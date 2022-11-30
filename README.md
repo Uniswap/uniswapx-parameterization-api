@@ -2,7 +2,7 @@
 
 ## Getting Started
 
-follow [api-template README](https://github.com/Uniswap/api-template), specifically the _First time developing on AWS or with CDK?_ section to get your AWS CDK set up and bootstrapped.
+follow [api-template README](https://github.com/Uniswap/api-template#first-time-developing-on-aws-or-with-cdk) to get your AWS CDK set up and bootstrapped.
 
 ## Delopyment
 
