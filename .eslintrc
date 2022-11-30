@@ -1,12 +1,17 @@
 {
   "root": true,
   "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "sourceType": "module"
+  },
   "env": {
     "node": true,
     "es6": true
   },
   "plugins": [
-    "@typescript-eslint"
+    "@typescript-eslint",
+    "simple-import-sort",
+    "import"
   ],
   "extends": [
     "eslint:recommended",
@@ -23,6 +28,13 @@
         ]
       }
     ],
-    "@typescript-eslint/ban-types": "warn"
+    "simple-import-sort/imports": "error",
+    "simple-import-sort/exports": "error",
+    "import/first": "error",
+    "import/newline-after-import": "error",
+    "import/no-duplicates": "error",
+    "@typescript-eslint/ban-types": "warn",
+    "@typescript-eslint/no-unused-vars": "warn",
+    "@typescript-eslint/ban-ts-comment": "off"
   }
 }
