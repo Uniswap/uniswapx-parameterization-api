@@ -8,6 +8,7 @@ import * as path from 'path';
 
 import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
+import { DynamoStack } from './dynamo-stack';
 
 export interface LambdaStackProps extends cdk.NestedStackProps {
   provisionedConcurrency: number;
@@ -23,6 +24,12 @@ export class LambdaStack extends cdk.NestedStack {
     super(scope, name, props);
     const { provisionedConcurrency } = props;
 
+    /*
+     * DDB Initialization
+     */
+    new DynamoStack(this, `${SERVICE_NAME}DynamoStack`, {});
+
+    /* Lambda Initialization */
     const lambdaName = `${SERVICE_NAME}Lambda`;
 
     const lambdaRole = new aws_iam.Role(this, `${lambdaName}-LambdaRole`, {
