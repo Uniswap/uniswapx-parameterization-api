@@ -111,21 +111,20 @@ export class APIStack extends cdk.Stack {
     });
 
     /* Lambda Integration */
-    const { helloWorldLambdaAlias } = new LambdaStack(this, `${SERVICE_NAME}LambdaStack`, {
+    const { quoteLambdaAlias } = new LambdaStack(this, `${SERVICE_NAME}LambdaStack`, {
       provisionedConcurrency: props.provisionedConcurrency,
       stage: props.stage as STAGE,
       envVars: props.envVars,
     });
 
-    const helloWorldLambdaIntegration = new aws_apigateway.LambdaIntegration(helloWorldLambdaAlias, {});
+    const quoteLambdaIntegration = new aws_apigateway.LambdaIntegration(quoteLambdaAlias, {});
     const quote = api.root.addResource('quote', {
       defaultCorsPreflightOptions: {
         allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
         allowMethods: aws_apigateway.Cors.ALL_METHODS,
       },
     });
-    const helloWorld = quote.addResource('hello-world');
-    helloWorld.addMethod('GET', helloWorldLambdaIntegration);
+    quote.addMethod('GET', quoteLambdaIntegration);
 
     this.url = new CfnOutput(this, 'Url', {
       value: api.url,

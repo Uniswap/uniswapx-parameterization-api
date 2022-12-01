@@ -64,3 +64,5 @@ typings/
 .env.test
 
 .cache
+dist/
+cdk.out/

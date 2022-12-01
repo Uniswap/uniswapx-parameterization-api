@@ -16,8 +16,8 @@ export interface LambdaStackProps extends cdk.NestedStackProps {
 }
 
 export class LambdaStack extends cdk.NestedStack {
-  private readonly helloWorldLambda: aws_lambda_nodejs.NodejsFunction;
-  public readonly helloWorldLambdaAlias: aws_lambda.Alias;
+  private readonly quoteLambda: aws_lambda_nodejs.NodejsFunction;
+  public readonly quoteLambdaAlias: aws_lambda.Alias;
 
   constructor(scope: Construct, name: string, props: LambdaStackProps) {
     super(scope, name, props);
@@ -33,11 +33,11 @@ export class LambdaStack extends cdk.NestedStack {
       ],
     });
 
-    this.helloWorldLambda = new aws_lambda_nodejs.NodejsFunction(this, `HelloWorld${lambdaName}`, {
+    this.quoteLambda = new aws_lambda_nodejs.NodejsFunction(this, `Quote${lambdaName}`, {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_16_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'helloWorldHandler',
+      handler: 'quoteHandler',
       memorySize: 128,
       bundling: {
         minify: true,
@@ -49,22 +49,22 @@ export class LambdaStack extends cdk.NestedStack {
       },
     });
 
-    this.helloWorldLambdaAlias = new aws_lambda.Alias(this, `GetOrdersLiveAlias`, {
+    this.quoteLambdaAlias = new aws_lambda.Alias(this, `GetOrdersLiveAlias`, {
       aliasName: 'live',
-      version: this.helloWorldLambda.currentVersion,
+      version: this.quoteLambda.currentVersion,
       provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
     });
 
     if (provisionedConcurrency > 0) {
-      const helloWorldTarget = new asg.ScalableTarget(this, `${lambdaName}-PostOrder-ProvConcASG`, {
+      const quoteTarget = new asg.ScalableTarget(this, `${lambdaName}-PostOrder-ProvConcASG`, {
         serviceNamespace: asg.ServiceNamespace.LAMBDA,
         maxCapacity: provisionedConcurrency * 5,
         minCapacity: provisionedConcurrency,
-        resourceId: `function:${this.helloWorldLambdaAlias.lambda.functionName}:${this.helloWorldLambdaAlias.aliasName}`,
+        resourceId: `function:${this.quoteLambdaAlias.lambda.functionName}:${this.quoteLambdaAlias.aliasName}`,
         scalableDimension: 'lambda:function:ProvisionedConcurrency',
       });
 
-      helloWorldTarget.node.addDependency(this.helloWorldLambdaAlias);
+      quoteTarget.node.addDependency(this.quoteLambdaAlias);
     }
   }
 }

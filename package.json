@@ -14,7 +14,10 @@
     "fix": "run-s fix:*",
     "fix:prettier": "prettier \"lib/**/*.ts\" --write",
     "fix:lint": "eslint lib --ext .ts --fix",
-    "fix:lint:cdk": "eslint bin --ext .ts --fix"
+    "fix:lint:cdk": "eslint bin --ext .ts --fix",
+    "lint": "run-s lint:*",
+    "lint:prettier": "prettier \"lib/**/*.ts\"",
+    "lint:lint:cdk": "eslint bin --ext .ts"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.108",
