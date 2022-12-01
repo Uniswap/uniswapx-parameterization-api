@@ -5,7 +5,7 @@ import Joi from 'joi';
 import { APIGLambdaHandler } from './base';
 import { APIHandleRequestParams, ApiInjector, ApiRInj, ErrorResponse, Response } from './base/api-handler';
 
-export class HelloWorldInjector extends ApiInjector<string, ApiRInj, void, void> {
+export class QuoteInjector extends ApiInjector<string, ApiRInj, void, void> {
   public async buildContainerInjected(): Promise<string> {
     return 'hello world';
   }
@@ -34,7 +34,7 @@ export class HelloWorldInjector extends ApiInjector<string, ApiRInj, void, void>
   }
 }
 
-export class HelloWorldHandler extends APIGLambdaHandler<string, ApiRInj, void, void, string> {
+export class QuoteHandler extends APIGLambdaHandler<string, ApiRInj, void, void, string> {
   public async handleRequest(
     params: APIHandleRequestParams<string, ApiRInj, void, void>
   ): Promise<ErrorResponse | Response<string>> {

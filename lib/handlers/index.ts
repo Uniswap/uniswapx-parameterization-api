@@ -1,8 +1,8 @@
-import { HelloWorldHandler, HelloWorldInjector } from './hello-world';
+import { QuoteHandler, QuoteInjector } from './quote';
 
-const helloWorldInjectorPromise = new HelloWorldInjector('helloWorldInjector').build();
-const helloWorldHandler = new HelloWorldHandler('helloWorldHandler', helloWorldInjectorPromise);
+const quoteInjectorPromise = new QuoteInjector('quoteInjector').build();
+const quoteHandler = new QuoteHandler('quoteHandler', quoteInjectorPromise);
 
 module.exports = {
-  helloWorldHandler: helloWorldHandler.handler,
+  quoteHandler: quoteHandler.handler,
 };
