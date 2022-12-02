@@ -4,6 +4,8 @@
 
 follow [api-template README](https://github.com/Uniswap/api-template#first-time-developing-on-aws-or-with-cdk) to get your AWS CDK set up and bootstrapped.
 
+To run dynamodb-related tests, you need to have Java Runtime installed (https://www.java.com/en/download/manual.jsp).
+
 ## Delopyment
 
 ### Dev Environment
