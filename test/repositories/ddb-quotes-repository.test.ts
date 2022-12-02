@@ -82,8 +82,7 @@ describe('DynamoQuotesRepository tests', () => {
       const res = await quotesRepository.getAllResponsesByRequestId('requestId0');
       expect(res).not.toBeNull();
       expect(res).toHaveLength(2);
-      expect(res).toContain(RESPONSE_MOCKS['0']);
-      expect(res).toContain(RESPONSE_MOCKS['1']);
+      expect(res).toMatchObject([RESPONSE_MOCKS['0'], RESPONSE_MOCKS['1']]);
     });
 
     it('should return an empty array if requestId is not present in table', async () => {
