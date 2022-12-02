@@ -90,10 +90,10 @@ export class DynamoQuotesRepository implements BaseQuotesRepository {
   }
 
   public async getAllResponsesByRequestId(requestId: string): Promise<QuoteResponse[]> {
-    const responses = await this.quotesTable.query(requestId, {
-      beginsWith: 'response',
-      reverse: true, // newest first
+    const responses = await this.quoteResponseEntity.query(requestId, {
+      beginsWith: 'response#',
       execute: true,
+      consistent: true,
     });
 
     return responses.Items as QuoteResponse[];

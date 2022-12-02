@@ -40,7 +40,4 @@ module.exports = {
       ],
     }
   ],
-  options: [
-    '-inMemory',
-  ]
 }

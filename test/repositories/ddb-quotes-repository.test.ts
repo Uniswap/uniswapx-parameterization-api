@@ -72,17 +72,18 @@ describe('DynamoQuotesRepository tests', () => {
     });
   });
 
-  describe('putResponses test', () => {
+  describe('putResponses and getAllResponsesByRequestId tests', () => {
     it('should successfully put multiple requests in table', async () => {
-      expect(() => quotesRepository.putResponses(Object.values(RESPONSE_MOCKS))).not.toThrow();
+      expect(async () => await quotesRepository.putResponses(Object.values(RESPONSE_MOCKS))).not.toThrow();
     });
-  });
 
-  describe('getAllResponsesByRequestId test', () => {
     it('should successfully get all quoteResponses by rid', async () => {
-      const res = await quotesRepository.getAllResponsesByRequestId(REQUEST_MOCKS['0'].requestId);
+      await quotesRepository.putResponses(Object.values(RESPONSE_MOCKS));
+      const res = await quotesRepository.getAllResponsesByRequestId('requestId0');
       expect(res).not.toBeNull();
-      expect(res).toHaveLength(0);
+      expect(res).toHaveLength(2);
+      expect(res).toContain(RESPONSE_MOCKS['0']);
+      expect(res).toContain(RESPONSE_MOCKS['1']);
     });
 
     it('should return an empty array if requestId is not present in table', async () => {
