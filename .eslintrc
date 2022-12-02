@@ -33,6 +33,7 @@
     "import/first": "error",
     "import/newline-after-import": "error",
     "import/no-duplicates": "error",
+    "@typescript-eslint/no-empty-interface": "off",
     "@typescript-eslint/ban-types": "warn",
     "@typescript-eslint/no-unused-vars": "warn",
     "@typescript-eslint/ban-ts-comment": "off"

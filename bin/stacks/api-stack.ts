@@ -124,7 +124,7 @@ export class APIStack extends cdk.Stack {
         allowMethods: aws_apigateway.Cors.ALL_METHODS,
       },
     });
-    quote.addMethod('GET', quoteLambdaIntegration);
+    quote.addMethod('POST', quoteLambdaIntegration);
 
     this.url = new CfnOutput(this, 'Url', {
       value: api.url,
