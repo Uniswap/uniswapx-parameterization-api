@@ -13,13 +13,14 @@
     "test": "jest",
     "fix": "run-s fix:*",
     "fix:prettier": "prettier \"lib/**/*.ts\" --write",
-    "fix:lint": "eslint lib --ext .ts --fix",
+    "fix:lint": "eslint lib test --ext .ts --fix",
     "fix:lint:cdk": "eslint bin --ext .ts --fix",
     "lint": "run-s lint:*",
     "lint:prettier": "prettier \"lib/**/*.ts\"",
     "lint:lint:cdk": "eslint bin --ext .ts"
   },
   "devDependencies": {
+    "@shelf/jest-dynamodb": "^3.3.1",
     "@types/aws-lambda": "^8.10.108",
     "@types/bunyan": "^1.8.8",
     "@types/jest": "^29.2.0",
@@ -50,6 +51,7 @@
     "bunyan": "^1.8.15",
     "constructs": "^10.1.137",
     "dotenv": "^16.0.3",
+    "dynamodb-toolbox": "^0.6.1",
     "esm": "^3.2.25",
     "joi": "^17.7.0",
     "source-map-support": "^0.5.21"
