@@ -1,12 +1,12 @@
 import { BigNumber } from 'ethers';
 import Joi from 'joi';
 
-import { validateAddress, validateAmount, validateAmountResponse } from '../../util/validators';
+import { RequestFieldValidator, ResponseFieldValidator } from '../../util/validator';
 
 export const PostQuoteRequestBodyJoi = Joi.object({
-  tokenIn: Joi.string().custom(validateAddress, 'Invalid address').required(),
-  amountIn: Joi.string().custom(validateAmount, 'Invalid amount').required(),
-  tokenOut: Joi.string().custom(validateAddress, 'Invalid address').required(),
+  tokenIn: RequestFieldValidator.address.required(),
+  amountIn: RequestFieldValidator.amount.required(),
+  tokenOut: RequestFieldValidator.address.required(),
 });
 
 export type PostQuoteRequestBody = {
@@ -18,9 +18,9 @@ export type PostQuoteRequestBody = {
 export const PostQuoteResponseJoi = Joi.object({
   requestId: Joi.string().required(),
   tokenIn: Joi.string().required(),
-  amountIn: Joi.custom(validateAmountResponse, 'Invalid amount').required(),
+  amountIn: ResponseFieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
-  amountOut: Joi.custom(validateAmountResponse, 'Invalid amount').required(),
+  amountOut: ResponseFieldValidator.amount.required(),
 });
 
 export type PostQuoteResponse = {

@@ -1,4 +1,5 @@
-import { ethers, BigNumber } from 'ethers';
+import { BigNumber,ethers } from 'ethers';
+
 import { PostQuoteRequestBodyJoi, PostQuoteResponseJoi } from '../../../lib/handlers/quote/schema';
 
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
@@ -67,19 +68,19 @@ describe('Schema tests', () => {
 
     it('requires tokenIn to be defined', () => {
       const { tokenOut, amountIn } = validCombinations[0];
-      let validated = PostQuoteRequestBodyJoi.validate({ tokenOut, amountIn });
+      const validated = PostQuoteRequestBodyJoi.validate({ tokenOut, amountIn });
       expect(validated.error?.message).toEqual('"tokenIn" is required');
     });
 
     it('requires tokenOut to be defined', () => {
       const { tokenIn, amountIn } = validCombinations[0];
-      let validated = PostQuoteRequestBodyJoi.validate({ tokenIn, amountIn });
+      const validated = PostQuoteRequestBodyJoi.validate({ tokenIn, amountIn });
       expect(validated.error?.message).toEqual('"tokenOut" is required');
     });
 
     it('requires amountIn to be defined', () => {
       const { tokenIn, tokenOut } = validCombinations[0];
-      let validated = PostQuoteRequestBodyJoi.validate({ tokenIn, tokenOut });
+      const validated = PostQuoteRequestBodyJoi.validate({ tokenIn, tokenOut });
       expect(validated.error?.message).toEqual('"amountIn" is required');
     });
   });
