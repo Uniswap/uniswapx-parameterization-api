@@ -26,11 +26,11 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     /* Subscription Filter Initialization */
-    const sbuscriptionRole = new aws_iam.Role(this, 'SubscriptionRole', {
+    const subscriptionRole = new aws_iam.Role(this, 'SubscriptionRole', {
       assumedBy: new aws_iam.ServicePrincipal('logs.amazonaws.com'),
     });
 
-    sbuscriptionRole.addToPolicy(
+    subscriptionRole.addToPolicy(
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
         actions: ['firehose:PutRecord', 'firehose:PutRecordBatch'],
@@ -43,7 +43,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       destinationArn: firehoseStream.deliveryStreamArn,
       filterPattern: '{ $.statusCode = 200 }',
       logGroupName: quoteLambda.logGroup.logGroupName,
-      roleArn: sbuscriptionRole.roleArn,
+      roleArn: subscriptionRole.roleArn,
     });
 
     new CfnOutput(this, 'filterName', {
