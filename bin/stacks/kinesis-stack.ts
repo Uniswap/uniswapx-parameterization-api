@@ -5,7 +5,6 @@ import { Construct } from 'constructs';
 
 export interface KinesisStackProps extends cdk.NestedStackProps {
   lambdaRole: aws_iam.Role;
-  // rsRole?: aws_iam.Role;
 }
 
 export class KinesisStack extends cdk.NestedStack {
@@ -21,6 +20,5 @@ export class KinesisStack extends cdk.NestedStack {
     });
 
     this.stream.grantWrite(props.lambdaRole);
-    // this.stream.grantRead(props.rsRole);
   }
 }

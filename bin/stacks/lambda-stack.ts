@@ -88,7 +88,7 @@ export class LambdaStack extends cdk.NestedStack {
 
     this.quoteLambda.logGroup.addSubscriptionFilter('RequestSub', {
       destination: new destinations.KinesisDestination(kinesisStack.stream),
-      filterPattern: aws_logs.FilterPattern.allTerms('response'),
+      filterPattern: aws_logs.FilterPattern.numberValue('$.statusCode', '=', 200),
     });
   }
 }
