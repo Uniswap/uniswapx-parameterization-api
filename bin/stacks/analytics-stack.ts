@@ -18,14 +18,14 @@ export class AnalyticsStack extends cdk.NestedStack {
     const { quoteLambda } = props;
 
     /* S3 Initialization */
-
     const bucket = new aws_s3.Bucket(this, 'RequestBucket');
-    /* Kinesis Firehose Initialization */
 
+    /* Kinesis Firehose Initialization */
     const firehoseStream = new aws_firehose.DeliveryStream(this, 'RequestStream', {
       destinations: [new firehose_destinations.S3Bucket(bucket)],
     });
 
+    /* Subscription Filter Initialization */
     const sbuscriptionRole = new aws_iam.Role(this, 'SubscriptionRole', {
       assumedBy: new aws_iam.ServicePrincipal('logs.amazonaws.com'),
     });
