@@ -10,6 +10,11 @@
     "@jridgewell/gen-mapping" "^0.1.0"
     "@jridgewell/trace-mapping" "^0.3.9"
 
+"@aws-cdk/aws-kinesisfirehose-alpha@^2.54.0-alpha.0":
+  version "2.54.0-alpha.0"
+  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-kinesisfirehose-alpha/-/aws-kinesisfirehose-alpha-2.54.0-alpha.0.tgz#c9422830a7c86b0b5c273c0ed94932cdfd0435c1"
+  integrity sha512-2qFf+pWba7+WXbmTcgDQMwrQolFrxTrB4tdNO7E7QNR+I1ATkjKUv8zVWKEE2fOt8GZsS33+Bopy5cEMI0c+Bg==
+
 "@aws-crypto/ie11-detection@^2.0.0":
   version "2.0.2"
   resolved "https://registry.yarnpkg.com/@aws-crypto/ie11-detection/-/ie11-detection-2.0.2.tgz#9c39f4a5558196636031a933ec1b4792de959d6a"
