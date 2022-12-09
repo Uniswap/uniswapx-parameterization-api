@@ -20,6 +20,11 @@
   resolved "https://registry.yarnpkg.com/@aws-cdk/aws-kinesisfirehose-destinations-alpha/-/aws-kinesisfirehose-destinations-alpha-2.54.0-alpha.0.tgz#525fbd28f5b1161111237a20be2a40f6629fd4ba"
   integrity sha512-leP4NutPVawmFeE3unQO2CCK0m5JM5vmGdd3ezXBjYh34qyS0tZzr103vxJBSNVNR5uG+b8Ncwi8lw41Bh/dbw==
 
+"@aws-cdk/aws-redshift-alpha@^2.54.0-alpha.0":
+  version "2.54.0-alpha.0"
+  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-redshift-alpha/-/aws-redshift-alpha-2.54.0-alpha.0.tgz#eac9251cdb6939b2848191b42cc33f326a29917d"
+  integrity sha512-7/bxH6KMLArBfgJxiylNaz8NLV1EHcxa/kLctUK9xRBsn40DobZ/mIZxXc0keCK/siTKwv9i5qiGQ7l0YvJHOA==
+
 "@aws-crypto/ie11-detection@^2.0.0":
   version "2.0.2"
   resolved "https://registry.yarnpkg.com/@aws-crypto/ie11-detection/-/ie11-detection-2.0.2.tgz#9c39f4a5558196636031a933ec1b4792de959d6a"

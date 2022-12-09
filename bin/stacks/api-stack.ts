@@ -3,7 +3,7 @@ import { CfnOutput } from 'aws-cdk-lib';
 import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
 import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
-import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
+//import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -12,7 +12,7 @@ import * as aws_waf from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
-import { QUOTES_TABLE_INDEX, QUOTES_TABLE_KEY } from '../../lib/config/dynamodb';
+//import { QUOTES_TABLE_INDEX, QUOTES_TABLE_KEY } from '../../lib/config/dynamodb';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 
@@ -123,44 +123,44 @@ export class APIStack extends cdk.Stack {
     /*
      * DDB Initialization
      */
-    const quotesTable = new aws_dynamo.Table(this, `${SERVICE_NAME}OrdersTable`, {
-      tableName: 'Quotes',
-      partitionKey: {
-        name: QUOTES_TABLE_KEY.REQUEST_ID,
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      sortKey: {
-        name: QUOTES_TABLE_KEY.TYPE,
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      billingMode: aws_dynamo.BillingMode.PAY_PER_REQUEST,
-    });
+    // const quotesTable = new aws_dynamo.Table(this, `${SERVICE_NAME}OrdersTable`, {
+    //   tableName: 'Quotes',
+    //   partitionKey: {
+    //     name: QUOTES_TABLE_KEY.REQUEST_ID,
+    //     type: aws_dynamo.AttributeType.STRING,
+    //   },
+    //   sortKey: {
+    //     name: QUOTES_TABLE_KEY.TYPE,
+    //     type: aws_dynamo.AttributeType.STRING,
+    //   },
+    //   billingMode: aws_dynamo.BillingMode.PAY_PER_REQUEST,
+    // });
 
-    quotesTable.addGlobalSecondaryIndex({
-      indexName: QUOTES_TABLE_INDEX.OFFERER_TYPE,
-      partitionKey: {
-        name: `${QUOTES_TABLE_KEY.OFFERER}_${QUOTES_TABLE_KEY.TYPE}`,
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      sortKey: {
-        name: QUOTES_TABLE_KEY.CREATED_AT,
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      projectionType: aws_dynamo.ProjectionType.ALL,
-    });
+    // quotesTable.addGlobalSecondaryIndex({
+    //   indexName: QUOTES_TABLE_INDEX.OFFERER_TYPE,
+    //   partitionKey: {
+    //     name: `${QUOTES_TABLE_KEY.OFFERER}_${QUOTES_TABLE_KEY.TYPE}`,
+    //     type: aws_dynamo.AttributeType.STRING,
+    //   },
+    //   sortKey: {
+    //     name: QUOTES_TABLE_KEY.CREATED_AT,
+    //     type: aws_dynamo.AttributeType.STRING,
+    //   },
+    //   projectionType: aws_dynamo.ProjectionType.ALL,
+    // });
 
-    quotesTable.addGlobalSecondaryIndex({
-      indexName: QUOTES_TABLE_KEY.FILLER,
-      partitionKey: {
-        name: QUOTES_TABLE_KEY.FILLER,
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      sortKey: {
-        name: QUOTES_TABLE_KEY.CREATED_AT,
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      projectionType: aws_dynamo.ProjectionType.ALL,
-    });
+    // quotesTable.addGlobalSecondaryIndex({
+    //   indexName: QUOTES_TABLE_KEY.FILLER,
+    //   partitionKey: {
+    //     name: QUOTES_TABLE_KEY.FILLER,
+    //     type: aws_dynamo.AttributeType.STRING,
+    //   },
+    //   sortKey: {
+    //     name: QUOTES_TABLE_KEY.CREATED_AT,
+    //     type: aws_dynamo.AttributeType.STRING,
+    //   },
+    //   projectionType: aws_dynamo.ProjectionType.ALL,
+    // });
 
     /*
      * Lambda Initialization
