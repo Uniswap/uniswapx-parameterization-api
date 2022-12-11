@@ -5,11 +5,13 @@ import * as aws_ec2 from 'aws-cdk-lib/aws-ec2';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_firehose from 'aws-cdk-lib/aws-kinesisfirehose';
 import * as aws_kms from 'aws-cdk-lib/aws-kms';
+import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as aws_logs from 'aws-cdk-lib/aws-logs';
 import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
+import path from 'path';
 
 const RS_DATABASE_NAME = 'rfq';
 
@@ -148,8 +150,24 @@ export class AnalyticsStack extends cdk.NestedStack {
     //
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
+      managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
     });
     bucket.grantReadWrite(firehoseRole);
+
+    const quoteRequestProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
+      runtime: aws_lambda.Runtime.NODEJS_16_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'quoteRequestProcessor',
+      memorySize: 256,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+      },
+    });
 
     const firehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RequestRedshiftStream', {
       redshiftDestinationConfiguration: {
@@ -168,8 +186,27 @@ export class AnalyticsStack extends cdk.NestedStack {
         },
         roleArn: firehoseRole.roleArn,
         copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
           dataTableName: requestTable.tableName,
           dataTableColumns: 'requestId,offerer,tokenIn,tokenOut,amountIn,createdAt',
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: quoteRequestProcessorLambda.functionArn,
+                },
+                {
+                  parameterName: 'RoleArn',
+                  parameterValue: firehoseRole.roleArn,
+                },
+              ],
+            },
+          ],
         },
         cloudWatchLoggingOptions: {
           enabled: true,

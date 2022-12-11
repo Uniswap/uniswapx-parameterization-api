@@ -19,6 +19,7 @@
     "inlineSources": true,
     "strictPropertyInitialization": true,
     "outDir": "dist",
+    "allowJs": true,
     "typeRoots": ["./node_modules/@types"]
   },
   "files": ["./.env.js"],
