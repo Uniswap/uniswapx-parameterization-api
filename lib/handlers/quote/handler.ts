@@ -21,6 +21,16 @@ export class QuoteHandler extends APIGLambdaHandler<
       requestBody: { tokenIn, tokenOut, amountIn },
     } = params;
 
+    log.info({
+      eventType: 'QuoteRequest',
+      body: {
+        requestId: 'fake request id',
+        tokenIn: tokenIn,
+        tokenOut: tokenOut,
+        amountIn: amountIn.toString(),
+      },
+    });
+
     log.info(`hello from ${requestId}`);
     return {
       statusCode: 200,

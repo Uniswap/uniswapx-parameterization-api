@@ -16,6 +16,11 @@ import * as path from 'path';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 
+/**
+ * APIStack
+ *    Sets up the API Gateway and Lambda functions for the parameterization service.
+ *    The API Gateway is responsible for creating REST endpoints, each of which is integrated with a Lambda function.
+ */
 export class APIStack extends cdk.Stack {
   public readonly url: CfnOutput;
 
@@ -122,6 +127,7 @@ export class APIStack extends cdk.Stack {
 
     /*
      * DDB Initialization
+     * TODO: Uncomment when we want to build a explorer-type info page, or remove if we no longer see the need
      */
     // const quotesTable = new aws_dynamo.Table(this, `${SERVICE_NAME}OrdersTable`, {
     //   tableName: 'Quotes',
@@ -208,14 +214,6 @@ export class APIStack extends cdk.Stack {
     }
 
     /*
-     * Analytics Stack Initialization
-     */
-
-    new AnalyticsStack(this, 'AnalyticsStack', {
-      quoteLambda,
-    });
-
-    /*
      * APIG <> Lambda Integration
      */
     const quoteLambdaIntegration = new aws_apigateway.LambdaIntegration(quoteLambdaAlias, {});
@@ -226,6 +224,13 @@ export class APIStack extends cdk.Stack {
       },
     });
     quote.addMethod('POST', quoteLambdaIntegration);
+
+    /*
+     * Analytics Stack Initialization
+     */
+    new AnalyticsStack(this, 'AnalyticsStack', {
+      quoteLambda,
+    });
 
     this.url = new CfnOutput(this, 'Url', {
       value: api.url,

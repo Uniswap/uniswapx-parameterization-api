@@ -29,11 +29,21 @@ export interface AnalyticsStackProps extends cdk.NestedStackProps {
   quoteLambda: aws_lambda_nodejs.NodejsFunction;
 }
 
+/**
+ * AnalyticsStack
+ *  Sets up the Analytics infrastructure for the parameterization service. The final destination is a Redshift cluster that we can run SQL queries against.
+ *    This includes:
+ *      - CloudWatch Subscription Filters for sending relevant logs events about quote requests and responses to Kinesis Firehose
+ *      - 'Data Processors': lambda functions to transform the shape of the log events before they are published to Firehose
+ *      - Kinesis Firehose Delivery Stream, which batches log events together and load them to intermediary S3 buckets
+ *      - Provisioned Redshift Cluster; transformed log events are COPY'd from S3 to Redshift as the final datawarehouse and analytics engine
+ */
 export class AnalyticsStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: AnalyticsStackProps) {
     super(scope, id, props);
     const { quoteLambda } = props;
 
+    /* Firehose Delivery Stream related logs */
     const rfqLogGroup = new aws_logs.LogGroup(this, 'rfqGroup', {
       logGroupName: '/aws/analytics/rfq',
       retention: aws_logs.RetentionDays.INFINITE,
@@ -144,10 +154,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     /* Kinesis Firehose Initialization */
-    // const firehoseStream = new aws_firehose.DeliveryStream(this, 'RequestStream', {
-    //   destinations: [new firehose_destinations.S3Bucket(bucket)],
-    // });
-    //
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
       managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
@@ -169,7 +175,9 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const firehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RequestRedshiftStream', {
+    // no L2 cdk construct available, so had to use Cfn construct
+    // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-kinesisfirehose-deliverystream.html
+    const quoteRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RequestRedshiftStream', {
       redshiftDestinationConfiguration: {
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
@@ -225,14 +233,14 @@ export class AnalyticsStack extends cdk.NestedStack {
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
         actions: ['firehose:PutRecord', 'firehose:PutRecordBatch'],
-        resources: [firehoseStream.attrArn],
+        resources: ['*'],
       })
     );
 
-    // no L2 constructs available for Kinesis Firehose type SubscriptionFilter, so using L1
+    // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
     const cfnSubscriptionFilter = new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
-      destinationArn: firehoseStream.attrArn,
-      filterPattern: '{ $.statusCode = 200 }',
+      destinationArn: quoteRequestFirehoseStream.attrArn,
+      filterPattern: '{ $.eventType = "QuoteRequest" }',
       logGroupName: quoteLambda.logGroup.logGroupName,
       roleArn: subscriptionRole.roleArn,
     });
