@@ -15,7 +15,6 @@ import path from 'path';
 
 const RS_DATABASE_NAME = 'rfq';
 
-// docs.aws.amazon.com/firehose/latest/dev/controlling-access.html#using-iam-rs-vpc
 const FIREHOSE_IP_ADDRESS_USE2 = '13.58.135.96/27';
 
 enum RS_DATA_TYPES {
@@ -99,6 +98,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       publiclyAccessible: true,
     });
 
+    // docs.aws.amazon.com/firehose/latest/dev/controlling-access.html#using-iam-rs-vpc
     subscriptionSG.addIngressRule(
       aws_ec2.Peer.ipv4(FIREHOSE_IP_ADDRESS_USE2),
       aws_ec2.Port.tcp(rsCluster.clusterEndpoint.port)
@@ -166,7 +166,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    // no L2 cdk construct available, so had to use Cfn construct
+    // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-kinesisfirehose-deliverystream.html
     const quoteRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RequestRedshiftStream', {
       redshiftDestinationConfiguration: {
@@ -215,6 +215,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     );
 
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
+    // same here regarding CDK not having a stable impelmentation of this resource
     const cfnSubscriptionFilter = new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
       destinationArn: quoteRequestFirehoseStream.attrArn,
       filterPattern: '{ $.eventType = "QuoteRequest" }',
