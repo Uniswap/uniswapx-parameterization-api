@@ -43,22 +43,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     super(scope, id, props);
     const { quoteLambda } = props;
 
-    /* Firehose Delivery Stream related logs */
-    const rfqLogGroup = new aws_logs.LogGroup(this, 'rfqGroup', {
-      logGroupName: '/aws/analytics/rfq',
-      retention: aws_logs.RetentionDays.INFINITE,
-    });
-
-    const firehoseLogStream = new aws_logs.LogStream(this, 'firehoseLogStream', {
-      logGroup: rfqLogGroup,
-      logStreamName: 'firehoseLogStream',
-    });
-
-    const s3LogStream = new aws_logs.LogStream(this, 'S3LogStream', {
-      logGroup: rfqLogGroup,
-      logStreamName: 'S3LogStream',
-    });
-
     /* S3 Initialization */
     const bucket = new aws_s3.Bucket(this, 'RequestBucket');
 
@@ -159,6 +143,13 @@ export class AnalyticsStack extends cdk.NestedStack {
       managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
     });
     bucket.grantReadWrite(firehoseRole);
+    firehoseRole.addToPolicy(
+      new aws_iam.PolicyStatement({
+        effect: aws_iam.Effect.ALLOW,
+        actions: ['lambda:InvokeFunction', 'lambda:GetFunctionConfiguration'],
+        resources: ['*'],
+      })
+    );
 
     const quoteRequestProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
@@ -186,11 +177,6 @@ export class AnalyticsStack extends cdk.NestedStack {
           bucketArn: bucket.bucketArn,
           roleArn: firehoseRole.roleArn,
           compressionFormat: 'UNCOMPRESSED',
-          cloudWatchLoggingOptions: {
-            enabled: true,
-            logGroupName: rfqLogGroup.logGroupName,
-            logStreamName: s3LogStream.logStreamName,
-          },
         },
         roleArn: firehoseRole.roleArn,
         copyCommand: {
@@ -208,18 +194,9 @@ export class AnalyticsStack extends cdk.NestedStack {
                   parameterName: 'LambdaArn',
                   parameterValue: quoteRequestProcessorLambda.functionArn,
                 },
-                {
-                  parameterName: 'RoleArn',
-                  parameterValue: firehoseRole.roleArn,
-                },
               ],
             },
           ],
-        },
-        cloudWatchLoggingOptions: {
-          enabled: true,
-          logGroupName: rfqLogGroup.logGroupName,
-          logStreamName: firehoseLogStream.logStreamName,
         },
       },
     });
