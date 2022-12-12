@@ -10,16 +10,6 @@
     "@jridgewell/gen-mapping" "^0.1.0"
     "@jridgewell/trace-mapping" "^0.3.9"
 
-"@aws-cdk/aws-kinesisfirehose-alpha@^2.54.0-alpha.0":
-  version "2.54.0-alpha.0"
-  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-kinesisfirehose-alpha/-/aws-kinesisfirehose-alpha-2.54.0-alpha.0.tgz#c9422830a7c86b0b5c273c0ed94932cdfd0435c1"
-  integrity sha512-2qFf+pWba7+WXbmTcgDQMwrQolFrxTrB4tdNO7E7QNR+I1ATkjKUv8zVWKEE2fOt8GZsS33+Bopy5cEMI0c+Bg==
-
-"@aws-cdk/aws-kinesisfirehose-destinations-alpha@^2.54.0-alpha.0":
-  version "2.54.0-alpha.0"
-  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-kinesisfirehose-destinations-alpha/-/aws-kinesisfirehose-destinations-alpha-2.54.0-alpha.0.tgz#525fbd28f5b1161111237a20be2a40f6629fd4ba"
-  integrity sha512-leP4NutPVawmFeE3unQO2CCK0m5JM5vmGdd3ezXBjYh34qyS0tZzr103vxJBSNVNR5uG+b8Ncwi8lw41Bh/dbw==
-
 "@aws-cdk/aws-redshift-alpha@^2.54.0-alpha.0":
   version "2.54.0-alpha.0"
   resolved "https://registry.yarnpkg.com/@aws-cdk/aws-redshift-alpha/-/aws-redshift-alpha-2.54.0-alpha.0.tgz#eac9251cdb6939b2848191b42cc33f326a29917d"
