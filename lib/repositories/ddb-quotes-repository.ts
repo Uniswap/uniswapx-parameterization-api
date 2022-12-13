@@ -2,7 +2,7 @@ import { DocumentClient } from 'aws-sdk/clients/dynamodb';
 import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMODB_TYPE, QUOTES_TABLE_INDEX, QUOTES_TABLE_KEY } from '../config/dynamodb';
-import {DBQuoteRequest, DBQuoteResponse } from '../entities';
+import { DBQuoteRequest, DBQuoteResponse } from '../entities';
 import { BaseQuotesRepository } from './base-quotes-repository';
 
 export class DynamoQuotesRepository implements BaseQuotesRepository {
@@ -66,7 +66,7 @@ export class DynamoQuotesRepository implements BaseQuotesRepository {
     private readonly quoteResponseEntity: Entity
   ) {}
 
-  public async putRequest(request:DBQuoteRequest): Promise<void> {
+  public async putRequest(request: DBQuoteRequest): Promise<void> {
     await this.quoteRequestEntity.put(request, {
       execute: true,
     });

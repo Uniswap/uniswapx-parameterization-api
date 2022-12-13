@@ -1,5 +1,6 @@
-import { v4 as uuidv4 } from 'uuid';
 import { BigNumber } from 'ethers';
+import { v4 as uuidv4 } from 'uuid';
+
 import { PostQuoteRequestBody } from '../handlers/quote/schema';
 
 export interface QuoteRequestData {
@@ -19,7 +20,7 @@ export class QuoteRequest {
       requestId: uuidv4(),
       offerer: body.offerer,
       tokenIn: body.tokenIn,
-      amountIn: body.amountIn,
+      amountIn: BigNumber.from(body.amountIn),
       tokenOut: body.tokenOut,
     });
   }

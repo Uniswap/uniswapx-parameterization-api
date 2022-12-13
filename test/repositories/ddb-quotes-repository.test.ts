@@ -1,9 +1,9 @@
 import { DocumentClient } from 'aws-sdk/clients/dynamodb';
 
-import {DBQuoteRequest, DBQuoteResponse } from '../../lib/entities';
+import { DBQuoteRequest, DBQuoteResponse } from '../../lib/entities';
 import { DynamoQuotesRepository } from '../../lib/repositories/ddb-quotes-repository';
 
-const REQUEST_MOCKS: Record<string,DBQuoteRequest> = {};
+const REQUEST_MOCKS: Record<string, DBQuoteRequest> = {};
 const RESPONSE_MOCKS: Record<string, DBQuoteResponse> = {};
 
 Array(3)

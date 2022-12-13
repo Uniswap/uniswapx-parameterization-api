@@ -13,6 +13,7 @@
     "test": "jest",
     "fix": "run-s fix:*",
     "fix:prettier": "prettier \"lib/**/*.ts\" --write",
+    "fix:prettiertest": "prettier \"test/**/*.ts\" --write",
     "fix:lint": "eslint lib test --ext .ts --fix",
     "fix:lint:cdk": "eslint bin --ext .ts --fix",
     "lint": "run-s lint:*",

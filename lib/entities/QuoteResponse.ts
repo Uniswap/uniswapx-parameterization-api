@@ -1,6 +1,7 @@
 import { BigNumber } from 'ethers';
-import { QuoteRequestData } from '.';
+
 import { PostQuoteResponse } from '../handlers/quote/schema';
+import { QuoteRequestData } from '.';
 
 export interface QuoteResponseData extends QuoteRequestData {
   amountOut: BigNumber;
@@ -27,9 +28,10 @@ export class QuoteResponse implements QuoteResponseData {
     return {
       requestId: this.requestId,
       tokenIn: this.tokenIn,
-      amountIn: this.amountIn,
+      amountIn: this.amountIn.toString(),
       tokenOut: this.tokenOut,
-      amountOut: this.amountOut,
+      amountOut: this.amountOut.toString(),
+      offerer: this.offerer,
     };
   }
 
