@@ -7,7 +7,6 @@ import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
 
-
 dotenv.config();
 
 export class APIStage extends Stage {
@@ -38,6 +37,10 @@ export class APIStage extends Stage {
 // Local Dev Stack
 const app = new cdk.App();
 new APIStack(app, `${SERVICE_NAME}Stack`, {
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
+  },
   provisionedConcurrency: process.env.PROVISION_CONCURRENCY ? parseInt(process.env.PROVISION_CONCURRENCY) : 0,
   throttlingOverride: process.env.THROTTLE_PER_FIVE_MINS,
   chatbotSNSArn: process.env.CHATBOT_SNS_ARN,

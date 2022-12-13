@@ -35,6 +35,16 @@ export class QuoteHandler extends APIGLambdaHandler<
     }
 
     log.info(`Quoted requestId: ${request.requestId}: ${bestQuote.amountOut.toString()}`);
+    log.info({
+      eventType: 'QuoteRequest',
+      body: {
+        requestId: request.requestId,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        amountIn: request.amountIn.toString(),
+      },
+    });
+
     return {
       statusCode: 200,
       body: bestQuote.toResponse(),
