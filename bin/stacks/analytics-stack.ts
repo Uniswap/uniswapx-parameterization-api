@@ -143,13 +143,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
     });
     bucket.grantReadWrite(firehoseRole);
-    firehoseRole.addToPolicy(
-      new aws_iam.PolicyStatement({
-        effect: aws_iam.Effect.ALLOW,
-        actions: ['lambda:InvokeFunction', 'lambda:GetFunctionConfiguration'],
-        resources: ['*'],
-      })
-    );
 
     const quoteRequestProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
@@ -166,6 +159,13 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    firehoseRole.addToPolicy(
+      new aws_iam.PolicyStatement({
+        effect: aws_iam.Effect.ALLOW,
+        actions: ['lambda:InvokeFunction', 'lambda:GetFunctionConfiguration'],
+        resources: [quoteRequestProcessorLambda.functionArn],
+      })
+    );
     // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-kinesisfirehose-deliverystream.html
     const quoteRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RequestRedshiftStream', {
@@ -215,7 +215,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     );
 
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
-    // same here regarding CDK not having a stable impelmentation of this resource
+    // same here regarding CDK not having a stable implementation of this resource
     const cfnSubscriptionFilter = new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
       destinationArn: quoteRequestFirehoseStream.attrArn,
       filterPattern: '{ $.eventType = "QuoteRequest" }',
