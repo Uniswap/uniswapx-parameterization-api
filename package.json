@@ -17,7 +17,8 @@
     "fix:lint:cdk": "eslint bin --ext .ts --fix",
     "lint": "run-s lint:*",
     "lint:prettier": "prettier \"lib/**/*.ts\"",
-    "lint:lint:cdk": "eslint bin --ext .ts"
+    "lint:lint:cdk": "eslint bin --ext .ts",
+    "deploy": "yarn build && cdk deploy"
   },
   "devDependencies": {
     "@shelf/jest-dynamodb": "^3.3.1",
@@ -46,6 +47,7 @@
     "typescript": "^4.8.4"
   },
   "dependencies": {
+    "@aws-cdk/aws-redshift-alpha": "^2.54.0-alpha.0",
     "aws-cdk-lib": "2.43.1",
     "aws-sdk": "^2.1238.0",
     "bunyan": "^1.8.15",
