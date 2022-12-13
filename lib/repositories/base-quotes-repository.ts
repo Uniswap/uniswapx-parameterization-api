@@ -1,8 +1,8 @@
-import { QuoteRequest, QuoteResponse } from '../entities';
+import {DBQuoteRequest, DBQuoteResponse } from '../entities';
 
 export interface BaseQuotesRepository {
-  putRequest(request: QuoteRequest): Promise<void>;
-  putResponses(responses: QuoteResponse[]): Promise<void>;
-  getRequestById: (requestId: string) => Promise<QuoteRequest | null>;
-  getAllResponsesByRequestId: (requestId: string) => Promise<QuoteResponse[]>;
+  putRequest(request:DBQuoteRequest): Promise<void>;
+  putResponses(responses: DBQuoteResponse[]): Promise<void>;
+  getRequestById: (requestId: string) => Promise<DBQuoteRequest | null>;
+  getAllResponsesByRequestId: (requestId: string) => Promise<DBQuoteResponse[]>;
 }

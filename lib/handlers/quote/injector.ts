@@ -1,21 +1,25 @@
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
+import { Quoter, MockQuoter } from '../../quoters';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
 
-export interface ContainerInjected {}
+export interface ContainerInjected {
+  quoters: Quoter[];
+}
 
 export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQuoteRequestBody, void> {
   public async buildContainerInjected(): Promise<ContainerInjected> {
-    return {};
+    return {
+      quoters: [new MockQuoter()],
+    };
   }
 
   public async getRequestInjected(
     containerInjected: ContainerInjected,
-    requestBody: PostQuoteRequestBody,
-    //@ts-ignore
-    requestQueryParams: void,
+    _requestBody: PostQuoteRequestBody,
+    _requestQueryParams: void,
     _event: APIGatewayProxyEvent,
     context: Context,
     log: Logger
@@ -31,7 +35,6 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
     return {
       log,
       requestId,
-      ...requestBody,
     };
   }
 }

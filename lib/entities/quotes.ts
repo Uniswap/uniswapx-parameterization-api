@@ -1,4 +1,4 @@
-export type QuoteRequest = {
+export type DBQuoteRequest = {
   requestId: string;
   type: string;
   tokenIn: string;
@@ -9,7 +9,7 @@ export type QuoteRequest = {
   deadline: number;
 };
 
-export type QuoteResponse = {
+export type DBQuoteResponse = {
   requestId: string;
   type: string;
   tokenIn: string;

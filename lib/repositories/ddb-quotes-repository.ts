@@ -2,7 +2,7 @@ import { DocumentClient } from 'aws-sdk/clients/dynamodb';
 import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMODB_TYPE, QUOTES_TABLE_INDEX, QUOTES_TABLE_KEY } from '../config/dynamodb';
-import { QuoteRequest, QuoteResponse } from '../entities';
+import {DBQuoteRequest, DBQuoteResponse } from '../entities';
 import { BaseQuotesRepository } from './base-quotes-repository';
 
 export class DynamoQuotesRepository implements BaseQuotesRepository {
@@ -66,13 +66,13 @@ export class DynamoQuotesRepository implements BaseQuotesRepository {
     private readonly quoteResponseEntity: Entity
   ) {}
 
-  public async putRequest(request: QuoteRequest): Promise<void> {
+  public async putRequest(request:DBQuoteRequest): Promise<void> {
     await this.quoteRequestEntity.put(request, {
       execute: true,
     });
   }
 
-  public async putResponses(responses: QuoteResponse[]): Promise<void> {
+  public async putResponses(responses: DBQuoteResponse[]): Promise<void> {
     await this.quotesTable.batchWrite(
       responses.map((response) => this.quoteResponseEntity.putBatch(response)),
       {
@@ -81,21 +81,21 @@ export class DynamoQuotesRepository implements BaseQuotesRepository {
     );
   }
 
-  public async getRequestById(requestId: string): Promise<QuoteRequest | null> {
+  public async getRequestById(requestId: string): Promise<DBQuoteRequest | null> {
     const response = await this.quoteRequestEntity.query(requestId, {
       beginsWith: 'request',
       execute: true,
     });
-    return (response.Items?.[0] as QuoteRequest) ?? null;
+    return (response.Items?.[0] as DBQuoteRequest) ?? null;
   }
 
-  public async getAllResponsesByRequestId(requestId: string): Promise<QuoteResponse[]> {
+  public async getAllResponsesByRequestId(requestId: string): Promise<DBQuoteResponse[]> {
     const responses = await this.quoteResponseEntity.query(requestId, {
       beginsWith: 'response#',
       execute: true,
       consistent: true,
     });
 
-    return responses.Items as QuoteResponse[];
+    return responses.Items as DBQuoteResponse[];
   }
 }

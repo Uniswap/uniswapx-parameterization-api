@@ -4,12 +4,14 @@ import Joi from 'joi';
 import { RequestFieldValidator, ResponseFieldValidator } from '../../util/validator';
 
 export const PostQuoteRequestBodyJoi = Joi.object({
+  offerer: RequestFieldValidator.address.required(),
   tokenIn: RequestFieldValidator.address.required(),
   amountIn: RequestFieldValidator.amount.required(),
   tokenOut: RequestFieldValidator.address.required(),
 });
 
 export type PostQuoteRequestBody = {
+  offerer: string;
   tokenIn: string;
   amountIn: BigNumber;
   tokenOut: string;
