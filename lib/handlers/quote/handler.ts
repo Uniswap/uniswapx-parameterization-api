@@ -28,7 +28,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     const bestQuote = await getBestQuote(quoters, request);
     if (!bestQuote) {
       return {
-        statusCode: 400,
+        statusCode: 404,
         detail: 'No quotes available',
         errorCode: 'QUOTE_ERROR',
       };
