@@ -1,7 +1,7 @@
 import { BigNumber, ethers } from 'ethers';
 import Joi, { CustomHelpers } from 'joi';
 
-export class RequestFieldValidator {
+export class FieldValidator {
   public static readonly address = Joi.string().custom((value: string, helpers: CustomHelpers<string>) => {
     if (!ethers.utils.isAddress(value)) {
       return helpers.message({ custom: 'Invalid address' });
@@ -11,16 +11,14 @@ export class RequestFieldValidator {
 
   public static readonly amount = Joi.string().custom((value: string, helpers: CustomHelpers<string>) => {
     try {
-      return BigNumber.from(value);
+      const result = BigNumber.from(value);
+      if (result.lt(0)) {
+        return helpers.message({ custom: 'Invalid amount' });
+      }
     } catch {
       // bignumber error is a little ugly for API response so rethrow our own
       return helpers.message({ custom: 'Invalid amount' });
     }
-  });
-}
-
-export class ResponseFieldValidator {
-  public static readonly amount = Joi.custom((value: BigNumber) => {
-    return value.toString();
+    return value;
   });
 }

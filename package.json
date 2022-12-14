@@ -13,6 +13,7 @@
     "test": "jest",
     "fix": "run-s fix:*",
     "fix:prettier": "prettier \"lib/**/*.ts\" --write",
+    "fix:prettiertest": "prettier \"test/**/*.ts\" --write",
     "fix:lint": "eslint lib test --ext .ts --fix",
     "fix:lint:cdk": "eslint bin --ext .ts --fix",
     "lint": "run-s lint:*",
@@ -27,6 +28,7 @@
     "@types/jest": "^29.2.0",
     "@types/node": "^18.11.4",
     "@types/qs": "^6.9.7",
+    "@types/uuid": "^9.0.0",
     "@typescript-eslint/eslint-plugin": "^5.40.1",
     "@typescript-eslint/parser": "^5.40.1",
     "aws-sdk-client-mock": "^2.0.0",
@@ -56,7 +58,8 @@
     "dynamodb-toolbox": "^0.6.1",
     "esm": "^3.2.25",
     "joi": "^17.7.0",
-    "source-map-support": "^0.5.21"
+    "source-map-support": "^0.5.21",
+    "uuid": "^9.0.0"
   },
   "prettier": {
     "printWidth": 120,

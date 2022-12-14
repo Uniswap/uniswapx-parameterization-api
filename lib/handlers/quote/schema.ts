@@ -1,32 +1,35 @@
-import { BigNumber } from 'ethers';
 import Joi from 'joi';
 
-import { RequestFieldValidator, ResponseFieldValidator } from '../../util/validator';
+import { FieldValidator } from '../../util/validator';
 
 export const PostQuoteRequestBodyJoi = Joi.object({
-  tokenIn: RequestFieldValidator.address.required(),
-  amountIn: RequestFieldValidator.amount.required(),
-  tokenOut: RequestFieldValidator.address.required(),
+  offerer: FieldValidator.address.required(),
+  tokenIn: FieldValidator.address.required(),
+  amountIn: FieldValidator.amount.required(),
+  tokenOut: FieldValidator.address.required(),
 });
 
 export type PostQuoteRequestBody = {
+  offerer: string;
   tokenIn: string;
-  amountIn: BigNumber;
+  amountIn: string;
   tokenOut: string;
 };
 
 export const PostQuoteResponseJoi = Joi.object({
   requestId: Joi.string().required(),
   tokenIn: Joi.string().required(),
-  amountIn: ResponseFieldValidator.amount.required(),
+  amountIn: FieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
-  amountOut: ResponseFieldValidator.amount.required(),
+  amountOut: FieldValidator.amount.required(),
+  offerer: FieldValidator.address.required(),
 });
 
 export type PostQuoteResponse = {
   requestId: string;
   tokenIn: string;
-  amountIn: BigNumber;
+  amountIn: string;
   tokenOut: string;
-  amountOut: BigNumber;
+  amountOut: string;
+  offerer: string;
 };

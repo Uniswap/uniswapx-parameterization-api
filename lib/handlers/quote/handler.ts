@@ -1,6 +1,7 @@
-import { BigNumber } from 'ethers';
 import Joi from 'joi';
 
+import { QuoteRequest, QuoteResponse } from '../../entities';
+import { Quoter } from '../../quoters';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ApiRInj, ErrorResponse, Response } from '../base/api-handler';
 import { ContainerInjected } from './injector';
@@ -14,33 +15,39 @@ export class QuoteHandler extends APIGLambdaHandler<
   PostQuoteResponse
 > {
   public async handleRequest(
-    params: APIHandleRequestParams<string, ApiRInj, PostQuoteRequestBody, void>
+    params: APIHandleRequestParams<ContainerInjected, ApiRInj, PostQuoteRequestBody, void>
   ): Promise<ErrorResponse | Response<PostQuoteResponse>> {
     const {
-      requestInjected: { log, requestId },
-      requestBody: { tokenIn, tokenOut, amountIn },
+      requestInjected: { log },
+      requestBody,
+      containerInjected: { quoters },
     } = params;
 
+    // TODO: add quoter filtering based on request param, i.e. user can request only RFQ or only ROUTER
+    const request = QuoteRequest.fromRequestBody(requestBody);
+    const bestQuote = await getBestQuote(quoters, request);
+    if (!bestQuote) {
+      return {
+        statusCode: 404,
+        detail: 'No quotes available',
+        errorCode: 'QUOTE_ERROR',
+      };
+    }
+
+    log.info(`Quoted requestId: ${request.requestId}: ${bestQuote.amountOut.toString()}`);
     log.info({
       eventType: 'QuoteRequest',
       body: {
-        requestId: 'fake request id',
-        tokenIn: tokenIn,
-        tokenOut: tokenOut,
-        amountIn: amountIn.toString(),
+        requestId: request.requestId,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        amountIn: request.amountIn.toString(),
       },
     });
 
-    log.info(`hello from ${requestId}`);
     return {
       statusCode: 200,
-      body: {
-        requestId: 'fake request id',
-        tokenIn,
-        tokenOut,
-        amountIn,
-        amountOut: BigNumber.from('1324'),
-      },
+      body: bestQuote.toResponse(),
     };
   }
 
@@ -55,4 +62,17 @@ export class QuoteHandler extends APIGLambdaHandler<
   protected responseBodySchema(): Joi.ObjectSchema | null {
     return PostQuoteResponseJoi;
   }
+}
+
+// fetch quotes from all quoters and return the best one
+async function getBestQuote(quoters: Quoter[], quoteRequest: QuoteRequest): Promise<QuoteResponse | null> {
+  const responses: QuoteResponse[] = await Promise.all(quoters.map((q) => q.quote(quoteRequest)));
+
+  // return the response with the highest amountOut value
+  return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
+    if (!bestQuote || quote.amountOut.gt(bestQuote.amountOut)) {
+      return quote;
+    }
+    return bestQuote;
+  }, null);
 }
