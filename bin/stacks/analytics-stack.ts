@@ -22,6 +22,7 @@ enum RS_DATA_TYPES {
   ADDRESS = 'char(42)',
   UINT256 = 'varchar(78)',
   TIMESTAMP = 'timestamp',
+  BIGINT = 'bigint',
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -43,7 +44,8 @@ export class AnalyticsStack extends cdk.NestedStack {
     const { quoteLambda } = props;
 
     /* S3 Initialization */
-    const bucket = new aws_s3.Bucket(this, 'RequestBucket');
+    const requestBucket = new aws_s3.Bucket(this, 'RequestBucket');
+    const fillBucket = new aws_s3.Bucket(this, 'FillBucket');
 
     /* Redshift Initialization */
     const rsRole = new aws_iam.Role(this, 'RedshiftRole', {
@@ -125,7 +127,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       databaseName: RS_DATABASE_NAME,
       tableName: 'QuoteResponses',
       tableColumns: [
-        { name: 'responseId', dataType: RS_DATA_TYPES.UUID },
+        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
         { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
@@ -137,12 +139,29 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
+    const orderStatusTable = new aws_rs.Table(this, 'orderStatusTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'OrderStatus',
+      tableColumns: [
+        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'nonce', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'blockNumber', dataType: RS_DATA_TYPES.BIGINT },
+        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
+      ],
+    });
+
     /* Kinesis Firehose Initialization */
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
       managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
     });
-    bucket.grantReadWrite(firehoseRole);
+    requestBucket.grantReadWrite(firehoseRole);
+    fillBucket.grantReadWrite(firehoseRole);
 
     const quoteRequestProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
@@ -159,22 +178,37 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    const FillLogProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'FillLogProcessor', {
+      runtime: aws_lambda.Runtime.NODEJS_16_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'fillLogProcessor',
+      memorySize: 256,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+      },
+    });
+
     firehoseRole.addToPolicy(
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
         actions: ['lambda:InvokeFunction', 'lambda:GetFunctionConfiguration'],
-        resources: [quoteRequestProcessorLambda.functionArn],
+        resources: [quoteRequestProcessorLambda.functionArn, FillLogProcessorLambda.functionArn],
       })
     );
     // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-kinesisfirehose-deliverystream.html
-    const quoteRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RequestRedshiftStream', {
+    const requestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RequestRedshiftStream', {
       redshiftDestinationConfiguration: {
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
         s3Configuration: {
-          bucketArn: bucket.bucketArn,
+          bucketArn: requestBucket.bucketArn,
           roleArn: firehoseRole.roleArn,
           compressionFormat: 'UNCOMPRESSED',
         },
@@ -201,6 +235,39 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    new aws_firehose.CfnDeliveryStream(this, 'FillRedshiftStream', {
+      redshiftDestinationConfiguration: {
+        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
+        username: 'admin',
+        password: creds.secretValueFromJson('password').toString(),
+        s3Configuration: {
+          bucketArn: fillBucket.bucketArn,
+          roleArn: firehoseRole.roleArn,
+          compressionFormat: 'UNCOMPRESSED',
+        },
+        roleArn: firehoseRole.roleArn,
+        copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
+          dataTableName: orderStatusTable.tableName,
+          dataTableColumns: 'quoteId,offerer,filler,nonce,blockNumber,tokenOut,amountOut',
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: FillLogProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
     /* Subscription Filter Initialization */
     const subscriptionRole = new aws_iam.Role(this, 'SubscriptionRole', {
       assumedBy: new aws_iam.ServicePrincipal('logs.amazonaws.com'),
@@ -217,7 +284,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
     // same here regarding CDK not having a stable implementation of this resource
     const cfnSubscriptionFilter = new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
-      destinationArn: quoteRequestFirehoseStream.attrArn,
+      destinationArn: requestFirehoseStream.attrArn,
       filterPattern: '{ $.eventType = "QuoteRequest" }',
       logGroupName: quoteLambda.logGroup.logGroupName,
       roleArn: subscriptionRole.roleArn,
