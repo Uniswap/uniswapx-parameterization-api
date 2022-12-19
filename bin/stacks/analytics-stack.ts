@@ -23,6 +23,7 @@ enum RS_DATA_TYPES {
   UINT256 = 'varchar(78)',
   TIMESTAMP = 'timestamp',
   BIGINT = 'bigint',
+  TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled'
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -139,13 +140,14 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const orderStatusTable = new aws_rs.Table(this, 'orderStatusTable', {
+    const archivedOrderdTable = new aws_rs.Table(this, 'archivedsOrderTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
-      tableName: 'OrderStatus',
+      tableName: 'ArchivedOrders',
       tableColumns: [
         { name: 'quoteId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'status', dataType: RS_DATA_TYPES.TERMINAL_STATUS },
         { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'nonce', dataType: RS_DATA_TYPES.UINT256 },
@@ -248,7 +250,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         roleArn: firehoseRole.roleArn,
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: orderStatusTable.tableName,
+          dataTableName: archivedOrderdTable.tableName,
           dataTableColumns: 'quoteId,offerer,filler,nonce,blockNumber,tokenOut,amountOut',
         },
         processingConfiguration: {
