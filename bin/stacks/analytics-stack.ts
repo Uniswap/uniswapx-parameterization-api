@@ -158,6 +158,8 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     /* Kinesis Firehose Initialization */
+    // TODO: add x-account trust policy
+    // https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CreateFirehoseStreamDestination.html
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
       managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
