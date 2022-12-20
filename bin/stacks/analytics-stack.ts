@@ -182,10 +182,10 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const FillLogProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'FillLogProcessor', {
+    const fillEventProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'FillLogProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'fillLogProcessor',
+      handler: 'fillEventProcessor',
       memorySize: 256,
       bundling: {
         minify: true,
@@ -201,7 +201,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
         actions: ['lambda:InvokeFunction', 'lambda:GetFunctionConfiguration'],
-        resources: [quoteRequestProcessorLambda.functionArn, FillLogProcessorLambda.functionArn],
+        resources: [quoteRequestProcessorLambda.functionArn, fillEventProcessorLambda.functionArn],
       })
     );
     // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
@@ -263,7 +263,7 @@ export class AnalyticsStack extends cdk.NestedStack {
               parameters: [
                 {
                   parameterName: 'LambdaArn',
-                  parameterValue: FillLogProcessorLambda.functionArn,
+                  parameterValue: fillEventProcessorLambda.functionArn,
                 },
               ],
             },
