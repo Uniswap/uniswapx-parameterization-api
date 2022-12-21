@@ -147,7 +147,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       tableName: 'ArchivedOrders',
       tableColumns: [
         { name: 'quoteId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'status', dataType: RS_DATA_TYPES.TERMINAL_STATUS },
+        { name: 'orderStatus', dataType: RS_DATA_TYPES.TERMINAL_STATUS },
         { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'nonce', dataType: RS_DATA_TYPES.UINT256 },
