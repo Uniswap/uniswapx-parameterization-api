@@ -252,7 +252,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         roleArn: firehoseRole.roleArn,
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: archivedOrderdTable.tableName,
+          dataTableName: archivedOrdersTable.tableName,
           dataTableColumns: 'quoteId,offerer,filler,nonce,blockNumber,tokenOut,amountOut',
         },
         processingConfiguration: {
