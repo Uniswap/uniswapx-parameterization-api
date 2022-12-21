@@ -7,8 +7,9 @@ export enum QuoterType {
 }
 
 export interface Quoter {
-  quote(request: QuoteRequest): Promise<QuoteResponse>;
+  quote(request: QuoteRequest): Promise<QuoteResponse[]>;
   type(): QuoterType;
 }
 
 export * from './MockQuoter';
+export * from './WebhookQuoter';

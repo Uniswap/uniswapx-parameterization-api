@@ -13,6 +13,10 @@ export interface QuoteRequestData {
   tokenOut: string;
 }
 
+export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amountIn'> {
+  amountIn: string;
+}
+
 // data class for QuoteRequest helpers and conversions
 export class QuoteRequest {
   public static fromRequestBody(body: PostQuoteRequestBody): QuoteRequest {
@@ -26,6 +30,16 @@ export class QuoteRequest {
   }
 
   constructor(private data: QuoteRequestData) {}
+
+  public toJSON(): QuoteRequestDataJSON {
+    return {
+      requestId: this.requestId,
+      offerer: this.offerer,
+      tokenIn: this.tokenIn,
+      amountIn: this.amountIn.toString(),
+      tokenOut: this.tokenOut,
+    };
+  }
 
   public get requestId(): string {
     return this.data.requestId;

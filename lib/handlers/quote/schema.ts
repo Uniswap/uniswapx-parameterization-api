@@ -23,6 +23,7 @@ export const PostQuoteResponseJoi = Joi.object({
   tokenOut: Joi.string().required(),
   amountOut: FieldValidator.amount.required(),
   offerer: FieldValidator.address.required(),
+  filler: FieldValidator.address,
 });
 
 export type PostQuoteResponse = {
@@ -32,4 +33,5 @@ export type PostQuoteResponse = {
   tokenOut: string;
   amountOut: string;
   offerer: string;
+  filler?: string;
 };

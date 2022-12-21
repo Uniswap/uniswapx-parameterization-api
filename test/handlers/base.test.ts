@@ -13,6 +13,7 @@ class MockInjector extends BaseInjector<MockContainerInjected> {
 describe('BaseInjector tests', () => {
   it('should throw if handlerName is not defined', () => {
     expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       new MockInjector(undefined as any);
     }).toThrow();
   });
