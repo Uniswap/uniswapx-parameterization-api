@@ -140,7 +140,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const archivedOrderdTable = new aws_rs.Table(this, 'archivedsOrderTable', {
+    const archivedOrdersTable = new aws_rs.Table(this, 'archivedOrdersTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
