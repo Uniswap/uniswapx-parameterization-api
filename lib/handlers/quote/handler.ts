@@ -47,7 +47,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     return {
       statusCode: 200,
-      body: bestQuote.toResponse(),
+      body: bestQuote.toResponseJSON(),
     };
   }
 
@@ -66,7 +66,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
 // fetch quotes from all quoters and return the best one
 async function getBestQuote(quoters: Quoter[], quoteRequest: QuoteRequest): Promise<QuoteResponse | null> {
-  const responses: QuoteResponse[] = await Promise.all(quoters.map((q) => q.quote(quoteRequest)));
+  const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat();
 
   // return the response with the highest amountOut value
   return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {

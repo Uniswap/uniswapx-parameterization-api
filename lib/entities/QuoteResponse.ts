@@ -1,11 +1,17 @@
 import { BigNumber } from 'ethers';
+import { ValidationResult } from 'joi';
 
-import { PostQuoteResponse } from '../handlers/quote/schema';
+import { PostQuoteResponse, PostQuoteResponseJoi } from '../handlers/quote/schema';
 import { QuoteRequestData } from '.';
 
 export interface QuoteResponseData extends QuoteRequestData {
   amountOut: BigNumber;
   filler?: string;
+}
+
+interface ValidatedResponse {
+  response: QuoteResponse;
+  validation: ValidationResult<QuoteResponse>;
 }
 
 // data class for QuoteRequest helpers and conversions
@@ -22,9 +28,24 @@ export class QuoteResponse implements QuoteResponseData {
     });
   }
 
+  public static fromResponseJSON(data: PostQuoteResponse): ValidatedResponse {
+    const responseValidation = PostQuoteResponseJoi.validate(data, {
+      allowUnknown: true,
+      stripUnknown: true,
+    });
+    return {
+      response: new QuoteResponse({
+        ...data,
+        amountIn: BigNumber.from(data.amountIn),
+        amountOut: BigNumber.from(data.amountOut),
+      }),
+      validation: responseValidation,
+    };
+  }
+
   constructor(private data: QuoteResponseData) {}
 
-  public toResponse(): PostQuoteResponse {
+  public toResponseJSON(): PostQuoteResponse {
     return {
       requestId: this.requestId,
       tokenIn: this.tokenIn,

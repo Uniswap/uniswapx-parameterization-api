@@ -1,7 +1,8 @@
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import { MockQuoter, Quoter } from '../../quoters';
+import { JsonWebhookConfigurationProvider } from '../../providers';
+import { MockQuoter, Quoter, WebhookQuoter } from '../../quoters';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
 
@@ -11,8 +12,15 @@ export interface ContainerInjected {
 
 export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQuoteRequestBody, void> {
   public async buildContainerInjected(): Promise<ContainerInjected> {
+    const log: Logger = bunyan.createLogger({
+      name: this.injectorName,
+      serializers: bunyan.stdSerializers,
+      level: bunyan.INFO,
+    });
+    const webhookProvider = new JsonWebhookConfigurationProvider();
+
     return {
-      quoters: [new MockQuoter(1, 1), new MockQuoter(3, 2)],
+      quoters: [new MockQuoter(log, 1, 1), new MockQuoter(log, 3, 2), new WebhookQuoter(log, webhookProvider)],
     };
   }
 
