@@ -66,4 +66,3 @@ typings/
 .cache
 dist/
 cdk.out/
-cdk.context.json

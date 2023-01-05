@@ -159,11 +159,11 @@ export class APIPipeline extends Stack {
       },
       commands: [
         'git config --global url."https://${GH_TOKEN}@github.com/".insteadOf ssh://git@github.com/',
-        'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc && npm ci',
+        'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc',
         'echo "UNISWAP_API=${UNISWAP_API}" > .env',
-        'npm install',
-        'npm run build',
-        'npm run integ-test',
+        'yarn install --frozen-lockfile --network-concurrency 1',
+        'yarn build',
+        'yarn test:integ',
       ],
       partialBuildSpec: BuildSpec.fromObject({
         phases: {

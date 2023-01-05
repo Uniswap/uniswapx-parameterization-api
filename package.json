@@ -11,6 +11,7 @@
     "clean": "rm -rf dist cdk.out",
     "watch": "tsc -w",
     "test": "jest",
+    "test:integ": "jest --testPathPattern test/integ --passWithNoTests",
     "fix": "run-s fix:*",
     "fix:prettier": "prettier \"lib/**/*.ts\" --write",
     "fix:prettiertest": "prettier \"test/**/*.ts\" --write",
