@@ -72,12 +72,10 @@ export class AnalyticsStack extends cdk.NestedStack {
       encryptionKey: key,
     });
 
-    const defaultVpc = aws_ec2.Vpc.fromLookup(this, 'defaultVpc', {
-      isDefault: true,
-    });
+    const vpc = new aws_ec2.Vpc(this, 'RsVpc', {});
 
     const subscriptionSG = new aws_ec2.SecurityGroup(this, 'SubscriptionSG', {
-      vpc: defaultVpc,
+      vpc: vpc,
       allowAllOutbound: true,
     });
 
@@ -88,7 +86,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         masterUsername: 'admin',
         masterPassword: creds.secretValueFromJson('password'),
       },
-      vpc: defaultVpc,
+      vpc: vpc,
       clusterType: aws_rs.ClusterType.SINGLE_NODE,
       nodeType: aws_rs.NodeType.DC2_LARGE,
       defaultDatabaseName: RS_DATABASE_NAME,

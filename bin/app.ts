@@ -1,16 +1,16 @@
 import * as cdk from 'aws-cdk-lib';
-import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { CfnOutput, SecretValue, Stack, StackProps, Stage, StageProps } from 'aws-cdk-lib';
+import { BuildEnvironmentVariableType, BuildSpec } from 'aws-cdk-lib/aws-codebuild';
+import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { CodeBuildStep, CodePipeline, CodePipelineSource } from 'aws-cdk-lib/pipelines';
 import { Construct } from 'constructs';
 import dotenv from 'dotenv';
 
-import { BuildEnvironmentVariableType, BuildSpec } from 'aws-cdk-lib/aws-codebuild';
+import { SUPPORTED_CHAINS } from '../lib/config/chains';
+import { ChainId } from '../lib/util/chains';
 import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
-import { SUPPORTED_CHAINS } from '../lib/config/chains';
-import { ChainId } from '../lib/util/chains';
 
 dotenv.config();
 
@@ -64,8 +64,8 @@ export class APIPipeline extends Stack {
       },
       commands: [
         'git config --global url."https://${GH_TOKEN}@github.com/".insteadOf ssh://git@github.com/',
-        'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc && npm ci',
-        'npm run build',
+        'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc && yarn install --frozen-lockfile --network-concurrency 1',
+        'yarn build',
         'npx cdk synth',
       ],
       partialBuildSpec: BuildSpec.fromObject({
