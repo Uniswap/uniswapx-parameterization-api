@@ -66,7 +66,7 @@ export class APIPipeline extends Stack {
         'git config --global url."https://${GH_TOKEN}@github.com/".insteadOf ssh://git@github.com/',
         'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc && yarn install --frozen-lockfile --network-concurrency 1',
         'yarn build',
-        'npx cdk synth',
+        'npx cdk synth --verbose',
       ],
       partialBuildSpec: BuildSpec.fromObject({
         phases: {
