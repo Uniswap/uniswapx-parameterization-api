@@ -1,5 +1,4 @@
 import DEFAULT_TOKEN_LIST from '@uniswap/default-token-list';
-import { Protocol } from '@uniswap/router-sdk';
 import { CurrencyAmount, Token, TradeType } from '@uniswap/sdk-core';
 import {
   AlphaRouter,
@@ -20,6 +19,7 @@ import { BigNumber, ethers } from 'ethers';
 import NodeCache from 'node-cache';
 
 import { SUPPORTED_CHAINS } from '../config/chains';
+import { DEFAULT_ROUTING_CONFIG_BY_CHAIN } from '../config/routing';
 import { QuoteRequest, QuoteResponse } from '../entities';
 import { Quoter, QuoterType } from '.';
 
@@ -71,9 +71,13 @@ export class AutoRouterQuoter implements Quoter {
 
     let route;
     try {
-      route = await router.route(inputAmount, outputToken, TradeType.EXACT_INPUT, undefined, {
-        protocols: [Protocol.V3, Protocol.V2],
-      });
+      route = await router.route(
+        inputAmount,
+        outputToken,
+        TradeType.EXACT_INPUT,
+        undefined,
+        DEFAULT_ROUTING_CONFIG_BY_CHAIN(request.chainId)
+      );
     } catch (e) {
       this.log.error(`Error getting route: ${e} for request: ${request.requestId}`);
       return [];
