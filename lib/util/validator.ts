@@ -1,6 +1,8 @@
 import { BigNumber, ethers } from 'ethers';
 import Joi, { CustomHelpers } from 'joi';
 
+import { SUPPORTED_CHAINS } from '../config/chains';
+
 export class FieldValidator {
   public static readonly address = Joi.string().custom((value: string, helpers: CustomHelpers<string>) => {
     if (!ethers.utils.isAddress(value)) {
@@ -21,4 +23,8 @@ export class FieldValidator {
     }
     return value;
   });
+
+  public static readonly chainId = Joi.number()
+    .integer()
+    .valid(...SUPPORTED_CHAINS);
 }

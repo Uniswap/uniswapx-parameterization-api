@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { PostQuoteRequestBody } from '../handlers/quote/schema';
 
 export interface QuoteRequestData {
+  chainId: number;
   requestId: string;
   offerer: string;
 
@@ -21,6 +22,7 @@ export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amountIn'>
 export class QuoteRequest {
   public static fromRequestBody(body: PostQuoteRequestBody): QuoteRequest {
     return new QuoteRequest({
+      chainId: body.chainId,
       requestId: uuidv4(),
       offerer: body.offerer,
       tokenIn: body.tokenIn,
@@ -33,6 +35,7 @@ export class QuoteRequest {
 
   public toJSON(): QuoteRequestDataJSON {
     return {
+      chainId: this.chainId,
       requestId: this.requestId,
       offerer: this.offerer,
       tokenIn: this.tokenIn,
@@ -43,6 +46,10 @@ export class QuoteRequest {
 
   public get requestId(): string {
     return this.data.requestId;
+  }
+
+  public get chainId(): number {
+    return this.data.chainId;
   }
 
   public get offerer(): string {

@@ -11,5 +11,6 @@ export interface Quoter {
   type(): QuoterType;
 }
 
+export * from './AutoRouterQuoter';
 export * from './MockQuoter';
 export * from './WebhookQuoter';

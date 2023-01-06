@@ -18,6 +18,7 @@ interface ValidatedResponse {
 export class QuoteResponse implements QuoteResponseData {
   public static fromRequest(request: QuoteRequestData, amountOut: BigNumber, filler?: string): QuoteResponse {
     return new QuoteResponse({
+      chainId: request.chainId,
       requestId: request.requestId,
       offerer: request.offerer,
       tokenIn: request.tokenIn,
@@ -47,6 +48,7 @@ export class QuoteResponse implements QuoteResponseData {
 
   public toResponseJSON(): PostQuoteResponse {
     return {
+      chainId: this.chainId,
       requestId: this.requestId,
       tokenIn: this.tokenIn,
       amountIn: this.amountIn.toString(),
@@ -58,6 +60,10 @@ export class QuoteResponse implements QuoteResponseData {
 
   public get requestId(): string {
     return this.data.requestId;
+  }
+
+  public get chainId(): number {
+    return this.data.chainId;
   }
 
   public get offerer(): string {

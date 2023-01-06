@@ -53,6 +53,7 @@ describe('Quote handler', () => {
     } as APIGatewayProxyEvent);
 
   const getRequest = (amountIn: string): PostQuoteRequestBody => ({
+    chainId: 1,
     offerer: OFFERER,
     tokenIn: TOKEN_IN,
     amountIn: amountIn,
