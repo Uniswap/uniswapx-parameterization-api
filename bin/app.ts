@@ -24,16 +24,18 @@ export class APIStage extends Stage {
       provisionedConcurrency: number;
       chatbotSNSArn?: string;
       stage: string;
+      envVars?: Record<string, string>,
     }
   ) {
     super(scope, id, props);
-    const { provisionedConcurrency, chatbotSNSArn, stage, env } = props;
+    const { provisionedConcurrency, chatbotSNSArn, stage, env, envVars } = props;
 
     const { url } = new APIStack(this, `${SERVICE_NAME}API`, {
       env,
       provisionedConcurrency,
       chatbotSNSArn,
       stage,
+      envVars,
     });
     this.url = url;
   }
@@ -103,6 +105,10 @@ export class APIPipeline extends Stack {
       env: { account: '801328487475', region: 'us-east-2' },
       provisionedConcurrency: 2,
       stage: STAGE.BETA,
+      envVars: {
+        ...jsonRpcUrls,
+
+      },
     });
 
     const betaUsEast2AppStage = pipeline.addStage(betaUsEast2Stage);
@@ -121,16 +127,7 @@ export class APIPipeline extends Stack {
 
     this.addIntegTests(code, prodUsEast2Stage, prodUsEast2AppStage);
 
-    // const slackChannel = chatbot.SlackChannelConfiguration.fromSlackChannelConfigurationArn(
-    //   this,
-    //   'SlackChannel',
-    //   'arn:aws:chatbot::644039819003:chat-configuration/slack-channel/eng-ops-slack-chatbot'
-    // );
-
     pipeline.buildPipeline();
-    // pipeline.pipeline.notifyOn('NotifySlack', slackChannel, {
-    //   events: [PipelineNotificationEvents.PIPELINE_EXECUTION_FAILED],
-    // });
   }
 
   private addIntegTests(
@@ -182,6 +179,13 @@ export class APIPipeline extends Stack {
 
 // Local Dev Stack
 const app = new cdk.App();
+
+const envVars: { [key: string]: string } = {}
+
+Object.values(SUPPORTED_CHAINS).forEach((chainId) => {
+  envVars[`WEB3_RPC_${chainId}`] = process.env[`RPC_${chainId}`] || ''
+})
+
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
@@ -191,6 +195,7 @@ new APIStack(app, `${SERVICE_NAME}Stack`, {
   throttlingOverride: process.env.THROTTLE_PER_FIVE_MINS,
   chatbotSNSArn: process.env.CHATBOT_SNS_ARN,
   stage: STAGE.LOCAL,
+  envVars,
 });
 
 new APIPipeline(app, `${SERVICE_NAME}PipelineStack`, {

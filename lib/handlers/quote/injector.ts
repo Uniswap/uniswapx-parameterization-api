@@ -1,8 +1,9 @@
+import { setGlobalLogger } from '@uniswap/smart-order-router';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import { JsonWebhookConfigurationProvider } from '../../providers';
-import { MockQuoter, Quoter, WebhookQuoter } from '../../quoters';
+import { AutoRouterQuoter, MockQuoter, Quoter, WebhookQuoter } from '../../quoters';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
 
@@ -20,13 +21,13 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
     const webhookProvider = new JsonWebhookConfigurationProvider();
 
     return {
-      quoters: [new MockQuoter(log, 1, 1), new MockQuoter(log, 3, 2), new WebhookQuoter(log, webhookProvider)],
+      quoters: [new AutoRouterQuoter(log), new WebhookQuoter(log, webhookProvider), new MockQuoter(log, 1, 1)],
     };
   }
 
   public async getRequestInjected(
-    containerInjected: ContainerInjected,
-    _requestBody: PostQuoteRequestBody,
+    _containerInjected: ContainerInjected,
+    requestBody: PostQuoteRequestBody,
     _requestQueryParams: void,
     _event: APIGatewayProxyEvent,
     context: Context,
@@ -36,9 +37,10 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
 
     log = log.child({
       serializers: bunyan.stdSerializers,
-      containerInjected: containerInjected,
+      requestBody,
       requestId,
     });
+    setGlobalLogger(log);
 
     return {
       log,

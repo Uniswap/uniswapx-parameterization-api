@@ -1,14 +1,18 @@
+import DEFAULT_TOKEN_LIST from '@uniswap/default-token-list';
+import { CurrencyAmount, Token } from '@uniswap/sdk-core';
+import { AlphaRouter, CachingTokenListProvider, ITokenProvider, NodeJSCache } from '@uniswap/smart-order-router';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import axios from 'axios';
 import { default as Logger } from 'bunyan';
-import { ethers } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
+import NodeCache from 'node-cache';
 
 import { QuoteRequestDataJSON } from '../../../lib/entities/QuoteRequest';
 import { ApiInjector, ApiRInj } from '../../../lib/handlers/base/api-handler';
 import { ContainerInjected, PostQuoteRequestBody, PostQuoteResponse } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
-import { MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { AutoRouterQuoter, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -16,6 +20,7 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 const OFFERER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const CHAIN_ID = 1;
 
 // silent logger in tests
 const logger = Logger.createLogger({ name: 'test' });
@@ -53,11 +58,17 @@ describe('Quote handler', () => {
     } as APIGatewayProxyEvent);
 
   const getRequest = (amountIn: string): PostQuoteRequestBody => ({
+    chainId: CHAIN_ID,
     offerer: OFFERER,
     tokenIn: TOKEN_IN,
     amountIn: amountIn,
     tokenOut: TOKEN_OUT,
   });
+
+  const mockTokenProvider = (chainId: number): ITokenProvider => {
+    const tokenCache = new NodeJSCache<Token>(new NodeCache({ stdTTL: 3600, useClones: false }));
+    return new CachingTokenListProvider(chainId, DEFAULT_TOKEN_LIST, tokenCache);
+  };
 
   afterEach(() => {
     jest.clearAllMocks();
@@ -311,6 +322,63 @@ describe('Quote handler', () => {
       expect(quoteResponse).toMatchObject({
         amountOut: amountIn.toString(),
         ...request,
+      });
+    });
+  });
+
+  describe('AutoRouter Quoter', () => {
+    const buildDependencies = (amountOut: BigNumber) => {
+      return {
+        [CHAIN_ID]: {
+          chainId: CHAIN_ID,
+          tokenProvider: mockTokenProvider(1),
+          router: {
+            route: () => {
+              return Promise.resolve({
+                quoteGasAdjusted: CurrencyAmount.fromRawAmount(
+                  new Token(CHAIN_ID, TOKEN_OUT, 18),
+                  amountOut.toString()
+                ),
+              });
+            },
+          } as unknown as AlphaRouter,
+        },
+      };
+    };
+
+    it('Simple request and response', async () => {
+      const amountIn = ethers.utils.parseEther('1');
+      const quoters = [new AutoRouterQuoter(logger, buildDependencies(amountIn.mul(2)))];
+      const request = getRequest(amountIn.toString());
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      expect(response.statusCode).toEqual(200);
+      expect(quoteResponse).toMatchObject({
+        amountOut: amountIn.mul(2).toString(),
+        ...request,
+      });
+    });
+
+    it('Fails if token is not in the tokenlist', async () => {
+      const amountIn = ethers.utils.parseEther('1');
+      const quoters = [new AutoRouterQuoter(logger, buildDependencies(amountIn.mul(2)))];
+      const request = getRequest(amountIn.toString());
+      request.tokenIn = ethers.constants.AddressZero;
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      expect(response.statusCode).toEqual(404);
+      expect(quoteResponse).toMatchObject({
+        detail: 'No quotes available',
+        errorCode: 'QUOTE_ERROR',
+        id: 'test',
       });
     });
   });
