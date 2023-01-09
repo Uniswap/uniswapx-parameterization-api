@@ -192,6 +192,7 @@ export class APIStack extends cdk.Stack {
       environment: {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
+        ...props.envVars,
       },
     });
 

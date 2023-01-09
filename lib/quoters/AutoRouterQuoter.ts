@@ -24,6 +24,7 @@ import { QuoteRequest, QuoteResponse } from '../entities';
 import { Quoter, QuoterType } from '.';
 
 type Dependencies = {
+  chainId: number;
   router: AlphaRouter;
   tokenProvider: ITokenProvider;
 };
@@ -39,10 +40,20 @@ const PROVIDER_TIMEOUT_MS = 5000;
 export class AutoRouterQuoter implements Quoter {
   private dependencies: DependenciesByChain;
 
-  constructor(private log: Logger) {
-    this.dependencies = SUPPORTED_CHAINS.map((chainId) => AutoRouterQuoter.getDependencies(this.log, chainId)).filter(
-      (d) => d !== null
-    ) as DependenciesByChain;
+  // builds an autorouter to quote orders for each supported chain
+  // note pre-build router dependencies can be passed, or they will be built locally if not provided
+  constructor(private log: Logger, injectedDependencies?: DependenciesByChain) {
+    this.dependencies =
+      injectedDependencies ??
+      SUPPORTED_CHAINS.map((chainId) => AutoRouterQuoter.getDependencies(this.log, chainId)).reduce(
+        (acc: DependenciesByChain, d: Dependencies | null) => {
+          if (d) {
+            acc[d.chainId] = d;
+          }
+          return acc;
+        },
+        {}
+      );
   }
 
   public type(): QuoterType {
@@ -56,6 +67,7 @@ export class AutoRouterQuoter implements Quoter {
       return [];
     }
     const { router, tokenProvider } = this.dependencies[request.chainId];
+
     const { getTokenByAddress } = await tokenProvider.getTokens([request.tokenIn, request.tokenOut]);
     const [inputToken, outputToken] = [getTokenByAddress(request.tokenIn), getTokenByAddress(request.tokenOut)];
 
@@ -137,6 +149,7 @@ export class AutoRouterQuoter implements Quoter {
     );
 
     return {
+      chainId,
       router,
       tokenProvider,
     };
