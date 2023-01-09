@@ -1,3 +1,4 @@
+import { Protocol } from '@uniswap/router-sdk';
 import { AlphaRouterConfig } from '@uniswap/smart-order-router';
 
 import { ChainId } from '../util/chains';
@@ -29,6 +30,7 @@ export const DEFAULT_ROUTING_CONFIG_BY_CHAIN = (chainId: ChainId): AlphaRouterCo
         maxSplits: 7,
         distributionPercent: 5,
         forceCrossProtocol: false,
+        protocols: [Protocol.V3],
       };
   }
 };

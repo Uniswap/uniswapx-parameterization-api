@@ -6,12 +6,16 @@ import { WebhookConfigurationProvider } from '../providers';
 import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
-const WEBHOOK_TIMEOUT_MS = 1000;
+const WEBHOOK_TIMEOUT_MS = 500;
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
-  constructor(private log: Logger, private webhookProvider: WebhookConfigurationProvider) {}
+  private log: Logger;
+
+  constructor(_log: Logger, private webhookProvider: WebhookConfigurationProvider) {
+    this.log = _log.child({ quoter: 'WebhookQuoter' });
+  }
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
     const endpoints = await this.webhookProvider.getEndpoints();

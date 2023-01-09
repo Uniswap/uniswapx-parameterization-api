@@ -5,6 +5,7 @@ import {
   CachingGasStationProvider,
   CachingTokenListProvider,
   CachingTokenProviderWithFallback,
+  CachingV3PoolProvider,
   EIP1559GasPriceProvider,
   GasPrice,
   ITokenProvider,
@@ -13,6 +14,10 @@ import {
   OnChainGasPriceProvider,
   TokenProvider,
   UniswapMulticallProvider,
+  V2PoolProvider,
+  V2QuoteProvider,
+  V3HeuristicGasModelFactory,
+  V3PoolProvider,
 } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
@@ -33,16 +38,18 @@ type DependenciesByChain = {
   [chainId: number]: Dependencies;
 };
 
-const PROVIDER_TIMEOUT_MS = 5000;
+const PROVIDER_TIMEOUT_MS = 500;
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
 export class AutoRouterQuoter implements Quoter {
   private dependencies: DependenciesByChain;
+  private log: Logger;
 
   // builds an autorouter to quote orders for each supported chain
   // note pre-build router dependencies can be passed, or they will be built locally if not provided
-  constructor(private log: Logger, injectedDependencies?: DependenciesByChain) {
+  constructor(_log: Logger, injectedDependencies?: DependenciesByChain) {
+    this.log = _log.child({ quoter: 'AutoRouterQuoter' });
     this.dependencies =
       injectedDependencies ??
       SUPPORTED_CHAINS.map((chainId) => AutoRouterQuoter.getDependencies(this.log, chainId)).reduce(
@@ -100,6 +107,8 @@ export class AutoRouterQuoter implements Quoter {
       return [];
     }
 
+    this.log.info(`Got quote: ${route.quoteGasAdjusted.quotient.toString()} for request: ${request.requestId}`);
+
     const quotedAmountOut = BigNumber.from(route.quoteGasAdjusted.quotient.toString());
 
     return [QuoteResponse.fromRequest(request, quotedAmountOut)];
@@ -125,20 +134,21 @@ export class AutoRouterQuoter implements Quoter {
     const multicallProvider = new UniswapMulticallProvider(chainId, provider);
 
     const gasPriceCache = new NodeJSCache<GasPrice>(new NodeCache({ stdTTL: 15, useClones: true }));
-    const router = new AlphaRouter({
-      provider,
-      chainId: chainId,
-      multicall2Provider: multicallProvider,
-      gasPriceProvider: new CachingGasStationProvider(
-        chainId,
-        new OnChainGasPriceProvider(
-          chainId,
-          new EIP1559GasPriceProvider(provider),
-          new LegacyGasPriceProvider(provider)
-        ),
-        gasPriceCache
-      ),
-    });
+
+    const v3PoolProvider = new CachingV3PoolProvider(
+      chainId,
+      new V3PoolProvider(chainId, multicallProvider),
+      new NodeJSCache(new NodeCache({ stdTTL: 180, useClones: false }))
+    );
+
+    const v2PoolProvider = new V2PoolProvider(chainId, multicallProvider);
+
+    const gasPriceProvider = new CachingGasStationProvider(
+      chainId,
+      new OnChainGasPriceProvider(chainId, new EIP1559GasPriceProvider(provider), new LegacyGasPriceProvider(provider)),
+      gasPriceCache
+    );
+
     const tokenCache = new NodeJSCache<Token>(new NodeCache({ stdTTL: 3600, useClones: false }));
     const tokenListProvider = new CachingTokenListProvider(chainId, DEFAULT_TOKEN_LIST, tokenCache);
     const tokenProvider = new CachingTokenProviderWithFallback(
@@ -147,6 +157,18 @@ export class AutoRouterQuoter implements Quoter {
       tokenListProvider,
       new TokenProvider(chainId, multicallProvider)
     );
+
+    const router = new AlphaRouter({
+      chainId: chainId,
+      provider,
+      multicall2Provider: multicallProvider,
+      v3PoolProvider,
+      v2PoolProvider,
+      gasPriceProvider,
+      v3GasModelFactory: new V3HeuristicGasModelFactory(),
+      tokenProvider,
+      v2QuoteProvider: new V2QuoteProvider(),
+    });
 
     return {
       chainId,
