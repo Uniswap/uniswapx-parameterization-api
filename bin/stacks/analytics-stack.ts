@@ -20,6 +20,7 @@ const FIREHOSE_IP_ADDRESS_USE2 = '13.58.135.96/27';
 enum RS_DATA_TYPES {
   UUID = 'char(36)',
   ADDRESS = 'char(42)',
+  TX_HASH = 'char(66)',
   UINT256 = 'varchar(78)',
   TIMESTAMP = 'timestamp',
   BIGINT = 'bigint',
@@ -150,6 +151,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'nonce', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'blockNumber', dataType: RS_DATA_TYPES.BIGINT },
+        { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
       ],
@@ -251,7 +253,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: archivedOrdersTable.tableName,
-          dataTableColumns: 'quoteId,offerer,filler,nonce,blockNumber,tokenOut,amountOut',
+          dataTableColumns: 'quoteId,offerer,filler,nonce,blockNumber,tokenOut,amountOut,orderStatus,txHash',
         },
         processingConfiguration: {
           enabled: true,
