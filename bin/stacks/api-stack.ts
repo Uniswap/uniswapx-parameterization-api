@@ -32,7 +32,7 @@ export class APIStack extends cdk.Stack {
       throttlingOverride?: string;
       chatbotSNSArn?: string;
       stage: string;
-      envVars?: { [key: string]: string };
+      envVars: Record<string, string>;
     }
   ) {
     super(parent, name, props);
@@ -233,6 +233,7 @@ export class APIStack extends cdk.Stack {
      */
     new AnalyticsStack(this, 'AnalyticsStack', {
       quoteLambda,
+      envVars: props.envVars,
     });
 
     this.url = new CfnOutput(this, 'Url', {
