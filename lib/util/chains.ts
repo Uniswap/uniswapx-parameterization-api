@@ -1,6 +1,7 @@
 export enum ChainId {
   MAINNET = 1,
   GÖRLI = 5,
+  TENDERLY = 'TENDERLY',
 }
 
 export enum ChainName {
