@@ -193,6 +193,7 @@ export class APIStack extends cdk.Stack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
+        stage: props.stage,
       },
       timeout: cdk.Duration.seconds(30),
     });

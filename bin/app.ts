@@ -24,7 +24,7 @@ export class APIStage extends Stage {
       provisionedConcurrency: number;
       chatbotSNSArn?: string;
       stage: string;
-      envVars?: Record<string, string>,
+      envVars?: Record<string, string>;
     }
   ) {
     super(scope, id, props);
@@ -91,13 +91,15 @@ export class APIPipeline extends Stack {
     // Secrets are stored in secrets manager in the pipeline account. Accounts we deploy to
     // have been granted permissions to access secrets via resource policies.
     const goudaRpc = sm.Secret.fromSecretAttributes(this, 'goudaRpc', {
-      secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-api-rpc-2-cXyqGh',
+      secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-service-rpc-urls-E4FbSb',
     });
 
     const jsonRpcUrls: { [chain: string]: string } = {};
     SUPPORTED_CHAINS.forEach((chainId: ChainId) => {
-      jsonRpcUrls[`RPC_${chainId}`] = goudaRpc.secretValueFromJson(chainId.toString()).toString();
+      const key = `RPC_${chainId}`;
+      jsonRpcUrls[`RPC_${chainId}`] = goudaRpc.secretValueFromJson(key).toString();
     });
+    jsonRpcUrls['RPC_TENDERLY'] = goudaRpc.secretValueFromJson('RPC_TENDERLY').toString();
 
     // Beta us-east-2
 
@@ -107,7 +109,6 @@ export class APIPipeline extends Stack {
       stage: STAGE.BETA,
       envVars: {
         ...jsonRpcUrls,
-
       },
     });
 
@@ -120,6 +121,9 @@ export class APIPipeline extends Stack {
       env: { account: '830217277613', region: 'us-east-2' },
       provisionedConcurrency: 5,
       chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
+      envVars: {
+        ...jsonRpcUrls,
+      },
       stage: STAGE.PROD,
     });
 
@@ -180,11 +184,12 @@ export class APIPipeline extends Stack {
 // Local Dev Stack
 const app = new cdk.App();
 
-const envVars: { [key: string]: string } = {}
+const envVars: { [key: string]: string } = {};
 
 Object.values(SUPPORTED_CHAINS).forEach((chainId) => {
-  envVars[`WEB3_RPC_${chainId}`] = process.env[`RPC_${chainId}`] || ''
-})
+  envVars[`RPC_${chainId}`] = process.env[`RPC_${chainId}`] || '';
+});
+envVars[`RPC_TENDERLY`] = process.env[`RPC_TENDERLY`] || '';
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {
