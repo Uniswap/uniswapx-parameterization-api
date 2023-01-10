@@ -1,3 +1,3 @@
 import { ChainId } from '../util/chains';
 
-export const SUPPORTED_CHAINS: ChainId[] = [ChainId.MAINNET, ChainId.GÖRLI, ChainId.TENDERLY];
+export const SUPPORTED_CHAINS: ChainId[] = [ChainId.MAINNET, ChainId.GÖRLI];

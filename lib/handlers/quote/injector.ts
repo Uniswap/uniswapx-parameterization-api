@@ -4,6 +4,7 @@ import { default as bunyan, default as Logger } from 'bunyan';
 
 import { JsonWebhookConfigurationProvider } from '../../providers';
 import { AutoRouterQuoter, MockQuoter, Quoter, WebhookQuoter } from '../../quoters';
+import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
 
@@ -18,6 +19,11 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
       serializers: bunyan.stdSerializers,
       level: bunyan.INFO,
     });
+
+    if (process.env['stage'] == STAGE.LOCAL || process.env['stage'] == STAGE.BETA) {
+      process.env['RPC_1'] = process.env['RPC_TENDERLY'];
+    }
+
     const webhookProvider = new JsonWebhookConfigurationProvider();
 
     return {

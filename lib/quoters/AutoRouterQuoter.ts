@@ -23,10 +23,10 @@ import Logger from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
 import NodeCache from 'node-cache';
 
+import { Quoter, QuoterType } from '.';
 import { SUPPORTED_CHAINS } from '../config/chains';
 import { DEFAULT_ROUTING_CONFIG_BY_CHAIN } from '../config/routing';
 import { QuoteRequest, QuoteResponse } from '../entities';
-import { Quoter, QuoterType } from '.';
 
 type Dependencies = {
   chainId: number;
@@ -116,7 +116,7 @@ export class AutoRouterQuoter implements Quoter {
 
   // builds an alphaRouter and other required dependencies for the given chainid
   static getDependencies(log: Logger, chainId: number): Dependencies | null {
-    const url = process.env[`WEB3_RPC_${chainId.toString()}`];
+    const url = process.env[`RPC_${chainId.toString()}`];
     if (!url) {
       // cannot route without rpc url
       log.fatal({ chainId: chainId }, `Fatal: No Web3 RPC endpoint set for chain`);
