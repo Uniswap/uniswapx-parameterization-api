@@ -24,7 +24,7 @@ export class APIStage extends Stage {
       provisionedConcurrency: number;
       chatbotSNSArn?: string;
       stage: string;
-      envVars?: Record<string, string>;
+      envVars: Record<string, string>;
     }
   ) {
     super(scope, id, props);
@@ -109,6 +109,7 @@ export class APIPipeline extends Stack {
       stage: STAGE.BETA,
       envVars: {
         ...jsonRpcUrls,
+        FILL_LOG_SENDER_ACCOUNT: '321377678687',
       },
     });
 
@@ -123,6 +124,7 @@ export class APIPipeline extends Stack {
       chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
       envVars: {
         ...jsonRpcUrls,
+        FILL_LOG_SENDER_ACCOUNT: '316116520258',
       },
       stage: STAGE.PROD,
     });
@@ -190,6 +192,7 @@ Object.values(SUPPORTED_CHAINS).forEach((chainId) => {
   envVars[`RPC_${chainId}`] = process.env[`RPC_${chainId}`] || '';
 });
 envVars[`RPC_TENDERLY`] = process.env[`RPC_TENDERLY`] || '';
+envVars['FILL_LOG_SENDER_ACCOUNT'] = process.env['FILL_LOG_SENDER_ACCOUNT'] || '';
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {

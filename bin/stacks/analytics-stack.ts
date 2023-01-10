@@ -13,6 +13,8 @@ import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import path from 'path';
 
+import { checkDefined } from '../../lib/preconditions/preconditions';
+
 const RS_DATABASE_NAME = 'rfq';
 
 const FIREHOSE_IP_ADDRESS_USE2 = '13.58.135.96/27';
@@ -29,6 +31,7 @@ enum RS_DATA_TYPES {
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
   quoteLambda: aws_lambda_nodejs.NodejsFunction;
+  envVars: Record<string, string>;
 }
 
 /**
@@ -280,6 +283,22 @@ export class AnalyticsStack extends cdk.NestedStack {
         effect: aws_iam.Effect.ALLOW,
         actions: ['firehose:PutRecord', 'firehose:PutRecordBatch'],
         resources: ['*'],
+      })
+    );
+
+    subscriptionRole.addToPolicy(
+      new aws_iam.PolicyStatement({
+        effect: aws_iam.Effect.ALLOW,
+        actions: ['logs:putSubscriptionFilter'],
+        resources: [`arn:aws:logs:${this.region}:${checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT'])}:*`],
+      })
+    );
+
+    subscriptionRole.addToPolicy(
+      new aws_iam.PolicyStatement({
+        effect: aws_iam.Effect.ALLOW,
+        actions: ['iam:PassRole'],
+        resources: [`arn:aws:logs:${this.region}:${checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT'])}:*`],
       })
     );
 
