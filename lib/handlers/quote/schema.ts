@@ -11,7 +11,7 @@ export const PostQuoteRequestBodyJoi = Joi.object({
 });
 
 export type PostQuoteRequestBody = {
-  chainId: number | string;
+  chainId: number;
   offerer: string;
   tokenIn: string;
   amountIn: string;
@@ -30,7 +30,7 @@ export const PostQuoteResponseJoi = Joi.object({
 });
 
 export type PostQuoteResponse = {
-  chainId: number | string;
+  chainId: number;
   requestId: string;
   tokenIn: string;
   amountIn: string;

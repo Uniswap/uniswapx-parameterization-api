@@ -24,5 +24,7 @@ export class FieldValidator {
     return value;
   });
 
-  public static readonly chainId = Joi.alternatives(Joi.number().integer(), Joi.string()).valid(...SUPPORTED_CHAINS);
+  public static readonly chainId = Joi.number()
+    .integer()
+    .valid(...SUPPORTED_CHAINS);
 }

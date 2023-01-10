@@ -23,10 +23,10 @@ import Logger from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
 import NodeCache from 'node-cache';
 
-import { Quoter, QuoterType } from '.';
 import { SUPPORTED_CHAINS } from '../config/chains';
 import { DEFAULT_ROUTING_CONFIG_BY_CHAIN } from '../config/routing';
 import { QuoteRequest, QuoteResponse } from '../entities';
+import { Quoter, QuoterType } from '.';
 
 type Dependencies = {
   chainId: number;
