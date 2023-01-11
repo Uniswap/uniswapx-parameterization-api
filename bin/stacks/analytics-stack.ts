@@ -240,7 +240,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    new aws_firehose.CfnDeliveryStream(this, 'FillRedshiftStream', {
+    const fillStream = new aws_firehose.CfnDeliveryStream(this, 'FillRedshiftStream', {
       redshiftDestinationConfiguration: {
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
@@ -286,21 +286,39 @@ export class AnalyticsStack extends cdk.NestedStack {
       })
     );
 
-    subscriptionRole.addToPolicy(
-      new aws_iam.PolicyStatement({
-        effect: aws_iam.Effect.ALLOW,
-        actions: ['logs:putSubscriptionFilter'],
-        resources: [`arn:aws:logs:${this.region}:${checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT'])}:*`],
-      })
-    );
+    //     subscriptionRole.addToPolicy(
+    //       new aws_iam.PolicyStatement({
+    //         effect: aws_iam.Effect.ALLOW,
+    //         actions: ['iam:PassRole'],
+    //         resources: [`arn:aws:logs:${this.region}:${checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT'])}:*`],
+    //       })
+    //     );
 
-    subscriptionRole.addToPolicy(
-      new aws_iam.PolicyStatement({
-        effect: aws_iam.Effect.ALLOW,
-        actions: ['iam:PassRole'],
-        resources: [`arn:aws:logs:${this.region}:${checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT'])}:*`],
-      })
-    );
+    // A 'CW Logs destination' which is somehow different from the Firehose stream which is supposed to be the
+    // destination of the x-account subscription filter; unfortunately there is little documentation on this from AWS
+    // had to use Cfn construct because aws-cdk-lib.aws_logs_destinations module doesn't support Firehose
+    // https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CreateDestination.html
+    const destination = new aws_logs.CfnDestination(this, 'FillEventDestination', {
+      roleArn: subscriptionRole.roleArn,
+      targetArn: fillStream.attrArn,
+      destinationName: 'fillEventDestination',
+    });
+
+    // hack to get around with CDK bug where `new aws_iam.PolicyDocument({...}).string()` doesn't really turn it into a string
+    destination.destinationPolicy = JSON.stringify({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Sid: '',
+          Effect: 'Allow',
+          Principal: {
+            AWS: checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT']),
+          },
+          Action: 'logs:PutSubscriptionFilter',
+          Resource: '*',
+        },
+      ],
+    });
 
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
     // same here regarding CDK not having a stable implementation of this resource
@@ -313,6 +331,9 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     new CfnOutput(this, 'filterName', {
       value: cfnSubscriptionFilter.toString(),
+    });
+    new CfnOutput(this, 'destinationName', {
+      value: destination.attrArn,
     });
   }
 }
