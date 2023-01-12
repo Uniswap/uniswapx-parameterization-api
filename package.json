@@ -5,7 +5,7 @@
     "app": "./dist/bin/app.js"
   },
   "license": "UNLICENSED",
-  "repository": "https://github.com/Uniswap/gouda-service",
+  "repository": "https://github.com/Uniswap/gouda-parameterization-api",
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist cdk.out",
