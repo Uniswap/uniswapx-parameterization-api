@@ -1,5 +1,5 @@
 import Logger from 'bunyan';
-import { BigNumber, ethers } from 'ethers';
+import { ethers } from 'ethers';
 
 import { Quoter, QuoterType } from '.';
 import { QuoteRequest, QuoteResponse } from '../entities';
