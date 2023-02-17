@@ -26,7 +26,9 @@ enum RS_DATA_TYPES {
   UINT256 = 'varchar(78)',
   TIMESTAMP = 'timestamp',
   BIGINT = 'bigint',
+  INTEGER = 'integer',
   TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled'
+  TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -113,13 +115,16 @@ export class AnalyticsStack extends cdk.NestedStack {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
-      tableName: 'QuoteRequests',
+      tableName: 'RfqRequests',
       tableColumns: [
         { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'amount', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'type', dataType: RS_DATA_TYPES.TRADE_TYPE },
+        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
       ],
     });
@@ -128,7 +133,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
-      tableName: 'QuoteResponses',
+      tableName: 'RfqResponses',
       tableColumns: [
         { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
         { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
@@ -137,6 +142,8 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
       ],
@@ -157,6 +164,9 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'fillTimestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
       ],
     });
 
