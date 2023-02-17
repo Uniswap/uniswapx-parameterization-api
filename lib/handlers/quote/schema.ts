@@ -3,19 +3,25 @@ import Joi from 'joi';
 import { FieldValidator } from '../../util/validator';
 
 export const PostQuoteRequestBodyJoi = Joi.object({
-  chainId: FieldValidator.chainId.required(),
+  requestId: FieldValidator.requestId.required(),
+  tokenInChainId: FieldValidator.chainId.required(),
+  tokenOutChainId: FieldValidator.chainId.required(),
   offerer: FieldValidator.address.required(),
   tokenIn: FieldValidator.address.required(),
-  amountIn: FieldValidator.amount.required(),
   tokenOut: FieldValidator.address.required(),
+  amount: FieldValidator.amount.required(),
+  type: FieldValidator.tradeType.required(),
 });
 
 export type PostQuoteRequestBody = {
-  chainId: number;
+  requestId: string;
+  tokenInChainId: number;
+  tokenOutChainId: number;
   offerer: string;
   tokenIn: string;
-  amountIn: string;
   tokenOut: string;
+  amount: string;
+  type: string;
 };
 
 export const PostQuoteResponseJoi = Joi.object({
