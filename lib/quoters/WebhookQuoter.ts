@@ -1,9 +1,10 @@
+import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
 import Logger from 'bunyan';
 
-import { QuoteRequest, QuoteResponse } from '../entities';
-import { WebhookConfigurationProvider, WebhookConfiguration } from '../providers';
 import { Quoter, QuoterType } from '.';
+import { QuoteRequest, QuoteResponse } from '../entities';
+import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -35,7 +36,7 @@ export class WebhookQuoter implements Quoter {
         headers,
       });
 
-      const { response, validation } = QuoteResponse.fromResponseJSON(hookResponse.data);
+      const { response, validation } = QuoteResponse.fromResponseJSON(hookResponse.data, request.type);
 
       // TODO: remove, using for debugging purposes
       this.log.info(
@@ -70,9 +71,9 @@ export class WebhookQuoter implements Quoter {
       }
 
       this.log.info(
-        `WebhookQuoter: request ${
-          request.requestId
-        } for endpoint ${endpoint}: ${request.amountIn.toString()} -> ${response.amountOut.toString()}`
+        `WebhookQuoter: request ${request.requestId} for endpoint ${endpoint}: ${request.amount.toString()} -> ${
+          response.type === TradeType.EXACT_INPUT ? response.amountOut.toString() : response.amountIn.toString()
+        }}`
       );
       return response;
     } catch (e) {

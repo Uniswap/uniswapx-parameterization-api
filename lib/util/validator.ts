@@ -27,4 +27,8 @@ export class FieldValidator {
   public static readonly chainId = Joi.number()
     .integer()
     .valid(...SUPPORTED_CHAINS);
+
+  public static readonly requestId = Joi.string().guid({ version: 'uuidv4' });
+
+  public static readonly tradeType = Joi.string().valid('EXACT_INPUT', 'EXACT_OUTPUT');
 }

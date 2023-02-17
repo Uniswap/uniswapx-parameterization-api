@@ -27,7 +27,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
     const webhookProvider = new JsonWebhookConfigurationProvider();
 
     return {
-      quoters: [new WebhookQuoter(log, webhookProvider), new MockQuoter(log, 1, 1)],
+      quoters: [new WebhookQuoter(log, webhookProvider)],
     };
   }
 

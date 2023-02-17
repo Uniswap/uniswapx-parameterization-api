@@ -1,11 +1,17 @@
+import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber } from 'ethers';
 import { ValidationResult } from 'joi';
+import { v4 as uuidv4 } from 'uuid';
 
-import { PostQuoteResponse, PostQuoteResponseJoi } from '../handlers/quote/schema';
 import { QuoteRequestData } from '.';
+import { PostQuoteResponse, PostQuoteResponseJoi } from '../handlers/quote/schema';
 
-export interface QuoteResponseData extends QuoteRequestData {
+export interface QuoteResponseData
+  extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type'> {
+  quoteId: string;
+  chainId: number;
   amountOut: BigNumber;
+  amountIn: BigNumber;
   filler?: string;
 }
 
@@ -16,38 +22,47 @@ interface ValidatedResponse {
 
 // data class for QuoteRequest helpers and conversions
 export class QuoteResponse implements QuoteResponseData {
-  public static fromRequest(request: QuoteRequestData, amountOut: BigNumber, filler?: string): QuoteResponse {
-    return new QuoteResponse({
-      chainId: request.chainId,
-      requestId: request.requestId,
-      offerer: request.offerer,
-      tokenIn: request.tokenIn,
-      amountIn: request.amountIn,
-      tokenOut: request.tokenOut,
-      amountOut: amountOut,
-      filler: filler,
-    });
+  public static fromRequest(request: QuoteRequestData, amountQuoted: BigNumber, filler?: string): QuoteResponse {
+    return new QuoteResponse(
+      {
+        chainId: request.tokenInChainId, // TODO: update schema
+        requestId: request.requestId,
+        quoteId: uuidv4(),
+        offerer: request.offerer,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        amountIn: request.type === TradeType.EXACT_INPUT ? request.amount : amountQuoted,
+        amountOut: request.type === TradeType.EXACT_OUTPUT ? request.amount : amountQuoted,
+        filler: filler,
+      },
+      request.type
+    );
   }
 
-  public static fromResponseJSON(data: PostQuoteResponse): ValidatedResponse {
+  public static fromResponseJSON(data: PostQuoteResponse, type: TradeType): ValidatedResponse {
     const responseValidation = PostQuoteResponseJoi.validate(data, {
       allowUnknown: true,
       stripUnknown: true,
     });
     return {
-      response: new QuoteResponse({
-        ...data,
-        amountIn: BigNumber.from(data.amountIn),
-        amountOut: BigNumber.from(data.amountOut),
-      }),
+      response: new QuoteResponse(
+        {
+          ...data,
+          quoteId: uuidv4(),
+          amountIn: BigNumber.from(data.amountIn),
+          amountOut: BigNumber.from(data.amountOut),
+        },
+        type
+      ),
       validation: responseValidation,
     };
   }
 
-  constructor(private data: QuoteResponseData) {}
+  constructor(private data: QuoteResponseData, public type: TradeType) {}
 
-  public toResponseJSON(): PostQuoteResponse {
+  public toResponseJSON(): PostQuoteResponse & { quoteId: string } {
     return {
+      quoteId: this.quoteId,
       chainId: this.chainId,
       requestId: this.requestId,
       tokenIn: this.tokenIn,
@@ -56,6 +71,10 @@ export class QuoteResponse implements QuoteResponseData {
       amountOut: this.amountOut.toString(),
       offerer: this.offerer,
     };
+  }
+
+  public get quoteId(): string {
+    return this.data.quoteId;
   }
 
   public get requestId(): string {

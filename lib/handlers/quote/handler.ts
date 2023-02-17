@@ -39,9 +39,13 @@ export class QuoteHandler extends APIGLambdaHandler<
       eventType: 'QuoteRequest',
       body: {
         requestId: request.requestId,
+        tokenInChainId: request.tokenInChainId,
+        tokenOutChainId: request.tokenInChainId,
+        offerer: request.offerer,
         tokenIn: request.tokenIn,
         tokenOut: request.tokenOut,
-        amountIn: request.amountIn.toString(),
+        amount: request.amount.toString(),
+        type: request.type,
       },
     });
 
