@@ -2,7 +2,7 @@ import axios from 'axios';
 import Logger from 'bunyan';
 
 import { QuoteRequest, QuoteResponse } from '../entities';
-import { WebhookConfigurationProvider } from '../providers';
+import { WebhookConfigurationProvider, WebhookConfiguration } from '../providers';
 import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
@@ -27,10 +27,12 @@ export class WebhookQuoter implements Quoter {
     return QuoterType.RFQ;
   }
 
-  private async fetchQuote(endpoint: string, request: QuoteRequest): Promise<QuoteResponse | null> {
+  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
+    const { endpoint, headers } = config;
     try {
       const hookResponse = await axios.post(endpoint, request.toJSON(), {
         timeout: WEBHOOK_TIMEOUT_MS,
+        headers,
       });
 
       const { response, validation } = QuoteResponse.fromResponseJSON(hookResponse.data);
