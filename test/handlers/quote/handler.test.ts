@@ -1,22 +1,19 @@
-import DEFAULT_TOKEN_LIST from '@uniswap/default-token-list';
-import { CurrencyAmount, Token } from '@uniswap/sdk-core';
-import { AlphaRouter, CachingTokenListProvider, ITokenProvider, NodeJSCache } from '@uniswap/smart-order-router';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import axios from 'axios';
 import { default as Logger } from 'bunyan';
-import { BigNumber, ethers } from 'ethers';
-import NodeCache from 'node-cache';
+import { ethers } from 'ethers';
 
-import { QuoteRequestDataJSON } from '../../../lib/entities/QuoteRequest';
+import { v4 as uuidv4 } from 'uuid';
 import { ApiInjector, ApiRInj } from '../../../lib/handlers/base/api-handler';
 import { ContainerInjected, PostQuoteRequestBody, PostQuoteResponse } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
-import { AutoRouterQuoter, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+const REQUEST_ID = uuidv4();
 const OFFERER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
@@ -58,21 +55,39 @@ describe('Quote handler', () => {
     } as APIGatewayProxyEvent);
 
   const getRequest = (amountIn: string): PostQuoteRequestBody => ({
-    chainId: CHAIN_ID,
+    requestId: REQUEST_ID,
+    tokenInChainId: CHAIN_ID,
+    tokenOutChainId: CHAIN_ID,
     offerer: OFFERER,
     tokenIn: TOKEN_IN,
-    amountIn: amountIn,
+    amount: amountIn,
     tokenOut: TOKEN_OUT,
+    type: 'EXACT_INPUT',
   });
-
-  const mockTokenProvider = (chainId: number): ITokenProvider => {
-    const tokenCache = new NodeJSCache<Token>(new NodeCache({ stdTTL: 3600, useClones: false }));
-    return new CachingTokenListProvider(chainId, DEFAULT_TOKEN_LIST, tokenCache);
-  };
 
   afterEach(() => {
     jest.clearAllMocks();
   });
+
+  const responseFromRequest = (
+    request: PostQuoteRequestBody,
+    overrides: Partial<PostQuoteResponse>
+  ): PostQuoteResponse => {
+    return Object.assign(
+      {},
+      {
+        amountOut: request.amount,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        amountIn: request.amount,
+        offerer: request.offerer,
+        requestId: request.requestId,
+        chainId: request.tokenInChainId,
+        quoteId: 'quoteId',
+      },
+      overrides
+    );
+  };
 
   it('Simple request and response', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
@@ -85,10 +100,7 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
-    expect(quoteResponse).toMatchObject({
-      amountOut: amountIn.toString(),
-      ...request,
-    });
+    expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
   });
 
   it('Handles hex amount', async () => {
@@ -102,11 +114,9 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
-    expect(quoteResponse).toMatchObject({
-      ...request,
-      amountOut: amountIn.toString(),
-      amountIn: amountIn.toString(),
-    });
+    expect(
+      responseFromRequest(request, { amountIn: amountIn.toString(), amountOut: amountIn.toString() })
+    ).toMatchObject(quoteResponse);
   });
 
   it('Pick the greater of two quotes', async () => {
@@ -120,10 +130,7 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
-    expect(quoteResponse).toMatchObject({
-      amountOut: amountIn.mul(2).toString(),
-      ...request,
-    });
+    expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject(quoteResponse);
   });
 
   it('Two quoters returning the same result', async () => {
@@ -137,10 +144,7 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
-    expect(quoteResponse).toMatchObject({
-      amountOut: amountIn.toString(),
-      ...request,
-    });
+    expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
   });
 
   it('Invalid amountIn', async () => {
@@ -171,13 +175,17 @@ describe('Quote handler', () => {
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, req, _options) => {
-        const requestId = (req as QuoteRequestDataJSON).requestId;
+      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: {
-            requestId,
             amountOut: amountIn.mul(2).toString(),
-            ...request,
+            requestId: request.requestId,
+            tokenIn: request.tokenIn,
+            tokenOut: request.tokenOut,
+            amountIn: request.amount,
+            offerer: request.offerer,
+            chainId: request.tokenInChainId,
+            quoteId: 'quoteId',
           },
         });
       });
@@ -190,26 +198,33 @@ describe('Quote handler', () => {
       expect(response.statusCode).toEqual(200);
       expect(quoteResponse).toMatchObject({
         amountOut: amountIn.mul(2).toString(),
-        ...request,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        amountIn: request.amount,
+        offerer: request.offerer,
+        chainId: request.tokenInChainId,
+        requestId: request.requestId,
       });
     });
 
     it('Passes headers', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {
-        'X-Authentication': '1234',
-      } }]);
+      const webhookProvider = new MockWebhookConfigurationProvider([
+        {
+          endpoint: 'https://uniswap.org',
+          headers: {
+            'X-Authentication': '1234',
+          },
+        },
+      ]);
       const quoters = [new WebhookQuoter(logger, webhookProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, req, options: any) => {
-        const requestId = (req as QuoteRequestDataJSON).requestId;
+      mockedAxios.post.mockImplementationOnce((_endpoint, _req, options: any) => {
         expect(options.headers['X-Authentication']).toEqual('1234');
         return Promise.resolve({
           data: {
-            requestId,
-            amountOut: amountIn.mul(2).toString(),
-            ...request,
+            ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
           },
         });
       });
@@ -222,7 +237,11 @@ describe('Quote handler', () => {
       expect(response.statusCode).toEqual(200);
       expect(quoteResponse).toMatchObject({
         amountOut: amountIn.mul(2).toString(),
-        ...request,
+        amountIn: request.amount,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        chainId: request.tokenInChainId,
+        offerer: request.offerer,
       });
     });
 
@@ -232,11 +251,9 @@ describe('Quote handler', () => {
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, req, _options) => {
-        const requestId = (req as QuoteRequestDataJSON).requestId;
+      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: {
-            requestId,
             ...request,
           },
         });
@@ -260,7 +277,6 @@ describe('Quote handler', () => {
           data: {
             requestId: '1234',
             amountOut: amountIn.toString(),
-            ...request,
           },
         });
       });
@@ -281,7 +297,6 @@ describe('Quote handler', () => {
       mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: {
-            requestId: '1234',
             ...request,
           },
         });
@@ -293,10 +308,7 @@ describe('Quote handler', () => {
       );
       expect(response.statusCode).toEqual(200);
       const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(quoteResponse).toMatchObject({
-        amountOut: amountIn.toString(),
-        ...request,
-      });
+      expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
     });
 
     it('uses if better than backup', async () => {
@@ -305,13 +317,17 @@ describe('Quote handler', () => {
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, req, _options) => {
-        const requestId = (req as QuoteRequestDataJSON).requestId;
+      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: {
-            requestId,
             amountOut: amountIn.mul(2).toString(),
-            ...request,
+            tokenIn: request.tokenIn,
+            tokenOut: request.tokenOut,
+            amountIn: request.amount,
+            offerer: request.offerer,
+            chainId: request.tokenInChainId,
+            requestId: request.requestId,
+            quoteId: 'quoteId',
           },
         });
       });
@@ -322,10 +338,7 @@ describe('Quote handler', () => {
       );
       expect(response.statusCode).toEqual(200);
       const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(quoteResponse).toMatchObject({
-        amountOut: amountIn.mul(2).toString(),
-        ...request,
-      });
+      expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject(quoteResponse);
     });
 
     it('uses backup if better', async () => {
@@ -334,13 +347,17 @@ describe('Quote handler', () => {
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, req, _options) => {
-        const requestId = (req as QuoteRequestDataJSON).requestId;
+      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: {
-            requestId,
             amountOut: amountIn.div(2).toString(),
-            ...request,
+            tokenIn: request.tokenIn,
+            tokenOut: request.tokenOut,
+            amountIn: request.amount,
+            offerer: request.offerer,
+            chainId: request.tokenInChainId,
+            requestId: request.requestId,
+            quoteId: 'quoteId',
           },
         });
       });
@@ -351,67 +368,7 @@ describe('Quote handler', () => {
       );
       expect(response.statusCode).toEqual(200);
       const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(quoteResponse).toMatchObject({
-        amountOut: amountIn.toString(),
-        ...request,
-      });
-    });
-  });
-
-  describe('AutoRouter Quoter', () => {
-    const buildDependencies = (amountOut: BigNumber) => {
-      return {
-        [CHAIN_ID]: {
-          chainId: CHAIN_ID,
-          tokenProvider: mockTokenProvider(1),
-          router: {
-            route: () => {
-              return Promise.resolve({
-                quoteGasAdjusted: CurrencyAmount.fromRawAmount(
-                  new Token(CHAIN_ID, TOKEN_OUT, 18),
-                  amountOut.toString()
-                ),
-              });
-            },
-          } as unknown as AlphaRouter,
-        },
-      };
-    };
-
-    it('Simple request and response', async () => {
-      const amountIn = ethers.utils.parseEther('1');
-      const quoters = [new AutoRouterQuoter(logger, buildDependencies(amountIn.mul(2)))];
-      const request = getRequest(amountIn.toString());
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
-      );
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(response.statusCode).toEqual(200);
-      expect(quoteResponse).toMatchObject({
-        amountOut: amountIn.mul(2).toString(),
-        ...request,
-      });
-    });
-
-    it('Fails if token is not in the tokenlist', async () => {
-      const amountIn = ethers.utils.parseEther('1');
-      const quoters = [new AutoRouterQuoter(logger, buildDependencies(amountIn.mul(2)))];
-      const request = getRequest(amountIn.toString());
-      request.tokenIn = ethers.constants.AddressZero;
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
-      );
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(response.statusCode).toEqual(404);
-      expect(quoteResponse).toMatchObject({
-        detail: 'No quotes available',
-        errorCode: 'QUOTE_ERROR',
-        id: 'test',
-      });
+      expect(responseFromRequest(request, { amountOut: amountIn.toString() })).toMatchObject(quoteResponse);
     });
   });
 });

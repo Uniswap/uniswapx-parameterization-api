@@ -1,33 +1,36 @@
+import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber } from 'ethers';
-import { v4 as uuidv4 } from 'uuid';
 
 import { PostQuoteRequestBody } from '../handlers/quote/schema';
 
 export interface QuoteRequestData {
-  chainId: number;
+  tokenInChainId: number;
+  tokenOutChainId: number;
   requestId: string;
   offerer: string;
-
   tokenIn: string;
-  amountIn: BigNumber;
-
+  amount: BigNumber;
   tokenOut: string;
+  type: TradeType;
 }
 
-export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amountIn'> {
-  amountIn: string;
+export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amount' | 'type'> {
+  amount: string;
+  type: string;
 }
 
 // data class for QuoteRequest helpers and conversions
 export class QuoteRequest {
   public static fromRequestBody(body: PostQuoteRequestBody): QuoteRequest {
     return new QuoteRequest({
-      chainId: body.chainId,
-      requestId: uuidv4(),
+      tokenInChainId: body.tokenInChainId,
+      tokenOutChainId: body.tokenOutChainId,
+      requestId: body.requestId,
       offerer: body.offerer,
       tokenIn: body.tokenIn,
-      amountIn: BigNumber.from(body.amountIn),
       tokenOut: body.tokenOut,
+      amount: BigNumber.from(body.amount),
+      type: TradeType[body.type as keyof typeof TradeType],
     });
   }
 
@@ -35,12 +38,14 @@ export class QuoteRequest {
 
   public toJSON(): QuoteRequestDataJSON {
     return {
-      chainId: this.chainId,
+      tokenInChainId: this.tokenInChainId,
+      tokenOutChainId: this.tokenOutChainId,
       requestId: this.requestId,
       offerer: this.offerer,
       tokenIn: this.tokenIn,
-      amountIn: this.amountIn.toString(),
       tokenOut: this.tokenOut,
+      amount: this.amount.toString(),
+      type: TradeType[this.type],
     };
   }
 
@@ -48,8 +53,12 @@ export class QuoteRequest {
     return this.data.requestId;
   }
 
-  public get chainId(): number {
-    return this.data.chainId;
+  public get tokenInChainId(): number {
+    return this.data.tokenInChainId;
+  }
+
+  public get tokenOutChainId(): number {
+    return this.data.tokenInChainId;
   }
 
   public get offerer(): string {
@@ -60,11 +69,15 @@ export class QuoteRequest {
     return this.data.tokenIn;
   }
 
-  public get amountIn(): BigNumber {
-    return this.data.amountIn;
-  }
-
   public get tokenOut(): string {
     return this.data.tokenOut;
+  }
+
+  public get amount(): BigNumber {
+    return this.data.amount;
+  }
+
+  public get type(): TradeType {
+    return this.data.type;
   }
 }

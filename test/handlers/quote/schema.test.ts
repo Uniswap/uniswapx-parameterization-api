@@ -1,10 +1,13 @@
 import { ethers } from 'ethers';
 
+import { v4 as uuidv4 } from 'uuid';
 import { PostQuoteRequestBodyJoi, PostQuoteResponseJoi } from '../../../lib/handlers/quote/schema';
 
 const OFFERER = '0x0000000000000000000000000000000000000000';
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const QUOTE_ID = uuidv4();
+const REQUEST_ID = uuidv4();
 
 const validTokenIn = [USDC, WETH].reduce(lowerUpper, []);
 const validTokenOut = [USDC, WETH].reduce(lowerUpper, []);
@@ -18,11 +21,14 @@ const validAmountIn = [
 const validCombinations = validTokenIn.flatMap((tokenIn) =>
   validTokenOut.flatMap((tokenOut) =>
     validAmountIn.flatMap((amount) => ({
-      chainId: 1,
+      requestId: REQUEST_ID,
+      tokenInChainId: 1,
+      tokenOutChainId: 1,
       offerer: OFFERER,
       tokenIn,
       tokenOut,
-      amountIn: amount,
+      amount: amount,
+      type: 'EXACT_INPUT',
     }))
   )
 );
@@ -34,11 +40,14 @@ describe('Schema tests', () => {
         const validated = PostQuoteRequestBodyJoi.validate(body);
         expect(validated.error).toBeUndefined();
         expect(validated.value).toStrictEqual({
-          chainId: 1,
+          requestId: REQUEST_ID,
+          tokenInChainId: 1,
+          tokenOutChainId: 1,
           tokenIn: ethers.utils.getAddress(body.tokenIn),
           tokenOut: ethers.utils.getAddress(body.tokenOut),
-          amountIn: body.amountIn,
+          amount: body.amount,
           offerer: OFFERER,
+          type: 'EXACT_INPUT',
         });
       }
     });
@@ -80,54 +89,97 @@ describe('Schema tests', () => {
     it('requires amount to be a string number', () => {
       let validated = PostQuoteRequestBodyJoi.validate(
         Object.assign({}, validCombinations[0], {
-          amountIn: 'abcd',
+          amount: 'abcd',
         })
       );
       expect(validated.error?.message).toMatch('Invalid amount');
 
       validated = PostQuoteRequestBodyJoi.validate(
         Object.assign({}, validCombinations[0], {
-          amountIn: '1234*',
+          amount: '1234*',
         })
       );
       expect(validated.error?.message).toMatch('Invalid amount');
     });
 
     it('requires tokenIn to be defined', () => {
-      const { tokenOut, amountIn, offerer, chainId } = validCombinations[0];
-      const validated = PostQuoteRequestBodyJoi.validate({ tokenOut, amountIn, offerer, chainId });
+      const { tokenOut, amount, offerer, tokenInChainId, tokenOutChainId, requestId } = validCombinations[0];
+      const validated = PostQuoteRequestBodyJoi.validate({
+        tokenOut,
+        amount,
+        offerer,
+        tokenInChainId,
+        tokenOutChainId,
+        requestId,
+      });
       expect(validated.error?.message).toEqual('"tokenIn" is required');
     });
 
     it('requires tokenOut to be defined', () => {
-      const { tokenIn, amountIn, offerer, chainId } = validCombinations[0];
-      const validated = PostQuoteRequestBodyJoi.validate({ tokenIn, amountIn, offerer, chainId });
+      const { tokenIn, amount, offerer, tokenInChainId, tokenOutChainId, requestId } = validCombinations[0];
+      const validated = PostQuoteRequestBodyJoi.validate({
+        tokenIn,
+        amount,
+        offerer,
+        tokenInChainId,
+        tokenOutChainId,
+        requestId,
+      });
       expect(validated.error?.message).toEqual('"tokenOut" is required');
     });
 
-    it('requires amountIn to be defined', () => {
-      const { tokenIn, tokenOut, offerer, chainId } = validCombinations[0];
-      const validated = PostQuoteRequestBodyJoi.validate({ tokenIn, tokenOut, offerer, chainId });
-      expect(validated.error?.message).toEqual('"amountIn" is required');
+    it('requires amount to be defined', () => {
+      const { tokenIn, tokenOut, offerer, tokenInChainId, tokenOutChainId, requestId } = validCombinations[0];
+      const validated = PostQuoteRequestBodyJoi.validate({
+        tokenIn,
+        tokenOut,
+        offerer,
+        tokenInChainId,
+        tokenOutChainId,
+        requestId,
+      });
+      expect(validated.error?.message).toEqual('"amount" is required');
     });
 
-    it('requires chainId to be defined', () => {
-      const { tokenIn, tokenOut, offerer, amountIn } = validCombinations[0];
-      const validated = PostQuoteRequestBodyJoi.validate({ tokenIn, tokenOut, offerer, amountIn });
-      expect(validated.error?.message).toEqual('"chainId" is required');
+    it('requires tokenInChainId to be defined', () => {
+      const { tokenIn, tokenOut, offerer, amount, tokenOutChainId, requestId } = validCombinations[0];
+      const validated = PostQuoteRequestBodyJoi.validate({
+        tokenIn,
+        tokenOut,
+        amount,
+        offerer,
+        tokenOutChainId,
+        requestId,
+      });
+      expect(validated.error?.message).toEqual('"tokenInChainId" is required');
     });
 
-    it('requires chainId to be supported', () => {
-      const validated = PostQuoteRequestBodyJoi.validate(Object.assign({}, validCombinations[0], { chainId: 999999 }));
-      expect(validated.error?.message).toContain('"chainId" must be one of');
+    it('requires tokenOutChainId to be defined', () => {
+      const { tokenIn, tokenOut, offerer, amount, tokenInChainId, requestId } = validCombinations[0];
+      const validated = PostQuoteRequestBodyJoi.validate({
+        tokenIn,
+        tokenOut,
+        amount,
+        offerer,
+        tokenInChainId,
+        requestId,
+      });
+      expect(validated.error?.message).toContain('"tokenOutChainId" is required');
     });
+  });
+
+  it('requires tokenInChainId to be supported', () => {
+    const validated = PostQuoteRequestBodyJoi.validate(
+      Object.assign({}, validCombinations[0], { tokenInChainId: 999999 })
+    );
+    expect(validated.error?.message).toContain('"tokenInChainId" must be one of');
   });
 
   describe('PostQuoteResponseJoi', () => {
     it('validates valid inputs', () => {
       const body = {
         chainId: 1,
-        requestId: '1234',
+        requestId: REQUEST_ID,
         offerer: OFFERER,
         tokenIn: USDC,
         tokenOut: WETH,
@@ -138,7 +190,7 @@ describe('Schema tests', () => {
       expect(validated.error).toBeUndefined();
       expect(validated.value).toStrictEqual({
         chainId: 1,
-        requestId: '1234',
+        requestId: REQUEST_ID,
         offerer: OFFERER,
         tokenIn: USDC,
         tokenOut: WETH,
@@ -162,6 +214,7 @@ describe('Schema tests', () => {
 
     it('requires tokenIn to be defined', () => {
       const body = {
+        quoteId: QUOTE_ID,
         chainId: 1,
         requestId: '1234',
         tokenOut: WETH,
@@ -175,6 +228,7 @@ describe('Schema tests', () => {
 
     it('requires tokenOut to be defined', () => {
       const body = {
+        quoteId: QUOTE_ID,
         chainId: 1,
         requestId: '1234',
         tokenIn: USDC,
@@ -188,6 +242,7 @@ describe('Schema tests', () => {
 
     it('requires amountIn to be defined', () => {
       const body = {
+        quoteId: QUOTE_ID,
         chainId: 1,
         requestId: '1234',
         tokenIn: USDC,
@@ -201,6 +256,7 @@ describe('Schema tests', () => {
 
     it('requires amountOut to be defined', () => {
       const body = {
+        quoteId: QUOTE_ID,
         chainId: 1,
         requestId: '1234',
         tokenIn: USDC,
