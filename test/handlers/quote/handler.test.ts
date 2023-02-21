@@ -166,7 +166,7 @@ describe('Quote handler', () => {
 
   describe('Webhook Quoter', () => {
     it('Simple request and response', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider(['https://uniswap.org']);
+      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
       const quoters = [new WebhookQuoter(logger, webhookProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -194,8 +194,40 @@ describe('Quote handler', () => {
       });
     });
 
+    it('Passes headers', async () => {
+      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {
+        'X-Authentication': '1234',
+      } }]);
+      const quoters = [new WebhookQuoter(logger, webhookProvider)];
+      const amountIn = ethers.utils.parseEther('1');
+      const request = getRequest(amountIn.toString());
+
+      mockedAxios.post.mockImplementationOnce((_endpoint, req, options: any) => {
+        const requestId = (req as QuoteRequestDataJSON).requestId;
+        expect(options.headers['X-Authentication']).toEqual('1234');
+        return Promise.resolve({
+          data: {
+            requestId,
+            amountOut: amountIn.mul(2).toString(),
+            ...request,
+          },
+        });
+      });
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      expect(response.statusCode).toEqual(200);
+      expect(quoteResponse).toMatchObject({
+        amountOut: amountIn.mul(2).toString(),
+        ...request,
+      });
+    });
+
     it('handles invalid responses', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider(['https://uniswap.org']);
+      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
       const quoters = [new WebhookQuoter(logger, webhookProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -218,7 +250,7 @@ describe('Quote handler', () => {
     });
 
     it('returns error if requestId is invalid', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider(['https://uniswap.org']);
+      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
       const quoters = [new WebhookQuoter(logger, webhookProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -241,7 +273,7 @@ describe('Quote handler', () => {
     });
 
     it('uses backup on failure', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider(['https://uniswap.org']);
+      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
       const quoters = [new WebhookQuoter(logger, webhookProvider), new MockQuoter(logger, 1, 1)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -268,7 +300,7 @@ describe('Quote handler', () => {
     });
 
     it('uses if better than backup', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider(['https://uniswap.org']);
+      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
       const quoters = [new WebhookQuoter(logger, webhookProvider), new MockQuoter(logger, 1, 1)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -297,7 +329,7 @@ describe('Quote handler', () => {
     });
 
     it('uses backup if better', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider(['https://uniswap.org']);
+      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
       const quoters = [new WebhookQuoter(logger, webhookProvider), new MockQuoter(logger, 1, 1)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
