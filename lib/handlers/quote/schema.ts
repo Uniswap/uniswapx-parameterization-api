@@ -36,6 +36,7 @@ export const PostQuoteResponseJoi = Joi.object({
 });
 
 export type PostQuoteResponse = {
+  quoteId: string;
   chainId: number;
   requestId: string;
   tokenIn: string;

@@ -15,7 +15,7 @@ import path from 'path';
 
 import { checkDefined } from '../../lib/preconditions/preconditions';
 
-const RS_DATABASE_NAME = 'rfq';
+const RS_DATABASE_NAME = 'uniswap_x'; // must be lowercase
 
 const FIREHOSE_IP_ADDRESS_USE2 = '13.58.135.96/27';
 
@@ -24,11 +24,12 @@ enum RS_DATA_TYPES {
   ADDRESS = 'char(42)',
   TX_HASH = 'char(66)',
   UINT256 = 'varchar(78)',
-  TIMESTAMP = 'timestamp',
+  TIMESTAMP = 'char(10)', // unix timestamp in seconds
   BIGINT = 'bigint',
   INTEGER = 'integer',
   TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled'
   TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
+  ROUTING = 'text',
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -51,7 +52,10 @@ export class AnalyticsStack extends cdk.NestedStack {
     const { quoteLambda } = props;
 
     /* S3 Initialization */
-    const requestBucket = new aws_s3.Bucket(this, 'RequestBucket');
+    const rfqRequestBucket = new aws_s3.Bucket(this, 'RfqRequestBucket');
+    const unifiedRoutingRequestBucket = new aws_s3.Bucket(this, 'UnifiedRoutingRequestBucket');
+    const rfqResponseBucket = new aws_s3.Bucket(this, 'RfqResponseBucket');
+    const unifiedRoutingResponseBucket = new aws_s3.Bucket(this, 'UnifiedRoutingResponseBucket');
     const fillBucket = new aws_s3.Bucket(this, 'FillBucket');
 
     /* Redshift Initialization */
@@ -111,7 +115,26 @@ export class AnalyticsStack extends cdk.NestedStack {
       aws_ec2.Port.tcp(rsCluster.clusterEndpoint.port)
     );
 
-    const requestTable = new aws_rs.Table(this, 'requestTable', {
+    const uraRequestTable = new aws_rs.Table(this, 'UnifiedRoutingRequestTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'UnifiedRoutingRequests',
+      tableColumns: [
+        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'amount', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'type', dataType: RS_DATA_TYPES.TRADE_TYPE },
+        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'configs', dataType: RS_DATA_TYPES.ROUTING }, // array as string, e.g. '[DUTCH_LIMIT,CLASSIC]'
+        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+      ],
+    });
+
+    const rfqRequestTable = new aws_rs.Table(this, 'RfqRequestTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
@@ -129,7 +152,31 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    new aws_rs.Table(this, 'responseTable', {
+    const uraResponseTable = new aws_rs.Table(this, 'UnifiedRoutingResponseTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'UnifiedRoutingResponses',
+      tableColumns: [
+        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
+        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'amountInGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'amountOutGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'type', dataType: RS_DATA_TYPES.TRADE_TYPE },
+        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'routing', dataType: RS_DATA_TYPES.ROUTING },
+        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+      ],
+    });
+
+    const rfqResponseTable = new aws_rs.Table(this, 'RfqResponseTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
@@ -175,13 +222,17 @@ export class AnalyticsStack extends cdk.NestedStack {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
       managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
     });
-    requestBucket.grantReadWrite(firehoseRole);
+    rfqRequestBucket.grantReadWrite(firehoseRole);
+    unifiedRoutingRequestBucket.grantReadWrite(firehoseRole);
+    rfqResponseBucket.grantReadWrite(firehoseRole);
+    unifiedRoutingResponseBucket.grantReadWrite(firehoseRole);
     fillBucket.grantReadWrite(firehoseRole);
 
-    const quoteRequestProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
+    const quoteProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'quoteRequestProcessor',
+      handler: 'quoteProcessor',
+      timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
       memorySize: 256,
       bundling: {
         minify: true,
@@ -212,26 +263,27 @@ export class AnalyticsStack extends cdk.NestedStack {
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
         actions: ['lambda:InvokeFunction', 'lambda:GetFunctionConfiguration'],
-        resources: [quoteRequestProcessorLambda.functionArn, fillEventProcessorLambda.functionArn],
+        resources: [quoteProcessorLambda.functionArn, fillEventProcessorLambda.functionArn],
       })
     );
     // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-kinesisfirehose-deliverystream.html
-    const requestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RequestRedshiftStream', {
+    const uraRequestStream = new aws_firehose.CfnDeliveryStream(this, 'uraRequestStream', {
       redshiftDestinationConfiguration: {
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
         s3Configuration: {
-          bucketArn: requestBucket.bucketArn,
+          bucketArn: unifiedRoutingRequestBucket.bucketArn,
           roleArn: firehoseRole.roleArn,
           compressionFormat: 'UNCOMPRESSED',
         },
         roleArn: firehoseRole.roleArn,
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: requestTable.tableName,
-          dataTableColumns: 'requestId,offerer,tokenIn,tokenOut,amountIn,createdAt',
+          dataTableName: uraRequestTable.tableName,
+          dataTableColumns:
+            'requestId,offerer,tokenIn,tokenOut,amount,type,tokenInChainId,tokenOutChainId,configs,createdAt',
         },
         processingConfiguration: {
           enabled: true,
@@ -241,7 +293,108 @@ export class AnalyticsStack extends cdk.NestedStack {
               parameters: [
                 {
                   parameterName: 'LambdaArn',
-                  parameterValue: quoteRequestProcessorLambda.functionArn,
+                  parameterValue: quoteProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const rfqRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RfqRequestStream', {
+      redshiftDestinationConfiguration: {
+        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
+        username: 'admin',
+        password: creds.secretValueFromJson('password').toString(),
+        s3Configuration: {
+          bucketArn: rfqRequestBucket.bucketArn,
+          roleArn: firehoseRole.roleArn,
+          compressionFormat: 'UNCOMPRESSED',
+        },
+        roleArn: firehoseRole.roleArn,
+        copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
+          dataTableName: rfqRequestTable.tableName,
+          dataTableColumns: 'requestId,offerer,tokenIn,tokenOut,amount,type,tokenInChainId,tokenOutChainId,createdAt',
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: quoteProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const uraResponseStream = new aws_firehose.CfnDeliveryStream(this, 'UnifiedRoutingResponseStream', {
+      redshiftDestinationConfiguration: {
+        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
+        username: 'admin',
+        password: creds.secretValueFromJson('password').toString(),
+        s3Configuration: {
+          bucketArn: unifiedRoutingResponseBucket.bucketArn,
+          roleArn: firehoseRole.roleArn,
+          compressionFormat: 'UNCOMPRESSED',
+        },
+        roleArn: firehoseRole.roleArn,
+        copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
+          dataTableName: uraResponseTable.tableName,
+          dataTableColumns:
+            'quoteId,requestId,offerer,tokenIn,tokenOut,amountInGasAdjusted,amountOutGasAdjusted,amountIn,amountOut,tokenInChainId,tokenOutChainId,routing,createdAt',
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: quoteProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const rfqResponseFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RfqResponseStream', {
+      redshiftDestinationConfiguration: {
+        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
+        username: 'admin',
+        password: creds.secretValueFromJson('password').toString(),
+        s3Configuration: {
+          bucketArn: rfqResponseBucket.bucketArn,
+          roleArn: firehoseRole.roleArn,
+          compressionFormat: 'UNCOMPRESSED',
+        },
+        roleArn: firehoseRole.roleArn,
+        copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
+          dataTableName: rfqResponseTable.tableName,
+          dataTableColumns:
+            'requestId,quoteId,offerer,tokenIn,tokenOut,amountIn,amountOut,tokenInChainId,tokenOutChainId,filler,createdAt',
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: quoteProcessorLambda.functionArn,
                 },
               ],
             },
@@ -308,42 +461,96 @@ export class AnalyticsStack extends cdk.NestedStack {
     // destination of the x-account subscription filter; unfortunately there is little documentation on this from AWS
     // had to use Cfn construct because aws-cdk-lib.aws_logs_destinations module doesn't support Firehose
     // https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CreateDestination.html
-    const destination = new aws_logs.CfnDestination(this, 'FillEventDestination', {
+    const fillDestination = new aws_logs.CfnDestination(this, 'FillEventDestination', {
       roleArn: subscriptionRole.roleArn,
       targetArn: fillStream.attrArn,
       destinationName: 'fillEventDestination',
     });
 
-    // hack to get around with CDK bug where `new aws_iam.PolicyDocument({...}).string()` doesn't really turn it into a string
-    destination.destinationPolicy = JSON.stringify({
-      Version: '2012-10-17',
-      Statement: [
-        {
-          Sid: '',
-          Effect: 'Allow',
-          Principal: {
-            AWS: checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT']),
-          },
-          Action: 'logs:PutSubscriptionFilter',
-          Resource: '*',
-        },
-      ],
+    const uraRequestDestination = new aws_logs.CfnDestination(this, 'uraRequestDestination', {
+      roleArn: subscriptionRole.roleArn,
+      targetArn: uraRequestStream.attrArn,
+      destinationName: 'uraRequestDestination',
     });
+
+    const uraResponseDestination = new aws_logs.CfnDestination(this, 'uraResponseDestination', {
+      roleArn: subscriptionRole.roleArn,
+      targetArn: uraResponseStream.attrArn,
+      destinationName: 'uraResponseDestination',
+    });
+    // hack to get around with CDK bug where `new aws_iam.PolicyDocument({...}).string()` doesn't really turn it into a string
+    // enclosed in if statement to allow deploying stack w/o having to set up x-account logging
+    if (props.envVars['FILL_LOG_SENDER_ACCOUNT']) {
+      fillDestination.destinationPolicy = JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Sid: '',
+            Effect: 'Allow',
+            Principal: {
+              AWS: checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT']),
+            },
+            Action: 'logs:PutSubscriptionFilter',
+            Resource: '*',
+          },
+        ],
+      });
+    }
+    if (props.envVars['URA_ACCOUNT']) {
+      uraRequestDestination.destinationPolicy = JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Sid: '',
+            Effect: 'Allow',
+            Principal: {
+              AWS: props.envVars['URA_ACCOUNT'],
+            },
+            Action: 'logs:PutSubscriptionFilter',
+            Resource: '*',
+          },
+        ],
+      });
+      uraResponseDestination.destinationPolicy = JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Sid: '',
+            Effect: 'Allow',
+            Principal: {
+              AWS: props.envVars['URA_ACCOUNT'],
+            },
+            Action: 'logs:PutSubscriptionFilter',
+            Resource: '*',
+          },
+        ],
+      });
+    }
 
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
     // same here regarding CDK not having a stable implementation of this resource
-    const cfnSubscriptionFilter = new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
-      destinationArn: requestFirehoseStream.attrArn,
+    new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
+      destinationArn: rfqRequestFirehoseStream.attrArn,
       filterPattern: '{ $.eventType = "QuoteRequest" }',
       logGroupName: quoteLambda.logGroup.logGroupName,
       roleArn: subscriptionRole.roleArn,
     });
 
-    new CfnOutput(this, 'filterName', {
-      value: cfnSubscriptionFilter.toString(),
+    new aws_logs.CfnSubscriptionFilter(this, 'ResponseSub', {
+      destinationArn: rfqResponseFirehoseStream.attrArn,
+      filterPattern: '{ $.eventType = "QuoteResponse" }',
+      logGroupName: quoteLambda.logGroup.logGroupName,
+      roleArn: subscriptionRole.roleArn,
     });
-    new CfnOutput(this, 'destinationName', {
-      value: destination.attrArn,
+
+    new CfnOutput(this, 'fillDestinationName', {
+      value: fillDestination.attrArn,
+    });
+    new CfnOutput(this, 'uraRequestDestinationName', {
+      value: uraRequestDestination.attrArn,
+    });
+    new CfnOutput(this, 'uraResponseDestinationName', {
+      value: uraResponseDestination.attrArn,
     });
   }
 }
