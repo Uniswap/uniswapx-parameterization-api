@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { QuoteRequestData } from '.';
 import { PostQuoteResponse, PostQuoteResponseJoi } from '../handlers/quote/schema';
+import { currentTimestampInSeconds } from '../util/time';
 
 export interface QuoteResponseData
   extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type'> {
@@ -58,7 +59,11 @@ export class QuoteResponse implements QuoteResponseData {
     };
   }
 
-  constructor(private data: QuoteResponseData, public type: TradeType) {}
+  constructor(
+    private data: QuoteResponseData,
+    public type: TradeType,
+    public createdAt = currentTimestampInSeconds()
+  ) {}
 
   public toResponseJSON(): PostQuoteResponse & { quoteId: string } {
     return {
@@ -70,6 +75,22 @@ export class QuoteResponse implements QuoteResponseData {
       tokenOut: this.tokenOut,
       amountOut: this.amountOut.toString(),
       offerer: this.offerer,
+    };
+  }
+
+  public toLog() {
+    return {
+      quoteId: this.quoteId,
+      requestId: this.requestId,
+      tokenInChainId: this.chainId,
+      tokenOutChainId: this.chainId,
+      tokenIn: this.tokenIn,
+      amountIn: this.amountIn.toString(),
+      tokenOut: this.tokenOut,
+      amountOut: this.amountOut.toString(),
+      offerer: this.offerer,
+      filler: this.filler,
+      createdAt: this.createdAt,
     };
   }
 

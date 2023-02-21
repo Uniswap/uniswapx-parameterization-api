@@ -193,6 +193,7 @@ Object.values(SUPPORTED_CHAINS).forEach((chainId) => {
 });
 envVars[`RPC_TENDERLY`] = process.env[`RPC_TENDERLY`] || '';
 envVars['FILL_LOG_SENDER_ACCOUNT'] = process.env['FILL_LOG_SENDER_ACCOUNT'] || '';
+envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {

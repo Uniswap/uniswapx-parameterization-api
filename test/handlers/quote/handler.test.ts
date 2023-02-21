@@ -83,6 +83,7 @@ describe('Quote handler', () => {
         offerer: request.offerer,
         requestId: request.requestId,
         chainId: request.tokenInChainId,
+        quoteId: 'quoteId',
       },
       overrides
     );
@@ -99,7 +100,7 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
-    expect(quoteResponse).toMatchObject(responseFromRequest(request, {}));
+    expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
   });
 
   it('Handles hex amount', async () => {
@@ -113,9 +114,9 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
-    expect(quoteResponse).toMatchObject(
+    expect(
       responseFromRequest(request, { amountIn: amountIn.toString(), amountOut: amountIn.toString() })
-    );
+    ).toMatchObject(quoteResponse);
   });
 
   it('Pick the greater of two quotes', async () => {
@@ -129,7 +130,7 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
-    expect(quoteResponse).toMatchObject(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }));
+    expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject(quoteResponse);
   });
 
   it('Two quoters returning the same result', async () => {
@@ -143,7 +144,7 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
-    expect(quoteResponse).toMatchObject(responseFromRequest(request, {}));
+    expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
   });
 
   it('Invalid amountIn', async () => {
@@ -184,6 +185,7 @@ describe('Quote handler', () => {
             amountIn: request.amount,
             offerer: request.offerer,
             chainId: request.tokenInChainId,
+            quoteId: 'quoteId',
           },
         });
       });
@@ -300,7 +302,7 @@ describe('Quote handler', () => {
       );
       expect(response.statusCode).toEqual(200);
       const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(quoteResponse).toMatchObject(responseFromRequest(request, {}));
+      expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
     });
 
     it('uses if better than backup', async () => {
@@ -319,6 +321,7 @@ describe('Quote handler', () => {
             offerer: request.offerer,
             chainId: request.tokenInChainId,
             requestId: request.requestId,
+            quoteId: 'quoteId',
           },
         });
       });
@@ -329,7 +332,7 @@ describe('Quote handler', () => {
       );
       expect(response.statusCode).toEqual(200);
       const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(quoteResponse).toMatchObject(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }));
+      expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject(quoteResponse);
     });
 
     it('uses backup if better', async () => {
@@ -348,6 +351,7 @@ describe('Quote handler', () => {
             offerer: request.offerer,
             chainId: request.tokenInChainId,
             requestId: request.requestId,
+            quoteId: 'quoteId',
           },
         });
       });
@@ -358,7 +362,7 @@ describe('Quote handler', () => {
       );
       expect(response.statusCode).toEqual(200);
       const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(quoteResponse).toMatchObject(responseFromRequest(request, { amountOut: amountIn.toString() }));
+      expect(responseFromRequest(request, { amountOut: amountIn.toString() })).toMatchObject(quoteResponse);
     });
   });
 });
