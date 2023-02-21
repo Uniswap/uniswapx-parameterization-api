@@ -25,7 +25,6 @@ export class QuoteHandler extends APIGLambdaHandler<
       containerInjected: { quoters },
     } = params;
 
-    // TODO: add quoter filtering based on request param, i.e. user can request only RFQ or only ROUTER
     const request = QuoteRequest.fromRequestBody(requestBody);
     log.info({
       eventType: 'QuoteRequest',
