@@ -208,21 +208,23 @@ describe('Quote handler', () => {
     });
 
     it('Passes headers', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {
-        'X-Authentication': '1234',
-      } }]);
+      const webhookProvider = new MockWebhookConfigurationProvider([
+        {
+          endpoint: 'https://uniswap.org',
+          headers: {
+            'X-Authentication': '1234',
+          },
+        },
+      ]);
       const quoters = [new WebhookQuoter(logger, webhookProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, req, options: any) => {
-        const requestId = (req as QuoteRequestDataJSON).requestId;
+      mockedAxios.post.mockImplementationOnce((_endpoint, _req, options: any) => {
         expect(options.headers['X-Authentication']).toEqual('1234');
         return Promise.resolve({
           data: {
-            requestId,
-            amountOut: amountIn.mul(2).toString(),
-            ...request,
+            ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
           },
         });
       });
@@ -235,7 +237,11 @@ describe('Quote handler', () => {
       expect(response.statusCode).toEqual(200);
       expect(quoteResponse).toMatchObject({
         amountOut: amountIn.mul(2).toString(),
-        ...request,
+        amountIn: request.amount,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        chainId: request.tokenInChainId,
+        offerer: request.offerer,
       });
     });
 
