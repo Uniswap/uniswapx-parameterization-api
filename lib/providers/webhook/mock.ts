@@ -1,9 +1,9 @@
-import { WebhookConfigurationProvider } from '.';
+import { WebhookConfigurationProvider, WebhookConfiguration } from '.';
 
 export class MockWebhookConfigurationProvider implements WebhookConfigurationProvider {
-  constructor(private endpoints: string[]) {}
+  constructor(private endpoints: WebhookConfiguration[]) {}
 
-  async getEndpoints(): Promise<string[]> {
+  async getEndpoints(): Promise<WebhookConfiguration[]> {
     return this.endpoints;
   }
 }
