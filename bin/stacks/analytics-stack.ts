@@ -169,7 +169,6 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'amountOutGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'type', dataType: RS_DATA_TYPES.TRADE_TYPE },
         { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'routing', dataType: RS_DATA_TYPES.ROUTING },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
