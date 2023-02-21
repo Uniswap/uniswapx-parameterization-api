@@ -1,7 +1,9 @@
+import { TradeType } from '@uniswap/sdk-core';
 import Joi from 'joi';
 
 import { QuoteRequest, QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';
+import { currentTimestampInSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ApiRInj, ErrorResponse, Response } from '../base/api-handler';
 import { ContainerInjected } from './injector';
@@ -23,8 +25,22 @@ export class QuoteHandler extends APIGLambdaHandler<
       containerInjected: { quoters },
     } = params;
 
-    // TODO: add quoter filtering based on request param, i.e. user can request only RFQ or only ROUTER
     const request = QuoteRequest.fromRequestBody(requestBody);
+    log.info({
+      eventType: 'QuoteRequest',
+      body: {
+        requestId: request.requestId,
+        tokenInChainId: request.tokenInChainId,
+        tokenOutChainId: request.tokenInChainId,
+        offerer: request.offerer,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        amount: request.amount.toString(),
+        type: TradeType[request.type],
+        createdAt: currentTimestampInSeconds(),
+      },
+    });
+
     const bestQuote = await getBestQuote(quoters, request);
     if (!bestQuote) {
       return {
@@ -34,15 +50,11 @@ export class QuoteHandler extends APIGLambdaHandler<
       };
     }
 
-    log.info(`Quoted requestId: ${request.requestId}: ${bestQuote.amountOut.toString()}`);
+    log.info({ bestQuote: bestQuote }, 'bestQuote');
+
     log.info({
-      eventType: 'QuoteRequest',
-      body: {
-        requestId: request.requestId,
-        tokenIn: request.tokenIn,
-        tokenOut: request.tokenOut,
-        amountIn: request.amountIn.toString(),
-      },
+      eventType: 'QuoteResponse',
+      body: bestQuote.toLog(),
     });
 
     return {

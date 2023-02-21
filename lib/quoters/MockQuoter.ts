@@ -1,5 +1,5 @@
 import Logger from 'bunyan';
-import { ethers } from 'ethers';
+import { BigNumber } from 'ethers';
 
 import { Quoter, QuoterType } from '.';
 import { QuoteRequest, QuoteResponse } from '../entities';
@@ -10,25 +10,18 @@ export const MOCK_FILLER_ADDRESS = '0x0000000000000000000000000000000000000001';
 export class MockQuoter implements Quoter {
   private log: Logger;
 
-  constructor(_log: Logger, private numerator: number, private denominator: number) {
+  constructor(_log: Logger, private numerator?: number, private denominator?: number) {
     this.log = _log.child({ quoter: 'MockQuoter' });
   }
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
-    let amountOut;
-    if (
-      request.tokenIn === '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' &&
-      request.tokenOut === '0x6B175474E89094C44Da98b954EedeAC495271d0F'
-    ) {
-      const wethAmount = ethers.utils.formatEther(request.amountIn);
-      amountOut = ethers.utils.parseUnits((parseFloat(wethAmount) * 2000).toString(), 18); // might lose a bit of precision? but doesn't matter
-    } else {
-      amountOut = request.amountIn.mul(this.numerator).div(this.denominator);
-    }
+    const amountQuoted =
+      this.denominator && this.numerator ? request.amount.mul(this.numerator).div(this.denominator) : BigNumber.from(1);
+
     this.log.info(
-      `MockQuoter: request ${request.requestId}: ${request.amountIn.toString()} -> ${amountOut.toString()}`
+      `MockQuoter: request ${request.requestId}: ${request.amount.toString()} -> ${amountQuoted.toString()}`
     );
-    return [QuoteResponse.fromRequest(request, amountOut, MOCK_FILLER_ADDRESS)];
+    return [QuoteResponse.fromRequest(request, amountQuoted, MOCK_FILLER_ADDRESS)];
   }
 
   public type(): QuoterType {

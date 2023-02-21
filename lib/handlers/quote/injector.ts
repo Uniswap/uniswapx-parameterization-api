@@ -3,7 +3,8 @@ import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import { JsonWebhookConfigurationProvider } from '../../providers';
-import { MockQuoter, Quoter, WebhookQuoter } from '../../quoters';
+import { Quoter, WebhookQuoter } from '../../quoters';
+import { MockQuoter } from '../../quoters/MockQuoter';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
@@ -26,8 +27,12 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
 
     const webhookProvider = new JsonWebhookConfigurationProvider();
 
+    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
+    if (process.env['stage'] == STAGE.LOCAL) {
+      quoters.push(new MockQuoter(log));
+    }
     return {
-      quoters: [new WebhookQuoter(log, webhookProvider), new MockQuoter(log, 1, 1)],
+      quoters: quoters,
     };
   }
 
