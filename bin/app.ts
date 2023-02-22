@@ -110,6 +110,7 @@ export class APIPipeline extends Stack {
       envVars: {
         ...jsonRpcUrls,
         FILL_LOG_SENDER_ACCOUNT: '321377678687',
+        URA_ACCOUNT: '665191769009',
       },
     });
 
@@ -125,6 +126,7 @@ export class APIPipeline extends Stack {
       envVars: {
         ...jsonRpcUrls,
         FILL_LOG_SENDER_ACCOUNT: '316116520258',
+        URA_ACCOUNT: '652077092967',
       },
       stage: STAGE.PROD,
     });
