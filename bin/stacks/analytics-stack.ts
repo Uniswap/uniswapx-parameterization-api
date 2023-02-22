@@ -551,5 +551,8 @@ export class AnalyticsStack extends cdk.NestedStack {
     new CfnOutput(this, 'uraResponseDestinationName', {
       value: uraResponseDestination.attrArn,
     });
+    new CfnOutput(this, 'UraAccount', {
+      value: props.envVars['URA_ACCOUNT'],
+    });
   }
 }
