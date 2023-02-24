@@ -13,8 +13,6 @@ import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import path from 'path';
 
-import { checkDefined } from '../../lib/preconditions/preconditions';
-
 const RS_DATABASE_NAME = 'uniswap_x'; // must be lowercase
 
 const FIREHOSE_IP_ADDRESS_USE2 = '13.58.135.96/27';
@@ -27,7 +25,7 @@ enum RS_DATA_TYPES {
   TIMESTAMP = 'char(10)', // unix timestamp in seconds
   BIGINT = 'bigint',
   INTEGER = 'integer',
-  TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled'
+  TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled || 'new' || 'open'
   TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
   ROUTING = 'text',
 }
@@ -57,6 +55,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     const rfqResponseBucket = new aws_s3.Bucket(this, 'RfqResponseBucket');
     const unifiedRoutingResponseBucket = new aws_s3.Bucket(this, 'UnifiedRoutingResponseBucket');
     const fillBucket = new aws_s3.Bucket(this, 'FillBucket');
+    const ordersBucket = new aws_s3.Bucket(this, 'OrdersBucket');
 
     /* Redshift Initialization */
     const rsRole = new aws_iam.Role(this, 'RedshiftRole', {
@@ -217,6 +216,18 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
+    const postedOrdersTable = new aws_rs.Table(this, 'postedOrdersTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'postedOrders',
+      tableColumns: [
+        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
+      ],
+    });
+
     /* Kinesis Firehose Initialization */
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
@@ -227,6 +238,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     rfqResponseBucket.grantReadWrite(firehoseRole);
     unifiedRoutingResponseBucket.grantReadWrite(firehoseRole);
     fillBucket.grantReadWrite(firehoseRole);
+    ordersBucket.grantReadWrite(firehoseRole);
 
     const quoteProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
@@ -244,11 +256,28 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    const postedOrderProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'postedOrderProcessor', {
+      runtime: aws_lambda.Runtime.NODEJS_16_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'postedOrderProcessor',
+      timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
+      memorySize: 512,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+      },
+    });
+
     const fillEventProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'FillLogProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'fillEventProcessor',
-      memorySize: 256,
+      timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
+      memorySize: 512,
       bundling: {
         minify: true,
         sourceMap: true,
@@ -263,7 +292,11 @@ export class AnalyticsStack extends cdk.NestedStack {
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
         actions: ['lambda:InvokeFunction', 'lambda:GetFunctionConfiguration'],
-        resources: [quoteProcessorLambda.functionArn, fillEventProcessorLambda.functionArn],
+        resources: [
+          quoteProcessorLambda.functionArn,
+          fillEventProcessorLambda.functionArn,
+          postedOrderProcessorLambda.functionArn,
+        ],
       })
     );
     // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
@@ -436,6 +469,39 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    const orderStream = new aws_firehose.CfnDeliveryStream(this, 'OrderStream', {
+      redshiftDestinationConfiguration: {
+        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
+        username: 'admin',
+        password: creds.secretValueFromJson('password').toString(),
+        s3Configuration: {
+          bucketArn: ordersBucket.bucketArn,
+          roleArn: firehoseRole.roleArn,
+          compressionFormat: 'UNCOMPRESSED',
+        },
+        roleArn: firehoseRole.roleArn,
+        copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
+          dataTableName: postedOrdersTable.tableName,
+          dataTableColumns: 'quoteId,createdAt,orderHash',
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: postedOrderProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
     /* Subscription Filter Initialization */
     const subscriptionRole = new aws_iam.Role(this, 'SubscriptionRole', {
       assumedBy: new aws_iam.ServicePrincipal('logs.amazonaws.com'),
@@ -449,14 +515,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       })
     );
 
-    //     subscriptionRole.addToPolicy(
-    //       new aws_iam.PolicyStatement({
-    //         effect: aws_iam.Effect.ALLOW,
-    //         actions: ['iam:PassRole'],
-    //         resources: [`arn:aws:logs:${this.region}:${checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT'])}:*`],
-    //       })
-    //     );
-
     // A 'CW Logs destination' which is somehow different from the Firehose stream which is supposed to be the
     // destination of the x-account subscription filter; unfortunately there is little documentation on this from AWS
     // had to use Cfn construct because aws-cdk-lib.aws_logs_destinations module doesn't support Firehose
@@ -465,6 +523,12 @@ export class AnalyticsStack extends cdk.NestedStack {
       roleArn: subscriptionRole.roleArn,
       targetArn: fillStream.attrArn,
       destinationName: 'fillEventDestination',
+    });
+
+    const postedOrderDestination = new aws_logs.CfnDestination(this, 'PostedOrderDestination', {
+      roleArn: subscriptionRole.roleArn,
+      targetArn: orderStream.attrArn,
+      destinationName: 'postedOrderDestination',
     });
 
     const uraRequestDestination = new aws_logs.CfnDestination(this, 'uraRequestDestination', {
@@ -488,7 +552,7 @@ export class AnalyticsStack extends cdk.NestedStack {
             Sid: '',
             Effect: 'Allow',
             Principal: {
-              AWS: checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT']),
+              AWS: props.envVars['FILL_LOG_SENDER_ACCOUNT'],
             },
             Action: 'logs:PutSubscriptionFilter',
             Resource: '*',
@@ -496,6 +560,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         ],
       });
     }
+
     if (props.envVars['URA_ACCOUNT']) {
       uraRequestDestination.destinationPolicy = JSON.stringify({
         Version: '2012-10-17',
@@ -545,6 +610,9 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     new CfnOutput(this, 'fillDestinationName', {
       value: fillDestination.attrArn,
+    });
+    new CfnOutput(this, 'postedOrderDestinationName', {
+      value: postedOrderDestination.attrArn,
     });
     new CfnOutput(this, 'uraRequestDestinationName', {
       value: uraRequestDestination.attrArn,
