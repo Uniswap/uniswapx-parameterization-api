@@ -13,8 +13,6 @@ import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import path from 'path';
 
-import { checkDefined } from '../../lib/preconditions/preconditions';
-
 const RS_DATABASE_NAME = 'uniswap_x'; // must be lowercase
 
 const FIREHOSE_IP_ADDRESS_USE2 = '13.58.135.96/27';
