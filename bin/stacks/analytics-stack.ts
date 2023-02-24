@@ -294,7 +294,11 @@ export class AnalyticsStack extends cdk.NestedStack {
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
         actions: ['lambda:InvokeFunction', 'lambda:GetFunctionConfiguration'],
-        resources: [quoteProcessorLambda.functionArn, fillEventProcessorLambda.functionArn],
+        resources: [
+          quoteProcessorLambda.functionArn,
+          fillEventProcessorLambda.functionArn,
+          postedOrderProcessorLambda.functionArn,
+        ],
       })
     );
     // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
@@ -513,14 +517,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       })
     );
 
-    //     subscriptionRole.addToPolicy(
-    //       new aws_iam.PolicyStatement({
-    //         effect: aws_iam.Effect.ALLOW,
-    //         actions: ['iam:PassRole'],
-    //         resources: [`arn:aws:logs:${this.region}:${checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT'])}:*`],
-    //       })
-    //     );
-
     // A 'CW Logs destination' which is somehow different from the Firehose stream which is supposed to be the
     // destination of the x-account subscription filter; unfortunately there is little documentation on this from AWS
     // had to use Cfn construct because aws-cdk-lib.aws_logs_destinations module doesn't support Firehose
@@ -558,7 +554,7 @@ export class AnalyticsStack extends cdk.NestedStack {
             Sid: '',
             Effect: 'Allow',
             Principal: {
-              AWS: checkDefined(props.envVars['FILL_LOG_SENDER_ACCOUNT']),
+              AWS: props.envVars['FILL_LOG_SENDER_ACCOUNT'],
             },
             Action: 'logs:PutSubscriptionFilter',
             Resource: '*',
@@ -566,6 +562,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         ],
       });
     }
+
     if (props.envVars['URA_ACCOUNT']) {
       uraRequestDestination.destinationPolicy = JSON.stringify({
         Version: '2012-10-17',
