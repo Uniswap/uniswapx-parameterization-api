@@ -560,7 +560,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         ],
       });
     }
-    if (props.envVars['POSTED_ORDER_LOG_SENDER_ACCOUNT']) {
+    if (props.envVars['ORDER_LOG_SENDER_ACCOUNT']) {
       postedOrderDestination.destinationPolicy = JSON.stringify({
         Version: '2012-10-17',
         Statement: [
