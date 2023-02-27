@@ -57,6 +57,14 @@ export class AnalyticsStack extends cdk.NestedStack {
     const fillBucket = new aws_s3.Bucket(this, 'FillBucket');
     const ordersBucket = new aws_s3.Bucket(this, 'OrdersBucket');
 
+    const dsRole = aws_iam.Role.fromRoleArn(this, 'DsRole', 'arn:aws:iam::867401673276:user/bq-load-sa');
+    rfqRequestBucket.grantRead(dsRole);
+    rfqResponseBucket.grantRead(dsRole);
+    unifiedRoutingRequestBucket.grantRead(dsRole);
+    unifiedRoutingResponseBucket.grantRead(dsRole);
+    fillBucket.grantRead(dsRole);
+    ordersBucket.grantRead(dsRole);
+
     /* Redshift Initialization */
     const rsRole = new aws_iam.Role(this, 'RedshiftRole', {
       assumedBy: new aws_iam.ServicePrincipal('redshift.amazonaws.com'),
