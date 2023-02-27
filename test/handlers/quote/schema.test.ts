@@ -180,6 +180,7 @@ describe('Schema tests', () => {
       const body = {
         chainId: 1,
         requestId: REQUEST_ID,
+        quoteId: QUOTE_ID,
         offerer: OFFERER,
         tokenIn: USDC,
         tokenOut: WETH,
@@ -191,6 +192,7 @@ describe('Schema tests', () => {
       expect(validated.value).toStrictEqual({
         chainId: 1,
         requestId: REQUEST_ID,
+        quoteId: QUOTE_ID,
         offerer: OFFERER,
         tokenIn: USDC,
         tokenOut: WETH,
@@ -202,6 +204,7 @@ describe('Schema tests', () => {
     it('requires requestId to be defined', () => {
       const body = {
         chainId: 1,
+        quoteId: QUOTE_ID,
         tokenIn: USDC,
         tokenOut: WETH,
         offerer: OFFERER,
@@ -216,7 +219,7 @@ describe('Schema tests', () => {
       const body = {
         quoteId: QUOTE_ID,
         chainId: 1,
-        requestId: '1234',
+        requestId: REQUEST_ID,
         tokenOut: WETH,
         offerer: OFFERER,
         amountIn: '1000',
@@ -230,7 +233,7 @@ describe('Schema tests', () => {
       const body = {
         quoteId: QUOTE_ID,
         chainId: 1,
-        requestId: '1234',
+        requestId: REQUEST_ID,
         tokenIn: USDC,
         offerer: OFFERER,
         amountIn: '1000',
@@ -244,7 +247,7 @@ describe('Schema tests', () => {
       const body = {
         quoteId: QUOTE_ID,
         chainId: 1,
-        requestId: '1234',
+        requestId: REQUEST_ID,
         tokenIn: USDC,
         offerer: OFFERER,
         tokenOut: WETH,
@@ -258,7 +261,7 @@ describe('Schema tests', () => {
       const body = {
         quoteId: QUOTE_ID,
         chainId: 1,
-        requestId: '1234',
+        requestId: REQUEST_ID,
         tokenIn: USDC,
         offerer: OFFERER,
         tokenOut: WETH,
