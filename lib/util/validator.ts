@@ -31,4 +31,6 @@ export class FieldValidator {
   public static readonly requestId = Joi.string().guid({ version: 'uuidv4' });
 
   public static readonly tradeType = Joi.string().valid('EXACT_INPUT', 'EXACT_OUTPUT');
+
+  public static readonly uuid = Joi.string().guid({ version: 'uuidv4' });
 }
