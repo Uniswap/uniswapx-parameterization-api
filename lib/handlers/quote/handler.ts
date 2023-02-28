@@ -7,7 +7,7 @@ import { currentTimestampInSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ApiRInj, ErrorResponse, Response } from '../base/api-handler';
 import { ContainerInjected } from './injector';
-import { PostQuoteRequestBody, PostQuoteRequestBodyJoi, PostQuoteResponse, PostQuoteResponseJoi } from './schema';
+import { PostQuoteRequestBody, PostQuoteRequestBodyJoi, PostQuoteResponse, URAResponseJoi } from './schema';
 
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
@@ -72,7 +72,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected responseBodySchema(): Joi.ObjectSchema | null {
-    return PostQuoteResponseJoi;
+    return URAResponseJoi;
   }
 }
 
