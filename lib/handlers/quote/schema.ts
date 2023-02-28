@@ -27,7 +27,6 @@ export type PostQuoteRequestBody = {
 export const PostQuoteResponseJoi = Joi.object({
   chainId: FieldValidator.chainId.required(),
   requestId: FieldValidator.uuid.required(),
-  quoteId: FieldValidator.uuid.required(),
   tokenIn: Joi.string().required(),
   amountIn: FieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
@@ -37,7 +36,6 @@ export const PostQuoteResponseJoi = Joi.object({
 });
 
 export type PostQuoteResponse = {
-  quoteId: string;
   chainId: number;
   requestId: string;
   tokenIn: string;

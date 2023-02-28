@@ -6,7 +6,6 @@ import { PostQuoteRequestBodyJoi, PostQuoteResponseJoi } from '../../../lib/hand
 const OFFERER = '0x0000000000000000000000000000000000000000';
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
-const QUOTE_ID = uuidv4();
 const REQUEST_ID = uuidv4();
 
 const validTokenIn = [USDC, WETH].reduce(lowerUpper, []);
@@ -180,7 +179,6 @@ describe('Schema tests', () => {
       const body = {
         chainId: 1,
         requestId: REQUEST_ID,
-        quoteId: QUOTE_ID,
         offerer: OFFERER,
         tokenIn: USDC,
         tokenOut: WETH,
@@ -192,7 +190,6 @@ describe('Schema tests', () => {
       expect(validated.value).toStrictEqual({
         chainId: 1,
         requestId: REQUEST_ID,
-        quoteId: QUOTE_ID,
         offerer: OFFERER,
         tokenIn: USDC,
         tokenOut: WETH,
@@ -204,7 +201,6 @@ describe('Schema tests', () => {
     it('requires requestId to be defined', () => {
       const body = {
         chainId: 1,
-        quoteId: QUOTE_ID,
         tokenIn: USDC,
         tokenOut: WETH,
         offerer: OFFERER,
@@ -217,7 +213,6 @@ describe('Schema tests', () => {
 
     it('requires tokenIn to be defined', () => {
       const body = {
-        quoteId: QUOTE_ID,
         chainId: 1,
         requestId: REQUEST_ID,
         tokenOut: WETH,
@@ -231,7 +226,6 @@ describe('Schema tests', () => {
 
     it('requires tokenOut to be defined', () => {
       const body = {
-        quoteId: QUOTE_ID,
         chainId: 1,
         requestId: REQUEST_ID,
         tokenIn: USDC,
@@ -245,7 +239,6 @@ describe('Schema tests', () => {
 
     it('requires amountIn to be defined', () => {
       const body = {
-        quoteId: QUOTE_ID,
         chainId: 1,
         requestId: REQUEST_ID,
         tokenIn: USDC,
@@ -259,7 +252,6 @@ describe('Schema tests', () => {
 
     it('requires amountOut to be defined', () => {
       const body = {
-        quoteId: QUOTE_ID,
         chainId: 1,
         requestId: REQUEST_ID,
         tokenIn: USDC,
