@@ -7,11 +7,12 @@ import { ApiInjector, ApiRInj } from '../../../lib/handlers/base/api-handler';
 import { ContainerInjected, PostQuoteRequestBody, PostQuoteResponse } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
-import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter, WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const OFFERER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
@@ -83,6 +84,7 @@ describe('Quote handler', () => {
         requestId: request.requestId,
         chainId: request.tokenInChainId,
         filler: MOCK_FILLER_ADDRESS,
+        quoteId: QUOTE_ID,
       },
       overrides
     );
@@ -99,7 +101,7 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
-    expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
+    expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
 
   it('Handles hex amount', async () => {
@@ -115,7 +117,7 @@ describe('Quote handler', () => {
     expect(response.statusCode).toEqual(200);
     expect(
       responseFromRequest(request, { amountIn: amountIn.toString(), amountOut: amountIn.toString() })
-    ).toMatchObject(quoteResponse);
+    ).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
 
   it('Pick the greater of two quotes', async () => {
@@ -129,7 +131,10 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
-    expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject(quoteResponse);
+    expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject({
+      ...quoteResponse,
+      quoteId: expect.any(String),
+    });
   });
 
   it('Two quoters returning the same result', async () => {
@@ -143,7 +148,7 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
-    expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
+    expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
 
   it('Invalid amountIn', async () => {
@@ -184,6 +189,7 @@ describe('Quote handler', () => {
             amountIn: request.amount,
             offerer: request.offerer,
             chainId: request.tokenInChainId,
+            quoteId: QUOTE_ID,
           },
         });
       });
@@ -202,6 +208,7 @@ describe('Quote handler', () => {
         offerer: request.offerer,
         chainId: request.tokenInChainId,
         requestId: request.requestId,
+        quoteId: expect.any(String),
       });
     });
 
@@ -296,6 +303,7 @@ describe('Quote handler', () => {
         return Promise.resolve({
           data: {
             ...request,
+            quoteId: QUOTE_ID,
           },
         });
       });
@@ -306,7 +314,7 @@ describe('Quote handler', () => {
       );
       expect(response.statusCode).toEqual(200);
       const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
-      expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
+      expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
     });
 
     it('uses if better than backup', async () => {
@@ -325,6 +333,7 @@ describe('Quote handler', () => {
             offerer: request.offerer,
             chainId: request.tokenInChainId,
             requestId: request.requestId,
+            quoteId: QUOTE_ID,
           },
         });
       });
@@ -335,7 +344,10 @@ describe('Quote handler', () => {
       );
       expect(response.statusCode).toEqual(200);
       const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject(quoteResponse);
+      expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject({
+        ...quoteResponse,
+        quoteId: QUOTE_ID,
+      });
     });
 
     it('uses backup if better', async () => {
@@ -354,6 +366,7 @@ describe('Quote handler', () => {
             offerer: request.offerer,
             chainId: request.tokenInChainId,
             requestId: request.requestId,
+            quoteId: QUOTE_ID,
           },
         });
       });
@@ -364,7 +377,10 @@ describe('Quote handler', () => {
       );
       expect(response.statusCode).toEqual(200);
       const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
-      expect(responseFromRequest(request, { amountOut: amountIn.toString() })).toMatchObject(quoteResponse);
+      expect(responseFromRequest(request, { amountOut: amountIn.toString() })).toMatchObject({
+        ...quoteResponse,
+        quoteId: expect.any(String),
+      });
     });
   });
 });
