@@ -36,26 +36,17 @@ export class QuoteRequest {
 
   constructor(private data: QuoteRequestData) {}
 
-  //  public toJSON(): QuoteRequestDataJSON {
-  public toJSON() {
+  public toJSON(): QuoteRequestDataJSON {
     return {
+      tokenInChainId: this.tokenInChainId,
+      tokenOutChainId: this.tokenOutChainId,
       requestId: this.requestId,
-      chainId: this.tokenInChainId,
       offerer: this.offerer,
       tokenIn: this.tokenIn,
-      amountIn: this.amount.toString(),
       tokenOut: this.tokenOut,
+      amount: this.amount.toString(),
+      type: TradeType[this.type],
     };
-    // return {
-    //   tokenInChainId: this.tokenInChainId,
-    //   tokenOutChainId: this.tokenOutChainId,
-    //   requestId: this.requestId,
-    //   offerer: this.offerer,
-    //   tokenIn: this.tokenIn,
-    //   tokenOut: this.tokenOut,
-    //   amount: this.amount.toString(),
-    //   type: TradeType[this.type],
-    // };
   }
 
   public get requestId(): string {
