@@ -35,6 +35,18 @@ export const PostQuoteResponseJoi = Joi.object({
   filler: FieldValidator.address,
 });
 
+export const URAResponseJoi = Joi.object({
+  chainId: FieldValidator.chainId.required(),
+  requestId: FieldValidator.uuid.required(),
+  tokenIn: Joi.string().required(),
+  amountIn: FieldValidator.amount.required(),
+  tokenOut: Joi.string().required(),
+  amountOut: FieldValidator.amount.required(),
+  offerer: FieldValidator.address.required(),
+  filler: FieldValidator.address,
+  quoteId: FieldValidator.uuid,
+});
+
 export type PostQuoteResponse = {
   chainId: number;
   requestId: string;
