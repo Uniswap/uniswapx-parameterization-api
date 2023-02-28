@@ -264,10 +264,10 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const postedOrderProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'postedOrderProcessor', {
+    const postOrderProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'postedOrderProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'postedOrderProcessor',
+      handler: 'postOrderProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
       memorySize: 512,
       bundling: {
@@ -303,7 +303,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         resources: [
           quoteProcessorLambda.functionArn,
           fillEventProcessorLambda.functionArn,
-          postedOrderProcessorLambda.functionArn,
+          postOrderProcessorLambda.functionArn,
         ],
       })
     );
@@ -501,7 +501,7 @@ export class AnalyticsStack extends cdk.NestedStack {
               parameters: [
                 {
                   parameterName: 'LambdaArn',
-                  parameterValue: postedOrderProcessorLambda.functionArn,
+                  parameterValue: postOrderProcessorLambda.functionArn,
                 },
               ],
             },
