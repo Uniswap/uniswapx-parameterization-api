@@ -7,7 +7,7 @@ import { ApiInjector, ApiRInj } from '../../../lib/handlers/base/api-handler';
 import { ContainerInjected, PostQuoteRequestBody, PostQuoteResponse } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
-import { MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -82,6 +82,7 @@ describe('Quote handler', () => {
         offerer: request.offerer,
         requestId: request.requestId,
         chainId: request.tokenInChainId,
+        filler: MOCK_FILLER_ADDRESS,
       },
       overrides
     );

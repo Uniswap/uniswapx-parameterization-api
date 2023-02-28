@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
-
 import { v4 as uuidv4 } from 'uuid';
+
 import { PostQuoteRequestBodyJoi, PostQuoteResponseJoi } from '../../../lib/handlers/quote/schema';
 
 const OFFERER = '0x0000000000000000000000000000000000000000';
