@@ -13,7 +13,6 @@ jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const OFFERER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
@@ -83,7 +82,6 @@ describe('Quote handler', () => {
         offerer: request.offerer,
         requestId: request.requestId,
         chainId: request.tokenInChainId,
-        quoteId: QUOTE_ID,
       },
       overrides
     );
@@ -98,9 +96,9 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const { quoteId, ...quoteResponse }: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
-    expect(responseFromRequest(request, { quoteId: QUOTE_ID })).toMatchObject(quoteResponse);
+    expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
   });
 
   it('Handles hex amount', async () => {
@@ -112,7 +110,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const { quoteId, ...quoteResponse }: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
     expect(
       responseFromRequest(request, { amountIn: amountIn.toString(), amountOut: amountIn.toString() })
@@ -128,7 +126,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const { quoteId, ...quoteResponse }: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
     expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject(quoteResponse);
   });
@@ -142,7 +140,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const { quoteId, ...quoteResponse }: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
     expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
   });
@@ -185,7 +183,6 @@ describe('Quote handler', () => {
             amountIn: request.amount,
             offerer: request.offerer,
             chainId: request.tokenInChainId,
-            quoteId: QUOTE_ID,
           },
         });
       });
@@ -307,8 +304,8 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(200);
-      const { quoteId, ...quoteResponse }: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
-      expect(responseFromRequest(request, { quoteId: QUOTE_ID })).toMatchObject(quoteResponse);
+      const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
+      expect(responseFromRequest(request, {})).toMatchObject(quoteResponse);
     });
 
     it('uses if better than backup', async () => {
@@ -327,7 +324,6 @@ describe('Quote handler', () => {
             offerer: request.offerer,
             chainId: request.tokenInChainId,
             requestId: request.requestId,
-            quoteId: QUOTE_ID,
           },
         });
       });
@@ -337,7 +333,7 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(200);
-      const { quoteId, ...quoteResponse }: PostQuoteResponse = JSON.parse(response.body);
+      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
       expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject(quoteResponse);
     });
 
@@ -357,7 +353,6 @@ describe('Quote handler', () => {
             offerer: request.offerer,
             chainId: request.tokenInChainId,
             requestId: request.requestId,
-            quoteId: QUOTE_ID,
           },
         });
       });
@@ -367,7 +362,7 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(200);
-      const { quoteId, ...quoteResponse }: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
+      const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
       expect(responseFromRequest(request, { amountOut: amountIn.toString() })).toMatchObject(quoteResponse);
     });
   });

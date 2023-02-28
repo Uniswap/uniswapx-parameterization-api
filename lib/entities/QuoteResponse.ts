@@ -9,11 +9,11 @@ import { currentTimestampInSeconds } from '../util/time';
 
 export interface QuoteResponseData
   extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type'> {
-  quoteId: string;
   chainId: number;
   amountOut: BigNumber;
   amountIn: BigNumber;
   filler?: string;
+  quoteId: string;
 }
 
 interface ValidatedResponse {
