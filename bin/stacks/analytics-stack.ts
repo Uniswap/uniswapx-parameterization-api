@@ -253,7 +253,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'quoteProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
-      memorySize: 256,
+      memorySize: 512,
       bundling: {
         minify: true,
         sourceMap: true,
