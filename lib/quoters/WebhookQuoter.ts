@@ -31,6 +31,8 @@ export class WebhookQuoter implements Quoter {
   private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
     const { endpoint, headers } = config;
     try {
+      this.log.info({ request, headers }, `Webhook request to: ${endpoint}`);
+
       const hookResponse = await axios.post(endpoint, request.toJSON(), {
         timeout: WEBHOOK_TIMEOUT_MS,
         headers,
@@ -44,7 +46,7 @@ export class WebhookQuoter implements Quoter {
           response,
           validation,
         },
-        `Webhook response from ${endpoint}`
+        `Webhook response from: ${endpoint}`
       );
 
       if (validation.error) {
