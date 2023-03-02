@@ -233,6 +233,9 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'quoteId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
         { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
+        { name: 'startTime', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'endTime', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'deadline', dataType: RS_DATA_TYPES.TIMESTAMP },
       ],
     });
 
@@ -491,7 +494,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: postedOrdersTable.tableName,
-          dataTableColumns: 'quoteId,createdAt,orderHash',
+          dataTableColumns: 'quoteId,createdAt,orderHash,startTime,endTime,deadline',
         },
         processingConfiguration: {
           enabled: true,
