@@ -29,6 +29,7 @@ enum RS_DATA_TYPES {
   TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
   ROUTING = 'text',
   SLIPPAGE = 'float4',
+  UnitInETH = 'float8',
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -225,6 +226,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'fillTimestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
         { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'gasUsed', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'gasCostInETH', dataType: RS_DATA_TYPES.UnitInETH },
       ],
     });
 
@@ -466,7 +468,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: archivedOrdersTable.tableName,
           dataTableColumns:
-            'quoteId,offerer,filler,nonce,blockNumber,tokenOut,amountOut,orderStatus,txHash,gasPriceWei,gasUsed',
+            'quoteId,offerer,filler,nonce,blockNumber,tokenOut,amountOut,orderStatus,txHash,gasPriceWei,gasUsed,gasCostInETH',
         },
         processingConfiguration: {
           enabled: true,
