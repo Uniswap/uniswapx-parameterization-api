@@ -398,7 +398,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: uraResponseTable.tableName,
           dataTableColumns:
-            'quoteId,requestId,offerer,tokenIn,tokenOut,amountInGasAdjusted,amountOutGasAdjusted,amountIn,tokenInChainId,tokenOutChainId,slippage,routing,createdAt,gasPriceWei',
+            'quoteId,requestId,offerer,tokenIn,tokenOut,amountInGasAdjusted,amountOutGasAdjusted,amountIn,amountOut,tokenInChainId,tokenOutChainId,slippage,routing,createdAt,gasPriceWei',
         },
         processingConfiguration: {
           enabled: true,
