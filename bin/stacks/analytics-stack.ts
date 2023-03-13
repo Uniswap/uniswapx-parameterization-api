@@ -174,6 +174,8 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'endAmountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'endAmountOut', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'amountInGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'amountOutGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
@@ -400,7 +402,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: uraResponseTable.tableName,
           dataTableColumns:
-            'quoteId,requestId,offerer,tokenIn,tokenOut,amountInGasAdjusted,amountOutGasAdjusted,amountIn,amountOut,tokenInChainId,tokenOutChainId,slippage,routing,createdAt,gasPriceWei',
+            'quoteId,requestId,offerer,tokenIn,tokenOut,amountInGasAdjusted,amountOutGasAdjusted,amountIn,amountOut,endAmountIn,endAmountOut,tokenInChainId,tokenOutChainId,slippage,routing,createdAt,gasPriceWei',
         },
         processingConfiguration: {
           enabled: true,
