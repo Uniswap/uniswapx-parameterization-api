@@ -33,6 +33,7 @@ enum RS_DATA_TYPES {
   FILL_DATA = 'text',
   EVENT_TYPE = 'varchar(9)', // 'fetch' || 'filter' || 'execution' || 'quote'
   FILTER_NAME = 'text',
+  BOT_TYPE = 'varchar(7)', // 'uniswap' || '1inch'
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -179,6 +180,8 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'endAmountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'endAmountOut', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'amountInGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'amountOutGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
@@ -258,6 +261,8 @@ export class AnalyticsStack extends cdk.NestedStack {
       tableColumns: [
         { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'eventType', dataType: RS_DATA_TYPES.EVENT_TYPE },
+        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'botType', dataType: RS_DATA_TYPES.BOT_TYPE },
 
         // shared order fields
         { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
@@ -460,7 +465,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: uraResponseTable.tableName,
           dataTableColumns:
-            'quoteId,requestId,offerer,tokenIn,tokenOut,amountInGasAdjusted,amountOutGasAdjusted,amountIn,amountOut,tokenInChainId,tokenOutChainId,slippage,routing,createdAt,gasPriceWei',
+            'quoteId,requestId,offerer,tokenIn,tokenOut,amountInGasAdjusted,amountOutGasAdjusted,amountIn,amountOut,endAmountIn,endAmountOut,tokenInChainId,tokenOutChainId,slippage,routing,createdAt,gasPriceWei',
         },
         processingConfiguration: {
           enabled: true,
@@ -595,7 +600,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: botOrderEventsTable.tableName,
           dataTableColumns:
-            'eventId,eventType,quoteId,offerer,tokenIn,tokenOut,amountIn,amountOut,orderHash,estimatedGasUsed,expectedProfit,expectedProfitETH,botBalance,filterName,minProfitETH,txHash,fillData,currentOrderPrice,quote,gasAdjustedQuote',
+            'eventId,eventType,quoteId,offerer,tokenIn,tokenOut,amountIn,amountOut,orderHash,estimatedGasUsed,expectedProfit,expectedProfitETH,botBalance,filterName,minProfitETH,txHash,fillData,currentOrderPrice,quote,gasAdjustedQuote,botType,createdAt',
         },
         processingConfiguration: {
           enabled: true,
@@ -776,7 +781,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     new CfnOutput(this, 'UraAccount', {
       value: props.envVars['URA_ACCOUNT'],
     });
-    new CfnOutput(this, 'botOrderEventsDestination', {
+    new CfnOutput(this, 'botOrderEventsDestinationName', {
       value: botOrderEventsDestination.attrArn,
     });
     new CfnOutput(this, 'BOT_ACCOUNT', {
