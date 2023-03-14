@@ -30,9 +30,9 @@ enum RS_DATA_TYPES {
   ROUTING = 'text',
   SLIPPAGE = 'float4',
   UnitInETH = 'float8',
-  FILL_DATA = 'text',
-  EVENT_TYPE = 'varchar(9)', // 'fetch' || 'filter' || 'execution' || 'quote'
-  FILTER_NAME = 'text',
+  BOT_FILL_DATA = 'text',
+  BOT_EVENT_TYPE = 'varchar(9)', // 'fetch' || 'filter' || 'execution' || 'quote'
+  BOT_FILTER_NAME = 'text',
   BOT_TYPE = 'varchar(7)', // 'uniswap' || '***REMOVED***'
 }
 
@@ -260,7 +260,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       tableName: 'botOrderEvents',
       tableColumns: [
         { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'eventType', dataType: RS_DATA_TYPES.EVENT_TYPE },
+        { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
         { name: 'botType', dataType: RS_DATA_TYPES.BOT_TYPE },
 
@@ -275,12 +275,12 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'botBalance', dataType: RS_DATA_TYPES.BIGINT },
 
         // filter order fields
-        { name: 'filterName', dataType: RS_DATA_TYPES.FILTER_NAME },
+        { name: 'filterName', dataType: RS_DATA_TYPES.BOT_FILTER_NAME },
         { name: 'minProfitETH', dataType: RS_DATA_TYPES.BIGINT },
 
         // execution order fields
         { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'fillData', dataType: RS_DATA_TYPES.FILL_DATA },
+        { name: 'fillData', dataType: RS_DATA_TYPES.BOT_FILL_DATA },
 
         // quote order fields
         { name: 'quote', dataType: RS_DATA_TYPES.BIGINT },
