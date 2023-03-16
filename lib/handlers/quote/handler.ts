@@ -42,7 +42,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       },
     });
 
-    const bestQuote = await getBestQuote(quoters, request);
+    const bestQuote = await getBestQuote(quoters, request, log);
     if (!bestQuote) {
       return {
         statusCode: 404,
