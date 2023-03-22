@@ -1,4 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
+import Logger from 'bunyan';
 import Joi from 'joi';
 
 import { QuoteRequest, QuoteResponse } from '../../entities';
@@ -41,7 +42,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       },
     });
 
-    const bestQuote = await getBestQuote(quoters, request);
+    const bestQuote = await getBestQuote(quoters, request, log);
     if (!bestQuote) {
       return {
         statusCode: 404,
@@ -51,11 +52,6 @@ export class QuoteHandler extends APIGLambdaHandler<
     }
 
     log.info({ bestQuote: bestQuote }, 'bestQuote');
-
-    log.info({
-      eventType: 'QuoteResponse',
-      body: bestQuote.toLog(),
-    });
 
     return {
       statusCode: 200,
@@ -77,11 +73,20 @@ export class QuoteHandler extends APIGLambdaHandler<
 }
 
 // fetch quotes from all quoters and return the best one
-async function getBestQuote(quoters: Quoter[], quoteRequest: QuoteRequest): Promise<QuoteResponse | null> {
+async function getBestQuote(
+  quoters: Quoter[],
+  quoteRequest: QuoteRequest,
+  log?: Logger
+): Promise<QuoteResponse | null> {
   const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat();
 
   // return the response with the highest amountOut value
   return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
+    log?.info({
+      eventType: 'QuoteResponse',
+      body: quote.toLog(),
+    });
+
     if (!bestQuote || quote.amountOut.gt(bestQuote.amountOut)) {
       return quote;
     }
