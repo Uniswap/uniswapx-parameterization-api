@@ -30,10 +30,11 @@ enum RS_DATA_TYPES {
   ROUTING = 'text',
   SLIPPAGE = 'float4',
   UnitInETH = 'float8',
-  BOT_FILL_DATA = 'text',
+  EXECUTOR_TYPE = 'varchar(9)', // 'publicRpc' || 'flashbots'
   BOT_EVENT_TYPE = 'varchar(9)', // 'fetch' || 'filter' || 'execution' || 'quote'
   BOT_FILTER_NAME = 'text',
   BOT_TYPE = 'varchar(7)', // 'uniswap' || '***REMOVED***'
+  STACK_TYPE = 'varchar(23)', // 'swapRouterFiller' || 'fundsMaintenanceHandler'
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -261,34 +262,35 @@ export class AnalyticsStack extends cdk.NestedStack {
       tableColumns: [
         { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'timestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
         { name: 'botType', dataType: RS_DATA_TYPES.BOT_TYPE },
+        { name: 'stackType', dataType: RS_DATA_TYPES.STACK_TYPE },
 
         // shared order fields
         { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
         { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'botBalance', dataType: RS_DATA_TYPES.BIGINT },
+        { name: 'botBalanceETH', dataType: RS_DATA_TYPES.UnitInETH },
 
         // filter order fields
         { name: 'filterName', dataType: RS_DATA_TYPES.BOT_FILTER_NAME },
-        { name: 'minProfitETH', dataType: RS_DATA_TYPES.BIGINT },
+        { name: 'minProfitETH', dataType: RS_DATA_TYPES.UnitInETH },
 
         // execution order fields
         { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'fillData', dataType: RS_DATA_TYPES.BOT_FILL_DATA },
+        { name: 'executorType', dataType: RS_DATA_TYPES.EXECUTOR_TYPE },
 
         // quote order fields
-        { name: 'quote', dataType: RS_DATA_TYPES.BIGINT },
-        { name: 'gasAdjustedQuote', dataType: RS_DATA_TYPES.BIGINT },
-        { name: 'currentOrderPrice', dataType: RS_DATA_TYPES.BIGINT },
-        { name: 'estimatedGasUsed', dataType: RS_DATA_TYPES.BIGINT },
-        { name: 'expectedProfit', dataType: RS_DATA_TYPES.BIGINT },
-        { name: 'expectedProfitETH', dataType: RS_DATA_TYPES.BIGINT },
+        { name: 'amountOutQuote', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'amountOutGasAdjustedQuote', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'gasUsedEstimate', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'gasCostInETH', dataType: RS_DATA_TYPES.UnitInETH },
+        { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'expectedProfit', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'expectedProfitETH', dataType: RS_DATA_TYPES.UnitInETH },
       ],
     });
 
@@ -600,7 +602,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: botOrderEventsTable.tableName,
           dataTableColumns:
-            'eventId,eventType,quoteId,offerer,tokenIn,tokenOut,amountIn,amountOut,orderHash,estimatedGasUsed,expectedProfit,expectedProfitETH,botBalance,filterName,minProfitETH,txHash,fillData,currentOrderPrice,quote,gasAdjustedQuote,botType,createdAt',
+            'eventId,eventType,offerer,tokenIn,tokenOut,amountIn,amountOut,orderHash,gasUsedEstimate,expectedProfit,expectedProfitETH,botBalanceETH,filterName,minProfitETH,txHash,fillData,amountOutQuote,amountOutGasAdjustedQuote,botType,timestamp,gasCostInETH,gasPriceWei,stackType,executorType',
         },
         processingConfiguration: {
           enabled: true,
