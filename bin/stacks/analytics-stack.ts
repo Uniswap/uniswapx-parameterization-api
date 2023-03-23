@@ -30,11 +30,10 @@ enum RS_DATA_TYPES {
   ROUTING = 'text',
   SLIPPAGE = 'float4',
   UnitInETH = 'float8',
-  EXECUTOR_TYPE = 'varchar(9)', // 'publicRpc' || 'flashbots'
+  EXECUTOR_TYPE = 'varchar(13)', // 'publicMempool' || 'flashbots'
   BOT_EVENT_TYPE = 'varchar(9)', // 'fetch' || 'filter' || 'execution' || 'quote'
   BOT_FILTER_NAME = 'text',
-  BOT_TYPE = 'varchar(7)', // 'uniswap' || '***REMOVED***'
-  STACK_TYPE = 'varchar(23)', // 'swapRouterFiller' || 'fundsMaintenanceHandler'
+  STACK_TYPE = 'varchar(21)', // 'SwapRouter02Filler' || '1InchAggregatorFiller' || 'SwapRouter02Cron'
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -263,7 +262,6 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
         { name: 'timestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'botType', dataType: RS_DATA_TYPES.BOT_TYPE },
         { name: 'stackType', dataType: RS_DATA_TYPES.STACK_TYPE },
 
         // shared order fields
@@ -602,7 +600,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: botOrderEventsTable.tableName,
           dataTableColumns:
-            'eventId,eventType,offerer,tokenIn,tokenOut,amountIn,amountOut,orderHash,gasUsedEstimate,expectedProfit,expectedProfitETH,botBalanceETH,filterName,minProfitETH,txHash,fillData,amountOutQuote,amountOutGasAdjustedQuote,botType,timestamp,gasCostInETH,gasPriceWei,stackType,executorType',
+            'eventId,eventType,offerer,tokenIn,tokenOut,amountIn,amountOut,orderHash,gasUsedEstimate,expectedProfit,expectedProfitETH,botBalanceETH,filterName,minProfitETH,txHash,fillData,amountOutQuote,amountOutGasAdjustedQuote,timestamp,gasCostInETH,gasPriceWei,stackType,executorType',
         },
         processingConfiguration: {
           enabled: true,
