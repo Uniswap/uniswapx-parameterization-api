@@ -30,6 +30,10 @@ enum RS_DATA_TYPES {
   ROUTING = 'text',
   SLIPPAGE = 'float4',
   UnitInETH = 'float8',
+  EXECUTOR_TYPE = 'varchar(13)', // 'publicMempool' || 'flashbots'
+  BOT_EVENT_TYPE = 'varchar(9)', // 'fetch' || 'filter' || 'execution' || 'quote'
+  BOT_FILTER_NAME = 'text',
+  STACK_TYPE = 'varchar(21)', // 'SwapRouter02Filler' || '1InchAggregatorFiller' || 'SwapRouter02Cron'
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -58,6 +62,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     const unifiedRoutingResponseBucket = new aws_s3.Bucket(this, 'UnifiedRoutingResponseBucket');
     const fillBucket = new aws_s3.Bucket(this, 'FillBucket');
     const ordersBucket = new aws_s3.Bucket(this, 'OrdersBucket');
+    const botOrderEventsBucket = new aws_s3.Bucket(this, 'BotOrderEventsBucket');
 
     const dsRole = aws_iam.Role.fromRoleArn(this, 'DsRole', 'arn:aws:iam::867401673276:user/bq-load-sa');
     rfqRequestBucket.grantRead(dsRole);
@@ -66,6 +71,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     unifiedRoutingResponseBucket.grantRead(dsRole);
     fillBucket.grantRead(dsRole);
     ordersBucket.grantRead(dsRole);
+    botOrderEventsBucket.grantRead(dsRole);
 
     /* Redshift Initialization */
     const rsRole = new aws_iam.Role(this, 'RedshiftRole', {
@@ -247,6 +253,45 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
+    const botOrderEventsTable = new aws_rs.Table(this, 'botOrderEventsTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'botOrderEvents',
+      tableColumns: [
+        { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
+        { name: 'timestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'stackType', dataType: RS_DATA_TYPES.STACK_TYPE },
+
+        // shared order fields
+        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
+        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'botBalanceETH', dataType: RS_DATA_TYPES.UnitInETH },
+
+        // filter order fields
+        { name: 'filterName', dataType: RS_DATA_TYPES.BOT_FILTER_NAME },
+        { name: 'minProfitETH', dataType: RS_DATA_TYPES.UnitInETH },
+
+        // execution order fields
+        { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
+        { name: 'executorType', dataType: RS_DATA_TYPES.EXECUTOR_TYPE },
+
+        // quote order fields
+        { name: 'amountOutQuote', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'amountOutGasAdjustedQuote', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'gasUsedEstimate', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'gasCostInETH', dataType: RS_DATA_TYPES.UnitInETH },
+        { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'expectedProfit', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'expectedProfitETH', dataType: RS_DATA_TYPES.UnitInETH },
+      ],
+    });
+
     /* Kinesis Firehose Initialization */
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
@@ -258,6 +303,23 @@ export class AnalyticsStack extends cdk.NestedStack {
     unifiedRoutingResponseBucket.grantReadWrite(firehoseRole);
     fillBucket.grantReadWrite(firehoseRole);
     ordersBucket.grantReadWrite(firehoseRole);
+    botOrderEventsBucket.grantReadWrite(firehoseRole);
+
+    const botOrderEventsProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'BotOrderEventsProcessor', {
+      runtime: aws_lambda.Runtime.NODEJS_16_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'botOrderEventsProcessor',
+      timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
+      memorySize: 512,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+      },
+    });
 
     const quoteProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
@@ -315,6 +377,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           quoteProcessorLambda.functionArn,
           fillEventProcessorLambda.functionArn,
           postOrderProcessorLambda.functionArn,
+          botOrderEventsProcessorLambda.functionArn,
         ],
       })
     );
@@ -522,6 +585,40 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    const botOrderEventsStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderEventsStream', {
+      redshiftDestinationConfiguration: {
+        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
+        username: 'admin',
+        password: creds.secretValueFromJson('password').toString(),
+        s3Configuration: {
+          bucketArn: botOrderEventsBucket.bucketArn,
+          roleArn: firehoseRole.roleArn,
+          compressionFormat: 'UNCOMPRESSED',
+        },
+        roleArn: firehoseRole.roleArn,
+        copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
+          dataTableName: botOrderEventsTable.tableName,
+          dataTableColumns:
+            'eventId,eventType,offerer,tokenIn,tokenOut,amountIn,amountOut,orderHash,gasUsedEstimate,expectedProfit,expectedProfitETH,botBalanceETH,filterName,minProfitETH,txHash,fillData,amountOutQuote,amountOutGasAdjustedQuote,timestamp,gasCostInETH,gasPriceWei,stackType,executorType',
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: botOrderEventsProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
     /* Subscription Filter Initialization */
     const subscriptionRole = new aws_iam.Role(this, 'SubscriptionRole', {
       assumedBy: new aws_iam.ServicePrincipal('logs.amazonaws.com'),
@@ -562,6 +659,13 @@ export class AnalyticsStack extends cdk.NestedStack {
       targetArn: uraResponseStream.attrArn,
       destinationName: 'uraResponseDestination',
     });
+
+    const botOrderEventsDestination = new aws_logs.CfnDestination(this, 'botOrderEventsDestination', {
+      roleArn: subscriptionRole.roleArn,
+      targetArn: botOrderEventsStream.attrArn,
+      destinationName: 'botOrderEventsDestination',
+    });
+
     // hack to get around with CDK bug where `new aws_iam.PolicyDocument({...}).string()` doesn't really turn it into a string
     // enclosed in if statement to allow deploying stack w/o having to set up x-account logging
     if (props.envVars['FILL_LOG_SENDER_ACCOUNT']) {
@@ -580,6 +684,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         ],
       });
     }
+
     if (props.envVars['ORDER_LOG_SENDER_ACCOUNT']) {
       postedOrderDestination.destinationPolicy = JSON.stringify({
         Version: '2012-10-17',
@@ -628,6 +733,23 @@ export class AnalyticsStack extends cdk.NestedStack {
       });
     }
 
+    if (props.envVars['BOT_ACCOUNT']) {
+      botOrderEventsDestination.destinationPolicy = JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Sid: '',
+            Effect: 'Allow',
+            Principal: {
+              AWS: props.envVars['BOT_ACCOUNT'],
+            },
+            Action: 'logs:PutSubscriptionFilter',
+            Resource: '*',
+          },
+        ],
+      });
+    }
+
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
     // same here regarding CDK not having a stable implementation of this resource
     new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
@@ -658,6 +780,12 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
     new CfnOutput(this, 'UraAccount', {
       value: props.envVars['URA_ACCOUNT'],
+    });
+    new CfnOutput(this, 'botOrderEventsDestinationName', {
+      value: botOrderEventsDestination.attrArn,
+    });
+    new CfnOutput(this, 'BOT_ACCOUNT', {
+      value: props.envVars['BOT_ACCOUNT'],
     });
   }
 }
