@@ -30,7 +30,7 @@ enum RS_DATA_TYPES {
   ROUTING = 'text',
   SLIPPAGE = 'float4',
   UnitInETH = 'float8',
-  EXECUTOR_TYPE = 'varchar(13)', // 'publicMempool' || 'flashbots'
+  BOT_EXECUTOR_TYPE = 'varchar(13)', // 'publicMempool' || 'flashbots'
   BOT_EVENT_TYPE = 'varchar(9)', // 'fetch' || 'filter' || 'execution' || 'quote'
   BOT_FILTER_NAME = 'text',
   STACK_TYPE = 'varchar(21)', // 'SwapRouter02Filler' || '1InchAggregatorFiller' || 'SwapRouter02Cron'
@@ -279,7 +279,7 @@ export class AnalyticsStack extends cdk.NestedStack {
 
         // execution order fields
         { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'executorType', dataType: RS_DATA_TYPES.EXECUTOR_TYPE },
+        { name: 'executorType', dataType: RS_DATA_TYPES.BOT_EXECUTOR_TYPE },
 
         // quote order fields
         { name: 'amountOutQuote', dataType: RS_DATA_TYPES.UINT256 },
@@ -587,6 +587,10 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const botOrderEventsStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderEventsStream', {
       redshiftDestinationConfiguration: {
+        retryOptions: {
+          // The default is 1 hour of retries so setting to 5 minutes
+          durationInSeconds: 300,
+        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
@@ -599,8 +603,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: botOrderEventsTable.tableName,
-          dataTableColumns:
-            'eventId,eventType,offerer,tokenIn,tokenOut,amountIn,amountOut,orderHash,gasUsedEstimate,expectedProfit,expectedProfitETH,botBalanceETH,filterName,minProfitETH,txHash,fillData,amountOutQuote,amountOutGasAdjustedQuote,timestamp,gasCostInETH,gasPriceWei,stackType,executorType',
+          dataTableColumns: botOrderEventsTable.tableColumns.map((column) => column.name).toString(),
         },
         processingConfiguration: {
           enabled: true,
