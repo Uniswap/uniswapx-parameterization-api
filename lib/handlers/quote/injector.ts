@@ -1,6 +1,7 @@
 import { setGlobalLogger } from '@uniswap/smart-order-router';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
+import { ethers } from 'ethers';
 
 import { JsonWebhookConfigurationProvider } from '../../providers';
 import { Quoter, WebhookQuoter } from '../../quoters';
@@ -27,7 +28,9 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
 
     const webhookProvider = new JsonWebhookConfigurationProvider();
 
-    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
+    const authSigningKey = new ethers.utils.SigningKey(process.env['AUTH_SIGNING_KEY']!);
+
+    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider, authSigningKey)];
     if (process.env['stage'] == STAGE.LOCAL) {
       quoters.push(new MockQuoter(log));
     }

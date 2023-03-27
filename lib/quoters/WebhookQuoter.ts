@@ -5,6 +5,7 @@ import Logger from 'bunyan';
 import { QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { Quoter, QuoterType } from '.';
+import { ethers } from 'ethers';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -14,7 +15,7 @@ const WEBHOOK_TIMEOUT_MS = 500;
 export class WebhookQuoter implements Quoter {
   private log: Logger;
 
-  constructor(_log: Logger, private webhookProvider: WebhookConfigurationProvider) {
+  constructor(_log: Logger, private webhookProvider: WebhookConfigurationProvider, private authSigningKey: ethers.utils.SigningKey) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
 
@@ -33,7 +34,11 @@ export class WebhookQuoter implements Quoter {
     try {
       this.log.info({ request, headers }, `Webhook request to: ${endpoint}`);
 
-      const hookResponse = await axios.post(endpoint, request.toJSON(), {
+      const hookResponse = await axios.post(endpoint, {
+        ...request.toJSON(),
+        // We sign the endpoint rather than the request body to avoid dealing with JSON serialization
+        endpointSignature: this.authSigningKey.signDigest(ethers.utils.keccak256(endpoint))
+      }, {
         timeout: WEBHOOK_TIMEOUT_MS,
         headers,
       });

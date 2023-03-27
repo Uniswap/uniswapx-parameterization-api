@@ -101,6 +101,10 @@ export class APIPipeline extends Stack {
     });
     jsonRpcUrls['RPC_TENDERLY'] = goudaRpc.secretValueFromJson('RPC_TENDERLY').toString();
 
+    const authSigningKey = sm.Secret.fromSecretAttributes(this, 'authSigningKey', {
+      secretCompleteArn: 'arn:' // TODO: add to secrets manager
+    });
+
     // Beta us-east-2
 
     const betaUsEast2Stage = new APIStage(this, 'beta-us-east-2', {
@@ -113,6 +117,7 @@ export class APIPipeline extends Stack {
         ORDER_LOG_SENDER_ACCOUNT: '321377678687',
         URA_ACCOUNT: '665191769009',
         BOT_ACCOUNT: '800035746608',
+        AUTH_SIGNING_KEY: authSigningKey.secretValue.toString(),
       },
     });
 
@@ -131,6 +136,7 @@ export class APIPipeline extends Stack {
         ORDER_LOG_SENDER_ACCOUNT: '316116520258',
         URA_ACCOUNT: '652077092967',
         BOT_ACCOUNT: '456809954954',
+        AUTH_SIGNING_KEY: authSigningKey.secretValue.toString(),
       },
       stage: STAGE.PROD,
     });
@@ -201,6 +207,7 @@ envVars[`RPC_TENDERLY`] = process.env[`RPC_TENDERLY`] || '';
 envVars['FILL_LOG_SENDER_ACCOUNT'] = process.env['FILL_LOG_SENDER_ACCOUNT'] || '';
 envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
+envVars['AUTH_SIGNING_KEY'] = process.env['AUTH_SIGNING_KEY'] || '';
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {
