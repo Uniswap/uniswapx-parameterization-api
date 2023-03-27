@@ -397,8 +397,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: uraRequestTable.tableName,
-          dataTableColumns:
-            'requestId,offerer,tokenIn,tokenOut,amount,type,tokenInChainId,tokenOutChainId,configs,createdAt',
+          dataTableColumns: uraRequestTable.tableColumns.map((column) => column.name).toString(),
         },
         processingConfiguration: {
           enabled: true,
@@ -431,7 +430,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: rfqRequestTable.tableName,
-          dataTableColumns: 'requestId,offerer,tokenIn,tokenOut,amount,type,tokenInChainId,tokenOutChainId,createdAt',
+          dataTableColumns: rfqRequestTable.tableColumns.map((column) => column.name).toString(),
         },
         processingConfiguration: {
           enabled: true,
@@ -464,8 +463,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: uraResponseTable.tableName,
-          dataTableColumns:
-            'quoteId,requestId,offerer,tokenIn,tokenOut,amountInGasAdjusted,amountOutGasAdjusted,amountIn,amountOut,endAmountIn,endAmountOut,tokenInChainId,tokenOutChainId,slippage,routing,createdAt,gasPriceWei',
+          dataTableColumns: uraResponseTable.tableColumns.map((column) => column.name).toString(),
         },
         processingConfiguration: {
           enabled: true,
@@ -498,8 +496,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: rfqResponseTable.tableName,
-          dataTableColumns:
-            'requestId,quoteId,offerer,tokenIn,tokenOut,amountIn,amountOut,tokenInChainId,tokenOutChainId,filler,createdAt',
+          dataTableColumns: rfqResponseTable.tableColumns.map((column) => column.name).toString(),
         },
         processingConfiguration: {
           enabled: true,
@@ -532,8 +529,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: archivedOrdersTable.tableName,
-          dataTableColumns:
-            'quoteId,offerer,filler,nonce,blockNumber,tokenOut,amountOut,orderStatus,txHash,gasPriceWei,gasUsed,gasCostInETH',
+          dataTableColumns: archivedOrdersTable.tableColumns.map((column) => column.name).toString(),
         },
         processingConfiguration: {
           enabled: true,
@@ -566,7 +562,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: postedOrdersTable.tableName,
-          dataTableColumns: 'quoteId,createdAt,orderHash,startTime,endTime,deadline',
+          dataTableColumns: postedOrdersTable.tableColumns.map((column) => column.name).toString(),
         },
         processingConfiguration: {
           enabled: true,
@@ -587,10 +583,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const botOrderEventsStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderEventsStream', {
       redshiftDestinationConfiguration: {
-        retryOptions: {
-          // The default is 1 hour of retries so setting to 5 minutes
-          durationInSeconds: 300,
-        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
