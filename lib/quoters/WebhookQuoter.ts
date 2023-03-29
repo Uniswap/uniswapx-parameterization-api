@@ -2,9 +2,9 @@ import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
 import Logger from 'bunyan';
 
+import { Quoter, QuoterType } from '.';
 import { QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
-import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
