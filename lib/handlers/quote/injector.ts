@@ -2,7 +2,7 @@ import { setGlobalLogger } from '@uniswap/smart-order-router';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import { JsonWebhookConfigurationProvider } from '../../providers';
+import { EnvWebhookConfigurationProvider } from '../../providers';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { MockQuoter } from '../../quoters/MockQuoter';
 import { STAGE } from '../../util/stage';
@@ -25,7 +25,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
       process.env['RPC_1'] = process.env['RPC_TENDERLY'];
     }
 
-    const webhookProvider = new JsonWebhookConfigurationProvider();
+    const webhookProvider = new EnvWebhookConfigurationProvider(log);
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
     if (process.env['stage'] == STAGE.LOCAL) {
