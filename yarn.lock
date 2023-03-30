@@ -314,6 +314,11 @@
   dependencies:
     "@jridgewell/trace-mapping" "0.3.9"
 
+"@datastructures-js/heap@^4.0.2":
+  version "4.3.1"
+  resolved "https://registry.yarnpkg.com/@datastructures-js/heap/-/heap-4.3.1.tgz#d3752b5664202b99b41815f6117e501d8f66c632"
+  integrity sha512-au4fYa4fprREES58FnMOTFjg8lCYpSenF5tBu8C/iweMaj02rAOZUqlLUCqR3HIWzNfgTeCmAiyRHdjJVHrsIQ==
+
 "@esbuild/android-arm@0.15.16":
   version "0.15.16"
   resolved "https://registry.yarnpkg.com/@esbuild/android-arm/-/android-arm-0.15.16.tgz#0642926178b15e3d1545efae6eee05c4f3451d15"
@@ -1691,6 +1696,13 @@ aws-cdk-lib@2.43.1:
     punycode "^2.1.1"
     semver "^7.3.7"
     yaml "1.10.2"
+
+aws-embedded-metrics@^4.1.0:
+  version "4.1.0"
+  resolved "https://registry.yarnpkg.com/aws-embedded-metrics/-/aws-embedded-metrics-4.1.0.tgz#2237e6681d0a9e32fb743974dc0e97e3844599a1"
+  integrity sha512-Yiscee2EfyiczIy9GFOSR0qzqD6kcD0HjQuBJRyO842SkKoFlxzOo/99OVEmg2odUS5XI8oxiS7HO0WTynkteg==
+  dependencies:
+    "@datastructures-js/heap" "^4.0.2"
 
 aws-sdk-client-mock@^2.0.0:
   version "2.0.1"

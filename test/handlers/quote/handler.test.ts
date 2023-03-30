@@ -1,13 +1,15 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
+import { createMetricsLogger } from 'aws-embedded-metrics';
 import axios from 'axios';
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 
-import { ApiInjector, ApiRInj } from '../../../lib/handlers/base/api-handler';
-import { ContainerInjected, PostQuoteRequestBody, PostQuoteResponse } from '../../../lib/handlers/quote';
+import { ApiInjector } from '../../../lib/handlers/base/api-handler';
+import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
+import { ContainerInjected, RequestInjected, PostQuoteRequestBody, PostQuoteResponse } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
-import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -25,17 +27,18 @@ logger.level(Logger.FATAL);
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
-  const requestInjectedMock: Promise<ApiRInj> = new Promise(
+  const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         requestId: 'test',
-      }) as unknown as ApiRInj
+        metric: new AWSMetricsLogger(createMetricsLogger()),
+      }) as unknown as RequestInjected
   );
 
   const injectorPromiseMock = (
     quoters: Quoter[]
-  ): Promise<ApiInjector<ContainerInjected, ApiRInj, PostQuoteRequestBody, void>> =>
+  ): Promise<ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
         getContainerInjected: () => {
@@ -44,7 +47,7 @@ describe('Quote handler', () => {
           };
         },
         getRequestInjected: () => requestInjectedMock,
-      } as unknown as ApiInjector<ContainerInjected, ApiRInj, PostQuoteRequestBody, void>)
+      } as unknown as ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>)
     );
 
   const getQuoteHandler = (quoters: Quoter[]) => new QuoteHandler('quote', injectorPromiseMock(quoters));
