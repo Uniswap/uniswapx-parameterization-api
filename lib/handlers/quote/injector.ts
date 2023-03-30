@@ -1,7 +1,9 @@
-import { setGlobalLogger } from '@uniswap/smart-order-router';
+import { IMetric, setGlobalLogger, setGlobalMetric } from '@uniswap/smart-order-router';
+import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
+import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
 import { JsonWebhookConfigurationProvider } from '../../providers';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { MockQuoter } from '../../quoters/MockQuoter';
@@ -13,7 +15,11 @@ export interface ContainerInjected {
   quoters: Quoter[];
 }
 
-export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQuoteRequestBody, void> {
+export interface RequestInjected extends ApiRInj {
+  metric: IMetric;
+}
+
+export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void> {
   public async buildContainerInjected(): Promise<ContainerInjected> {
     const log: Logger = bunyan.createLogger({
       name: this.injectorName,
@@ -42,8 +48,9 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
     _requestQueryParams: void,
     _event: APIGatewayProxyEvent,
     context: Context,
-    log: Logger
-  ): Promise<ApiRInj> {
+    log: Logger,
+    metricsLogger: MetricsLogger
+  ): Promise<RequestInjected> {
     const requestId = context.awsRequestId;
 
     log = log.child({
@@ -53,8 +60,14 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
     });
     setGlobalLogger(log);
 
+    metricsLogger.setNamespace('Uniswap');
+    metricsLogger.setDimensions({ Service: 'GoudaParameterizationAPI' });
+    const metric = new AWSMetricsLogger(metricsLogger);
+    setGlobalMetric(metric);
+
     return {
       log,
+      metric,
       requestId,
     };
   }
