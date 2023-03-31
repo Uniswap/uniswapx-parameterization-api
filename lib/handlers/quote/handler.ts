@@ -3,7 +3,7 @@ import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
 import Joi from 'joi';
 
-import { MetricName, QuoteRequest, QuoteResponse } from '../../entities';
+import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';
 import { currentTimestampInSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
@@ -28,7 +28,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     } = params;
     const before = Date.now();
 
-    metric.putMetric(MetricName.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
+    metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
     const request = QuoteRequest.fromRequestBody(requestBody);
     log.info({
@@ -48,7 +48,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     const bestQuote = await getBestQuote(quoters, request, log, metric);
     if (!bestQuote) {
-      metric.putMetric(MetricName.QUOTE_404, 1, MetricLoggerUnit.Count);
+      metric.putMetric(Metric.QUOTE_404, 1, MetricLoggerUnit.Count);
       return {
         statusCode: 404,
         detail: 'No quotes available',
@@ -58,8 +58,8 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     log.info({ bestQuote: bestQuote }, 'bestQuote');
 
-    metric.putMetric(MetricName.QUOTE_200, 1, MetricLoggerUnit.Count);
-    metric.putMetric(MetricName.QUOTE_LATENCY, Date.now() - before, MetricLoggerUnit.Milliseconds);
+    metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+    metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - before, MetricLoggerUnit.Milliseconds);
     return {
       statusCode: 200,
       body: bestQuote.toResponseJSON(),
@@ -87,7 +87,7 @@ async function getBestQuote(
   metric: IMetric
 ): Promise<QuoteResponse | null> {
   const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat();
-  metric.putMetric(MetricName.QUOTE_RESPONSE_COUNT, responses.length, MetricLoggerUnit.Count);
+  metric.putMetric(Metric.QUOTE_RESPONSE_COUNT, responses.length, MetricLoggerUnit.Count);
 
   // return the response with the highest amountOut value
   return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
