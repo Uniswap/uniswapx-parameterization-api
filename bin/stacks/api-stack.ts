@@ -15,6 +15,7 @@ import * as path from 'path';
 //import { QUOTES_TABLE_INDEX, QUOTES_TABLE_KEY } from '../../lib/config/dynamodb';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
+import { ParamDashboardStack } from './param-dashboard-stack';
 
 /**
  * APIStack
@@ -184,6 +185,11 @@ export class APIStack extends cdk.Stack {
       },
     });
     quote.addMethod('POST', quoteLambdaIntegration);
+
+    /*
+     * Param Dashboard Stack Initialization
+     */
+    new ParamDashboardStack(this, 'AnalyticsStack', {});
 
     /*
      * Analytics Stack Initialization
