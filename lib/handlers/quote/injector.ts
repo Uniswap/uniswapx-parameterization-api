@@ -59,3 +59,46 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
     };
   }
 }
+
+export class IntegrationQuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQuoteRequestBody, void> {
+  public async buildContainerInjected(): Promise<ContainerInjected> {
+    const log: Logger = bunyan.createLogger({
+      name: this.injectorName,
+      serializers: bunyan.stdSerializers,
+      level: bunyan.INFO,
+    });
+
+    const webhookProvider = new JsonWebhookConfigurationProvider();
+
+    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
+    if (process.env['stage'] == STAGE.LOCAL) {
+      quoters.push(new MockQuoter(log));
+    }
+    return {
+      quoters: quoters,
+    };
+  }
+
+  public async getRequestInjected(
+    _containerInjected: ContainerInjected,
+    requestBody: PostQuoteRequestBody,
+    _requestQueryParams: void,
+    _event: APIGatewayProxyEvent,
+    context: Context,
+    log: Logger
+  ): Promise<ApiRInj> {
+    const requestId = context.awsRequestId;
+
+    log = log.child({
+      serializers: bunyan.stdSerializers,
+      requestBody,
+      requestId,
+    });
+    setGlobalLogger(log);
+
+    return {
+      log,
+      requestId,
+    };
+  }
+}
