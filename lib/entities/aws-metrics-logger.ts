@@ -13,7 +13,7 @@ export class AWSMetricsLogger implements IMetric {
   }
 }
 
-export enum MetricName {
+export enum Metric {
   QUOTE_200 = 'QUOTE_200',
   QUOTE_400 = 'QUOTE_400',
   QUOTE_404 = 'QUOTE_404',
@@ -30,6 +30,14 @@ export enum MetricName {
   RFQ_FAIL_ERROR = 'RFQ_FAIL_ERROR',
 }
 
-export function metricContext(metric: MetricName, context: string): string {
+type MetricNeedingContext =
+  | Metric.RFQ_REQUESTED
+  | Metric.RFQ_SUCCESS
+  | Metric.RFQ_RESPONSE_TIME
+  | Metric.RFQ_FAIL_REQUEST_MATCH
+  | Metric.RFQ_FAIL_VALIDATION
+  | Metric.RFQ_FAIL_ERROR;
+
+export function metricContext(metric: MetricNeedingContext, context: string): string {
   return `${metric}_${context}`;
 }
