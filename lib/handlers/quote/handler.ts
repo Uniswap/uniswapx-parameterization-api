@@ -1,30 +1,34 @@
 import { TradeType } from '@uniswap/sdk-core';
+import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
 import Joi from 'joi';
 
-import { QuoteRequest, QuoteResponse } from '../../entities';
+import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';
 import { currentTimestampInSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
-import { APIHandleRequestParams, ApiRInj, ErrorResponse, Response } from '../base/api-handler';
-import { ContainerInjected } from './injector';
+import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
+import { ContainerInjected, RequestInjected } from './injector';
 import { PostQuoteRequestBody, PostQuoteRequestBodyJoi, PostQuoteResponse, URAResponseJoi } from './schema';
 
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
-  ApiRInj,
+  RequestInjected,
   PostQuoteRequestBody,
   void,
   PostQuoteResponse
 > {
   public async handleRequest(
-    params: APIHandleRequestParams<ContainerInjected, ApiRInj, PostQuoteRequestBody, void>
+    params: APIHandleRequestParams<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>
   ): Promise<ErrorResponse | Response<PostQuoteResponse>> {
     const {
-      requestInjected: { log },
+      requestInjected: { log, metric },
       requestBody,
       containerInjected: { quoters },
     } = params;
+    const before = Date.now();
+
+    metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
     const request = QuoteRequest.fromRequestBody(requestBody);
     log.info({
@@ -42,8 +46,9 @@ export class QuoteHandler extends APIGLambdaHandler<
       },
     });
 
-    const bestQuote = await getBestQuote(quoters, request, log);
+    const bestQuote = await getBestQuote(quoters, request, log, metric);
     if (!bestQuote) {
+      metric.putMetric(Metric.QUOTE_404, 1, MetricLoggerUnit.Count);
       return {
         statusCode: 404,
         detail: 'No quotes available',
@@ -53,6 +58,8 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     log.info({ bestQuote: bestQuote }, 'bestQuote');
 
+    metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+    metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - before, MetricLoggerUnit.Milliseconds);
     return {
       statusCode: 200,
       body: bestQuote.toResponseJSON(),
@@ -76,13 +83,15 @@ export class QuoteHandler extends APIGLambdaHandler<
 async function getBestQuote(
   quoters: Quoter[],
   quoteRequest: QuoteRequest,
-  log?: Logger
+  log: Logger,
+  metric: IMetric
 ): Promise<QuoteResponse | null> {
   const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat();
+  metric.putMetric(Metric.QUOTE_RESPONSE_COUNT, responses.length, MetricLoggerUnit.Count);
 
   // return the response with the highest amountOut value
   return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
-    log?.info({
+    log.info({
       eventType: 'QuoteResponse',
       body: quote.toLog(),
     });
