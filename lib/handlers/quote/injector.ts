@@ -25,7 +25,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
       process.env['RPC_1'] = process.env['RPC_TENDERLY'];
     }
 
-    const webhookProvider = new EnvWebhookConfigurationProvider(log);
+    const config = process.env.RFQ_WEBHOOK_CONFIG;
+    const webhookProvider = new EnvWebhookConfigurationProvider(config, log);
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
     if (process.env['stage'] == STAGE.LOCAL) {
@@ -60,7 +61,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
   }
 }
 
-export class IntegrationQuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQuoteRequestBody, void> {
+export class MockQuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQuoteRequestBody, void> {
   public async buildContainerInjected(): Promise<ContainerInjected> {
     const log: Logger = bunyan.createLogger({
       name: this.injectorName,
@@ -68,12 +69,10 @@ export class IntegrationQuoteInjector extends ApiInjector<ContainerInjected, Api
       level: bunyan.INFO,
     });
 
-    const webhookProvider = new JsonWebhookConfigurationProvider();
+    const config = process.env.INTEGRATION_RFQ_WEBHOOK_CONFIG;
+    const webhookProvider = new EnvWebhookConfigurationProvider(config, log);
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
-    if (process.env['stage'] == STAGE.LOCAL) {
-      quoters.push(new MockQuoter(log));
-    }
     return {
       quoters: quoters,
     };
