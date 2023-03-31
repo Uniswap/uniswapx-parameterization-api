@@ -129,8 +129,8 @@ export class ParamDashboardStack extends cdk.NestedStack {
 
     const region = cdk.Stack.of(this).region
 
-    new aws_cloudwatch.CfnDashboard(this, 'RoutingAPIDashboard', {
-      dashboardName: `RoutingDashboard`,
+    new aws_cloudwatch.CfnDashboard(this, 'GoudaParamDashboard', {
+      dashboardName: `GoudaParamDashboard`,
       dashboardBody: JSON.stringify({
         periodOverride: 'inherit',
         widgets: [
