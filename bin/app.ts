@@ -88,6 +88,10 @@ export class APIPipeline extends Stack {
       synth: synthStep,
     });
 
+    const rfqWebhookConfig = sm.Secret.fromSecretAttributes(this, 'RfqConfig', {
+      secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:rfq-webhook-config-sy04bH',
+    });
+
     // Secrets are stored in secrets manager in the pipeline account. Accounts we deploy to
     // have been granted permissions to access secrets via resource policies.
     const goudaRpc = sm.Secret.fromSecretAttributes(this, 'goudaRpc', {
@@ -109,6 +113,7 @@ export class APIPipeline extends Stack {
       stage: STAGE.BETA,
       envVars: {
         ...jsonRpcUrls,
+        RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         FILL_LOG_SENDER_ACCOUNT: '321377678687',
         ORDER_LOG_SENDER_ACCOUNT: '321377678687',
         URA_ACCOUNT: '665191769009',
@@ -127,6 +132,7 @@ export class APIPipeline extends Stack {
       chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
       envVars: {
         ...jsonRpcUrls,
+        RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         FILL_LOG_SENDER_ACCOUNT: '316116520258',
         ORDER_LOG_SENDER_ACCOUNT: '316116520258',
         URA_ACCOUNT: '652077092967',
