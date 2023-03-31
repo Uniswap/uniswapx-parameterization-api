@@ -189,7 +189,7 @@ export class APIStack extends cdk.Stack {
     /*
      * Param Dashboard Stack Initialization
      */
-    new ParamDashboardStack(this, 'AnalyticsStack', {});
+    new ParamDashboardStack(this, 'ParamDashboardStack', {});
 
     /*
      * Analytics Stack Initialization
