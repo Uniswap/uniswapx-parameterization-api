@@ -1,9 +1,6 @@
 [
   {
-    "endpoint": "https://rfq.***REMOVED***/gouda-rfqs",
-    "headers": {
-     "CF-Access-Client-Id": "***REMOVED***.access",
-     "CF-Access-Client-Secret": "***REMOVED***"
-    }
+    "endpoint": "https://test.com/rfq",
+    "headers": {}
   }
 ]
