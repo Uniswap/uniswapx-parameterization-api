@@ -6,15 +6,14 @@ export class EnvWebhookConfigurationProvider implements WebhookConfigurationProv
   private log: Logger;
   private endpoints: WebhookConfiguration[];
 
-  constructor(_log: Logger) {
+  constructor(config: string | undefined, _log: Logger) {
     this.log = _log.child({ component: 'JsonWebhookConfigurationProvider' });
 
     try {
-      const envConfig = process.env.RFQ_WEBHOOK_CONFIG;
-      if (!envConfig) {
+      if (!config) {
         throw new Error('No RFQ webhook config found');
       }
-      this.endpoints = JSON.parse(envConfig);
+      this.endpoints = JSON.parse(config);
     } catch (e) {
       this.log.warn('No RFQ webhook config found', e);
       this.endpoints = [];
