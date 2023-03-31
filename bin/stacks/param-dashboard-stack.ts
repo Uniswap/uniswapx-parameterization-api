@@ -124,7 +124,7 @@ const RFQFailRatesWidget = (region: string): LambdaWidget => ({
   type: "metric",
   properties: {
     metrics: [
-      [ { expression: "100*((m1+m3+m4)/m2)", label: "***REMOVED*** Traders", id: "e1", region } ],
+      [ { expression: "100*((m1+m4)/m2)", label: "***REMOVED*** Traders", id: "e1", region } ],
       [ "Uniswap", "RFQ_FAIL_ERROR_https://rfq.***REMOVED***/gouda-rfqs", "Service", "GoudaParameterizationAPI", { id: "m1", visible: false } ],
       [ ".", "RFQ_REQUESTED_https://rfq.***REMOVED***/gouda-rfqs", ".", ".", { id: "m2", visible: false } ],
       [ ".", "RFQ_SUCCESS_https://rfq.***REMOVED***/gouda-rfqs", ".", ".", { id: "m3", visible: false } ],
