@@ -12,3 +12,24 @@ export class AWSMetricsLogger implements IMetric {
     this.awsMetricLogger.putMetric(key, value, unit);
   }
 }
+
+export enum MetricName {
+  QUOTE_200 = 'QUOTE_200',
+  QUOTE_400 = 'QUOTE_400',
+  QUOTE_404 = 'QUOTE_404',
+
+  QUOTE_REQUESTED = 'QUOTE_REQUESTED',
+  QUOTE_LATENCY = 'QUOTE_LATENCY',
+  QUOTE_RESPONSE_COUNT = 'QUOTE_RESPONSE_COUNT',
+
+  RFQ_REQUESTED = 'RFQ_REQUESTED',
+  RFQ_SUCCESS = 'RFQ_SUCCESS',
+  RFQ_RESPONSE_TIME = 'RFQ_REQUESTED',
+  RFQ_FAIL_REQUEST_MATCH = 'RFQ_FAIL_REQUEST_MATCH',
+  RFQ_FAIL_VALIDATION = 'RFQ_FAIL_VALIDATION',
+  RFQ_FAIL_ERROR = 'RFQ_FAIL_ERROR',
+}
+
+export function metricContext(metric: MetricName, context: string): string {
+  return `${metric}_${context}`;
+}
