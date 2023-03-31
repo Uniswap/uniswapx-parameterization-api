@@ -1,12 +1,17 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { createMetricsLogger } from 'aws-embedded-metrics';
+import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import axios from 'axios';
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 
-import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
-import { ContainerInjected, RequestInjected, PostQuoteRequestBody, PostQuoteResponse } from '../../../lib/handlers/quote';
+import { ApiInjector } from '../../../lib/handlers/base/api-handler';
+import {
+  ContainerInjected,
+  PostQuoteRequestBody,
+  PostQuoteResponse,
+  RequestInjected,
+} from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';

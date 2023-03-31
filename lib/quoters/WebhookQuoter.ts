@@ -1,9 +1,9 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { MetricLoggerUnit, metric } from '@uniswap/smart-order-router';
+import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios from 'axios';
 import Logger from 'bunyan';
 
-import { QuoteRequest, QuoteResponse } from '../entities';
+import { metricContext, MetricName, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { Quoter, QuoterType } from '.';
 
@@ -31,7 +31,7 @@ export class WebhookQuoter implements Quoter {
 
   private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
     const { endpoint, headers } = config;
-    metric.putMetric(`RFQ_REQUESTED_${endpoint}`, 1, MetricLoggerUnit.Count);
+    metric.putMetric(metricContext(MetricName.RFQ_REQUESTED, endpoint), 1, MetricLoggerUnit.Count);
     try {
       this.log.info({ request, headers }, `Webhook request to: ${endpoint}`);
 
@@ -40,7 +40,11 @@ export class WebhookQuoter implements Quoter {
         timeout: WEBHOOK_TIMEOUT_MS,
         headers,
       });
-      metric.putMetric(`RFQ_RESPONSE_TIME_${endpoint}`, Date.now() - before, MetricLoggerUnit.Milliseconds);
+      metric.putMetric(
+        metricContext(MetricName.RFQ_RESPONSE_TIME, endpoint),
+        Date.now() - before,
+        MetricLoggerUnit.Milliseconds
+      );
 
       const { response, validation } = QuoteResponse.fromResponseJSON(hookResponse.data, request.type);
 
@@ -54,7 +58,7 @@ export class WebhookQuoter implements Quoter {
       );
 
       if (validation.error) {
-        metric.putMetric(`RFQ_FAIL_VALIDATION_${endpoint}`, 1, MetricLoggerUnit.Count);
+        metric.putMetric(metricContext(MetricName.RFQ_FAIL_VALIDATION, endpoint), 1, MetricLoggerUnit.Count);
         this.log.error(
           {
             error: validation.error?.details,
@@ -67,7 +71,7 @@ export class WebhookQuoter implements Quoter {
       }
 
       if (response.requestId !== request.requestId) {
-        metric.putMetric(`RFQ_FAIL_REQUEST_MATCH_${endpoint}`, 1, MetricLoggerUnit.Count);
+        metric.putMetric(metricContext(MetricName.RFQ_FAIL_REQUEST_MATCH, endpoint), 1, MetricLoggerUnit.Count);
         this.log.error(
           {
             requestId: request.requestId,
@@ -78,7 +82,7 @@ export class WebhookQuoter implements Quoter {
         return null;
       }
 
-      metric.putMetric(`RFQ_SUCCESS_${endpoint}`, 1, MetricLoggerUnit.Count);
+      metric.putMetric(metricContext(MetricName.RFQ_SUCCESS, endpoint), 1, MetricLoggerUnit.Count);
       this.log.info(
         `WebhookQuoter: request ${request.requestId} for endpoint ${endpoint}: ${request.amount.toString()} -> ${
           response.type === TradeType.EXACT_INPUT ? response.amountOut.toString() : response.amountIn.toString()
@@ -86,7 +90,7 @@ export class WebhookQuoter implements Quoter {
       );
       return response;
     } catch (e) {
-      metric.putMetric(`RFQ_FAIL_ERROR_${endpoint}`, 1, MetricLoggerUnit.Count);
+      metric.putMetric(metricContext(MetricName.RFQ_FAIL_ERROR, endpoint), 1, MetricLoggerUnit.Count);
       this.log.error(`Error fetching quote from ${endpoint}: ${e}`);
       return null;
     }
