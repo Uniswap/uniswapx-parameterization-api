@@ -15,11 +15,12 @@ export type LambdaWidget = {
   properties: {
     view: string;
     stacked: boolean;
-    period: number;
-    metrics: MetricPath[][];
+    period?: number;
+    metrics?: MetricPath[][];
     region: string;
     title: string;
-    stat: string,
+    stat?: string,
+    query?: string,
     yAxis?: {
       left: {
         label: string,
@@ -116,6 +117,21 @@ const ErrorRatesWidget = (region: string): LambdaWidget => ({
   }
 })
 
+const FailingRFQLogsWidget = (region: string): LambdaWidget => ({
+  type: "log",
+  x: 0,
+  y: 32,
+  width: 24,
+  height: 6,
+  properties: {
+    query: "SOURCE '/aws/lambda/beta-us-east-2-GoudaParameterization-QuoteE2906A56-dD269KqZUBHo' | fields @timestamp, msg\n| filter quoter = 'WebhookQuoter' and msg like \"Error fetching quote\"\n| sort @timestamp desc\n| limit 20",
+    region,
+    stacked: false,
+    view: "table",
+    title: "Failing RFQ Logs"
+  }
+})
+
 const RFQFailRatesWidget = (region: string): LambdaWidget => ({
   height: 10,
   width: 13,
@@ -161,6 +177,7 @@ export class ParamDashboardStack extends cdk.NestedStack {
           QuotesRequestedWidget(region),
           ErrorRatesWidget(region),
           RFQFailRatesWidget(region),
+          FailingRFQLogsWidget(region),
         ],
       }),
     })
