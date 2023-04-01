@@ -1,4 +1,5 @@
 import Logger from 'bunyan';
+
 import { WebhookConfiguration, WebhookConfigurationProvider } from '.';
 
 // reads endpoint configuration from the environment
