@@ -2,9 +2,9 @@ import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
 import Logger from 'bunyan';
 
-import { Quoter, QuoterType } from '.';
 import { QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -33,8 +33,9 @@ export class WebhookQuoter implements Quoter {
     try {
       this.log.info({ request, headers }, `Webhook request to: ${endpoint}`);
 
+      const timeoutOverride = config.overrides?.timeout;
       const hookResponse = await axios.post(endpoint, request.toJSON(), {
-        timeout: WEBHOOK_TIMEOUT_MS,
+        timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
         headers,
       });
 
