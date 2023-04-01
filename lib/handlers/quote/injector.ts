@@ -31,8 +31,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
       process.env['RPC_1'] = process.env['RPC_TENDERLY'];
     }
 
-    const config = process.env.RFQ_WEBHOOK_CONFIG;
-    const webhookProvider = new EnvWebhookConfigurationProvider(config, log);
+    const webhookProvider = new EnvWebhookConfigurationProvider(log);
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
     if (process.env['stage'] == STAGE.LOCAL) {
