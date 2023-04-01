@@ -2,7 +2,13 @@ import { setGlobalLogger } from '@uniswap/smart-order-router';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import { EnvWebhookConfigurationProvider } from '../../providers';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { checkDefined } from '../../preconditions/preconditions';
+import {
+  EnvWebhookConfigurationProvider,
+  ExternalWebhookConfigurationProvider,
+  WebhookConfiguration,
+} from '../../providers';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { MockQuoter } from '../../quoters/MockQuoter';
 import { STAGE } from '../../util/stage';
@@ -69,8 +75,11 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, P
       level: bunyan.INFO,
     });
 
-    const config = process.env.INTEGRATION_RFQ_WEBHOOK_CONFIG;
-    const webhookProvider = new EnvWebhookConfigurationProvider(config, log);
+    const s3Client = new S3Client({});
+    const s3Res = await s3Client.send(new GetObjectCommand({ Bucket: 'rfq-config', Key: 'integration.json' }));
+    const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
+    const s3Json = JSON.parse(await s3Body.transformToString()) as WebhookConfiguration;
+    const webhookProvider = new ExternalWebhookConfigurationProvider([s3Json]);
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
     return {
