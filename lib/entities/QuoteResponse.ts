@@ -3,9 +3,9 @@ import { BigNumber } from 'ethers';
 import { ValidationResult } from 'joi';
 import { v4 as uuidv4 } from 'uuid';
 
-import { QuoteRequestData } from '.';
 import { PostQuoteResponse, PostQuoteResponseJoi } from '../handlers/quote/schema';
 import { currentTimestampInSeconds } from '../util/time';
+import { QuoteRequestData } from '.';
 
 export interface QuoteResponseData
   extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type'> {
