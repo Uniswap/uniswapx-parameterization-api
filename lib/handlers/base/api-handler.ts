@@ -62,7 +62,7 @@ export abstract class ApiInjector<CInj, RInj extends ApiRInj, ReqBody, ReqQueryP
     event: APIGatewayProxyEvent,
     context: Context,
     log: Logger,
-    metrics?: MetricsLogger
+    metrics: MetricsLogger
   ): Promise<RInj>;
 }
 

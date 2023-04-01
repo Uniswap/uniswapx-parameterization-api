@@ -36,7 +36,10 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const s3Client = new S3Client({});
     const s3Res = await s3Client.send(
-      new GetObjectCommand({ Bucket: WEBHOOK_CONFIG_BUCKET, Key: PRODUCTION_WEBHOOK_CONFIG_KEY })
+      new GetObjectCommand({
+        Bucket: WEBHOOK_CONFIG_BUCKET + `-${process.env['stage']}`,
+        Key: PRODUCTION_WEBHOOK_CONFIG_KEY,
+      })
     );
     const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
     const s3Json = JSON.parse(await s3Body.transformToString()) as WebhookConfiguration;
@@ -82,7 +85,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
   }
 }
 
-export class MockQuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQuoteRequestBody, void> {
+export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void> {
   public async buildContainerInjected(): Promise<ContainerInjected> {
     const log: Logger = bunyan.createLogger({
       name: this.injectorName,
@@ -110,8 +113,9 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, P
     _requestQueryParams: void,
     _event: APIGatewayProxyEvent,
     context: Context,
-    log: Logger
-  ): Promise<ApiRInj> {
+    log: Logger,
+    metricsLogger: MetricsLogger
+  ): Promise<RequestInjected> {
     const requestId = context.awsRequestId;
 
     log = log.child({
@@ -120,9 +124,14 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, P
       requestId,
     });
     setGlobalLogger(log);
+    metricsLogger.setNamespace('Uniswap');
+    metricsLogger.setDimensions({ Service: 'GoudaParameterizationAPI-Integration' });
+    const metric = new AWSMetricsLogger(metricsLogger);
+    setGlobalMetric(metric);
 
     return {
       log,
+      metric,
       requestId,
     };
   }
