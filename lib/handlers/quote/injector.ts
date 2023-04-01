@@ -3,7 +3,7 @@ import { setGlobalLogger } from '@uniswap/smart-order-router';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import { INTEGRATION_WEBHOOK_CONFIG_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
+import { INTEGRATION_WEBHOOK_CONFIG_KEY, PRODUCTION_WEBHOOK_CONFIG_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
 import { checkDefined } from '../../preconditions/preconditions';
 import {
   EnvWebhookConfigurationProvider,
@@ -32,7 +32,13 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, ApiRInj, PostQ
       process.env['RPC_1'] = process.env['RPC_TENDERLY'];
     }
 
-    const webhookProvider = new EnvWebhookConfigurationProvider(log);
+    const s3Client = new S3Client({});
+    const s3Res = await s3Client.send(
+      new GetObjectCommand({ Bucket: WEBHOOK_CONFIG_BUCKET, Key: PRODUCTION_WEBHOOK_CONFIG_KEY })
+    );
+    const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
+    const s3Json = JSON.parse(await s3Body.transformToString()) as WebhookConfiguration;
+    const webhookProvider = new ExternalWebhookConfigurationProvider([s3Json]);
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
     if (process.env['stage'] == STAGE.LOCAL) {
