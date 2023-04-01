@@ -1,15 +1,13 @@
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { setGlobalLogger } from '@uniswap/smart-order-router';
+import { IMetric, setGlobalLogger, setGlobalMetric } from '@uniswap/smart-order-router';
+import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import { INTEGRATION_WEBHOOK_CONFIG_KEY, PRODUCTION_WEBHOOK_CONFIG_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
+import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
-import {
-  EnvWebhookConfigurationProvider,
-  ExternalWebhookConfigurationProvider,
-  WebhookConfiguration,
-} from '../../providers';
+import { ExternalWebhookConfigurationProvider, WebhookConfiguration } from '../../providers';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { MockQuoter } from '../../quoters/MockQuoter';
 import { STAGE } from '../../util/stage';

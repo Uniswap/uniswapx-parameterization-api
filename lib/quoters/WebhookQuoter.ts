@@ -3,9 +3,9 @@ import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios from 'axios';
 import Logger from 'bunyan';
 
+import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
-import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -35,6 +35,7 @@ export class WebhookQuoter implements Quoter {
     try {
       this.log.info({ request, headers }, `Webhook request to: ${endpoint}`);
 
+      const before = Date.now();
       const timeoutOverride = config.overrides?.timeout;
       const hookResponse = await axios.post(endpoint, request.toJSON(), {
         timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
