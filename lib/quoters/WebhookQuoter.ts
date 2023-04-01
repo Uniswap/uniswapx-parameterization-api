@@ -33,8 +33,9 @@ export class WebhookQuoter implements Quoter {
     try {
       this.log.info({ request, headers }, `Webhook request to: ${endpoint}`);
 
+      const timeoutOverride = config.overrides?.timeout;
       const hookResponse = await axios.post(endpoint, request.toJSON(), {
-        timeout: WEBHOOK_TIMEOUT_MS,
+        timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
         headers,
       });
 
