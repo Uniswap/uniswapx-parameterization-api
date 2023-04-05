@@ -38,7 +38,7 @@ export class WebhookQuoter implements Quoter {
       const before = Date.now();
       const hookResponse = await axios.post(endpoint, request.toJSON(), {
         timeout: WEBHOOK_TIMEOUT_MS,
-        headers,
+        ...(!!headers && { headers }),
       });
       metric.putMetric(
         metricContext(Metric.RFQ_RESPONSE_TIME, endpoint),
