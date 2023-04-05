@@ -2,8 +2,11 @@
   {
     "endpoint": "https://rfq.***REMOVED***/gouda-rfqs",
     "headers": {
-     "CF-Access-Client-Id": "***REMOVED***.access",
-     "CF-Access-Client-Secret": "***REMOVED***"
+      "CF-Access-Client-Id": "***REMOVED***.access",
+      "CF-Access-Client-Secret": "***REMOVED***"
     }
+  },
+  {
+    "endpoint": "http://flask-test-env.eba-wirpqier.us-east-2.***REMOVED***/"
   }
 ]
