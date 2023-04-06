@@ -57,7 +57,8 @@ const RFQLatencyWidget = (region: string): LambdaWidget => ({
   type: "metric",
   properties: {
     metrics: [
-      [ "Uniswap", "RFQ_RESPONSE_TIME_https://rfq.***REMOVED***/gouda-rfqs", "Service", "GoudaParameterizationAPI", { label: "***REMOVED*** Traders" } ]
+      [ "Uniswap", "RFQ_RESPONSE_TIME_https://rfq.***REMOVED***/gouda-rfqs", "Service", "GoudaParameterizationAPI", { label: "***REMOVED*** Traders" } ],
+      [ ".", "RFQ_RESPONSE_TIME_http://flask-test-env.eba-wirpqier.us-east-2.***REMOVED***/", ".", ".", { label: "***REMOVED***" } ]
     ],
     view: "timeSeries",
     stacked: false,
@@ -140,11 +141,14 @@ const RFQFailRatesWidget = (region: string): LambdaWidget => ({
   type: "metric",
   properties: {
     metrics: [
-      [ { expression: "100*((m1+m4)/m2)", label: "***REMOVED*** Traders", id: "e1", region } ],
-      [ "Uniswap", "RFQ_FAIL_ERROR_https://rfq.***REMOVED***/gouda-rfqs", "Service", "GoudaParameterizationAPI", { id: "m1", visible: false } ],
-      [ ".", "RFQ_REQUESTED_https://rfq.***REMOVED***/gouda-rfqs", ".", ".", { id: "m2", visible: false } ],
-      [ ".", "RFQ_SUCCESS_https://rfq.***REMOVED***/gouda-rfqs", ".", ".", { id: "m3", visible: false } ],
-      [ ".", "RFQ_FAIL_VALIDATION_https://rfq.***REMOVED***/gouda-rfqs", ".", ".", { id: "m4", visible: false } ]
+      [ { expression: "100*((m2+m3)/m1)", label: "***REMOVED*** Traders", id: "e1", region } ],
+      [ { expression: "100*((m5+m6)/m4)", label: "***REMOVED***", id: "e2", region } ],
+      [ "Uniswap", "RFQ_REQUESTED_https://rfq.***REMOVED***/gouda-rfqs", "Service", "GoudaParameterizationAPI", { id: "m1", visible: false } ],
+      [ ".", "RFQ_FAIL_ERROR_https://rfq.***REMOVED***/gouda-rfqs", ".", ".", { id: "m2", visible: false } ],
+      [ ".", "RFQ_FAIL_VALIDATION_https://rfq.***REMOVED***/gouda-rfqs", ".", ".", { id: "m3", visible: false } ],
+      [ ".", "RFQ_REQUESTED_http://flask-test-env.eba-wirpqier.us-east-2.***REMOVED***/", ".", ".", { id: "m4", visible: false } ],
+      [ ".", "RFQ_FAIL_ERROR_http://flask-test-env.eba-wirpqier.us-east-2.***REMOVED***/", ".", ".", { id: "m5", visible: false } ],
+      [ ".", "RFQ_FAIL_VALIDATION_http://flask-test-env.eba-wirpqier.us-east-2.***REMOVED***/", ".", ".", { id: "m6", visible: false } ]
     ],
     view: "timeSeries",
     stacked: false,
