@@ -4,7 +4,7 @@ export * from './mock';
 
 export interface WebhookConfiguration {
   endpoint: string;
-  headers: { [key: string]: string };
+  headers?: { [key: string]: string };
   overrides?: { [key: string]: string };
 }
 
