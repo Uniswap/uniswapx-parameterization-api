@@ -1,12 +1,6 @@
 [
   {
-    "endpoint": "https://rfq.fullblock.space/gouda-rfqs",
-    "headers": {
-      "CF-Access-Client-Id": "d8f79c081132230edc10c206aff1696c.access",
-      "CF-Access-Client-Secret": "c2ae13d2fa370590567befe36899ed35edfc331bb6402140a0a23aa986709518"
-    }
-  },
-  {
-    "endpoint": "http://flask-test-env.eba-wirpqier.us-east-2.elasticbeanstalk.com/"
+    "endpoint": "https://test.com/rfq",
+    "headers": {}
   }
 ]
