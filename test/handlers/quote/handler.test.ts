@@ -225,7 +225,7 @@ describe('Quote handler', () => {
         {
           endpoint: 'https://uniswap.org',
           headers: {
-            'X-Authentication': '1234',
+            Authorization: '1234',
           },
         },
       ]);
@@ -234,7 +234,7 @@ describe('Quote handler', () => {
       const request = getRequest(amountIn.toString());
 
       mockedAxios.post.mockImplementationOnce((_endpoint, _req, options: any) => {
-        expect(options.headers['X-Authentication']).toEqual('1234');
+        expect(options.headers['Authorization']).toEqual('1234');
         return Promise.resolve({
           data: {
             ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),

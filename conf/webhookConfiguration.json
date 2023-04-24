@@ -8,5 +8,14 @@
   },
   {
     "endpoint": "http://flask-test-env.eba-wirpqier.us-east-2.elasticbeanstalk.com/"
+  },
+  {
+    "endpoint": "https://swap.symbolic.markets/gouda/quote",
+    "headers": {
+      "Authorization": "Bearer q8odijGXFdjlM92lujFkNxzmrt4Zjz26197BmkHynYpQuBqyOBh4BSpu0Uk1jarvPasC0gXqnaQ2OcAvvonzQvVl"
+    }
+  },
+  {
+    "endpoint": "https://kehr54rr.altono.xyz/uniswap/gouda/quote"
   }
 ]
