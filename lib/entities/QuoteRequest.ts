@@ -1,5 +1,6 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber } from 'ethers';
+import { getAddress } from 'ethers/lib/utils';
 
 import { PostQuoteRequestBody } from '../handlers/quote/schema';
 
@@ -26,9 +27,9 @@ export class QuoteRequest {
       tokenInChainId: body.tokenInChainId,
       tokenOutChainId: body.tokenOutChainId,
       requestId: body.requestId,
-      offerer: body.offerer,
-      tokenIn: body.tokenIn,
-      tokenOut: body.tokenOut,
+      offerer: getAddress(body.offerer),
+      tokenIn: getAddress(body.tokenIn),
+      tokenOut: getAddress(body.tokenOut),
       amount: BigNumber.from(body.amount),
       type: TradeType[body.type as keyof typeof TradeType],
     });
@@ -41,9 +42,9 @@ export class QuoteRequest {
       tokenInChainId: this.tokenInChainId,
       tokenOutChainId: this.tokenOutChainId,
       requestId: this.requestId,
-      offerer: this.offerer,
-      tokenIn: this.tokenIn,
-      tokenOut: this.tokenOut,
+      offerer: getAddress(this.offerer),
+      tokenIn: getAddress(this.tokenIn),
+      tokenOut: getAddress(this.tokenOut),
       amount: this.amount.toString(),
       type: TradeType[this.type],
     };
