@@ -28,10 +28,6 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       level: bunyan.INFO,
     });
 
-    if (process.env['stage'] == STAGE.LOCAL || process.env['stage'] == STAGE.BETA) {
-      process.env['RPC_1'] = process.env['RPC_TENDERLY'];
-    }
-
     const webhookProvider = new S3WebhookConfigurationProvider(WEBHOOK_CONFIG_BUCKET, PRODUCTION_WEBHOOK_CONFIG_KEY);
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
