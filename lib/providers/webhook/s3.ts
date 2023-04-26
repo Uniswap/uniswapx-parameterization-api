@@ -15,7 +15,8 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
   }
 
   async getEndpoints(): Promise<WebhookConfiguration[]> {
-    if (!this.endpoints) {
+    // TODO add time based lookup as well
+    if (this.endpoints.length === 0) {
       await this.fetchEndpoints();
     }
     return this.endpoints;
