@@ -21,6 +21,7 @@ export class WebhookQuoter implements Quoter {
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
     const endpoints = await this.webhookProvider.getEndpoints();
+    this.log.info(`Fetching quotes from ${endpoints.length} endpoints`, endpoints);
     const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));
     return quotes.filter((q) => q !== null) as QuoteResponse[];
   }
