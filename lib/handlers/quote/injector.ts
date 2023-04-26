@@ -34,7 +34,11 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       process.env['RPC_1'] = process.env['RPC_TENDERLY'];
     }
 
-    const webhookProvider = new S3WebhookConfigurationProvider(`${WEBHOOK_CONFIG_BUCKET}-${stage}`, PRODUCTION_WEBHOOK_CONFIG_KEY);
+    const webhookProvider = new S3WebhookConfigurationProvider(
+      log,
+      `${WEBHOOK_CONFIG_BUCKET}-${stage}`,
+      PRODUCTION_WEBHOOK_CONFIG_KEY
+    );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
     if (stage == STAGE.LOCAL) {
@@ -85,7 +89,11 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
     });
 
     const stage = process.env['stage'];
-    const webhookProvider = new S3WebhookConfigurationProvider(`${WEBHOOK_CONFIG_BUCKET}-${stage}`, INTEGRATION_WEBHOOK_CONFIG_KEY);
+    const webhookProvider = new S3WebhookConfigurationProvider(
+      log,
+      `${WEBHOOK_CONFIG_BUCKET}-${stage}`,
+      INTEGRATION_WEBHOOK_CONFIG_KEY
+    );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
     return {

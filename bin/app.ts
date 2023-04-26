@@ -6,8 +6,6 @@ import { CodeBuildStep, CodePipeline, CodePipelineSource } from 'aws-cdk-lib/pip
 import { Construct } from 'constructs';
 import dotenv from 'dotenv';
 
-import { SUPPORTED_CHAINS } from '../lib/config/chains';
-import { ChainId } from '../lib/util/chains';
 import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
@@ -92,19 +90,6 @@ export class APIPipeline extends Stack {
       secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:rfq-webhook-config-sy04bH',
     });
 
-    // Secrets are stored in secrets manager in the pipeline account. Accounts we deploy to
-    // have been granted permissions to access secrets via resource policies.
-    const goudaRpc = sm.Secret.fromSecretAttributes(this, 'goudaRpc', {
-      secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-service-rpc-urls-E4FbSb',
-    });
-
-    const jsonRpcUrls: { [chain: string]: string } = {};
-    SUPPORTED_CHAINS.forEach((chainId: ChainId) => {
-      const key = `RPC_${chainId}`;
-      jsonRpcUrls[`RPC_${chainId}`] = goudaRpc.secretValueFromJson(key).toString();
-    });
-    jsonRpcUrls['RPC_TENDERLY'] = goudaRpc.secretValueFromJson('RPC_TENDERLY').toString();
-
     // Beta us-east-2
 
     const betaUsEast2Stage = new APIStage(this, 'beta-us-east-2', {
@@ -112,7 +97,6 @@ export class APIPipeline extends Stack {
       provisionedConcurrency: 2,
       stage: STAGE.BETA,
       envVars: {
-        ...jsonRpcUrls,
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         FILL_LOG_SENDER_ACCOUNT: '321377678687',
         ORDER_LOG_SENDER_ACCOUNT: '321377678687',
@@ -131,7 +115,6 @@ export class APIPipeline extends Stack {
       provisionedConcurrency: 5,
       chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
       envVars: {
-        ...jsonRpcUrls,
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         FILL_LOG_SENDER_ACCOUNT: '316116520258',
         ORDER_LOG_SENDER_ACCOUNT: '316116520258',
@@ -200,10 +183,6 @@ const app = new cdk.App();
 
 const envVars: { [key: string]: string } = {};
 
-Object.values(SUPPORTED_CHAINS).forEach((chainId) => {
-  envVars[`RPC_${chainId}`] = process.env[`RPC_${chainId}`] || '';
-});
-envVars[`RPC_TENDERLY`] = process.env[`RPC_TENDERLY`] || '';
 envVars['FILL_LOG_SENDER_ACCOUNT'] = process.env['FILL_LOG_SENDER_ACCOUNT'] || '';
 envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
