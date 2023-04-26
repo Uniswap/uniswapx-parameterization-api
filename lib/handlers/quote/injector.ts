@@ -28,10 +28,15 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       level: bunyan.INFO,
     });
 
-    const webhookProvider = new S3WebhookConfigurationProvider(WEBHOOK_CONFIG_BUCKET, PRODUCTION_WEBHOOK_CONFIG_KEY);
+    const stage = process.env['stage'];
+    const webhookProvider = new S3WebhookConfigurationProvider(
+      log,
+      `${WEBHOOK_CONFIG_BUCKET}-${stage}`,
+      PRODUCTION_WEBHOOK_CONFIG_KEY
+    );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
-    if (process.env['stage'] == STAGE.LOCAL) {
+    if (stage == STAGE.LOCAL) {
       quoters.push(new MockQuoter(log));
       quoters.push(new MockQuoterWebhook(log));
     }
@@ -79,7 +84,12 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
       level: bunyan.INFO,
     });
 
-    const webhookProvider = new S3WebhookConfigurationProvider(WEBHOOK_CONFIG_BUCKET, INTEGRATION_WEBHOOK_CONFIG_KEY);
+    const stage = process.env['stage'];
+    const webhookProvider = new S3WebhookConfigurationProvider(
+      log,
+      `${WEBHOOK_CONFIG_BUCKET}-${stage}`,
+      INTEGRATION_WEBHOOK_CONFIG_KEY
+    );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
     return {
