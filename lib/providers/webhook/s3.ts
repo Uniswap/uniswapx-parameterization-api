@@ -8,15 +8,24 @@ import { WebhookConfiguration, WebhookConfigurationProvider } from '.';
 export class S3WebhookConfigurationProvider implements WebhookConfigurationProvider {
   private log: Logger;
   private endpoints: WebhookConfiguration[];
+  private lastUpdatedEndpointsTimestamp: number;
+
+  // try to refetch endpoints every 5 mins
+  private static UPDATE_ENDPOINTS_PERIOD_MS = 5 * 60000;
 
   constructor(_log: Logger, private bucket: string, private key: string) {
     this.endpoints = [];
     this.log = _log.child({ quoter: 'S3WebhookConfigurationProvider' });
+    this.lastUpdatedEndpointsTimestamp = Date.now();
   }
 
   async getEndpoints(): Promise<WebhookConfiguration[]> {
-    if (!this.endpoints) {
+    if (
+      this.endpoints.length === 0 ||
+      Date.now() - this.lastUpdatedEndpointsTimestamp > S3WebhookConfigurationProvider.UPDATE_ENDPOINTS_PERIOD_MS
+    ) {
       await this.fetchEndpoints();
+      this.lastUpdatedEndpointsTimestamp = Date.now();
     }
     return this.endpoints;
   }
