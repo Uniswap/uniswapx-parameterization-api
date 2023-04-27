@@ -31,7 +31,6 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
   }
 
   async fetchEndpoints(): Promise<void> {
-    this.log.info(`Fetching endpoints from ${this.bucket} with key ${this.key}`);
     const s3Client = new S3Client({});
     const s3Res = await s3Client.send(
       new GetObjectCommand({
@@ -39,7 +38,6 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
         Key: this.key,
       })
     );
-    this.log.info(`S3 result`, s3Res);
     const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
     this.endpoints = JSON.parse(await s3Body.transformToString()) as WebhookConfiguration[];
 
