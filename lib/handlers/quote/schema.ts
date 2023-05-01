@@ -5,7 +5,7 @@ import { FieldValidator } from '../../util/validator';
 export const PostQuoteRequestBodyJoi = Joi.object({
   requestId: FieldValidator.requestId.required(),
   tokenInChainId: FieldValidator.chainId.required(),
-  tokenOutChainId: FieldValidator.chainId.required(),
+  tokenOutChainId: Joi.number().integer().valid(Joi.ref('tokenInChainId')).required(),
   offerer: FieldValidator.address.required(),
   tokenIn: FieldValidator.address.required(),
   tokenOut: FieldValidator.address.required(),

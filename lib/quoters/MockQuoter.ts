@@ -1,4 +1,3 @@
-import axios from 'axios';
 import Logger from 'bunyan';
 import { BigNumber } from 'ethers';
 
@@ -18,37 +17,6 @@ export class MockQuoter implements Quoter {
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
     const amountQuoted =
       this.denominator && this.numerator ? request.amount.mul(this.numerator).div(this.denominator) : BigNumber.from(1);
-
-    this.log.info(
-      `MockQuoter: request ${request.requestId}: ${request.amount.toString()} -> ${amountQuoted.toString()}`
-    );
-    return [QuoteResponse.fromRequest(request, amountQuoted, MOCK_FILLER_ADDRESS)];
-  }
-
-  public type(): QuoterType {
-    return QuoterType.TEST;
-  }
-}
-
-export class MockQuoterWebhook implements Quoter {
-  private log: Logger;
-
-  constructor(_log: Logger, private numerator?: number, private denominator?: number) {
-    this.log = _log.child({ quoter: 'MockQuoter' });
-  }
-
-  public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
-    try {
-      const endpoint = `${process.env.UNISWAP_API!}rfq`;
-      console.log('endpoint: ', endpoint);
-      const hookResponse = await axios.post(endpoint, request.toJSON());
-      console.log('hookResponse: ', hookResponse.data);
-    } catch (e) {
-      console.log('error eyyyyy: ', e);
-    }
-
-    const amountQuoted =
-      this.denominator && this.numerator ? request.amount.mul(this.numerator).div(this.denominator) : BigNumber.from(0);
 
     this.log.info(
       `MockQuoter: request ${request.requestId}: ${request.amount.toString()} -> ${amountQuoted.toString()}`
