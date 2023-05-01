@@ -36,9 +36,12 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
-    if (stage == STAGE.LOCAL) {
+
+    // TODO: remove this once market makers are actively quoting
+    if (stage == STAGE.LOCAL || stage == STAGE.BETA) {
       quoters.push(new MockQuoter(log));
     }
+
     return {
       quoters: quoters,
     };

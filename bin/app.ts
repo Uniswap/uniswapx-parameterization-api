@@ -124,9 +124,10 @@ export class APIPipeline extends Stack {
       stage: STAGE.PROD,
     });
 
-    const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);
+    pipeline.addStage(prodUsEast2Stage);
 
-    this.addIntegTests(code, prodUsEast2Stage, prodUsEast2AppStage);
+    // TODO: add back integration tests for prod once market makers are actively quoting
+    // this.addIntegTests(code, prodUsEast2Stage, prodUsEast2AppStage);
 
     pipeline.buildPipeline();
   }
