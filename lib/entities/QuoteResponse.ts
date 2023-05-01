@@ -50,8 +50,8 @@ export class QuoteResponse implements QuoteResponseData {
         {
           ...data,
           quoteId: uuidv4(),
-          amountIn: BigNumber.from(data.amountIn),
-          amountOut: BigNumber.from(data.amountOut),
+          amountIn: BigNumber.from(data.amountIn ?? 0),
+          amountOut: BigNumber.from(data.amountOut ?? 0),
         },
         type
       ),
