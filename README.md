@@ -40,3 +40,18 @@ The project currently has a `GET hello-world` Api Gateway<>Lambda integration se
 ❯ curl <url>/prod/quote/hello-world
 "hello world"%
 ```
+
+## Integration Tests
+
+1. Deploy your API using the intructions above.
+
+1. Add your API url to your `.env` file as `UNISWAP_API`
+
+   ```
+   UNISWAP_API='<YourUrl>'
+   ```
+
+1. Run the tests with:
+   ```
+   yarn test:integ
+   ```

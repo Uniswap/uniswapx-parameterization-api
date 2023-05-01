@@ -154,7 +154,7 @@ describe('Schema tests', () => {
     });
 
     it('requires tokenOutChainId to be defined', () => {
-      const { tokenIn, tokenOut, offerer, amount, tokenInChainId, requestId } = validCombinations[0];
+      const { tokenIn, tokenOut, offerer, amount, tokenInChainId, requestId, type } = validCombinations[0];
       const validated = PostQuoteRequestBodyJoi.validate({
         tokenIn,
         tokenOut,
@@ -162,8 +162,24 @@ describe('Schema tests', () => {
         offerer,
         tokenInChainId,
         requestId,
+        type,
       });
       expect(validated.error?.message).toContain('"tokenOutChainId" is required');
+    });
+
+    it('requires tokenOutChainId and tokenInChainId to be the same value', () => {
+      const { tokenIn, tokenOut, offerer, amount, tokenInChainId, requestId, type } = validCombinations[0];
+      const validated = PostQuoteRequestBodyJoi.validate({
+        tokenIn,
+        tokenOut,
+        amount,
+        offerer,
+        tokenInChainId,
+        tokenOutChainId: 5,
+        requestId,
+        type,
+      });
+      expect(validated.error?.message).toContain('"tokenOutChainId" must be [ref:tokenInChainId]');
     });
   });
 
