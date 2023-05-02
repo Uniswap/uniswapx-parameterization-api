@@ -7,8 +7,6 @@ import { INTEGRATION_WEBHOOK_CONFIG_KEY, PRODUCTION_WEBHOOK_CONFIG_KEY, WEBHOOK_
 import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { Quoter, WebhookQuoter } from '../../quoters';
-import { MockQuoter } from '../../quoters/MockQuoter';
-import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
 
@@ -36,9 +34,6 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
-    if (stage == STAGE.LOCAL) {
-      quoters.push(new MockQuoter(log));
-    }
     return {
       quoters: quoters,
     };
