@@ -23,7 +23,7 @@ describe('WebhookQuoter tests', () => {
   });
 
   const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
-  const logger = { child: () => logger, info: jest.fn(), error: jest.fn() } as any;
+  const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   const webhookQuoter = new WebhookQuoter(logger, webhookProvider);
 
   const request = new QuoteRequest({
@@ -59,6 +59,53 @@ describe('WebhookQuoter tests', () => {
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
+  });
+
+  it('Simple request and response with explicit chainId', async () => {
+    const provider = new MockWebhookConfigurationProvider([
+      { endpoint: 'https://uniswap.org', headers: {}, chainIds: [1] },
+    ]);
+    const quoter = new WebhookQuoter(logger, provider);
+    const quote = {
+      amountOut: ethers.utils.parseEther('2').toString(),
+      tokenIn: request.tokenIn,
+      tokenOut: request.tokenOut,
+      amountIn: request.amount.toString(),
+      offerer: request.offerer,
+      chainId: request.tokenInChainId,
+      requestId: request.requestId,
+      quoteId: QUOTE_ID,
+      filler: FILLER,
+    };
+
+    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: quote,
+      });
+    });
+    const response = await quoter.quote(request);
+
+    expect(response.length).toEqual(1);
+    expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
+  });
+
+  it('Skips if chainId not configured', async () => {
+    const provider = new MockWebhookConfigurationProvider([
+      { endpoint: 'https://uniswap.org', headers: {}, chainIds: [4, 5, 6] },
+    ]);
+    const quoter = new WebhookQuoter(logger, provider);
+
+    const response = await quoter.quote(request);
+
+    expect(response.length).toEqual(0);
+
+    expect(logger.debug).toHaveBeenCalledWith(
+      {
+        configuredChainIds: [4, 5, 6],
+        chainId: request.tokenInChainId,
+      },
+      'chainId not configured for https://uniswap.org'
+    );
   });
 
   it('Invalid quote response from webhook, missing amountIn', async () => {
