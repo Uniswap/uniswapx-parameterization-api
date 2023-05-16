@@ -32,6 +32,14 @@ export class WebhookQuoter implements Quoter {
 
   private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
     const { endpoint, headers } = config;
+    if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
+      this.log.debug(
+        { configuredChainIds: config.chainIds, chainId: request.tokenInChainId },
+        `chainId not configured for ${endpoint}`
+      );
+      return null;
+    }
+
     metric.putMetric(metricContext(Metric.RFQ_REQUESTED, endpoint), 1, MetricLoggerUnit.Count);
     try {
       this.log.info({ request, headers }, `Webhook request to: ${endpoint}`);
