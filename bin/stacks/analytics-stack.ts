@@ -251,6 +251,13 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'startTime', dataType: RS_DATA_TYPES.TIMESTAMP },
         { name: 'endTime', dataType: RS_DATA_TYPES.TIMESTAMP },
         { name: 'deadline', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'chainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'inputStartAmount', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'inputEndAmount', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'outputStartAmount', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'outputEndAmount', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
       ],
     });
 
