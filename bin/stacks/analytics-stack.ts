@@ -288,6 +288,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         // execution order fields
         { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
         { name: 'executorType', dataType: RS_DATA_TYPES.BOT_EXECUTOR_TYPE },
+        { name: 'callData', dataType: RS_DATA_TYPES.ROUTING },
 
         // quote order fields
         { name: 'amountOutQuote', dataType: RS_DATA_TYPES.UINT256 },
