@@ -20,6 +20,8 @@ export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amount' | 
   type: string;
 }
 
+export interface CleanQuoteRequestDataJSON extends Omit<QuoteRequestDataJSON, 'offerer'> {}
+
 // data class for QuoteRequest helpers and conversions
 export class QuoteRequest {
   public static fromRequestBody(body: PostQuoteRequestBody): QuoteRequest {
@@ -43,6 +45,18 @@ export class QuoteRequest {
       tokenOutChainId: this.tokenOutChainId,
       requestId: this.requestId,
       offerer: getAddress(this.offerer),
+      tokenIn: getAddress(this.tokenIn),
+      tokenOut: getAddress(this.tokenOut),
+      amount: this.amount.toString(),
+      type: TradeType[this.type],
+    };
+  }
+
+  public toCleanJSON(): CleanQuoteRequestDataJSON {
+    return {
+      tokenInChainId: this.tokenInChainId,
+      tokenOutChainId: this.tokenOutChainId,
+      requestId: this.requestId,
       tokenIn: getAddress(this.tokenIn),
       tokenOut: getAddress(this.tokenOut),
       amount: this.amount.toString(),
