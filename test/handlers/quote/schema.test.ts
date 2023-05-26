@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
-import { PostQuoteRequestBodyJoi, PostQuoteResponseJoi } from '../../../lib/handlers/quote/schema';
+import { PostQuoteRequestBodyJoi, PostQuoteResponseJoi, RfqResponseJoi } from '../../../lib/handlers/quote/schema';
 
 const OFFERER = '0x0000000000000000000000000000000000000000';
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
@@ -277,6 +277,139 @@ describe('Schema tests', () => {
       };
       const validated = PostQuoteResponseJoi.validate(body);
       expect(validated.error?.message).toEqual('"amountOut" is required');
+    });
+  });
+
+  describe('RfqResponseJoi', () => {
+    it('validates valid inputs', () => {
+      const body = {
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000',
+        amountOut: '1000000000000000000',
+      };
+      const validated = RfqResponseJoi.validate(body);
+      expect(validated.error).toBeUndefined();
+      expect(validated.value).toStrictEqual({
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000',
+        amountOut: '1000000000000000000',
+      });
+    });
+
+    it('requires requestId to be defined', () => {
+      const body = {
+        chainId: 1,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000',
+        amountOut: '1000000000000000000',
+      };
+      const validated = RfqResponseJoi.validate(body);
+      expect(validated.error?.message).toEqual('"requestId" is required');
+    });
+
+    it('requires tokenIn to be defined', () => {
+      const body = {
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenOut: WETH,
+        amountIn: '1000',
+        amountOut: '1000000000000000000',
+      };
+      const validated = RfqResponseJoi.validate(body);
+      expect(validated.error?.message).toEqual('"tokenIn" is required');
+    });
+
+    it('requires tokenOut to be defined', () => {
+      const body = {
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        amountIn: '1000',
+        amountOut: '1000000000000000000',
+      };
+      const validated = RfqResponseJoi.validate(body);
+      expect(validated.error?.message).toEqual('"tokenOut" is required');
+    });
+
+    it('requires amountIn to be defined', () => {
+      const body = {
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountOut: '1000000000000000000',
+      };
+      const validated = RfqResponseJoi.validate(body);
+      expect(validated.error?.message).toEqual('"amountIn" is required');
+    });
+
+    it('requires amountOut to be defined', () => {
+      const body = {
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000000000000000000',
+      };
+      const validated = RfqResponseJoi.validate(body);
+      expect(validated.error?.message).toEqual('"amountOut" is required');
+    });
+
+    it('ignores offerer', () => {
+      const body = {
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000000000000000000',
+        amountOut: '1000000000000000000',
+        offerer: OFFERER,
+      };
+      const validated = RfqResponseJoi.validate(body, {
+        allowUnknown: true,
+        stripUnknown: true,
+      });
+      expect(validated.error).toBeUndefined();
+      expect(validated.value).toStrictEqual({
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000000000000000000',
+        amountOut: '1000000000000000000',
+      });
+    });
+
+    it('handles null offerer', () => {
+      const body = {
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000000000000000000',
+        amountOut: '1000000000000000000',
+        offerer: null,
+      };
+      const validated = RfqResponseJoi.validate(body, {
+        allowUnknown: true,
+        stripUnknown: true,
+      });
+      expect(validated.error).toBeUndefined();
+      expect(validated.value).toStrictEqual({
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000000000000000000',
+        amountOut: '1000000000000000000',
+      });
     });
   });
 });
