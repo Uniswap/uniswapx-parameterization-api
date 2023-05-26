@@ -3,7 +3,7 @@ import { BigNumber } from 'ethers';
 import { ValidationResult } from 'joi';
 import { v4 as uuidv4 } from 'uuid';
 
-import { PostQuoteResponse, PostQuoteResponseJoi } from '../handlers/quote/schema';
+import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
 import { currentTimestampInSeconds } from '../util/time';
 import { QuoteRequestData } from '.';
 
@@ -40,8 +40,8 @@ export class QuoteResponse implements QuoteResponseData {
     );
   }
 
-  public static fromResponseJSON(data: PostQuoteResponse, type: TradeType): ValidatedResponse {
-    const responseValidation = PostQuoteResponseJoi.validate(data, {
+  public static fromRFQ(request: QuoteRequestData, data: RfqResponse, type: TradeType): ValidatedResponse {
+    const responseValidation = RfqResponseJoi.validate(data, {
       allowUnknown: true,
       stripUnknown: true,
     });
@@ -49,6 +49,7 @@ export class QuoteResponse implements QuoteResponseData {
       response: new QuoteResponse(
         {
           ...data,
+          offerer: request.offerer,
           quoteId: uuidv4(),
           amountIn: BigNumber.from(data.amountIn ?? 0),
           amountOut: BigNumber.from(data.amountOut ?? 0),
