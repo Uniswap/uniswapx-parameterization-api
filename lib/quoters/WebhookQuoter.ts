@@ -56,7 +56,7 @@ export class WebhookQuoter implements Quoter {
         MetricLoggerUnit.Milliseconds
       );
 
-      const { response, validation } = QuoteResponse.fromResponseJSON(hookResponse.data, request.type);
+      const { response, validation } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
 
       // TODO: remove, using for debugging purposes
       this.log.info(
