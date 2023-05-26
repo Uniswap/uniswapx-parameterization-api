@@ -31,7 +31,7 @@ export const PostQuoteResponseJoi = Joi.object({
   amountIn: FieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
   amountOut: FieldValidator.amount.required(),
-  offerer: FieldValidator.address.required(),
+  offerer: FieldValidator.address.optional(),
   filler: FieldValidator.address,
 });
 
