@@ -61,6 +61,29 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
   });
 
+  it('Simple request and response no offerer', async () => {
+    const quote = {
+      amountOut: ethers.utils.parseEther('2').toString(),
+      tokenIn: request.tokenIn,
+      tokenOut: request.tokenOut,
+      amountIn: request.amount.toString(),
+      chainId: request.tokenInChainId,
+      requestId: request.requestId,
+      quoteId: QUOTE_ID,
+      filler: FILLER,
+    };
+
+    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: quote,
+      });
+    });
+    const response = await webhookQuoter.quote(request);
+
+    expect(response.length).toEqual(1);
+    expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
+  });
+
   it('Simple request and response with explicit chainId', async () => {
     const provider = new MockWebhookConfigurationProvider([
       { endpoint: 'https://uniswap.org', headers: {}, chainIds: [1] },
