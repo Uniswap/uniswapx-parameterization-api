@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { BigNumber } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
 import { getAddress } from 'ethers/lib/utils';
 
 import { PostQuoteRequestBody } from '../handlers/quote/schema';
@@ -19,8 +19,6 @@ export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amount' | 
   amount: string;
   type: string;
 }
-
-export interface CleanQuoteRequestDataJSON extends Omit<QuoteRequestDataJSON, 'offerer'> {}
 
 // data class for QuoteRequest helpers and conversions
 export class QuoteRequest {
@@ -52,7 +50,7 @@ export class QuoteRequest {
     };
   }
 
-  public toCleanJSON(): CleanQuoteRequestDataJSON {
+  public toCleanJSON(): QuoteRequestDataJSON {
     return {
       tokenInChainId: this.tokenInChainId,
       tokenOutChainId: this.tokenOutChainId,
@@ -60,6 +58,7 @@ export class QuoteRequest {
       tokenIn: getAddress(this.tokenIn),
       tokenOut: getAddress(this.tokenOut),
       amount: this.amount.toString(),
+      offerer: ethers.constants.AddressZero,
       type: TradeType[this.type],
     };
   }
