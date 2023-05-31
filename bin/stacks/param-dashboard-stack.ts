@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib'
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch'
 import { Construct } from 'constructs'
+import { STAGE } from '../../lib/util/stage';
 
 export const NAMESPACE = 'Uniswap'
 
@@ -58,7 +59,11 @@ const RFQLatencyWidget = (region: string): LambdaWidget => ({
   properties: {
     metrics: [
       [ "Uniswap", "RFQ_RESPONSE_TIME_https://rfq.fullblock.space/gouda-rfqs", "Service", "GoudaParameterizationAPI", { label: "Flow Traders" } ],
-      [ ".", "RFQ_RESPONSE_TIME_http://flask-test-env.eba-wirpqier.us-east-2.elasticbeanstalk.com/", ".", ".", { label: "Ergonia" } ]
+      [ ".", "RFQ_RESPONSE_TIME_http://gouda-test-dev.us-west-2.elasticbeanstalk.com", ".", ".", { label: "Ergonia" } ],
+      [ ".", "RFQ_RESPONSE_TIME_https://swap.symbolic.markets/gouda/quote", ".", ".", { label: "SCP" } ],
+      [ ".", "RFQ_RESPONSE_TIME_https://kehr54rr.altono.xyz/uniswap/gouda/quote", ".", ".", { label: "Altonomy" } ],
+      [ ".", "RFQ_RESPONSE_TIME_https://api.prycto.network/kELxupuoRRWdKX9Q1inVoxOkuNvc3BsHvKTkEYQZ/gouda/defi/quote", ".", ".", { label: "Prycto" } ],
+      [ ".", "RFQ_RESPONSE_TIME_https://pdtmm.ambergroup.io/uniswap-gouda/", ".", ".", { label: "Amber" } ],
     ],
     view: "timeSeries",
     stacked: false,
@@ -118,20 +123,26 @@ const ErrorRatesWidget = (region: string): LambdaWidget => ({
   }
 })
 
-const FailingRFQLogsWidget = (region: string): LambdaWidget => ({
-  type: "log",
-  x: 0,
-  y: 32,
-  width: 24,
-  height: 6,
-  properties: {
-    query: "SOURCE '/aws/lambda/beta-us-east-2-GoudaParameterization-QuoteE2906A56-dD269KqZUBHo' | fields @timestamp, msg\n| filter quoter = 'WebhookQuoter' and msg like \"Error fetching quote\"\n| sort @timestamp desc\n| limit 20",
-    region,
-    stacked: false,
-    view: "table",
-    title: "Failing RFQ Logs"
-  }
-})
+const FailingRFQLogsWidget = (region: string, stage: string): LambdaWidget => {
+  const logGroup = stage === STAGE.BETA ?
+  '/aws/lambda/beta-us-east-2-GoudaParameterization-QuoteE2906A56-dD269KqZUBHo' :
+  '/aws/lambda/prod-us-east-2-GoudaParameterization-QuoteE2906A56-glqABjbF8MQv';
+
+  return {
+    type: "log",
+    x: 0,
+    y: 32,
+    width: 24,
+    height: 6,
+    properties: {
+      query: `SOURCE '${logGroup}' | fields @timestamp, msg\n| filter quoter = 'WebhookQuoter' and msg like \"Error fetching quote\"\n| sort @timestamp desc\n| limit 20`,
+      region,
+      stacked: false,
+      view: "table",
+      title: "Failing RFQ Logs"
+    }
+  };
+}
 
 const RFQFailRatesWidget = (region: string): LambdaWidget => ({
   height: 10,
@@ -143,12 +154,16 @@ const RFQFailRatesWidget = (region: string): LambdaWidget => ({
     metrics: [
       [ { expression: "100*((m2+m3)/m1)", label: "Flow Traders", id: "e1", region } ],
       [ { expression: "100*((m5+m6)/m4)", label: "Ergonia", id: "e2", region } ],
+      [ { expression: "100*((m8+m9)/m7)", label: "Prycto", id: "e3", region } ],
       [ "Uniswap", "RFQ_REQUESTED_https://rfq.fullblock.space/gouda-rfqs", "Service", "GoudaParameterizationAPI", { id: "m1", visible: false } ],
       [ ".", "RFQ_FAIL_ERROR_https://rfq.fullblock.space/gouda-rfqs", ".", ".", { id: "m2", visible: false } ],
       [ ".", "RFQ_FAIL_VALIDATION_https://rfq.fullblock.space/gouda-rfqs", ".", ".", { id: "m3", visible: false } ],
-      [ ".", "RFQ_REQUESTED_http://flask-test-env.eba-wirpqier.us-east-2.elasticbeanstalk.com/", ".", ".", { id: "m4", visible: false } ],
-      [ ".", "RFQ_FAIL_ERROR_http://flask-test-env.eba-wirpqier.us-east-2.elasticbeanstalk.com/", ".", ".", { id: "m5", visible: false } ],
-      [ ".", "RFQ_FAIL_VALIDATION_http://flask-test-env.eba-wirpqier.us-east-2.elasticbeanstalk.com/", ".", ".", { id: "m6", visible: false } ]
+      [ ".", "RFQ_REQUESTED_http://gouda-test-dev.us-west-2.elasticbeanstalk.com", ".", ".", { id: "m4", visible: false } ],
+      [ ".", "RFQ_FAIL_ERROR_http://gouda-test-dev.us-west-2.elasticbeanstalk.com", ".", ".", { id: "m5", visible: false } ],
+      [ ".", "RFQ_FAIL_VALIDATION_http://gouda-test-dev.us-west-2.elasticbeanstalk.com", ".", ".", { id: "m6", visible: false } ],
+      [ ".", "RFQ_REQUESTED_https://api.prycto.network/kELxupuoRRWdKX9Q1inVoxOkuNvc3BsHvKTkEYQZ/gouda/defi/quote", ".", ".", { id: "m7", visible: false } ],
+      [ ".", "RFQ_FAIL_ERROR_https://api.prycto.network/kELxupuoRRWdKX9Q1inVoxOkuNvc3BsHvKTkEYQZ/gouda/defi/quote", ".", ".", { id: "m8", visible: false } ],
+      [ ".", "RFQ_FAIL_VALIDATION_https://api.prycto.network/kELxupuoRRWdKX9Q1inVoxOkuNvc3BsHvKTkEYQZ/gouda/defi/quote", ".", ".", { id: "m9", visible: false } ],
     ],
     view: "timeSeries",
     stacked: false,
@@ -165,8 +180,12 @@ const RFQFailRatesWidget = (region: string): LambdaWidget => ({
   }
 })
 
+export interface DashboardProps extends cdk.NestedStackProps {
+  stage: string;
+}
+
 export class ParamDashboardStack extends cdk.NestedStack {
-  constructor(scope: Construct, name: string, props: cdk.NestedStackProps) {
+  constructor(scope: Construct, name: string, props: DashboardProps) {
     super(scope, name, props)
 
     const region = cdk.Stack.of(this).region
@@ -181,7 +200,7 @@ export class ParamDashboardStack extends cdk.NestedStack {
           QuotesRequestedWidget(region),
           ErrorRatesWidget(region),
           RFQFailRatesWidget(region),
-          FailingRFQLogsWidget(region),
+          FailingRFQLogsWidget(region, props.stage),
         ],
       }),
     })
