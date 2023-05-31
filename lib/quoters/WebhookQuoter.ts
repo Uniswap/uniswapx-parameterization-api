@@ -61,6 +61,7 @@ export class WebhookQuoter implements Quoter {
       // TODO: remove, using for debugging purposes
       this.log.info(
         {
+          rawResponse: hookResponse.data,
           response,
           validation,
         },

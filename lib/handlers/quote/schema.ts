@@ -65,7 +65,7 @@ export const RfqResponseJoi = Joi.object({
   amountIn: FieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
   amountOut: FieldValidator.amount.required(),
-  filler: FieldValidator.address,
+  filler: FieldValidator.address.optional(),
 });
 
 export type RfqResponse = {
