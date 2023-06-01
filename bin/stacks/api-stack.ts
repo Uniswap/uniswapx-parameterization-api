@@ -254,7 +254,6 @@ export class APIStack extends cdk.Stack {
      */
     new ParamDashboardStack(this, 'ParamDashboardStack', {
       quoteLambda,
-      stage: props.stage,
     });
 
     /*
