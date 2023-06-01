@@ -37,14 +37,14 @@ describe('S3WebhookConfigurationProvider', () => {
 
   it('Fetches endpoints', async () => {
     applyMock(mockEndpoints);
-    const provider = new S3WebhookConfigurationProvider(bucket, key, logger);
+    const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
     const endpoints = await provider.getEndpoints();
     expect(endpoints).toEqual(mockEndpoints);
   });
 
   it('Caches fetched endpoints', async () => {
     applyMock(mockEndpoints);
-    const provider = new S3WebhookConfigurationProvider(bucket, key, logger);
+    const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
     let endpoints = await provider.getEndpoints();
     expect(endpoints).toEqual(mockEndpoints);
     endpoints = await provider.getEndpoints();
@@ -53,12 +53,13 @@ describe('S3WebhookConfigurationProvider', () => {
 
   it('Refetches after cache expires', async () => {
     applyMock(mockEndpoints);
-    const provider = new S3WebhookConfigurationProvider(bucket, key, logger);
+    const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
     let endpoints = await provider.getEndpoints();
     expect(endpoints).toEqual(mockEndpoints);
 
     const updatedEndpoints = [
       {
+        name: 'updated',
         endpoint: 'https://updated.com',
         headers: {
           'x-api-key': 'updated',

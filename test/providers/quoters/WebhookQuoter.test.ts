@@ -22,7 +22,9 @@ describe('WebhookQuoter tests', () => {
     jest.clearAllMocks();
   });
 
-  const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
+  const webhookProvider = new MockWebhookConfigurationProvider([
+    { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
+  ]);
   const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   const webhookQuoter = new WebhookQuoter(logger, webhookProvider);
 
@@ -110,7 +112,7 @@ describe('WebhookQuoter tests', () => {
 
   it('Simple request and response with explicit chainId', async () => {
     const provider = new MockWebhookConfigurationProvider([
-      { endpoint: 'https://uniswap.org', headers: {}, chainIds: [1] },
+      { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, chainIds: [1] },
     ]);
     const quoter = new WebhookQuoter(logger, provider);
     const quote = {
@@ -138,7 +140,7 @@ describe('WebhookQuoter tests', () => {
 
   it('Skips if chainId not configured', async () => {
     const provider = new MockWebhookConfigurationProvider([
-      { endpoint: 'https://uniswap.org', headers: {}, chainIds: [4, 5, 6] },
+      { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, chainIds: [4, 5, 6] },
     ]);
     const quoter = new WebhookQuoter(logger, provider);
 
