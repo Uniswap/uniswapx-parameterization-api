@@ -182,7 +182,9 @@ describe('Quote handler', () => {
 
   describe('Webhook Quoter', () => {
     it('Simple request and response', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
+      const webhookProvider = new MockWebhookConfigurationProvider([
+        { endpoint: 'https://uniswap.org', headers: {}, name: 'uniswap' },
+      ]);
       const quoters = [new WebhookQuoter(logger, webhookProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -223,6 +225,7 @@ describe('Quote handler', () => {
     it('Passes headers', async () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         {
+          name: 'uniswap',
           endpoint: 'https://uniswap.org',
           headers: {
             'X-Authentication': '1234',
@@ -259,7 +262,9 @@ describe('Quote handler', () => {
     });
 
     it('handles invalid responses', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
+      const webhookProvider = new MockWebhookConfigurationProvider([
+        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
+      ]);
       const quoters = [new WebhookQuoter(logger, webhookProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -280,7 +285,9 @@ describe('Quote handler', () => {
     });
 
     it('returns error if requestId is invalid', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
+      const webhookProvider = new MockWebhookConfigurationProvider([
+        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
+      ]);
       const quoters = [new WebhookQuoter(logger, webhookProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -302,7 +309,9 @@ describe('Quote handler', () => {
     });
 
     it('uses backup on failure', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
+      const webhookProvider = new MockWebhookConfigurationProvider([
+        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
+      ]);
       const quoters = [new WebhookQuoter(logger, webhookProvider), new MockQuoter(logger, 1, 1)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -326,7 +335,9 @@ describe('Quote handler', () => {
     });
 
     it('uses if better than backup', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
+      const webhookProvider = new MockWebhookConfigurationProvider([
+        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
+      ]);
       const quoters = [new WebhookQuoter(logger, webhookProvider), new MockQuoter(logger, 1, 1)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -359,7 +370,9 @@ describe('Quote handler', () => {
     });
 
     it('uses backup if better', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([{ endpoint: 'https://uniswap.org', headers: {} }]);
+      const webhookProvider = new MockWebhookConfigurationProvider([
+        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
+      ]);
       const quoters = [new WebhookQuoter(logger, webhookProvider), new MockQuoter(logger, 1, 1)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());

@@ -5,6 +5,7 @@ import { S3WebhookConfigurationProvider, WebhookConfiguration } from '../../../l
 
 const mockEndpoints = [
   {
+    name: 'google',
     endpoint: 'https://google.com',
     headers: {
       'x-api-key': '1234',
@@ -58,6 +59,7 @@ describe('S3WebhookConfigurationProvider', () => {
 
     const updatedEndpoints = [
       {
+        name: 'updated',
         endpoint: 'https://updated.com',
         headers: {
           'x-api-key': 'updated',
