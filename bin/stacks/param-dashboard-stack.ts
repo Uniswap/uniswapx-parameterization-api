@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib'
+import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch'
 import { Construct } from 'constructs'
 import { STAGE } from '../../lib/util/stage';
@@ -50,21 +51,15 @@ const LatencyWidget = (region: string): LambdaWidget => ({
   }
 })
 
-const RFQLatencyWidget = (region: string): LambdaWidget => ({
+const RFQLatencyWidget = (region: string, rfqProviders: string[]): LambdaWidget => ({
   height: 11,
   width: 13,
   y: 11,
   x: 11,
   type: "metric",
   properties: {
-    metrics: [
-      [ "Uniswap", "RFQ_RESPONSE_TIME_https://rfq.fullblock.space/gouda-rfqs", "Service", "GoudaParameterizationAPI", { label: "Flow Traders" } ],
-      [ ".", "RFQ_RESPONSE_TIME_http://gouda-test-dev.us-west-2.elasticbeanstalk.com", ".", ".", { label: "Ergonia" } ],
-      [ ".", "RFQ_RESPONSE_TIME_https://swap.symbolic.markets/gouda/quote", ".", ".", { label: "SCP" } ],
-      [ ".", "RFQ_RESPONSE_TIME_https://kehr54rr.altono.xyz/uniswap/gouda/quote", ".", ".", { label: "Altonomy" } ],
-      [ ".", "RFQ_RESPONSE_TIME_https://api.prycto.network/kELxupuoRRWdKX9Q1inVoxOkuNvc3BsHvKTkEYQZ/gouda/defi/quote", ".", ".", { label: "Prycto" } ],
-      [ ".", "RFQ_RESPONSE_TIME_https://pdtmm.ambergroup.io/uniswap-gouda/", ".", ".", { label: "Amber" } ],
-    ],
+    metrics: rfqProviders.map((name) =>
+      ([ "Uniswap", `RFQ_RESPONSE_TIME_${name}`, "Service", "GoudaParameterizationAPI", { label: name } ])),
     view: "timeSeries",
     stacked: false,
     region,
@@ -123,11 +118,7 @@ const ErrorRatesWidget = (region: string): LambdaWidget => ({
   }
 })
 
-const FailingRFQLogsWidget = (region: string, stage: string): LambdaWidget => {
-  const logGroup = stage === STAGE.BETA ?
-  '/aws/lambda/beta-us-east-2-GoudaParameterization-QuoteE2906A56-dD269KqZUBHo' :
-  '/aws/lambda/prod-us-east-2-GoudaParameterization-QuoteE2906A56-glqABjbF8MQv';
-
+const FailingRFQLogsWidget = (region: string, stage: string, logGroup: string): LambdaWidget => {
   return {
     type: "log",
     x: 0,
@@ -144,27 +135,24 @@ const FailingRFQLogsWidget = (region: string, stage: string): LambdaWidget => {
   };
 }
 
-const RFQFailRatesWidget = (region: string): LambdaWidget => ({
+const RFQFailRatesWidget = (region: string, rfqProviders: string[]): LambdaWidget => ({
   height: 10,
   width: 13,
   y: 22,
   x: 11,
   type: "metric",
   properties: {
-    metrics: [
-      [ { expression: "100*((m2+m3)/m1)", label: "Flow Traders", id: "e1", region } ],
-      [ { expression: "100*((m5+m6)/m4)", label: "Ergonia", id: "e2", region } ],
-      [ { expression: "100*((m8+m9)/m7)", label: "Prycto", id: "e3", region } ],
-      [ "Uniswap", "RFQ_REQUESTED_https://rfq.fullblock.space/gouda-rfqs", "Service", "GoudaParameterizationAPI", { id: "m1", visible: false } ],
-      [ ".", "RFQ_FAIL_ERROR_https://rfq.fullblock.space/gouda-rfqs", ".", ".", { id: "m2", visible: false } ],
-      [ ".", "RFQ_FAIL_VALIDATION_https://rfq.fullblock.space/gouda-rfqs", ".", ".", { id: "m3", visible: false } ],
-      [ ".", "RFQ_REQUESTED_http://gouda-test-dev.us-west-2.elasticbeanstalk.com", ".", ".", { id: "m4", visible: false } ],
-      [ ".", "RFQ_FAIL_ERROR_http://gouda-test-dev.us-west-2.elasticbeanstalk.com", ".", ".", { id: "m5", visible: false } ],
-      [ ".", "RFQ_FAIL_VALIDATION_http://gouda-test-dev.us-west-2.elasticbeanstalk.com", ".", ".", { id: "m6", visible: false } ],
-      [ ".", "RFQ_REQUESTED_https://api.prycto.network/kELxupuoRRWdKX9Q1inVoxOkuNvc3BsHvKTkEYQZ/gouda/defi/quote", ".", ".", { id: "m7", visible: false } ],
-      [ ".", "RFQ_FAIL_ERROR_https://api.prycto.network/kELxupuoRRWdKX9Q1inVoxOkuNvc3BsHvKTkEYQZ/gouda/defi/quote", ".", ".", { id: "m8", visible: false } ],
-      [ ".", "RFQ_FAIL_VALIDATION_https://api.prycto.network/kELxupuoRRWdKX9Q1inVoxOkuNvc3BsHvKTkEYQZ/gouda/defi/quote", ".", ".", { id: "m9", visible: false } ],
-    ],
+    metrics: rfqProviders.flatMap((name, i) => {
+      const rfqRequested = i * 3;
+      const rfqFailError = i * 3 + 1;
+      const rfqFailValidation = i * 3 + 2;
+      return [
+        [ { expression: `100*((m${rfqFailError}+m${rfqFailValidation})/m${rfqRequested})`, label: name, id: `e${i}`, region } ],
+        [ "Uniswap", `RFQ_REQUESTED_${name}`, "Service", "GoudaParameterizationAPI", { id: `m${rfqRequested}`, visible: false } ],
+        [ "Uniswap", `RFQ_FAIl_ERROR_${name}`, "Service", "GoudaParameterizationAPI", { id: `m${rfqFailError}`, visible: false } ],
+        [ "Uniswap", `RFQ_FAIL_VALIDATION_${name}`, "Service", "GoudaParameterizationAPI", { id: `m${rfqFailValidation}`, visible: false } ],
+      ]
+    }),
     view: "timeSeries",
     stacked: false,
     region,
@@ -181,8 +169,12 @@ const RFQFailRatesWidget = (region: string): LambdaWidget => ({
 })
 
 export interface DashboardProps extends cdk.NestedStackProps {
+  quoteLambda: aws_lambda_nodejs.NodejsFunction;
   stage: string;
 }
+
+// TODO: fetch dynamically from s3?
+const RFQ_PROVIDERS = ['Flow Traders', 'Ergonia', 'SCP', 'Altonomy', 'Prycto', 'Amber'];
 
 export class ParamDashboardStack extends cdk.NestedStack {
   constructor(scope: Construct, name: string, props: DashboardProps) {
@@ -196,11 +188,11 @@ export class ParamDashboardStack extends cdk.NestedStack {
         periodOverride: 'inherit',
         widgets: [
           LatencyWidget(region),
-          RFQLatencyWidget(region),
+          RFQLatencyWidget(region, RFQ_PROVIDERS),
           QuotesRequestedWidget(region),
           ErrorRatesWidget(region),
-          RFQFailRatesWidget(region),
-          FailingRFQLogsWidget(region, props.stage),
+          RFQFailRatesWidget(region, RFQ_PROVIDERS),
+          FailingRFQLogsWidget(region, props.stage, props.quoteLambda.logGroup.logGroupArn),
         ],
       }),
     })

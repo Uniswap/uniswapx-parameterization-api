@@ -28,9 +28,9 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const stage = process.env['stage'];
     const webhookProvider = new S3WebhookConfigurationProvider(
-      log,
       `${WEBHOOK_CONFIG_BUCKET}-${stage}`,
-      PRODUCTION_WEBHOOK_CONFIG_KEY
+      PRODUCTION_WEBHOOK_CONFIG_KEY,
+      log
     );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
@@ -80,9 +80,9 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
 
     const stage = process.env['stage'];
     const webhookProvider = new S3WebhookConfigurationProvider(
-      log,
       `${WEBHOOK_CONFIG_BUCKET}-${stage}`,
-      INTEGRATION_WEBHOOK_CONFIG_KEY
+      INTEGRATION_WEBHOOK_CONFIG_KEY,
+      log
     );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
