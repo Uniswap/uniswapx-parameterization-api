@@ -2,7 +2,6 @@ import * as cdk from 'aws-cdk-lib'
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch'
 import { Construct } from 'constructs'
-import { STAGE } from '../../lib/util/stage';
 
 export const NAMESPACE = 'Uniswap'
 
@@ -118,7 +117,7 @@ const ErrorRatesWidget = (region: string): LambdaWidget => ({
   }
 })
 
-const FailingRFQLogsWidget = (region: string, stage: string, logGroup: string): LambdaWidget => {
+const FailingRFQLogsWidget = (region: string, logGroup: string): LambdaWidget => {
   return {
     type: "log",
     x: 0,
@@ -170,7 +169,6 @@ const RFQFailRatesWidget = (region: string, rfqProviders: string[]): LambdaWidge
 
 export interface DashboardProps extends cdk.NestedStackProps {
   quoteLambda: aws_lambda_nodejs.NodejsFunction;
-  stage: string;
 }
 
 // TODO: fetch dynamically from s3?
@@ -192,7 +190,7 @@ export class ParamDashboardStack extends cdk.NestedStack {
           QuotesRequestedWidget(region),
           ErrorRatesWidget(region),
           RFQFailRatesWidget(region, RFQ_PROVIDERS),
-          FailingRFQLogsWidget(region, props.stage, props.quoteLambda.logGroup.logGroupArn),
+          FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupArn),
         ],
       }),
     })
