@@ -232,4 +232,50 @@ describe('WebhookQuoter tests', () => {
     );
     expect(response).toEqual([]);
   });
+
+  it('Skips if response is zero exactInput', async () => {
+    const quote = {
+      amountOut: '0',
+      tokenIn: request.tokenIn,
+      tokenOut: request.tokenOut,
+      amountIn: request.amount.toString(),
+      offerer: request.offerer,
+      chainId: request.tokenInChainId,
+      requestId: request.requestId,
+      quoteId: QUOTE_ID,
+      filler: FILLER,
+    };
+
+    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: quote,
+      });
+    });
+    const response = await webhookQuoter.quote(request);
+
+    expect(response.length).toEqual(0);
+  });
+
+  it('Skips if response is zero exactOutput', async () => {
+    const quote = {
+      amountOut: request.amount.toString(),
+      tokenIn: request.tokenIn,
+      tokenOut: request.tokenOut,
+      amountIn: '0',
+      offerer: request.offerer,
+      chainId: request.tokenInChainId,
+      requestId: request.requestId,
+      quoteId: QUOTE_ID,
+      filler: FILLER,
+    };
+
+    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: quote,
+      });
+    });
+    const response = await webhookQuoter.quote(Object.assign({}, request, { type: 'EXACT_OUTPUT' }));
+
+    expect(response.length).toEqual(0);
+  });
 });
