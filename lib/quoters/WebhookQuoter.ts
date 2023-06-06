@@ -93,11 +93,24 @@ export class WebhookQuoter implements Quoter {
         return null;
       }
 
+      // RFQ providers may return 0 as a non-quote response. These should not be considered
+      const quote = request.type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;
+      if (quote.eq(0)) {
+        this.log.error(
+          {
+            requestId: request.requestId,
+            responseRequestId: response.requestId,
+          },
+          `Webhook returned 0 quote`
+        );
+        return null;
+      }
+
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
       this.log.info(
-        `WebhookQuoter: request ${request.requestId} for endpoint ${endpoint}: ${request.amount.toString()} -> ${
-          response.type === TradeType.EXACT_INPUT ? response.amountOut.toString() : response.amountIn.toString()
-        }}`
+        `WebhookQuoter: request ${
+          request.requestId
+        } for endpoint ${endpoint}: ${request.amount.toString()} -> ${quote.toString()}}`
       );
       return response;
     } catch (e) {
