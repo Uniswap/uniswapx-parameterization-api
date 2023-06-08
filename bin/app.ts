@@ -20,17 +20,19 @@ export class APIStage extends Stage {
     id: string,
     props: StageProps & {
       provisionedConcurrency: number;
+      internalApiKey?: string;
       chatbotSNSArn?: string;
       stage: string;
       envVars: Record<string, string>;
     }
   ) {
     super(scope, id, props);
-    const { provisionedConcurrency, chatbotSNSArn, stage, env, envVars } = props;
+    const { provisionedConcurrency, internalApiKey, chatbotSNSArn, stage, env, envVars } = props;
 
     const { url } = new APIStack(this, `${SERVICE_NAME}API`, {
       env,
       provisionedConcurrency,
+      internalApiKey,
       chatbotSNSArn,
       stage,
       envVars,
@@ -90,11 +92,16 @@ export class APIPipeline extends Stack {
       secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:rfq-webhook-config-sy04bH',
     });
 
+    const internalApiKey = sm.Secret.fromSecretAttributes(this, 'internal-api-key', {
+      secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-parameterization-api-internal-api-key-uw4sIa',
+    })
+
     // Beta us-east-2
 
     const betaUsEast2Stage = new APIStage(this, 'beta-us-east-2', {
       env: { account: '801328487475', region: 'us-east-2' },
       provisionedConcurrency: 2,
+      internalApiKey: internalApiKey.secretValue.toString(),
       stage: STAGE.BETA,
       envVars: {
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
@@ -113,6 +120,7 @@ export class APIPipeline extends Stack {
     const prodUsEast2Stage = new APIStage(this, 'prod-us-east-2', {
       env: { account: '830217277613', region: 'us-east-2' },
       provisionedConcurrency: 5,
+      internalApiKey: internalApiKey.secretValue.toString(),
       chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
       envVars: {
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
@@ -194,6 +202,7 @@ new APIStack(app, `${SERVICE_NAME}Stack`, {
     region: process.env.CDK_DEFAULT_REGION,
   },
   provisionedConcurrency: process.env.PROVISION_CONCURRENCY ? parseInt(process.env.PROVISION_CONCURRENCY) : 0,
+  internalApiKey: 'test-api-key',
   throttlingOverride: process.env.THROTTLE_PER_FIVE_MINS,
   chatbotSNSArn: process.env.CHATBOT_SNS_ARN,
   stage: STAGE.LOCAL,

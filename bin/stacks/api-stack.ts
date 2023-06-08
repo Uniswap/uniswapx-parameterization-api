@@ -30,6 +30,7 @@ export class APIStack extends cdk.Stack {
     name: string,
     props: cdk.StackProps & {
       provisionedConcurrency: number;
+      internalApiKey?: string;
       throttlingOverride?: string;
       chatbotSNSArn?: string;
       stage: string;
@@ -37,7 +38,7 @@ export class APIStack extends cdk.Stack {
     }
   ) {
     super(parent, name, props);
-    const { provisionedConcurrency } = props;
+    const { provisionedConcurrency, internalApiKey } = props;
 
     /*
      *  API Gateway Initialization
@@ -98,6 +99,27 @@ export class APIStack extends cdk.Stack {
               forwardedIpConfig: {
                 headerName: 'X-Forwarded-For',
                 fallbackBehavior: 'MATCH',
+              },
+              scopeDownStatement: {
+                notStatement: {
+                  statement: {
+                    byteMatchStatement: {
+                      fieldToMatch: {
+                        singleHeader: {
+                          name: 'x-api-key',
+                        },
+                      },
+                      positionalConstraint: 'EXACTLY',
+                      searchString: internalApiKey,
+                      textTransformations: [
+                        {
+                          type: 'NONE',
+                          priority: 0,
+                        },
+                      ],
+                    },
+                  },
+                },
               },
             },
           },
