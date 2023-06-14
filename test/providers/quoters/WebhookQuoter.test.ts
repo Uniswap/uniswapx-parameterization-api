@@ -17,13 +17,15 @@ const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const CHAIN_ID = 1;
 const FILLER = '0x0000000000000000000000000000000000000001';
 
+const WEBHOOK_URL = 'https://uniswap.org';
+
 describe('WebhookQuoter tests', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
 
   const webhookProvider = new MockWebhookConfigurationProvider([
-    { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
+    { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {} },
   ]);
   const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   const webhookQuoter = new WebhookQuoter(logger, webhookProvider);
@@ -112,7 +114,7 @@ describe('WebhookQuoter tests', () => {
 
   it('Simple request and response with explicit chainId', async () => {
     const provider = new MockWebhookConfigurationProvider([
-      { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, chainIds: [1] },
+      { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1] },
     ]);
     const quoter = new WebhookQuoter(logger, provider);
     const quote = {
@@ -140,7 +142,7 @@ describe('WebhookQuoter tests', () => {
 
   it('Skips if chainId not configured', async () => {
     const provider = new MockWebhookConfigurationProvider([
-      { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, chainIds: [4, 5, 6] },
+      { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6] },
     ]);
     const quoter = new WebhookQuoter(logger, provider);
 
@@ -153,7 +155,7 @@ describe('WebhookQuoter tests', () => {
         configuredChainIds: [4, 5, 6],
         chainId: request.tokenInChainId,
       },
-      'chainId not configured for https://uniswap.org'
+      `chainId not configured for ${WEBHOOK_URL}`
     );
   });
 
@@ -196,9 +198,9 @@ describe('WebhookQuoter tests', () => {
           },
           type: 0,
         },
-        webhookUrl: 'https://uniswap.org',
+        webhookUrl: WEBHOOK_URL,
       },
-      'Webhook Response failed validation. Webhook: https://uniswap.org.'
+      `Webhook Response failed validation. Webhook: ${WEBHOOK_URL}.`
     );
     expect(response).toEqual([]);
   });
@@ -233,7 +235,26 @@ describe('WebhookQuoter tests', () => {
     expect(response).toEqual([]);
   });
 
-  it('Skips if response is zero exactInput', async () => {
+  it('Counts as non-quote if response returns 404', async () => {
+    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: '',
+        status: 404,
+      });
+    });
+    const response = await webhookQuoter.quote(request);
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        response: '',
+        responseStatus: 404,
+      },
+      `Webhook elected not to quote: ${WEBHOOK_URL}`
+    );
+
+    expect(response.length).toEqual(0);
+  });
+
+  it('Counts as non-quote if response is zero exactInput', async () => {
     const quote = {
       amountOut: '0',
       tokenIn: request.tokenIn,
@@ -249,14 +270,22 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
+        status: 200,
       });
     });
     const response = await webhookQuoter.quote(request);
 
     expect(response.length).toEqual(0);
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        response: quote,
+        responseStatus: 200,
+      },
+      `Webhook elected not to quote: ${WEBHOOK_URL}`
+    );
   });
 
-  it('Skips if response is zero exactOutput', async () => {
+  it('Counts as non-quote if response is zero exactOutput', async () => {
     const quote = {
       amountOut: request.amount.toString(),
       tokenIn: request.tokenIn,
@@ -272,10 +301,29 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
+        status: 200,
       });
     });
-    const response = await webhookQuoter.quote(Object.assign({}, request, { type: 'EXACT_OUTPUT' }));
+    const response = await webhookQuoter.quote(
+      new QuoteRequest({
+        tokenInChainId: CHAIN_ID,
+        tokenOutChainId: CHAIN_ID,
+        requestId: REQUEST_ID,
+        offerer: OFFERER,
+        tokenIn: TOKEN_IN,
+        tokenOut: TOKEN_OUT,
+        amount: ethers.utils.parseEther('1'),
+        type: TradeType.EXACT_OUTPUT,
+      })
+    );
 
     expect(response.length).toEqual(0);
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        response: quote,
+        responseStatus: 200,
+      },
+      `Webhook elected not to quote: ${WEBHOOK_URL}`
+    );
   });
 });
