@@ -1,6 +1,6 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
@@ -50,6 +50,7 @@ export class WebhookQuoter implements Quoter {
         timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
         ...(!!headers && { headers }),
       });
+
       metric.putMetric(
         metricContext(Metric.RFQ_RESPONSE_TIME, name),
         Date.now() - before,
@@ -58,16 +59,20 @@ export class WebhookQuoter implements Quoter {
 
       const { response, validation } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
 
-      // TODO: remove, using for debugging purposes
-      this.log.info(
-        {
-          rawResponse: hookResponse.data,
-          response,
-          validation,
-        },
-        `Webhook response from: ${endpoint}`
-      );
+      // RFQ provider explicitly elected not to quote
+      if (isNonQuote(request, hookResponse, response)) {
+        metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
+        this.log.info(
+          {
+            response: hookResponse.data,
+            responseStatus: hookResponse.status,
+          },
+          `Webhook elected not to quote: ${endpoint}`
+        );
+        return null;
+      }
 
+      // RFQ provider response failed validation
       if (validation.error) {
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
         this.log.error(
@@ -93,18 +98,7 @@ export class WebhookQuoter implements Quoter {
         return null;
       }
 
-      // RFQ providers may return 0 as a non-quote response. These should not be considered
       const quote = request.type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;
-      if (quote.eq(0)) {
-        this.log.error(
-          {
-            requestId: request.requestId,
-            responseRequestId: response.requestId,
-          },
-          `Webhook returned 0 quote`
-        );
-        return null;
-      }
 
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
       this.log.info(
@@ -119,4 +113,22 @@ export class WebhookQuoter implements Quoter {
       return null;
     }
   }
+}
+
+// returns true if the given hook response is an explicit non-quote
+// these should be treated differently from quote validation errors for analytics purposes
+// valid non-quote responses:
+// - 404
+// - 0 amount quote
+function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedResponse: QuoteResponse): boolean {
+  if (hookResponse.status === 404) {
+    return true;
+  }
+
+  const quote = request.type === TradeType.EXACT_INPUT ? parsedResponse.amountOut : parsedResponse.amountIn;
+  if (quote.eq(0)) {
+    return true;
+  }
+
+  return false;
 }

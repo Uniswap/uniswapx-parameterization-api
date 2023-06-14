@@ -26,6 +26,7 @@ export enum Metric {
   RFQ_SUCCESS = 'RFQ_SUCCESS',
   RFQ_RESPONSE_TIME = 'RFQ_RESPONSE_TIME',
   RFQ_FAIL_REQUEST_MATCH = 'RFQ_FAIL_REQUEST_MATCH',
+  RFQ_NON_QUOTE = 'RFQ_NON_QUOTE',
   RFQ_FAIL_VALIDATION = 'RFQ_FAIL_VALIDATION',
   RFQ_FAIL_ERROR = 'RFQ_FAIL_ERROR',
 }
@@ -36,6 +37,7 @@ type MetricNeedingContext =
   | Metric.RFQ_RESPONSE_TIME
   | Metric.RFQ_FAIL_REQUEST_MATCH
   | Metric.RFQ_FAIL_VALIDATION
+  | Metric.RFQ_NON_QUOTE
   | Metric.RFQ_FAIL_ERROR;
 
 export function metricContext(metric: MetricNeedingContext, context: string): string {
