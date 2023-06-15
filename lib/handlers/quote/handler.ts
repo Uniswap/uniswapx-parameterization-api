@@ -5,6 +5,7 @@ import Joi from 'joi';
 
 import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';
+import { NoQuotesAvailable } from '../../util/errors';
 import { currentTimestampInSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
@@ -48,12 +49,9 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     const bestQuote = await getBestQuote(quoters, request, log, metric);
     if (!bestQuote) {
+      log.info('ASDFASDFASDFADSF BEST QUOTE', bestQuote);
       metric.putMetric(Metric.QUOTE_404, 1, MetricLoggerUnit.Count);
-      return {
-        statusCode: 404,
-        detail: 'No quotes available',
-        errorCode: 'QUOTE_ERROR',
-      };
+      throw new NoQuotesAvailable();
     }
 
     log.info({ bestQuote: bestQuote }, 'bestQuote');
