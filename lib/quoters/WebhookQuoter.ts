@@ -42,7 +42,7 @@ export class WebhookQuoter implements Quoter {
 
     metric.putMetric(metricContext(Metric.RFQ_REQUESTED, name), 1, MetricLoggerUnit.Count);
     try {
-      this.log.info({ request, headers }, `Webhook request to: ${endpoint}`);
+      this.log.info({ request: request.toCleanJSON(), headers }, `Webhook request to: ${endpoint}`);
 
       const before = Date.now();
       const timeoutOverride = config.overrides?.timeout;
