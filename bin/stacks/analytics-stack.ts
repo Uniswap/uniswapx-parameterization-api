@@ -301,6 +301,88 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
+    const botOrderLoaderTable = new aws_rs.Table(this, 'botOrderLoaderTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'botLoaderEvents',
+      tableColumns: [
+        { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
+        { name: 'timestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
+
+        // order fields
+        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
+        { name: 'chainId', dataType: RS_DATA_TYPES.INTEGER },
+      ],
+    });
+
+    const botOrderRouterTable = new aws_rs.Table(this, 'botOrderRouterTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'botOrderRouterEvents',
+      tableColumns: [
+        { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
+        { name: 'timestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
+
+        // order fields
+        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
+        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'startAmountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'endAmountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'startAmountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'endAmountOut', dataType: RS_DATA_TYPES.UINT256 },
+
+        // route fields
+        { name: 'callData', dataType: RS_DATA_TYPES.ROUTING },
+        { name: 'estimatedGasUsed', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'estimatedGasUsedQuoteToken', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'quote', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'quoteGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'blockNumber', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'quoteNative', dataType: RS_DATA_TYPES.UINT256 },
+
+        // route native fields
+      ],
+    });
+
+    const botOrderBroadcastTable = new aws_rs.Table(this, 'botOrderBroadcastTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'botOrderBroadcastEvents',
+      tableColumns: [
+        { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
+        { name: 'timestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
+
+        // order fields
+        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
+        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'startAmountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'endAmountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'startAmountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'endAmountOut', dataType: RS_DATA_TYPES.UINT256 },
+
+        // route fields
+        { name: 'callData', dataType: RS_DATA_TYPES.ROUTING },
+        { name: 'estimatedGasUsed', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'estimatedGasUsedQuoteToken', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'quote', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'quoteGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'blockNumber', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'blockNumber', dataType: RS_DATA_TYPES.UINT256 },
+      ],
+    });
+
     /* Kinesis Firehose Initialization */
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
