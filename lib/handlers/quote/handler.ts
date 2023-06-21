@@ -49,7 +49,6 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     const bestQuote = await getBestQuote(quoters, request, log, metric);
     if (!bestQuote) {
-      log.info('ASDFASDFASDFADSF BEST QUOTE', bestQuote);
       metric.putMetric(Metric.QUOTE_404, 1, MetricLoggerUnit.Count);
       throw new NoQuotesAvailable();
     }
