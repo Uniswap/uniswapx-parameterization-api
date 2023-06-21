@@ -335,7 +335,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'endAmountOut', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'chainId', dataType: RS_DATA_TYPES.INTEGER },
 
-        // execution fields
+        // broadcast fields
         { name: 'goudaGasAdjustedQuote', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'goudaGasUseEstimate', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
