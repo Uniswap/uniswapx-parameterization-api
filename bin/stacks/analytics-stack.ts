@@ -27,13 +27,10 @@ enum RS_DATA_TYPES {
   INTEGER = 'integer',
   TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled || 'new' || 'open'
   TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
-  ROUTING = 'text',
+  ROUTING = 'varchar(5000)',
   SLIPPAGE = 'float4',
   UnitInETH = 'float8',
-  BOT_EXECUTOR_TYPE = 'varchar(13)', // 'publicMempool' || 'flashbots'
-  BOT_EVENT_TYPE = 'varchar(9)', // 'fetch' || 'filter' || 'execution' || 'quote'
-  BOT_FILTER_NAME = 'text',
-  STACK_TYPE = 'varchar(21)', // 'SwapRouter02Filler' || '1InchAggregatorFiller' || 'SwapRouter02Cron'
+  BOT_EVENT_TYPE = 'text',
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
