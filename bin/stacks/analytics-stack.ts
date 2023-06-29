@@ -316,7 +316,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
-      tableName: 'botOrderBroadcastEvents',
+      tableName: 'botOrderBroadcastEvents2',
       tableColumns: [
         { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
