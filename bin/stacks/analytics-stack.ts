@@ -267,7 +267,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
-      tableName: 'botLoaderEvents',
+      tableName: 'botLoaderEvents3',
       tableColumns: [
         { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
@@ -283,7 +283,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
-      tableName: 'botOrderRouterEvents',
+      tableName: 'botOrderRouterEvents3',
       tableColumns: [
         { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
@@ -316,7 +316,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
-      tableName: 'botOrderBroadcastEvents2',
+      tableName: 'botOrderBroadcastEvents3',
       tableColumns: [
         { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
