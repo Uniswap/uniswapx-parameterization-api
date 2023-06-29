@@ -265,88 +265,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const botOrderLoaderTable = new aws_rs.Table(this, 'botOrderLoaderTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'botLoaderEvents',
-      tableColumns: [
-        { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
-        { name: 'timestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
-
-        // order fields
-        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'chainId', dataType: RS_DATA_TYPES.INTEGER },
-      ],
-    });
-
-    const botOrderRouterTable = new aws_rs.Table(this, 'botOrderRouterTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'botOrderRouterEvents',
-      tableColumns: [
-        { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
-        { name: 'timestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
-
-        // order fields
-        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'startAmountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'endAmountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'startAmountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'endAmountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'chainId', dataType: RS_DATA_TYPES.INTEGER },
-
-        // route fields
-        { name: 'callData', dataType: RS_DATA_TYPES.ROUTING },
-        { name: 'estimatedGasUsed', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'estimatedGasUsedQuoteToken', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'quote', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'quoteGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'blockNumber', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'quoteNative', dataType: RS_DATA_TYPES.UINT256 },
-      ],
-    });
-
-    const botOrderBroadcasterTable = new aws_rs.Table(this, 'botOrderBroadcasterTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'botOrderBroadcastEvents',
-      tableColumns: [
-        { name: 'eventId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'eventType', dataType: RS_DATA_TYPES.BOT_EVENT_TYPE },
-        { name: 'timestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
-
-        // order fields
-        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'startAmountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'endAmountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'startAmountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'endAmountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'chainId', dataType: RS_DATA_TYPES.INTEGER },
-
-        // broadcast fields
-        { name: 'goudaGasAdjustedQuote', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'goudaGasUseEstimate', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'outputProfit', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'outputProfitThreshold', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'nativeProfit', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'callData', dataType: RS_DATA_TYPES.ROUTING },
-        { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
-      ],
-    });
-
     /* Kinesis Firehose Initialization */
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
@@ -638,105 +556,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const botOrderLoaderStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderLoaderStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: botOrderLoaderBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: botOrderLoaderTable.tableName,
-          dataTableColumns: botOrderLoaderTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: botOrderEventsProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
-    const botOrderRouterStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderRouterStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: botOrderRouterBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: botOrderRouterTable.tableName,
-          dataTableColumns: botOrderRouterTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: botOrderEventsProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
-    const botOrderBroadcasterStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderBroadcasterStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: botOrderBroadcasterBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: botOrderBroadcasterTable.tableName,
-          dataTableColumns: botOrderBroadcasterTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: botOrderEventsProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
     /* Subscription Filter Initialization */
     const subscriptionRole = new aws_iam.Role(this, 'SubscriptionRole', {
       assumedBy: new aws_iam.ServicePrincipal('logs.amazonaws.com'),
@@ -776,24 +595,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       roleArn: subscriptionRole.roleArn,
       targetArn: uraResponseStream.attrArn,
       destinationName: 'uraResponseDestination',
-    });
-
-    const botOrderLoaderDestination = new aws_logs.CfnDestination(this, 'botOrderLoaderDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: botOrderLoaderStream.attrArn,
-      destinationName: 'botOrderLoaderDestination',
-    });
-
-    const botOrderRouterDestination = new aws_logs.CfnDestination(this, 'botOrderRouterDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: botOrderRouterStream.attrArn,
-      destinationName: 'botOrderRouterDestination',
-    });
-
-    const botOrderBroadcasterDestination = new aws_logs.CfnDestination(this, 'botOrderBroadcasterDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: botOrderBroadcasterStream.attrArn,
-      destinationName: 'botOrderBroadcasterDestination',
     });
 
     // hack to get around with CDK bug where `new aws_iam.PolicyDocument({...}).string()` doesn't really turn it into a string
@@ -863,51 +664,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       });
     }
 
-    if (props.envVars['BOT_ACCOUNT']) {
-      botOrderLoaderDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['BOT_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-      botOrderRouterDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['BOT_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-      botOrderBroadcasterDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['BOT_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-    }
-
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
     // same here regarding CDK not having a stable implementation of this resource
     new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
@@ -938,15 +694,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
     new CfnOutput(this, 'UraAccount', {
       value: props.envVars['URA_ACCOUNT'],
-    });
-    new CfnOutput(this, 'botOrderLoaderDestinationName', {
-      value: botOrderLoaderDestination.attrArn,
-    });
-    new CfnOutput(this, 'botOrderRouterDestinationName', {
-      value: botOrderRouterDestination.attrArn,
-    });
-    new CfnOutput(this, 'botOrderBroadcasterDestinationName', {
-      value: botOrderBroadcasterDestination.attrArn,
     });
     new CfnOutput(this, 'BOT_ACCOUNT', {
       value: props.envVars['BOT_ACCOUNT'],
