@@ -86,6 +86,8 @@ describe('WebhookQuoter tests', () => {
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, offerer: request.offerer, quoteId: expect.any(String) });
+    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toOpposingCleanJSON(), { headers: {}, timeout: 500 });
+    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), { headers: {}, timeout: 500 });
   });
 
   it('Simple request and response null offerer', async () => {
