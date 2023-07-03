@@ -1,11 +1,14 @@
 import * as cdk from 'aws-cdk-lib';
 import { CfnOutput, SecretValue, Stack, StackProps, Stage, StageProps } from 'aws-cdk-lib';
+import * as chatbot from 'aws-cdk-lib/aws-chatbot';
 import { BuildEnvironmentVariableType, BuildSpec } from 'aws-cdk-lib/aws-codebuild';
 import * as sm from 'aws-cdk-lib/aws-secretsmanager';
+
 import { CodeBuildStep, CodePipeline, CodePipelineSource } from 'aws-cdk-lib/pipelines';
 import { Construct } from 'constructs';
 import dotenv from 'dotenv';
 
+import { PipelineNotificationEvents } from 'aws-cdk-lib/aws-codepipeline';
 import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
@@ -62,6 +65,10 @@ export class APIPipeline extends Stack {
             value: 'github-token-2',
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
           },
+          VERSION: {
+            value: '1',
+            type: BuildEnvironmentVariableType.PLAINTEXT,
+          },
         },
       },
       commands: [
@@ -93,8 +100,9 @@ export class APIPipeline extends Stack {
     });
 
     const internalApiKey = sm.Secret.fromSecretAttributes(this, 'internal-api-key', {
-      secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-parameterization-api-internal-api-key-uw4sIa',
-    })
+      secretCompleteArn:
+        'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-parameterization-api-internal-api-key-uw4sIa',
+    });
 
     // Beta us-east-2
 
@@ -137,6 +145,16 @@ export class APIPipeline extends Stack {
     this.addIntegTests(code, prodUsEast2Stage, prodUsEast2AppStage);
 
     pipeline.buildPipeline();
+
+    const slackChannel = chatbot.SlackChannelConfiguration.fromSlackChannelConfigurationArn(
+      this,
+      'SlackChannel',
+      'arn:aws:chatbot::644039819003:chat-configuration/slack-channel/eng-ops-protocols-slack-chatbot'
+    );
+
+    pipeline.pipeline.notifyOn('NotifySlack', slackChannel, {
+      events: [PipelineNotificationEvents.PIPELINE_EXECUTION_FAILED],
+    });
   }
 
   private addIntegTests(
@@ -160,6 +178,10 @@ export class APIPipeline extends Stack {
           GH_TOKEN: {
             value: 'github-token-2',
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+          },
+          VERSION: {
+            value: '1',
+            type: BuildEnvironmentVariableType.PLAINTEXT,
           },
         },
       },
