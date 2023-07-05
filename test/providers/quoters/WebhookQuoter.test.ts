@@ -11,7 +11,7 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const OFFERER = '0x0000000000000000000000000000000000000000';
+const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const CHAIN_ID = 1;
@@ -34,7 +34,7 @@ describe('WebhookQuoter tests', () => {
     tokenInChainId: CHAIN_ID,
     tokenOutChainId: CHAIN_ID,
     requestId: REQUEST_ID,
-    offerer: OFFERER,
+    swapper: SWAPPER,
     tokenIn: TOKEN_IN,
     tokenOut: TOKEN_OUT,
     amount: ethers.utils.parseEther('1'),
@@ -47,7 +47,7 @@ describe('WebhookQuoter tests', () => {
       tokenIn: request.tokenIn,
       tokenOut: request.tokenOut,
       amountIn: request.amount.toString(),
-      offerer: request.offerer,
+      swapper: request.swapper,
       chainId: request.tokenInChainId,
       requestId: request.requestId,
       quoteId: QUOTE_ID,
@@ -65,7 +65,7 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
   });
 
-  it('Simple request and response no offerer', async () => {
+  it('Simple request and response no swapper', async () => {
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
       tokenIn: request.tokenIn,
@@ -85,12 +85,12 @@ describe('WebhookQuoter tests', () => {
     const response = await webhookQuoter.quote(request);
 
     expect(response.length).toEqual(1);
-    expect(response[0].toResponseJSON()).toEqual({ ...quote, offerer: request.offerer, quoteId: expect.any(String) });
+    expect(response[0].toResponseJSON()).toEqual({ ...quote, swapper: request.swapper, quoteId: expect.any(String) });
     expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toOpposingCleanJSON(), { headers: {}, timeout: 500 });
     expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), { headers: {}, timeout: 500 });
   });
 
-  it('Simple request and response null offerer', async () => {
+  it('Simple request and response null swapper', async () => {
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
       tokenIn: request.tokenIn,
@@ -99,7 +99,7 @@ describe('WebhookQuoter tests', () => {
       chainId: request.tokenInChainId,
       requestId: request.requestId,
       quoteId: QUOTE_ID,
-      offerer: null,
+      swapper: null,
       filler: FILLER,
     };
 
@@ -111,7 +111,7 @@ describe('WebhookQuoter tests', () => {
     const response = await webhookQuoter.quote(request);
 
     expect(response.length).toEqual(1);
-    expect(response[0].toResponseJSON()).toEqual({ ...quote, offerer: request.offerer, quoteId: expect.any(String) });
+    expect(response[0].toResponseJSON()).toEqual({ ...quote, swapper: request.swapper, quoteId: expect.any(String) });
   });
 
   it('Simple request and response with explicit chainId', async () => {
@@ -124,7 +124,7 @@ describe('WebhookQuoter tests', () => {
       tokenIn: request.tokenIn,
       tokenOut: request.tokenOut,
       amountIn: request.amount.toString(),
-      offerer: request.offerer,
+      swapper: request.swapper,
       chainId: request.tokenInChainId,
       requestId: request.requestId,
       quoteId: QUOTE_ID,
@@ -166,7 +166,7 @@ describe('WebhookQuoter tests', () => {
       amountOut: ethers.utils.parseEther('2').toString(),
       tokenIn: request.tokenIn,
       tokenOut: request.tokenOut,
-      offerer: request.offerer,
+      swapper: request.swapper,
       chainId: request.tokenInChainId,
       requestId: request.requestId,
       quoteId: QUOTE_ID,
@@ -213,7 +213,7 @@ describe('WebhookQuoter tests', () => {
       amountIn: request.amount.toString(),
       tokenIn: request.tokenIn,
       tokenOut: request.tokenOut,
-      offerer: request.offerer,
+      swapper: request.swapper,
       chainId: request.tokenInChainId,
       requestId: 'a83f397c-8ef4-4801-a9b7-6e7915504420',
       quoteId: QUOTE_ID,
@@ -262,7 +262,7 @@ describe('WebhookQuoter tests', () => {
       tokenIn: request.tokenIn,
       tokenOut: request.tokenOut,
       amountIn: request.amount.toString(),
-      offerer: request.offerer,
+      swapper: request.swapper,
       chainId: request.tokenInChainId,
       requestId: request.requestId,
       quoteId: QUOTE_ID,
@@ -293,7 +293,7 @@ describe('WebhookQuoter tests', () => {
       tokenIn: request.tokenIn,
       tokenOut: request.tokenOut,
       amountIn: '0',
-      offerer: request.offerer,
+      swapper: request.swapper,
       chainId: request.tokenInChainId,
       requestId: request.requestId,
       quoteId: QUOTE_ID,
@@ -311,7 +311,7 @@ describe('WebhookQuoter tests', () => {
         tokenInChainId: CHAIN_ID,
         tokenOutChainId: CHAIN_ID,
         requestId: REQUEST_ID,
-        offerer: OFFERER,
+        swapper: SWAPPER,
         tokenIn: TOKEN_IN,
         tokenOut: TOKEN_OUT,
         amount: ethers.utils.parseEther('1'),
