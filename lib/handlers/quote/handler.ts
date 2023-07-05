@@ -38,7 +38,7 @@ export class QuoteHandler extends APIGLambdaHandler<
         requestId: request.requestId,
         tokenInChainId: request.tokenInChainId,
         tokenOutChainId: request.tokenInChainId,
-        offerer: request.offerer,
+        offerer: request.swapper,
         tokenIn: request.tokenIn,
         tokenOut: request.tokenOut,
         amount: request.amount.toString(),
@@ -90,7 +90,7 @@ async function getBestQuote(
   return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
     log.info({
       eventType: 'QuoteResponse',
-      body: quote.toLog(),
+      body: { ...quote.toLog(), offerer: quote.swapper },
     });
 
     if (!bestQuote || quote.amountOut.gt(bestQuote.amountOut)) {

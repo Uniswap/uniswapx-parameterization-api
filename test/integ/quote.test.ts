@@ -14,7 +14,7 @@ if (!process.env.UNISWAP_API) {
 
 const API = `${process.env.UNISWAP_API!}quote`;
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const OFFERER = '0x0000000000000000000000000000000000000000';
+const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 
@@ -32,7 +32,7 @@ describe('Quote endpoint integration test', function () {
   //     requestId: REQUEST_ID,
   //     tokenInChainId: 1,
   //     tokenOutChainId: 1,
-  //     offerer: OFFERER,
+  //     swapper: SWAPPER,
   //     tokenIn: TOKEN_IN,
   //     tokenOut: TOKEN_OUT,
   //     amount: '1',
@@ -42,7 +42,7 @@ describe('Quote endpoint integration test', function () {
   //   const quoteResponse = await call('POST', API, quoteReq);
   //   expect(quoteResponse).to.be.not.equal(null);
   //   expect(quoteResponse.requestId).to.be.equal(REQUEST_ID);
-  //   expect(quoteResponse.offerer).to.be.equal(OFFERER);
+  //   expect(quoteResponse.swapper).to.be.equal(SWAPPER);
   //   expect(quoteResponse.tokenIn).to.be.equal(TOKEN_IN);
   //   expect(quoteResponse.tokenOut).to.be.equal(TOKEN_OUT);
   // });
@@ -52,7 +52,7 @@ describe('Quote endpoint integration test', function () {
   //     requestId: REQUEST_ID,
   //     tokenInChainId: 137,
   //     tokenOutChainId: 137,
-  //     offerer: OFFERER,
+  //     swapper: SWAPPER,
   //     tokenIn: TOKEN_IN,
   //     tokenOut: TOKEN_OUT,
   //     amount: '1',
@@ -62,7 +62,7 @@ describe('Quote endpoint integration test', function () {
   //   const quoteResponse = await call('POST', API, quoteReq);
   //   expect(quoteResponse).to.be.not.equal(null);
   //   expect(quoteResponse.requestId).to.be.equal(REQUEST_ID);
-  //   expect(quoteResponse.offerer).to.be.equal(OFFERER);
+  //   expect(quoteResponse.swapper).to.be.equal(SWAPPER);
   //   expect(quoteResponse.tokenIn).to.be.equal(TOKEN_IN);
   //   expect(quoteResponse.tokenOut).to.be.equal(TOKEN_OUT);
   // });
@@ -72,7 +72,7 @@ describe('Quote endpoint integration test', function () {
       requestId: 'bad_request_id',
       tokenInChainId: 1,
       tokenOutChainId: 1,
-      offerer: OFFERER,
+      swapper: SWAPPER,
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
       amount: '1',
@@ -93,7 +93,7 @@ describe('Quote endpoint integration test', function () {
       requestId: REQUEST_ID,
       tokenInChainId: 1,
       tokenOutChainId: 1,
-      offerer: OFFERER,
+      swapper: SWAPPER,
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
       type: 'EXACT_INPUT',
@@ -113,7 +113,7 @@ describe('Quote endpoint integration test', function () {
       requestId: REQUEST_ID,
       tokenInChainId: 1,
       tokenOutChainId: 1,
-      offerer: OFFERER,
+      swapper: SWAPPER,
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
       type: 'EXACT_NOTHING',
@@ -134,7 +134,7 @@ describe('Quote endpoint integration test', function () {
       requestId: REQUEST_ID,
       tokenInChainId: 1,
       tokenOutChainId: 1,
-      offerer: OFFERER,
+      swapper: SWAPPER,
       tokenIn: 'USDC',
       tokenOut: TOKEN_OUT,
       type: 'EXACT_OUTPUT',
@@ -155,7 +155,7 @@ describe('Quote endpoint integration test', function () {
       requestId: REQUEST_ID,
       tokenInChainId: 1,
       tokenOutChainId: 5,
-      offerer: OFFERER,
+      swapper: SWAPPER,
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
       type: 'EXACT_OUTPUT',

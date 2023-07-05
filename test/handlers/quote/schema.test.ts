@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { PostQuoteRequestBodyJoi, PostQuoteResponseJoi, RfqResponseJoi } from '../../../lib/handlers/quote/schema';
 
-const OFFERER = '0x0000000000000000000000000000000000000000';
+const SWAPPER = '0x0000000000000000000000000000000000000000';
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const REQUEST_ID = uuidv4();
@@ -23,7 +23,7 @@ const validCombinations = validTokenIn.flatMap((tokenIn) =>
       requestId: REQUEST_ID,
       tokenInChainId: 1,
       tokenOutChainId: 1,
-      offerer: OFFERER,
+      swapper: SWAPPER,
       tokenIn,
       tokenOut,
       amount: amount,
@@ -45,7 +45,7 @@ describe('Schema tests', () => {
           tokenIn: ethers.utils.getAddress(body.tokenIn),
           tokenOut: ethers.utils.getAddress(body.tokenOut),
           amount: body.amount,
-          offerer: OFFERER,
+          swapper: SWAPPER,
           type: 'EXACT_INPUT',
         });
       }
@@ -102,11 +102,11 @@ describe('Schema tests', () => {
     });
 
     it('requires tokenIn to be defined', () => {
-      const { tokenOut, amount, offerer, tokenInChainId, tokenOutChainId, requestId } = validCombinations[0];
+      const { tokenOut, amount, swapper, tokenInChainId, tokenOutChainId, requestId } = validCombinations[0];
       const validated = PostQuoteRequestBodyJoi.validate({
         tokenOut,
         amount,
-        offerer,
+        swapper,
         tokenInChainId,
         tokenOutChainId,
         requestId,
@@ -115,11 +115,11 @@ describe('Schema tests', () => {
     });
 
     it('requires tokenOut to be defined', () => {
-      const { tokenIn, amount, offerer, tokenInChainId, tokenOutChainId, requestId } = validCombinations[0];
+      const { tokenIn, amount, swapper, tokenInChainId, tokenOutChainId, requestId } = validCombinations[0];
       const validated = PostQuoteRequestBodyJoi.validate({
         tokenIn,
         amount,
-        offerer,
+        swapper,
         tokenInChainId,
         tokenOutChainId,
         requestId,
@@ -128,11 +128,11 @@ describe('Schema tests', () => {
     });
 
     it('requires amount to be defined', () => {
-      const { tokenIn, tokenOut, offerer, tokenInChainId, tokenOutChainId, requestId } = validCombinations[0];
+      const { tokenIn, tokenOut, swapper, tokenInChainId, tokenOutChainId, requestId } = validCombinations[0];
       const validated = PostQuoteRequestBodyJoi.validate({
         tokenIn,
         tokenOut,
-        offerer,
+        swapper,
         tokenInChainId,
         tokenOutChainId,
         requestId,
@@ -141,12 +141,12 @@ describe('Schema tests', () => {
     });
 
     it('requires tokenInChainId to be defined', () => {
-      const { tokenIn, tokenOut, offerer, amount, tokenOutChainId, requestId } = validCombinations[0];
+      const { tokenIn, tokenOut, swapper, amount, tokenOutChainId, requestId } = validCombinations[0];
       const validated = PostQuoteRequestBodyJoi.validate({
         tokenIn,
         tokenOut,
         amount,
-        offerer,
+        swapper,
         tokenOutChainId,
         requestId,
       });
@@ -154,12 +154,12 @@ describe('Schema tests', () => {
     });
 
     it('requires tokenOutChainId to be defined', () => {
-      const { tokenIn, tokenOut, offerer, amount, tokenInChainId, requestId, type } = validCombinations[0];
+      const { tokenIn, tokenOut, swapper, amount, tokenInChainId, requestId, type } = validCombinations[0];
       const validated = PostQuoteRequestBodyJoi.validate({
         tokenIn,
         tokenOut,
         amount,
-        offerer,
+        swapper,
         tokenInChainId,
         requestId,
         type,
@@ -168,12 +168,12 @@ describe('Schema tests', () => {
     });
 
     it('requires tokenOutChainId and tokenInChainId to be the same value', () => {
-      const { tokenIn, tokenOut, offerer, amount, tokenInChainId, requestId, type } = validCombinations[0];
+      const { tokenIn, tokenOut, swapper, amount, tokenInChainId, requestId, type } = validCombinations[0];
       const validated = PostQuoteRequestBodyJoi.validate({
         tokenIn,
         tokenOut,
         amount,
-        offerer,
+        swapper,
         tokenInChainId,
         tokenOutChainId: 5,
         requestId,
@@ -195,7 +195,7 @@ describe('Schema tests', () => {
       const body = {
         chainId: 1,
         requestId: REQUEST_ID,
-        offerer: OFFERER,
+        swapper: SWAPPER,
         tokenIn: USDC,
         tokenOut: WETH,
         amountIn: '1000',
@@ -206,7 +206,7 @@ describe('Schema tests', () => {
       expect(validated.value).toStrictEqual({
         chainId: 1,
         requestId: REQUEST_ID,
-        offerer: OFFERER,
+        swapper: SWAPPER,
         tokenIn: USDC,
         tokenOut: WETH,
         amountIn: '1000',
@@ -219,7 +219,7 @@ describe('Schema tests', () => {
         chainId: 1,
         tokenIn: USDC,
         tokenOut: WETH,
-        offerer: OFFERER,
+        swapper: SWAPPER,
         amountIn: '1000',
         amountOut: '1000000000000000000',
       };
@@ -232,7 +232,7 @@ describe('Schema tests', () => {
         chainId: 1,
         requestId: REQUEST_ID,
         tokenOut: WETH,
-        offerer: OFFERER,
+        swapper: SWAPPER,
         amountIn: '1000',
         amountOut: '1000000000000000000',
       };
@@ -245,7 +245,7 @@ describe('Schema tests', () => {
         chainId: 1,
         requestId: REQUEST_ID,
         tokenIn: USDC,
-        offerer: OFFERER,
+        swapper: SWAPPER,
         amountIn: '1000',
         amountOut: '1000000000000000000',
       };
@@ -258,7 +258,7 @@ describe('Schema tests', () => {
         chainId: 1,
         requestId: REQUEST_ID,
         tokenIn: USDC,
-        offerer: OFFERER,
+        swapper: SWAPPER,
         tokenOut: WETH,
         amountOut: '1000000000000000000',
       };
@@ -271,7 +271,7 @@ describe('Schema tests', () => {
         chainId: 1,
         requestId: REQUEST_ID,
         tokenIn: USDC,
-        offerer: OFFERER,
+        swapper: SWAPPER,
         tokenOut: WETH,
         amountIn: '1000000000000000000',
       };
@@ -362,7 +362,7 @@ describe('Schema tests', () => {
       expect(validated.error?.message).toEqual('"amountOut" is required');
     });
 
-    it('ignores offerer', () => {
+    it('ignores swapper', () => {
       const body = {
         chainId: 1,
         requestId: REQUEST_ID,
@@ -370,7 +370,7 @@ describe('Schema tests', () => {
         tokenOut: WETH,
         amountIn: '1000000000000000000',
         amountOut: '1000000000000000000',
-        offerer: OFFERER,
+        swapper: SWAPPER,
       };
       const validated = RfqResponseJoi.validate(body, {
         allowUnknown: true,
@@ -387,7 +387,7 @@ describe('Schema tests', () => {
       });
     });
 
-    it('handles null offerer', () => {
+    it('handles null swapper', () => {
       const body = {
         chainId: 1,
         requestId: REQUEST_ID,
@@ -395,7 +395,7 @@ describe('Schema tests', () => {
         tokenOut: WETH,
         amountIn: '1000000000000000000',
         amountOut: '1000000000000000000',
-        offerer: null,
+        swapper: null,
       };
       const validated = RfqResponseJoi.validate(body, {
         allowUnknown: true,

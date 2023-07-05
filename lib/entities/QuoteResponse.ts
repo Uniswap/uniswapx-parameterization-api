@@ -29,7 +29,7 @@ export class QuoteResponse implements QuoteResponseData {
         chainId: request.tokenInChainId, // TODO: update schema
         requestId: request.requestId,
         quoteId: uuidv4(),
-        offerer: request.offerer,
+        swapper: request.swapper,
         tokenIn: request.tokenIn,
         tokenOut: request.tokenOut,
         amountIn: request.type === TradeType.EXACT_INPUT ? request.amount : amountQuoted,
@@ -49,7 +49,7 @@ export class QuoteResponse implements QuoteResponseData {
       response: new QuoteResponse(
         {
           ...data,
-          offerer: request.offerer,
+          swapper: request.swapper,
           quoteId: uuidv4(),
           amountIn: BigNumber.from(data.amountIn ?? 0),
           amountOut: BigNumber.from(data.amountOut ?? 0),
@@ -75,7 +75,7 @@ export class QuoteResponse implements QuoteResponseData {
       amountIn: this.amountIn.toString(),
       tokenOut: this.tokenOut,
       amountOut: this.amountOut.toString(),
-      offerer: this.offerer,
+      swapper: this.swapper,
       filler: this.filler,
     };
   }
@@ -90,7 +90,7 @@ export class QuoteResponse implements QuoteResponseData {
       amountIn: this.amountIn.toString(),
       tokenOut: this.tokenOut,
       amountOut: this.amountOut.toString(),
-      offerer: this.offerer,
+      swapper: this.swapper,
       filler: this.filler,
       createdAt: this.createdAt,
     };
@@ -108,8 +108,8 @@ export class QuoteResponse implements QuoteResponseData {
     return this.data.chainId;
   }
 
-  public get offerer(): string {
-    return this.data.offerer;
+  public get swapper(): string {
+    return this.data.swapper;
   }
 
   public get tokenIn(): string {

@@ -4,7 +4,7 @@ export type DBQuoteRequest = {
   tokenIn: string;
   tokenOut: string;
   amountIn: string;
-  offerer: string;
+  swapper: string;
   createdAt: number;
   deadline: number;
 };
@@ -15,7 +15,7 @@ export type DBQuoteResponse = {
   tokenIn: string;
   tokenOut: string;
   amountIn: string;
-  offerer: string;
+  swapper: string;
   createdAt: number;
   deadline: number;
   id: string;

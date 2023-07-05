@@ -6,7 +6,7 @@ export const PostQuoteRequestBodyJoi = Joi.object({
   requestId: FieldValidator.requestId.required(),
   tokenInChainId: FieldValidator.chainId.required(),
   tokenOutChainId: Joi.number().integer().valid(Joi.ref('tokenInChainId')).required(),
-  offerer: FieldValidator.address.required(),
+  swapper: FieldValidator.address.required(),
   tokenIn: FieldValidator.address.required(),
   tokenOut: FieldValidator.address.required(),
   amount: FieldValidator.amount.required(),
@@ -17,7 +17,7 @@ export type PostQuoteRequestBody = {
   requestId: string;
   tokenInChainId: number;
   tokenOutChainId: number;
-  offerer: string;
+  swapper: string;
   tokenIn: string;
   tokenOut: string;
   amount: string;
@@ -31,7 +31,7 @@ export const PostQuoteResponseJoi = Joi.object({
   amountIn: FieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
   amountOut: FieldValidator.amount.required(),
-  offerer: FieldValidator.address.optional(),
+  swapper: FieldValidator.address.optional(),
   filler: FieldValidator.address,
 });
 
@@ -42,7 +42,7 @@ export type PostQuoteResponse = {
   amountIn: string;
   tokenOut: string;
   amountOut: string;
-  offerer: string;
+  swapper: string;
   filler?: string;
 };
 
@@ -53,7 +53,7 @@ export const URAResponseJoi = Joi.object({
   amountIn: FieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
   amountOut: FieldValidator.amount.required(),
-  offerer: FieldValidator.address.required(),
+  swapper: FieldValidator.address.required(),
   filler: FieldValidator.address,
   quoteId: FieldValidator.uuid,
 });
