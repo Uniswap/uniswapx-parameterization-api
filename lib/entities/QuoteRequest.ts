@@ -63,6 +63,24 @@ export class QuoteRequest {
     };
   }
 
+  // return an opposing quote request,
+  // i.e. quoting the other side of the trade
+  public toOpposingCleanJSON(): QuoteRequestDataJSON {
+    const type = this.type === TradeType.EXACT_INPUT ? TradeType.EXACT_OUTPUT : TradeType.EXACT_INPUT;
+    return {
+      tokenInChainId: this.tokenOutChainId,
+      tokenOutChainId: this.tokenInChainId,
+      requestId: this.requestId,
+      // switch tokenIn/tokenOut
+      tokenIn: getAddress(this.tokenOut),
+      tokenOut: getAddress(this.tokenIn),
+      amount: this.amount.toString(),
+      offerer: ethers.constants.AddressZero,
+      // switch tradeType
+      type: TradeType[type],
+    };
+  }
+
   public get requestId(): string {
     return this.data.requestId;
   }
