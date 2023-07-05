@@ -21,7 +21,7 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const OFFERER = '0x0000000000000000000000000000000000000000';
+const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const CHAIN_ID = 1;
@@ -66,7 +66,7 @@ describe('Quote handler', () => {
     requestId: REQUEST_ID,
     tokenInChainId: CHAIN_ID,
     tokenOutChainId: CHAIN_ID,
-    offerer: OFFERER,
+    swapper: SWAPPER,
     tokenIn: TOKEN_IN,
     amount: amountIn,
     tokenOut: TOKEN_OUT,
@@ -88,7 +88,7 @@ describe('Quote handler', () => {
         tokenIn: request.tokenIn,
         tokenOut: request.tokenOut,
         amountIn: request.amount,
-        offerer: request.offerer,
+        swapper: request.swapper,
         requestId: request.requestId,
         chainId: request.tokenInChainId,
         filler: MOCK_FILLER_ADDRESS,
@@ -197,7 +197,7 @@ describe('Quote handler', () => {
             tokenIn: request.tokenIn,
             tokenOut: request.tokenOut,
             amountIn: request.amount,
-            offerer: request.offerer,
+            swapper: request.swapper,
             chainId: request.tokenInChainId,
             quoteId: QUOTE_ID,
           },
@@ -215,7 +215,7 @@ describe('Quote handler', () => {
         tokenIn: request.tokenIn,
         tokenOut: request.tokenOut,
         amountIn: request.amount,
-        offerer: request.offerer,
+        swapper: request.swapper,
         chainId: request.tokenInChainId,
         requestId: request.requestId,
         quoteId: expect.any(String),
@@ -257,7 +257,7 @@ describe('Quote handler', () => {
         tokenIn: request.tokenIn,
         tokenOut: request.tokenOut,
         chainId: request.tokenInChainId,
-        offerer: request.offerer,
+        swapper: request.swapper,
       });
     });
 
@@ -349,7 +349,7 @@ describe('Quote handler', () => {
             tokenIn: request.tokenIn,
             tokenOut: request.tokenOut,
             amountIn: request.amount,
-            offerer: request.offerer,
+            swapper: request.swapper,
             chainId: request.tokenInChainId,
             requestId: request.requestId,
             quoteId: QUOTE_ID,
@@ -384,7 +384,7 @@ describe('Quote handler', () => {
             tokenIn: request.tokenIn,
             tokenOut: request.tokenOut,
             amountIn: request.amount,
-            offerer: request.offerer,
+            swapper: request.swapper,
             chainId: request.tokenInChainId,
             requestId: request.requestId,
             quoteId: QUOTE_ID,

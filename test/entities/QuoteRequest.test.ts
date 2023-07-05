@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import { QuoteRequest } from '../../lib/entities';
 
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const OFFERER = '0x0000000000000000000000000000000000000000';
+const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const CHAIN_ID = 1;
@@ -18,7 +18,7 @@ describe('QuoteRequest', () => {
     tokenInChainId: CHAIN_ID,
     tokenOutChainId: CHAIN_ID,
     requestId: REQUEST_ID,
-    offerer: OFFERER,
+    swapper: SWAPPER,
     tokenIn: TOKEN_IN,
     tokenOut: TOKEN_OUT,
     amount: ethers.utils.parseEther('1'),
@@ -33,7 +33,7 @@ describe('QuoteRequest', () => {
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
       amount: ethers.utils.parseEther('1').toString(),
-      offerer: ethers.constants.AddressZero,
+      swapper: ethers.constants.AddressZero,
       type: 'EXACT_INPUT',
     });
   });
@@ -46,7 +46,7 @@ describe('QuoteRequest', () => {
       tokenIn: TOKEN_OUT,
       tokenOut: TOKEN_IN,
       amount: ethers.utils.parseEther('1').toString(),
-      offerer: ethers.constants.AddressZero,
+      swapper: ethers.constants.AddressZero,
       type: 'EXACT_OUTPUT',
     });
   });
