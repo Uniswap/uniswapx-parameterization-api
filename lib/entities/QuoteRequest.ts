@@ -8,7 +8,7 @@ export interface QuoteRequestData {
   tokenInChainId: number;
   tokenOutChainId: number;
   requestId: string;
-  offerer: string;
+  swapper: string;
   tokenIn: string;
   amount: BigNumber;
   tokenOut: string;
@@ -27,7 +27,7 @@ export class QuoteRequest {
       tokenInChainId: body.tokenInChainId,
       tokenOutChainId: body.tokenOutChainId,
       requestId: body.requestId,
-      offerer: getAddress(body.offerer),
+      swapper: getAddress(body.swapper),
       tokenIn: getAddress(body.tokenIn),
       tokenOut: getAddress(body.tokenOut),
       amount: BigNumber.from(body.amount),
@@ -42,7 +42,7 @@ export class QuoteRequest {
       tokenInChainId: this.tokenInChainId,
       tokenOutChainId: this.tokenOutChainId,
       requestId: this.requestId,
-      offerer: getAddress(this.offerer),
+      swapper: getAddress(this.swapper),
       tokenIn: getAddress(this.tokenIn),
       tokenOut: getAddress(this.tokenOut),
       amount: this.amount.toString(),
@@ -58,7 +58,7 @@ export class QuoteRequest {
       tokenIn: getAddress(this.tokenIn),
       tokenOut: getAddress(this.tokenOut),
       amount: this.amount.toString(),
-      offerer: ethers.constants.AddressZero,
+      swapper: ethers.constants.AddressZero,
       type: TradeType[this.type],
     };
   }
@@ -75,7 +75,7 @@ export class QuoteRequest {
       tokenIn: getAddress(this.tokenOut),
       tokenOut: getAddress(this.tokenIn),
       amount: this.amount.toString(),
-      offerer: ethers.constants.AddressZero,
+      swapper: ethers.constants.AddressZero,
       // switch tradeType
       type: TradeType[type],
     };
@@ -93,8 +93,8 @@ export class QuoteRequest {
     return this.data.tokenInChainId;
   }
 
-  public get offerer(): string {
-    return this.data.offerer;
+  public get swapper(): string {
+    return this.data.swapper;
   }
 
   public get tokenIn(): string {
