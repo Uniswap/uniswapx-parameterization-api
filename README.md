@@ -1,4 +1,4 @@
-# gouda-parametrization-api
+# uniswapx-parametrization-api
 
 ## Getting Started
 
