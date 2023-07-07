@@ -39,7 +39,7 @@ const LatencyWidget = (region: string): LambdaWidget => ({
   type: "metric",
   properties: {
     metrics: [
-      [ "Uniswap", "QUOTE_LATENCY", "Service", "GoudaParameterizationAPI" ]
+      [ "Uniswap", "QUOTE_LATENCY", "Service", "UniswapXParameterizationAPI" ]
     ],
     view: "timeSeries",
     stacked: false,
@@ -58,7 +58,7 @@ const RFQLatencyWidget = (region: string, rfqProviders: string[]): LambdaWidget 
   type: "metric",
   properties: {
     metrics: rfqProviders.map((name) =>
-      ([ "Uniswap", `RFQ_RESPONSE_TIME_${name}`, "Service", "GoudaParameterizationAPI", { label: name } ])),
+      ([ "Uniswap", `RFQ_RESPONSE_TIME_${name}`, "Service", "UniswapXParameterizationAPI", { label: name } ])),
     view: "timeSeries",
     stacked: false,
     region,
@@ -76,7 +76,7 @@ const QuotesRequestedWidget = (region: string): LambdaWidget => ({
   type: "metric",
   properties: {
     metrics: [
-      [ "Uniswap", "QUOTE_REQUESTED", "Service", "GoudaParameterizationAPI" ],
+      [ "Uniswap", "QUOTE_REQUESTED", "Service", "UniswapXParameterizationAPI" ],
       [ ".", "QUOTE_200", ".", ".", { visible: false } ]
     ],
     view: "timeSeries",
@@ -98,7 +98,7 @@ const ErrorRatesWidget = (region: string): LambdaWidget => ({
     metrics: [
       [ { expression: "100*(m2/m4)", label: "200", id: "e1", region } ],
       [ { expression: "100*(m3/m4)", label: "404", id: "e2", region } ],
-      [ "Uniswap", "QUOTE_200", "Service", "GoudaParameterizationAPI", { id: "m2", visible: false } ],
+      [ "Uniswap", "QUOTE_200", "Service", "UniswapXParameterizationAPI", { id: "m2", visible: false } ],
       [ ".", "QUOTE_404", ".", ".", { id: "m3", visible: false } ],
       [ ".", "QUOTE_REQUESTED", ".", ".", { id: "m4", visible: false } ]
     ],
@@ -147,9 +147,9 @@ const RFQFailRatesWidget = (region: string, rfqProviders: string[]): LambdaWidge
       const rfqFailValidation = i * 3 + 2;
       return [
         [ { expression: `100*((m${rfqFailError}+m${rfqFailValidation})/m${rfqRequested})`, label: name, id: `e${i}`, region } ],
-        [ "Uniswap", `RFQ_REQUESTED_${name}`, "Service", "GoudaParameterizationAPI", { id: `m${rfqRequested}`, visible: false } ],
-        [ "Uniswap", `RFQ_FAIl_ERROR_${name}`, "Service", "GoudaParameterizationAPI", { id: `m${rfqFailError}`, visible: false } ],
-        [ "Uniswap", `RFQ_FAIL_VALIDATION_${name}`, "Service", "GoudaParameterizationAPI", { id: `m${rfqFailValidation}`, visible: false } ],
+        [ "Uniswap", `RFQ_REQUESTED_${name}`, "Service", "UniswapXParameterizationAPI", { id: `m${rfqRequested}`, visible: false } ],
+        [ "Uniswap", `RFQ_FAIl_ERROR_${name}`, "Service", "UniswapXParameterizationAPI", { id: `m${rfqFailError}`, visible: false } ],
+        [ "Uniswap", `RFQ_FAIL_VALIDATION_${name}`, "Service", "UniswapXParameterizationAPI", { id: `m${rfqFailValidation}`, visible: false } ],
       ]
     }),
     view: "timeSeries",
@@ -180,8 +180,8 @@ export class ParamDashboardStack extends cdk.NestedStack {
 
     const region = cdk.Stack.of(this).region
 
-    new aws_cloudwatch.CfnDashboard(this, 'GoudaParamDashboard', {
-      dashboardName: `GoudaParamDashboard`,
+    new aws_cloudwatch.CfnDashboard(this, 'UniswapXParamDashboard', {
+      dashboardName: `UniswapXParamDashboard`,
       dashboardBody: JSON.stringify({
         periodOverride: 'inherit',
         widgets: [

@@ -1,4 +1,4 @@
-# gouda-parametrization-api
+# uniswapx-parametrization-api
 
 ## Getting Started
 
@@ -25,13 +25,13 @@ cdk deploy
 after successful deployment, you should see something like
 
 ```
- ✅  GoudaParameterizationStack
+ ✅  UniswapXParameterizationStack
 
 ✨  Deployment time: 93.78s
 
 Outputs:
-GoudaParameterizationStack.GoudaParameterizationEndpoint57A27B25 = <your dev url>
-GoudaParameterizationStack.Url = <your dev url>
+UniswapXParameterizationStack.UniswapXParameterizationEndpoint57A27B25 = <your dev url>
+UniswapXParameterizationStack.Url = <your dev url>
 ```
 
 The project currently has a `GET hello-world` Api Gateway<>Lambda integration set up:

@@ -48,7 +48,7 @@ export class APIPipeline extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const code = CodePipelineSource.gitHub('Uniswap/gouda-parameterization-api', 'main', {
+    const code = CodePipelineSource.gitHub('Uniswap/uniswapx-parameterization-api', 'main', {
       authentication: SecretValue.secretsManager('github-token-2'),
     });
 
@@ -101,7 +101,7 @@ export class APIPipeline extends Stack {
 
     const internalApiKey = sm.Secret.fromSecretAttributes(this, 'internal-api-key', {
       secretCompleteArn:
-        'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-parameterization-api-internal-api-key-uw4sIa',
+        'arn:aws:secretsmanager:us-east-2:644039819003:secret:uniswapx-parameterization-api-internal-api-key-64wa6H',
     });
 
     // Beta us-east-2
