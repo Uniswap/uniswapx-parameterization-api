@@ -58,7 +58,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     setGlobalLogger(log);
 
     metricsLogger.setNamespace('Uniswap');
-    metricsLogger.setDimensions({ Service: 'GoudaParameterizationAPI' });
+    metricsLogger.setDimensions({ Service: 'UniswapXParameterizationAPI' });
     const metric = new AWSMetricsLogger(metricsLogger);
     setGlobalMetric(metric);
 
@@ -109,7 +109,7 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
     });
     setGlobalLogger(log);
     metricsLogger.setNamespace('Uniswap');
-    metricsLogger.setDimensions({ Service: 'GoudaParameterizationAPI-Integration' });
+    metricsLogger.setDimensions({ Service: 'UniswapXParameterizationAPI-Integration' });
     const metric = new AWSMetricsLogger(metricsLogger);
     setGlobalMetric(metric);
 

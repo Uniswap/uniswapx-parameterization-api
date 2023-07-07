@@ -48,7 +48,7 @@ export class APIPipeline extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const code = CodePipelineSource.gitHub('Uniswap/gouda-parameterization-api', 'main', {
+    const code = CodePipelineSource.gitHub('Uniswap/uniswapx-parameterization-api', 'main', {
       authentication: SecretValue.secretsManager('github-token-2'),
     });
 
