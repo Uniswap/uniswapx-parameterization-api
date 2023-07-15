@@ -1,8 +1,9 @@
 import * as cdk from 'aws-cdk-lib';
-import { CfnOutput } from 'aws-cdk-lib';
+import { CfnOutput, Duration } from 'aws-cdk-lib';
 import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
 import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
+import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 //import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
@@ -16,6 +17,16 @@ import * as path from 'path';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
+import { STAGE } from '../../lib/util/stage';
+import { SUPPORTED_CHAINS } from '../../lib/config/chains';
+import { ChainId } from '../../lib/util/chains';
+import { Metric } from '../../lib/entities';
+
+const CHAINS_NOT_ALARMED = [
+  ChainId.GÖRLI,
+  ChainId.POLYGON,
+]
+const ALL_ALARMED_CHAINS = SUPPORTED_CHAINS.filter((c) => !CHAINS_NOT_ALARMED.includes(c));
 
 /**
  * APIStack
@@ -38,7 +49,7 @@ export class APIStack extends cdk.Stack {
     }
   ) {
     super(parent, name, props);
-    const { provisionedConcurrency, internalApiKey } = props;
+    const { provisionedConcurrency, internalApiKey, stage } = props;
 
     /*
      *  API Gateway Initialization
@@ -174,9 +185,9 @@ export class APIStack extends cdk.Stack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
-        stage: props.stage,
+        stage
       },
-      timeout: cdk.Duration.seconds(30),
+      timeout: Duration.seconds(30),
     });
 
     const quoteLambdaAlias = new aws_lambda.Alias(this, `GetOrdersLiveAlias`, {
@@ -199,9 +210,9 @@ export class APIStack extends cdk.Stack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
-        stage: props.stage,
+        stage
       },
-      timeout: cdk.Duration.seconds(15),
+      timeout: Duration.seconds(15),
     });
 
     const mockQuoteAlias = new aws_lambda.Alias(this, `MockQuoteLiveAlias`, {
@@ -224,9 +235,9 @@ export class APIStack extends cdk.Stack {
         VERSION: '3',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
-        stage: props.stage,
+        stage
       },
-      timeout: cdk.Duration.seconds(5),
+      timeout: Duration.seconds(5),
     });
 
     const rfqLambdaAlias = new aws_lambda.Alias(this, `RfqLiveAlias`, {
@@ -285,6 +296,296 @@ export class APIStack extends cdk.Stack {
       quoteLambda,
       envVars: props.envVars,
     });
+
+    /* Alarms */
+    // Mostly copied from URA
+    const apiAlarm5xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-5XX',
+      metric: api.metricServerError({
+        period: Duration.minutes(5),
+        // For this metric 'avg' represents error rate.
+        statistic: 'avg',
+      }),
+      threshold: 0.05,
+      // Beta has much less traffic so is more susceptible to transient errors.
+      evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
+    });
+
+    const apiAlarm5xxSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-5XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-5XX',
+      metric: api.metricServerError({
+        period: Duration.minutes(5),
+        // For this metric 'avg' represents error rate.
+        statistic: 'avg',
+      }),
+      threshold: 0.03,
+      // Beta has much less traffic so is more susceptible to transient errors.
+      evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
+    });
+
+    const apiAlarm4xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-4XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-4XX',
+      metric: api.metricClientError({
+        period: Duration.minutes(5),
+        statistic: 'avg',
+      }),
+      threshold: 0.95,
+      evaluationPeriods: 3,
+    });
+
+    const apiAlarm4xxSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-4XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-4XX',
+      metric: api.metricClientError({
+        period: Duration.minutes(5),
+        statistic: 'avg',
+      }),
+      threshold: 0.8,
+      evaluationPeriods: 3,
+    });
+
+    const apiAlarmLatencySev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-Latency', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-Latency',
+      metric: api.metricLatency({
+        period: Duration.minutes(5),
+        statistic: 'p90',
+      }),
+      threshold: 8500,
+      evaluationPeriods: 3,
+    });
+
+    const apiAlarmLatencySev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-Latency', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-Latency',
+      metric: api.metricLatency({
+        period: Duration.minutes(5),
+        statistic: 'p90',
+      }),
+      threshold: 5500,
+      evaluationPeriods: 3,
+    });
+
+    // Alarms for 200 rate being too low for each chain
+    // TODO: we don't append the chainId to metric names yet
+    const percent5XXByChainAlarm: cdk.aws_cloudwatch.Alarm[] = ALL_ALARMED_CHAINS.flatMap((chainId) => {
+      const alarmNameSev3 = `UniswapXParameterizationAPI-SEV3-5XXAlarm-ChainId-${chainId.toString()}`;
+      const alarmNameSev2 = `UniswapXParameterizationAPI-SEV2-5XXAlarm-ChainId-${chainId.toString()}`;
+
+      const metric = new aws_cloudwatch.MathExpression({
+        expression: '100*(response5XX/invocations)',
+        period: Duration.minutes(5),
+        usingMetrics: {
+          invocations: new aws_cloudwatch.Metric({
+            namespace: 'Uniswap',
+            metricName: `${Metric.QUOTE_REQUESTED}`,
+            dimensionsMap: { Service: SERVICE_NAME },
+            unit: aws_cloudwatch.Unit.COUNT,
+            statistic: 'sum',
+          }),
+          response5XX: new aws_cloudwatch.Metric({
+            namespace: 'Uniswap',
+            metricName: `${Metric.QUOTE_500}`,
+            dimensionsMap: { Service: SERVICE_NAME },
+            unit: aws_cloudwatch.Unit.COUNT,
+            statistic: 'sum',
+          }),
+        },
+      });
+
+      return [
+        new aws_cloudwatch.Alarm(this, alarmNameSev2, {
+          alarmName: alarmNameSev2,
+          metric,
+          threshold: 10,
+          evaluationPeriods: 3,
+        }),
+        new aws_cloudwatch.Alarm(this, alarmNameSev3, {
+          alarmName: alarmNameSev3,
+          metric,
+          threshold: 5,
+          evaluationPeriods: 3,
+        }),
+      ];
+    });
+
+    // Alarms for 4XX rate being too high for each chain
+    const percent4XXByChainAlarm: cdk.aws_cloudwatch.Alarm[] = ALL_ALARMED_CHAINS.flatMap((chainId) => {
+      const alarmNameSev3 = `UniswapXParameterizationAPI-SEV3-4XXAlarm-ChainId-${chainId.toString()}`;
+      const alarmNameSev2 = `UniswapXParameterizationAPI-SEV2-4XXAlarm-ChainId-${chainId.toString()}`;
+
+      const metric = new aws_cloudwatch.MathExpression({
+        expression: '100*((response400+response404)/invocations)',
+        period: Duration.minutes(5),
+        usingMetrics: {
+          invocations: new aws_cloudwatch.Metric({
+            namespace: 'Uniswap',
+            metricName: `${Metric.QUOTE_REQUESTED}`,
+            dimensionsMap: { Service: SERVICE_NAME },
+            unit: aws_cloudwatch.Unit.COUNT,
+            statistic: 'sum',
+          }),
+          response400: new aws_cloudwatch.Metric({
+            namespace: 'Uniswap',
+            metricName: `${Metric.QUOTE_400}`,
+            dimensionsMap: { Service: SERVICE_NAME },
+            unit: aws_cloudwatch.Unit.COUNT,
+            statistic: 'sum',
+          }),
+          response404: new aws_cloudwatch.Metric({
+            namespace: 'Uniswap',
+            metricName: `${Metric.QUOTE_404}`,
+            dimensionsMap: { Service: SERVICE_NAME },
+            unit: aws_cloudwatch.Unit.COUNT,
+            statistic: 'sum',
+          }),
+        },
+      });
+
+      return [
+        new aws_cloudwatch.Alarm(this, alarmNameSev2, {
+          alarmName: alarmNameSev2,
+          metric,
+          threshold: 80,
+          evaluationPeriods: 3,
+        }),
+        new aws_cloudwatch.Alarm(this, alarmNameSev3, {
+          alarmName: alarmNameSev3,
+          metric,
+          threshold: 50,
+          evaluationPeriods: 3,
+        }),
+      ];
+    });
+
+    // Alarm on calls from URA to the routing API
+    const routingAPIErrorMetric = new aws_cloudwatch.MathExpression({
+      expression: '100*(error/invocations)',
+      period: Duration.minutes(5),
+      usingMetrics: {
+        invocations: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `RoutingApiQuoterRequest`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+        error: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `RoutingApiQuoterErr`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+      },
+    });
+
+    const routingAPIErrorRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RoutingAPI-ErrorRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-RoutingAPI-ErrorRate',
+      metric: routingAPIErrorMetric,
+      threshold: 10,
+      evaluationPeriods: 3,
+    });
+
+    const routingAPIErrorRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-RoutingAPI-ErrorRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-RoutingAPI-ErrorRate',
+      metric: routingAPIErrorMetric,
+      threshold: 5,
+      evaluationPeriods: 3,
+    });
+
+    // Alarm on calls from URA to the rfq service
+    const rfqAPIErrorMetric = new aws_cloudwatch.MathExpression({
+      expression: '100*(error/invocations)',
+      period: Duration.minutes(5),
+      usingMetrics: {
+        invocations: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `RfqQuoterRequest`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+        error: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `RfqQuoterRfqErr`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+      },
+    });
+
+    const rfqAPIErrorRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQAPI-ErrorRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-RFQAPI-ErrorRate',
+      metric: rfqAPIErrorMetric,
+      threshold: 10,
+      evaluationPeriods: 3,
+    });
+
+    const rfqAPIErrorRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-RFQAPI-ErrorRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQAPI-ErrorRate',
+      metric: rfqAPIErrorMetric,
+      threshold: 5,
+      evaluationPeriods: 3,
+    });
+
+    // Alarm on calls from URA to the nonce service (uniswapx service)
+    const nonceAPIErrorMetric = new aws_cloudwatch.MathExpression({
+      expression: '100*(error/invocations)',
+      period: Duration.minutes(5),
+      usingMetrics: {
+        invocations: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `RfqQuoterRequest`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+        error: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `RfqQuoterNonceErr`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+      },
+    });
+
+    const nonceAPIErrorRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-NonceAPI-ErrorRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-NonceAPI-ErrorRate',
+      metric: nonceAPIErrorMetric,
+      threshold: 10,
+      evaluationPeriods: 3,
+    });
+
+    const nonceAPIErrorRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-NonceAPI-ErrorRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-NonceAPI-ErrorRate',
+      metric: nonceAPIErrorMetric,
+      threshold: 5,
+      evaluationPeriods: 3,
+    });
+
+    if (chatbotSNSArn) {
+      const chatBotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
+      apiAlarm5xxSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarm4xxSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarm5xxSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarm4xxSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarmLatencySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarmLatencySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+
+      percent5XXByChainAlarm.forEach((alarm) => {
+        alarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      });
+      percent4XXByChainAlarm.forEach((alarm) => {
+        alarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      });
+
+      routingAPIErrorRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      routingAPIErrorRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      rfqAPIErrorRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      rfqAPIErrorRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      nonceAPIErrorRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      nonceAPIErrorRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+    }
 
     this.url = new CfnOutput(this, 'Url', {
       value: api.url,
