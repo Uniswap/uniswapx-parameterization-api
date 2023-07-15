@@ -49,7 +49,7 @@ export class APIStack extends cdk.Stack {
     }
   ) {
     super(parent, name, props);
-    const { provisionedConcurrency, internalApiKey, stage } = props;
+    const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
 
     /*
      *  API Gateway Initialization
@@ -455,21 +455,21 @@ export class APIStack extends cdk.Stack {
       ];
     });
 
-    // Alarm on calls from URA to the routing API
-    const routingAPIErrorMetric = new aws_cloudwatch.MathExpression({
-      expression: '100*(error/invocations)',
+    // Alarm on calls to RFQ providers
+    const rfqOverallSuccessMetric = new aws_cloudwatch.MathExpression({
+      expression: '100*(success/invocations)',
       period: Duration.minutes(5),
       usingMetrics: {
         invocations: new aws_cloudwatch.Metric({
           namespace: 'Uniswap',
-          metricName: `RoutingApiQuoterRequest`,
+          metricName: `${Metric.RFQ_REQUESTED}`,
           dimensionsMap: { Service: SERVICE_NAME },
           unit: aws_cloudwatch.Unit.COUNT,
           statistic: 'sum',
         }),
-        error: new aws_cloudwatch.Metric({
+        success: new aws_cloudwatch.Metric({
           namespace: 'Uniswap',
-          metricName: `RoutingApiQuoterErr`,
+          metricName: `${Metric.RFQ_SUCCESS}`,
           dimensionsMap: { Service: SERVICE_NAME },
           unit: aws_cloudwatch.Unit.COUNT,
           statistic: 'sum',
@@ -477,35 +477,36 @@ export class APIStack extends cdk.Stack {
       },
     });
 
-    const routingAPIErrorRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RoutingAPI-ErrorRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-RoutingAPI-ErrorRate',
-      metric: routingAPIErrorMetric,
-      threshold: 10,
+    const rfqOverallSuccessRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-SuccessRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-RFQ-SuccessRate',
+      metric: rfqOverallSuccessMetric,
+      threshold: 90,
+      comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
       evaluationPeriods: 3,
     });
 
-    const routingAPIErrorRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-RoutingAPI-ErrorRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-RoutingAPI-ErrorRate',
-      metric: routingAPIErrorMetric,
-      threshold: 5,
+    const rfqOverallSuccessRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate',
+      metric: rfqOverallSuccessMetric,
+      threshold: 95,
+      comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
       evaluationPeriods: 3,
     });
 
-    // Alarm on calls from URA to the rfq service
-    const rfqAPIErrorMetric = new aws_cloudwatch.MathExpression({
-      expression: '100*(error/invocations)',
+    const rfqOverallNonQuoteMetric = new aws_cloudwatch.MathExpression({
+      expression: '100*(nonQuote/invocations)',
       period: Duration.minutes(5),
       usingMetrics: {
         invocations: new aws_cloudwatch.Metric({
           namespace: 'Uniswap',
-          metricName: `RfqQuoterRequest`,
+          metricName: `${Metric.RFQ_REQUESTED}`,
           dimensionsMap: { Service: SERVICE_NAME },
           unit: aws_cloudwatch.Unit.COUNT,
           statistic: 'sum',
         }),
-        error: new aws_cloudwatch.Metric({
+        nonQuote: new aws_cloudwatch.Metric({
           namespace: 'Uniswap',
-          metricName: `RfqQuoterRfqErr`,
+          metricName: `${Metric.RFQ_NON_QUOTE}`,
           dimensionsMap: { Service: SERVICE_NAME },
           unit: aws_cloudwatch.Unit.COUNT,
           statistic: 'sum',
@@ -513,55 +514,23 @@ export class APIStack extends cdk.Stack {
       },
     });
 
-    const rfqAPIErrorRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQAPI-ErrorRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-RFQAPI-ErrorRate',
-      metric: rfqAPIErrorMetric,
-      threshold: 10,
+    const rfqOverallNonQuoteRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate',
+      metric: rfqOverallNonQuoteMetric,
+      threshold: 50,
+      comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       evaluationPeriods: 3,
     });
 
-    const rfqAPIErrorRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-RFQAPI-ErrorRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQAPI-ErrorRate',
-      metric: rfqAPIErrorMetric,
-      threshold: 5,
+    const rfqOverallNonQuoteRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate',
+      metric: rfqOverallNonQuoteMetric,
+      threshold: 30,
+      comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       evaluationPeriods: 3,
     });
 
-    // Alarm on calls from URA to the nonce service (uniswapx service)
-    const nonceAPIErrorMetric = new aws_cloudwatch.MathExpression({
-      expression: '100*(error/invocations)',
-      period: Duration.minutes(5),
-      usingMetrics: {
-        invocations: new aws_cloudwatch.Metric({
-          namespace: 'Uniswap',
-          metricName: `RfqQuoterRequest`,
-          dimensionsMap: { Service: SERVICE_NAME },
-          unit: aws_cloudwatch.Unit.COUNT,
-          statistic: 'sum',
-        }),
-        error: new aws_cloudwatch.Metric({
-          namespace: 'Uniswap',
-          metricName: `RfqQuoterNonceErr`,
-          dimensionsMap: { Service: SERVICE_NAME },
-          unit: aws_cloudwatch.Unit.COUNT,
-          statistic: 'sum',
-        }),
-      },
-    });
-
-    const nonceAPIErrorRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-NonceAPI-ErrorRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-NonceAPI-ErrorRate',
-      metric: nonceAPIErrorMetric,
-      threshold: 10,
-      evaluationPeriods: 3,
-    });
-
-    const nonceAPIErrorRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-NonceAPI-ErrorRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-NonceAPI-ErrorRate',
-      metric: nonceAPIErrorMetric,
-      threshold: 5,
-      evaluationPeriods: 3,
-    });
+    // TODO: do we want alarms on individual RFQ providers?
 
     if (chatbotSNSArn) {
       const chatBotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
@@ -579,12 +548,10 @@ export class APIStack extends cdk.Stack {
         alarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       });
 
-      routingAPIErrorRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      routingAPIErrorRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      rfqAPIErrorRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      rfqAPIErrorRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      nonceAPIErrorRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      nonceAPIErrorRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      rfqOverallSuccessRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      rfqOverallSuccessRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      rfqOverallNonQuoteRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      rfqOverallNonQuoteRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
     }
 
     this.url = new CfnOutput(this, 'Url', {
