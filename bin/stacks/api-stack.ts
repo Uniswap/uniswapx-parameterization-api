@@ -290,7 +290,6 @@ export class APIStack extends cdk.Stack {
     });
 
     /* Alarms */
-    // Mostly copied from URA
     const apiAlarm5xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {
       alarmName: 'UniswapXParameterizationAPI-SEV2-5XX',
       metric: api.metricServerError({
@@ -354,83 +353,6 @@ export class APIStack extends cdk.Stack {
       }),
       // approx 1.5x WEBHOOK_TIMEOUT_MS
       threshold: 750,
-      evaluationPeriods: 3,
-    });
-
-    const uniswapXParameterizationAPI5XXMetric = new aws_cloudwatch.MathExpression({
-      expression: '100*(response5XX/invocations)',
-      period: Duration.minutes(5),
-      usingMetrics: {
-        invocations: new aws_cloudwatch.Metric({
-          namespace: 'Uniswap',
-          metricName: `${Metric.QUOTE_REQUESTED}`,
-          dimensionsMap: { Service: SERVICE_NAME },
-          unit: aws_cloudwatch.Unit.COUNT,
-          statistic: 'sum',
-        }),
-        response5XX: new aws_cloudwatch.Metric({
-          namespace: 'Uniswap',
-          metricName: `${Metric.QUOTE_500}`,
-          dimensionsMap: { Service: SERVICE_NAME },
-          unit: aws_cloudwatch.Unit.COUNT,
-          statistic: 'sum',
-        }),
-      },
-    });
-
-    // Alarms for 5XX rate being too high for each chain
-    const uniswapXParameterizationAPI5XXAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-5XXAlarm',
-      metric: uniswapXParameterizationAPI5XXMetric,
-      threshold: 10,
-      evaluationPeriods: 3,
-    });
-    const uniswapXParameterizationAPI5XXAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-5XXAlarm', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-5XXAlarm',
-      metric: uniswapXParameterizationAPI5XXMetric,
-      threshold: 5,
-      evaluationPeriods: 3,
-    });
-
-    const uniswapXParameterizationAPI4XXMetric = new aws_cloudwatch.MathExpression({
-      expression: '100*((response400+response404)/invocations)',
-      period: Duration.minutes(5),
-      usingMetrics: {
-        invocations: new aws_cloudwatch.Metric({
-          namespace: 'Uniswap',
-          metricName: `${Metric.QUOTE_REQUESTED}`,
-          dimensionsMap: { Service: SERVICE_NAME },
-          unit: aws_cloudwatch.Unit.COUNT,
-          statistic: 'sum',
-        }),
-        response400: new aws_cloudwatch.Metric({
-          namespace: 'Uniswap',
-          metricName: `${Metric.QUOTE_400}`,
-          dimensionsMap: { Service: SERVICE_NAME },
-          unit: aws_cloudwatch.Unit.COUNT,
-          statistic: 'sum',
-        }),
-        response404: new aws_cloudwatch.Metric({
-          namespace: 'Uniswap',
-          metricName: `${Metric.QUOTE_404}`,
-          dimensionsMap: { Service: SERVICE_NAME },
-          unit: aws_cloudwatch.Unit.COUNT,
-          statistic: 'sum',
-        }),
-      },
-    });
-
-    // Alarms for 4XX rate being too high for each chain
-    const uniswapXParameterizationAPI4XXAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-5XXAlarm',
-      metric: uniswapXParameterizationAPI4XXMetric,
-      threshold: 80,
-      evaluationPeriods: 3,
-    });
-    const uniswapXParameterizationAPI4XXAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-4XXAlarm', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-4XXAlarm',
-      metric: uniswapXParameterizationAPI4XXMetric,
-      threshold: 50,
       evaluationPeriods: 3,
     });
 
@@ -512,10 +434,6 @@ export class APIStack extends cdk.Stack {
       apiAlarmLatencySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       apiAlarmLatencySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
 
-      uniswapXParameterizationAPI5XXAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      uniswapXParameterizationAPI5XXAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      uniswapXParameterizationAPI4XXAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      uniswapXParameterizationAPI4XXAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       rfqOverallSuccessRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       rfqOverallSuccessRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       rfqOverallNonQuoteRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
