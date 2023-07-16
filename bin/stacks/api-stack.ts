@@ -18,15 +18,7 @@ import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
 import { STAGE } from '../../lib/util/stage';
-import { SUPPORTED_CHAINS } from '../../lib/config/chains';
-import { ChainId } from '../../lib/util/chains';
 import { Metric } from '../../lib/entities';
-
-const CHAINS_NOT_ALARMED = [
-  ChainId.GÖRLI,
-  ChainId.POLYGON,
-]
-const ALL_ALARMED_CHAINS = SUPPORTED_CHAINS.filter((c) => !CHAINS_NOT_ALARMED.includes(c));
 
 /**
  * APIStack
@@ -349,7 +341,8 @@ export class APIStack extends cdk.Stack {
         period: Duration.minutes(5),
         statistic: 'p90',
       }),
-      threshold: 8500,
+      // approx 2x WEBHOOK_TIMEOUT_MS
+      threshold: 1000,
       evaluationPeriods: 3,
     });
 
@@ -359,100 +352,86 @@ export class APIStack extends cdk.Stack {
         period: Duration.minutes(5),
         statistic: 'p90',
       }),
-      threshold: 5500,
+      // approx 1.5x WEBHOOK_TIMEOUT_MS
+      threshold: 750,
       evaluationPeriods: 3,
     });
 
-    // Alarms for 200 rate being too low for each chain
-    // TODO: we don't append the chainId to metric names yet
-    const percent5XXByChainAlarm: cdk.aws_cloudwatch.Alarm[] = ALL_ALARMED_CHAINS.flatMap((chainId) => {
-      const alarmNameSev3 = `UniswapXParameterizationAPI-SEV3-5XXAlarm-ChainId-${chainId.toString()}`;
-      const alarmNameSev2 = `UniswapXParameterizationAPI-SEV2-5XXAlarm-ChainId-${chainId.toString()}`;
-
-      const metric = new aws_cloudwatch.MathExpression({
-        expression: '100*(response5XX/invocations)',
-        period: Duration.minutes(5),
-        usingMetrics: {
-          invocations: new aws_cloudwatch.Metric({
-            namespace: 'Uniswap',
-            metricName: `${Metric.QUOTE_REQUESTED}`,
-            dimensionsMap: { Service: SERVICE_NAME },
-            unit: aws_cloudwatch.Unit.COUNT,
-            statistic: 'sum',
-          }),
-          response5XX: new aws_cloudwatch.Metric({
-            namespace: 'Uniswap',
-            metricName: `${Metric.QUOTE_500}`,
-            dimensionsMap: { Service: SERVICE_NAME },
-            unit: aws_cloudwatch.Unit.COUNT,
-            statistic: 'sum',
-          }),
-        },
-      });
-
-      return [
-        new aws_cloudwatch.Alarm(this, alarmNameSev2, {
-          alarmName: alarmNameSev2,
-          metric,
-          threshold: 10,
-          evaluationPeriods: 3,
+    const uniswapXParameterizationAPI5XXMetric = new aws_cloudwatch.MathExpression({
+      expression: '100*(response5XX/invocations)',
+      period: Duration.minutes(5),
+      usingMetrics: {
+        invocations: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `${Metric.QUOTE_REQUESTED}`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
         }),
-        new aws_cloudwatch.Alarm(this, alarmNameSev3, {
-          alarmName: alarmNameSev3,
-          metric,
-          threshold: 5,
-          evaluationPeriods: 3,
+        response5XX: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `${Metric.QUOTE_500}`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
         }),
-      ];
+      },
+    });
+
+    // Alarms for 5XX rate being too high for each chain
+    const uniswapXParameterizationAPI5XXAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-5XXAlarm',
+      metric: uniswapXParameterizationAPI5XXMetric,
+      threshold: 10,
+      evaluationPeriods: 3,
+    });
+    const uniswapXParameterizationAPI5XXAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-5XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-5XXAlarm',
+      metric: uniswapXParameterizationAPI5XXMetric,
+      threshold: 5,
+      evaluationPeriods: 3,
+    });
+
+    const uniswapXParameterizationAPI4XXMetric = new aws_cloudwatch.MathExpression({
+      expression: '100*((response400+response404)/invocations)',
+      period: Duration.minutes(5),
+      usingMetrics: {
+        invocations: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `${Metric.QUOTE_REQUESTED}`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+        response400: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `${Metric.QUOTE_400}`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+        response404: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `${Metric.QUOTE_404}`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+      },
     });
 
     // Alarms for 4XX rate being too high for each chain
-    const percent4XXByChainAlarm: cdk.aws_cloudwatch.Alarm[] = ALL_ALARMED_CHAINS.flatMap((chainId) => {
-      const alarmNameSev3 = `UniswapXParameterizationAPI-SEV3-4XXAlarm-ChainId-${chainId.toString()}`;
-      const alarmNameSev2 = `UniswapXParameterizationAPI-SEV2-4XXAlarm-ChainId-${chainId.toString()}`;
-
-      const metric = new aws_cloudwatch.MathExpression({
-        expression: '100*((response400+response404)/invocations)',
-        period: Duration.minutes(5),
-        usingMetrics: {
-          invocations: new aws_cloudwatch.Metric({
-            namespace: 'Uniswap',
-            metricName: `${Metric.QUOTE_REQUESTED}`,
-            dimensionsMap: { Service: SERVICE_NAME },
-            unit: aws_cloudwatch.Unit.COUNT,
-            statistic: 'sum',
-          }),
-          response400: new aws_cloudwatch.Metric({
-            namespace: 'Uniswap',
-            metricName: `${Metric.QUOTE_400}`,
-            dimensionsMap: { Service: SERVICE_NAME },
-            unit: aws_cloudwatch.Unit.COUNT,
-            statistic: 'sum',
-          }),
-          response404: new aws_cloudwatch.Metric({
-            namespace: 'Uniswap',
-            metricName: `${Metric.QUOTE_404}`,
-            dimensionsMap: { Service: SERVICE_NAME },
-            unit: aws_cloudwatch.Unit.COUNT,
-            statistic: 'sum',
-          }),
-        },
-      });
-
-      return [
-        new aws_cloudwatch.Alarm(this, alarmNameSev2, {
-          alarmName: alarmNameSev2,
-          metric,
-          threshold: 80,
-          evaluationPeriods: 3,
-        }),
-        new aws_cloudwatch.Alarm(this, alarmNameSev3, {
-          alarmName: alarmNameSev3,
-          metric,
-          threshold: 50,
-          evaluationPeriods: 3,
-        }),
-      ];
+    const uniswapXParameterizationAPI4XXAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-5XXAlarm',
+      metric: uniswapXParameterizationAPI4XXMetric,
+      threshold: 80,
+      evaluationPeriods: 3,
+    });
+    const uniswapXParameterizationAPI4XXAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-4XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-4XXAlarm',
+      metric: uniswapXParameterizationAPI4XXMetric,
+      threshold: 50,
+      evaluationPeriods: 3,
     });
 
     // Alarm on calls to RFQ providers
@@ -514,14 +493,6 @@ export class APIStack extends cdk.Stack {
       },
     });
 
-    const rfqOverallNonQuoteRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate',
-      metric: rfqOverallNonQuoteMetric,
-      threshold: 50,
-      comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-      evaluationPeriods: 3,
-    });
-
     const rfqOverallNonQuoteRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate', {
       alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate',
       metric: rfqOverallNonQuoteMetric,
@@ -530,7 +501,7 @@ export class APIStack extends cdk.Stack {
       evaluationPeriods: 3,
     });
 
-    // TODO: do we want alarms on individual RFQ providers?
+    // TODO: consider alarming on individual RFQ providers
 
     if (chatbotSNSArn) {
       const chatBotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
@@ -541,16 +512,12 @@ export class APIStack extends cdk.Stack {
       apiAlarmLatencySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       apiAlarmLatencySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
 
-      percent5XXByChainAlarm.forEach((alarm) => {
-        alarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      });
-      percent4XXByChainAlarm.forEach((alarm) => {
-        alarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      });
-
+      uniswapXParameterizationAPI5XXAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      uniswapXParameterizationAPI5XXAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      uniswapXParameterizationAPI4XXAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      uniswapXParameterizationAPI4XXAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       rfqOverallSuccessRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       rfqOverallSuccessRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      rfqOverallNonQuoteRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       rfqOverallNonQuoteRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
     }
 
