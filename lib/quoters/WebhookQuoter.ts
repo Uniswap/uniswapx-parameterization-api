@@ -44,6 +44,7 @@ export class WebhookQuoter implements Quoter {
     metric.putMetric(metricContext(Metric.RFQ_REQUESTED, name), 1, MetricLoggerUnit.Count);
     try {
       this.log.info({ request: request.toCleanJSON(), headers }, `Webhook request to: ${endpoint}`);
+      this.log.info({ request: request.toOpposingCleanJSON(), headers }, `Webhook request to: ${endpoint}`);
 
       const before = Date.now();
       const timeoutOverride = config.overrides?.timeout;
@@ -57,11 +58,7 @@ export class WebhookQuoter implements Quoter {
         axios.post(endpoint, request.toOpposingCleanJSON(), axiosConfig),
       ]);
 
-      metric.putMetric(
-        Metric.RFQ_RESPONSE_TIME,
-        Date.now() - before,
-        MetricLoggerUnit.Milliseconds
-      );
+      metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);
       metric.putMetric(
         metricContext(Metric.RFQ_RESPONSE_TIME, name),
         Date.now() - before,
