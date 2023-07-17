@@ -1,8 +1,9 @@
 import * as cdk from 'aws-cdk-lib';
-import { CfnOutput } from 'aws-cdk-lib';
+import { CfnOutput, Duration } from 'aws-cdk-lib';
 import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
 import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
+import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 //import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
@@ -16,6 +17,8 @@ import * as path from 'path';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
+import { STAGE } from '../../lib/util/stage';
+import { Metric } from '../../lib/entities';
 
 /**
  * APIStack
@@ -38,7 +41,7 @@ export class APIStack extends cdk.Stack {
     }
   ) {
     super(parent, name, props);
-    const { provisionedConcurrency, internalApiKey } = props;
+    const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
 
     /*
      *  API Gateway Initialization
@@ -174,9 +177,9 @@ export class APIStack extends cdk.Stack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
-        stage: props.stage,
+        stage
       },
-      timeout: cdk.Duration.seconds(30),
+      timeout: Duration.seconds(30),
     });
 
     const quoteLambdaAlias = new aws_lambda.Alias(this, `GetOrdersLiveAlias`, {
@@ -199,9 +202,9 @@ export class APIStack extends cdk.Stack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
-        stage: props.stage,
+        stage
       },
-      timeout: cdk.Duration.seconds(15),
+      timeout: Duration.seconds(15),
     });
 
     const mockQuoteAlias = new aws_lambda.Alias(this, `MockQuoteLiveAlias`, {
@@ -224,9 +227,9 @@ export class APIStack extends cdk.Stack {
         VERSION: '3',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
-        stage: props.stage,
+        stage
       },
-      timeout: cdk.Duration.seconds(5),
+      timeout: Duration.seconds(5),
     });
 
     const rfqLambdaAlias = new aws_lambda.Alias(this, `RfqLiveAlias`, {
@@ -285,6 +288,156 @@ export class APIStack extends cdk.Stack {
       quoteLambda,
       envVars: props.envVars,
     });
+
+    /* Alarms */
+    const apiAlarm5xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-5XX',
+      metric: api.metricServerError({
+        period: Duration.minutes(5),
+        // For this metric 'avg' represents error rate.
+        statistic: 'avg',
+      }),
+      threshold: 0.05,
+      // Beta has much less traffic so is more susceptible to transient errors.
+      evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
+    });
+
+    const apiAlarm5xxSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-5XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-5XX',
+      metric: api.metricServerError({
+        period: Duration.minutes(5),
+        // For this metric 'avg' represents error rate.
+        statistic: 'avg',
+      }),
+      threshold: 0.03,
+      // Beta has much less traffic so is more susceptible to transient errors.
+      evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
+    });
+
+    const apiAlarm4xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-4XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-4XX',
+      metric: api.metricClientError({
+        period: Duration.minutes(5),
+        statistic: 'avg',
+      }),
+      threshold: 0.95,
+      evaluationPeriods: 3,
+    });
+
+    const apiAlarm4xxSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-4XXAlarm', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-4XX',
+      metric: api.metricClientError({
+        period: Duration.minutes(5),
+        statistic: 'avg',
+      }),
+      threshold: 0.8,
+      evaluationPeriods: 3,
+    });
+
+    const apiAlarmLatencySev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-Latency', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-Latency',
+      metric: api.metricLatency({
+        period: Duration.minutes(5),
+        statistic: 'p90',
+      }),
+      // approx 2x WEBHOOK_TIMEOUT_MS
+      threshold: 1000,
+      evaluationPeriods: 3,
+    });
+
+    const apiAlarmLatencySev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-Latency', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-Latency',
+      metric: api.metricLatency({
+        period: Duration.minutes(5),
+        statistic: 'p90',
+      }),
+      // approx 1.5x WEBHOOK_TIMEOUT_MS
+      threshold: 750,
+      evaluationPeriods: 3,
+    });
+
+    // Alarm on calls to RFQ providers
+    const rfqOverallSuccessMetric = new aws_cloudwatch.MathExpression({
+      expression: '100*(success/invocations)',
+      period: Duration.minutes(5),
+      usingMetrics: {
+        invocations: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `${Metric.RFQ_REQUESTED}`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+        success: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `${Metric.RFQ_SUCCESS}`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+      },
+    });
+
+    const rfqOverallSuccessRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-SuccessRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-RFQ-SuccessRate',
+      metric: rfqOverallSuccessMetric,
+      threshold: 90,
+      comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      evaluationPeriods: 3,
+    });
+
+    const rfqOverallSuccessRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate',
+      metric: rfqOverallSuccessMetric,
+      threshold: 95,
+      comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      evaluationPeriods: 3,
+    });
+
+    const rfqOverallNonQuoteMetric = new aws_cloudwatch.MathExpression({
+      expression: '100*(nonQuote/invocations)',
+      period: Duration.minutes(5),
+      usingMetrics: {
+        invocations: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `${Metric.RFQ_REQUESTED}`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+        nonQuote: new aws_cloudwatch.Metric({
+          namespace: 'Uniswap',
+          metricName: `${Metric.RFQ_NON_QUOTE}`,
+          dimensionsMap: { Service: SERVICE_NAME },
+          unit: aws_cloudwatch.Unit.COUNT,
+          statistic: 'sum',
+        }),
+      },
+    });
+
+    const rfqOverallNonQuoteRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate',
+      metric: rfqOverallNonQuoteMetric,
+      threshold: 30,
+      comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 3,
+    });
+
+    // TODO: consider alarming on individual RFQ providers
+
+    if (chatbotSNSArn) {
+      const chatBotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
+      apiAlarm5xxSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarm4xxSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarm5xxSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarm4xxSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarmLatencySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarmLatencySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+
+      rfqOverallSuccessRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      rfqOverallSuccessRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      rfqOverallNonQuoteRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+    }
 
     this.url = new CfnOutput(this, 'Url', {
       value: api.url,

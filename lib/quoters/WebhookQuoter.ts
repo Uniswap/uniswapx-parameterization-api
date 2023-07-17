@@ -40,6 +40,7 @@ export class WebhookQuoter implements Quoter {
       return null;
     }
 
+    metric.putMetric(Metric.RFQ_REQUESTED, 1, MetricLoggerUnit.Count);
     metric.putMetric(metricContext(Metric.RFQ_REQUESTED, name), 1, MetricLoggerUnit.Count);
     try {
       this.log.info({ request: request.toCleanJSON(), headers }, `Webhook request to: ${endpoint}`);
@@ -57,6 +58,11 @@ export class WebhookQuoter implements Quoter {
       ]);
 
       metric.putMetric(
+        Metric.RFQ_RESPONSE_TIME,
+        Date.now() - before,
+        MetricLoggerUnit.Milliseconds
+      );
+      metric.putMetric(
         metricContext(Metric.RFQ_RESPONSE_TIME, name),
         Date.now() - before,
         MetricLoggerUnit.Milliseconds
@@ -66,6 +72,7 @@ export class WebhookQuoter implements Quoter {
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
+        metric.putMetric(Metric.RFQ_NON_QUOTE, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
         this.log.info(
           {
@@ -79,6 +86,7 @@ export class WebhookQuoter implements Quoter {
 
       // RFQ provider response failed validation
       if (validation.error) {
+        metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
         this.log.error(
           {
@@ -92,6 +100,7 @@ export class WebhookQuoter implements Quoter {
       }
 
       if (response.requestId !== request.requestId) {
+        metric.putMetric(Metric.RFQ_FAIL_REQUEST_MATCH, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_REQUEST_MATCH, name), 1, MetricLoggerUnit.Count);
         this.log.error(
           {
@@ -105,6 +114,7 @@ export class WebhookQuoter implements Quoter {
 
       const quote = request.type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;
 
+      metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
       this.log.info(
         `WebhookQuoter: request ${
@@ -113,6 +123,7 @@ export class WebhookQuoter implements Quoter {
       );
       return response;
     } catch (e) {
+      metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_FAIL_ERROR, name), 1, MetricLoggerUnit.Count);
       this.log.error(`Error fetching quote from ${endpoint}: ${e}`);
       return null;
