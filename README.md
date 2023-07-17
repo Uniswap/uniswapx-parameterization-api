@@ -1,5 +1,9 @@
 # uniswapx-parametrization-api
 
+[![Unit Tests](https://github.com/Uniswap/uniswapx-parameterization-api/actions/workflows/test.yml/badge.svg)](https://github.com/Uniswap/uniswapx-parameterization-api/actions/workflows/test.yml)
+
+UniswapX Parameterization API is a service to parameterize UniswapX orders. The service fetches quotes on-demand from external providers to get a sense of the current market price for a given trade.
+
 ## Getting Started
 
 follow [api-template README](https://github.com/Uniswap/api-template#first-time-developing-on-aws-or-with-cdk) to get your AWS CDK set up and bootstrapped.
