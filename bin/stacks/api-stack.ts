@@ -416,7 +416,7 @@ export class APIStack extends cdk.Stack {
     });
 
     const rfqOverallNonQuoteRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate',
+      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-NonQuoteRate',
       metric: rfqOverallNonQuoteMetric,
       threshold: 30,
       comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
