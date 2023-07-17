@@ -14,11 +14,11 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 //import { QUOTES_TABLE_INDEX, QUOTES_TABLE_KEY } from '../../lib/config/dynamodb';
+import { Metric } from '../../lib/entities';
+import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
-import { STAGE } from '../../lib/util/stage';
-import { Metric } from '../../lib/entities';
 
 /**
  * APIStack
@@ -177,7 +177,7 @@ export class APIStack extends cdk.Stack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
-        stage
+        stage,
       },
       timeout: Duration.seconds(30),
     });
@@ -202,7 +202,7 @@ export class APIStack extends cdk.Stack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
-        stage
+        stage,
       },
       timeout: Duration.seconds(15),
     });
@@ -227,7 +227,7 @@ export class APIStack extends cdk.Stack {
         VERSION: '3',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
-        stage
+        stage,
       },
       timeout: Duration.seconds(5),
     });
@@ -320,7 +320,7 @@ export class APIStack extends cdk.Stack {
         period: Duration.minutes(5),
         statistic: 'avg',
       }),
-      threshold: 0.95,
+      threshold: 0.98,
       evaluationPeriods: 3,
     });
 
@@ -330,7 +330,7 @@ export class APIStack extends cdk.Stack {
         period: Duration.minutes(5),
         statistic: 'avg',
       }),
-      threshold: 0.8,
+      threshold: 0.95,
       evaluationPeriods: 3,
     });
 
@@ -341,7 +341,7 @@ export class APIStack extends cdk.Stack {
         statistic: 'p90',
       }),
       // approx 2x WEBHOOK_TIMEOUT_MS
-      threshold: 1000,
+      threshold: 3500,
       evaluationPeriods: 3,
     });
 
@@ -352,7 +352,7 @@ export class APIStack extends cdk.Stack {
         statistic: 'p90',
       }),
       // approx 1.5x WEBHOOK_TIMEOUT_MS
-      threshold: 750,
+      threshold: 2000,
       evaluationPeriods: 3,
     });
 
@@ -378,21 +378,29 @@ export class APIStack extends cdk.Stack {
       },
     });
 
-    const rfqOverallSuccessRateAlarmSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-SuccessRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-RFQ-SuccessRate',
-      metric: rfqOverallSuccessMetric,
-      threshold: 90,
-      comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-      evaluationPeriods: 3,
-    });
+    const rfqOverallSuccessRateAlarmSev2 = new aws_cloudwatch.Alarm(
+      this,
+      'UniswapXParameterizationAPI-SEV2-RFQ-SuccessRate',
+      {
+        alarmName: 'UniswapXParameterizationAPI-SEV2-RFQ-SuccessRate',
+        metric: rfqOverallSuccessMetric,
+        threshold: 90,
+        comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        evaluationPeriods: 3,
+      }
+    );
 
-    const rfqOverallSuccessRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate',
-      metric: rfqOverallSuccessMetric,
-      threshold: 95,
-      comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-      evaluationPeriods: 3,
-    });
+    const rfqOverallSuccessRateAlarmSev3 = new aws_cloudwatch.Alarm(
+      this,
+      'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate',
+      {
+        alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-SuccessRate',
+        metric: rfqOverallSuccessMetric,
+        threshold: 95,
+        comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        evaluationPeriods: 3,
+      }
+    );
 
     const rfqOverallNonQuoteMetric = new aws_cloudwatch.MathExpression({
       expression: '100*(nonQuote/invocations)',
@@ -415,13 +423,17 @@ export class APIStack extends cdk.Stack {
       },
     });
 
-    const rfqOverallNonQuoteRateAlarmSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-NonQuoteRate',
-      metric: rfqOverallNonQuoteMetric,
-      threshold: 30,
-      comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-      evaluationPeriods: 3,
-    });
+    const rfqOverallNonQuoteRateAlarmSev3 = new aws_cloudwatch.Alarm(
+      this,
+      'UniswapXParameterizationAPI-SEV2-RFQ-NonQuoteRate',
+      {
+        alarmName: 'UniswapXParameterizationAPI-SEV3-RFQ-NonQuoteRate',
+        metric: rfqOverallNonQuoteMetric,
+        threshold: 30,
+        comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        evaluationPeriods: 3,
+      }
+    );
 
     // TODO: consider alarming on individual RFQ providers
 
