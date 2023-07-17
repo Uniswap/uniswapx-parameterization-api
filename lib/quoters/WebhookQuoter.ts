@@ -1,11 +1,11 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
-import axios, { AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 
+import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
-import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -57,11 +57,7 @@ export class WebhookQuoter implements Quoter {
         axios.post(endpoint, request.toOpposingCleanJSON(), axiosConfig),
       ]);
 
-      metric.putMetric(
-        Metric.RFQ_RESPONSE_TIME,
-        Date.now() - before,
-        MetricLoggerUnit.Milliseconds
-      );
+      metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);
       metric.putMetric(
         metricContext(Metric.RFQ_RESPONSE_TIME, name),
         Date.now() - before,
@@ -125,7 +121,17 @@ export class WebhookQuoter implements Quoter {
     } catch (e) {
       metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_FAIL_ERROR, name), 1, MetricLoggerUnit.Count);
-      this.log.error(`Error fetching quote from ${endpoint}: ${e}`);
+      if (e instanceof AxiosError) {
+        this.log.error(
+          { endpoint, status: e.response?.status?.toString() },
+          `Axios error fetching quote from ${endpoint}: ${e}`
+        );
+      } else {
+        this.log.error(
+          { endpoint },
+          `Error fetching quote from ${endpoint}: ${e}`
+        );
+      }
       return null;
     }
   }
