@@ -144,6 +144,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'amount', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'type', dataType: RS_DATA_TYPES.TRADE_TYPE },
+        { name: 'swapper', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'configs', dataType: RS_DATA_TYPES.ROUTING }, // array as string, e.g. '[DUTCH_LIMIT,CLASSIC]'
@@ -178,6 +179,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
         { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
         { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'swapper', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
