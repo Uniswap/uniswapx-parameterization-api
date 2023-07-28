@@ -3,9 +3,9 @@ import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 
-import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -114,8 +114,8 @@ export class WebhookQuoter implements Quoter {
       metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
       this.log.info(
-        `WebhookQuoter: request ${
-          request.requestId
+        `WebhookQuoter: response ${
+          response.requestId
         } for endpoint ${endpoint}: ${request.amount.toString()} -> ${quote.toString()}}`
       );
       return response;
@@ -128,10 +128,7 @@ export class WebhookQuoter implements Quoter {
           `Axios error fetching quote from ${endpoint}: ${e}`
         );
       } else {
-        this.log.error(
-          { endpoint },
-          `Error fetching quote from ${endpoint}: ${e}`
-        );
+        this.log.error({ endpoint }, `Error fetching quote from ${endpoint}: ${e}`);
       }
       return null;
     }
