@@ -77,7 +77,7 @@ This data will be included in the body of the request and will be sent to the gi
    tokenOut: string,
    amount: string,
    swapper: string,
-   type: string (ex. EXACT_INPUT or EXACT_OUTPUT),
+   type: string (EXACT_INPUT or EXACT_OUTPUT),
 }
 ```
 
