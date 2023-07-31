@@ -59,3 +59,44 @@ The project currently has a `GET hello-world` Api Gateway<>Lambda integration se
    ```
    yarn test:integ
    ```
+
+## Webhook Quoting Schema
+
+Quoters will need to abide by the following schemas in order to successfully quote UniswapX orders.
+
+### Request
+
+This data will be included in the body of the request and will be sent to the given quote endpoint.
+
+```
+{
+   tokenInChainId: number,
+   tokenOutChainId: number,
+   requestId: string,
+   tokenIn: string,
+   tokenOut: string,
+   amount: string,
+   swapper: string,
+   type: string (EXACT_INPUT or EXACT_OUTPUT),
+}
+```
+
+### Response
+
+This data will be expected in the body of the quote response.
+
+_Note: if a quoter elects to not quote a swap they should still send back a response but with a zero value in the `amountIn`/`amountOut` field, depending on the trade type._
+
+```
+{
+  chainId: number,
+  requestId: number,
+  tokenIn: string,
+  amountIn: string,
+  tokenOut: string,
+  amountOut: string,
+  filler: string,
+}
+```
+
+The `requestId`, `tokenIn`, `chainId`, `tokenIn`, and `tokenOut` fields should be mirrored from the request. The `filler` address should be the address of the fill contract.
