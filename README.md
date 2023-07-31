@@ -77,7 +77,7 @@ This data will be included in the body of the request and will be sent to the gi
    tokenOut: string,
    amount: string,
    swapper: string,
-   type: string (ex. EXACT_INPUT or EXACT_OUTPUT),
+   type: string (EXACT_INPUT or EXACT_OUTPUT),
 }
 ```
 
@@ -85,7 +85,7 @@ This data will be included in the body of the request and will be sent to the gi
 
 This data will be expected in the body of the quote response.
 
-_Note: if a quoter elects to not quote a swap they should still send back a response but with a zero value in the `amountIn`/`amountOut` field, depending on the trade type._
+_Note: if a quoter elects to not quote a swap they should either send back a 404 or a response but with a zero value in the `amountIn`/`amountOut` field, depending on the trade type._
 
 ```
 {
