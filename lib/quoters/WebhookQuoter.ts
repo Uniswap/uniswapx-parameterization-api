@@ -114,6 +114,9 @@ export class WebhookQuoter implements Quoter {
       metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
       this.log.info(
+        {
+          response: response.toLog(),
+        },
         `WebhookQuoter: request ${
           request.requestId
         } for endpoint ${endpoint}: ${request.amount.toString()} -> ${quote.toString()}}`
