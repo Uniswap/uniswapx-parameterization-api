@@ -98,6 +98,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         throw new Error('No fade rate result');
       }
       console.log(result);
+      break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
       throw new Error(status.Error);
