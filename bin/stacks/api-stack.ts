@@ -4,7 +4,6 @@ import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
 import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-//import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -13,11 +12,11 @@ import * as aws_waf from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
-//import { QUOTES_TABLE_INDEX, QUOTES_TABLE_KEY } from '../../lib/config/dynamodb';
 import { Metric } from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
+import { CronStack } from './cron-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
 
 /**
@@ -160,8 +159,30 @@ export class APIStack extends cdk.Stack {
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess'),
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3ReadOnlyAccess'),
+        aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonRedshiftDataFullAccess'),
       ],
     });
+
+    lambdaRole.addToPolicy(
+      new aws_iam.PolicyStatement({
+        actions: [
+          'secretsmanager:GetSecretValue',
+          'secretsmanager:DescribeSecret',
+          'secretsmanager:ListSecretVersionIds',
+          'secretsmanager:GetResourcePolicy',
+        ],
+        resources: ['*'],
+        effect: aws_iam.Effect.ALLOW,
+      })
+    );
+
+    lambdaRole.addToPolicy(
+      new aws_iam.PolicyStatement({
+        actions: ['kms:Decrypt', 'kms:DescribeKey', 'kms:GenerateDataKey'],
+        resources: ['*'],
+        effect: aws_iam.Effect.ALLOW,
+      })
+    );
 
     const quoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Quote', {
       role: lambdaRole,
@@ -274,6 +295,7 @@ export class APIStack extends cdk.Stack {
     const integrationRfq = integration.addResource('rfq');
     integrationRfq.addMethod('POST', rfqLambdaIntegration);
     mockQuote.addMethod('POST', mockQuoteIntegration);
+
     /*
      * Param Dashboard Stack Initialization
      */
@@ -284,9 +306,16 @@ export class APIStack extends cdk.Stack {
     /*
      * Analytics Stack Initialization
      */
-    new AnalyticsStack(this, 'AnalyticsStack', {
+    const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
       quoteLambda,
       envVars: props.envVars,
+    });
+
+    new CronStack(this, 'CronStack', {
+      RsDatabase: analyticsStack.dbName,
+      RsClusterIdentifier: analyticsStack.clusterId,
+      RedshiftCredSecretArn: analyticsStack.credSecretArn,
+      lambdaRole: lambdaRole,
     });
 
     /* Alarms */

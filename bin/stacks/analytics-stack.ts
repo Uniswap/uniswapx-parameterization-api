@@ -14,7 +14,7 @@ import { Construct } from 'constructs';
 import path from 'path';
 
 const RS_DATABASE_NAME = 'uniswap_x'; // must be lowercase
-
+const ADMIN = 'admin';
 const FIREHOSE_IP_ADDRESS_USE2 = '13.58.135.96/27';
 
 enum RS_DATA_TYPES {
@@ -49,6 +49,10 @@ export interface AnalyticsStackProps extends cdk.NestedStackProps {
  *      - Provisioned Redshift Cluster; transformed log events are COPY'd from S3 to Redshift as the final datawarehouse and analytics engine
  */
 export class AnalyticsStack extends cdk.NestedStack {
+  public readonly clusterId: string;
+  public readonly dbName: string;
+  public readonly credSecretArn: string;
+
   constructor(scope: Construct, id: string, props: AnalyticsStackProps) {
     super(scope, id, props);
     const { quoteLambda } = props;
@@ -98,6 +102,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
       encryptionKey: key,
     });
+    this.credSecretArn = creds.secretArn;
 
     const vpc = new aws_ec2.Vpc(this, 'RsVpc', {});
 
@@ -110,7 +115,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     // which should be sufficient for prototype
     const rsCluster = new aws_rs.Cluster(this, 'ParametrizationCluster', {
       masterUser: {
-        masterUsername: 'admin',
+        masterUsername: ADMIN,
         masterPassword: creds.secretValueFromJson('password'),
       },
       vpc: vpc,
@@ -125,6 +130,8 @@ export class AnalyticsStack extends cdk.NestedStack {
       securityGroups: [subscriptionSG],
       publiclyAccessible: true,
     });
+    this.dbName = RS_DATABASE_NAME;
+    this.clusterId = rsCluster.clusterName;
 
     // docs.aws.amazon.com/firehose/latest/dev/controlling-access.html#using-iam-rs-vpc
     subscriptionSG.addIngressRule(
