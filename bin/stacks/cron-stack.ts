@@ -1,5 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
-import { Duration } from 'aws-cdk-lib';
+import { aws_cloudwatch, Duration } from 'aws-cdk-lib';
+import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
+import { Operation } from 'aws-cdk-lib/aws-dynamodb';
 import * as aws_events from 'aws-cdk-lib/aws-events';
 import * as aws_events_targets from 'aws-cdk-lib/aws-events-targets';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
@@ -8,13 +10,29 @@ import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
+import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../../lib/constants';
+import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
+
+type CapacityOptions = {
+  readCapacity?: number;
+  writeCapacity?: number;
+};
+
+type TableCapacityOptions = {
+  billingMode: aws_dynamo.BillingMode;
+} & CapacityOptions;
+
+export type TableCapacityConfig = {
+  fadeRate: TableCapacityOptions;
+};
 
 export interface CronStackProps extends cdk.NestedStackProps {
   RsDatabase: string;
   RsClusterIdentifier: string;
   RedshiftCredSecretArn: string;
   lambdaRole: aws_iam.Role;
+  chatbotSNSArn?: string;
 }
 
 export class CronStack extends cdk.NestedStack {
@@ -22,7 +40,7 @@ export class CronStack extends cdk.NestedStack {
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
-    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole } = props;
+    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, chatbotSNSArn } = props;
 
     this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}FadeRate`, {
       role: lambdaRole,
@@ -42,8 +60,110 @@ export class CronStack extends cdk.NestedStack {
       },
     });
     new aws_events.Rule(this, `${SERVICE_NAME}ScheduleCronLambda`, {
-      schedule: aws_events.Schedule.rate(Duration.minutes(5)),
+      schedule: aws_events.Schedule.rate(Duration.hours(1)),
       targets: [new aws_events_targets.LambdaFunction(this.fadeRateCronLambda)],
     });
+
+    /* RFQ fade rate table */
+    const fadeRateTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FadeRateTable`, {
+      tableName: DYNAMO_TABLE_NAME.FADE_RATE,
+      partitionKey: {
+        name: DYNAMO_TABLE_KEY.FILLER,
+        type: aws_dynamo.AttributeType.STRING,
+      },
+      deletionProtection: true,
+      pointInTimeRecovery: true,
+      contributorInsightsEnabled: true,
+      ...PROD_TABLE_CAPACITY.fadeRate,
+    });
+
+    this.alarmsPerTable(fadeRateTable, DYNAMO_TABLE_NAME.FADE_RATE, chatbotSNSArn);
+  }
+
+  private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSArn?: string): void {
+    const readCapacityAlarm = new aws_cloudwatch.Alarm(this, `${SERVICE_NAME}-SEV3-${name}-ReadCapacityAlarm`, {
+      alarmName: `${SERVICE_NAME}-SEV3-${name}-ReadCapacityAlarm`,
+      metric: table.metricConsumedReadCapacityUnits(),
+      threshold: 80,
+      evaluationPeriods: 2,
+    });
+
+    const writeCapacityAlarm = new aws_cloudwatch.Alarm(this, `${SERVICE_NAME}-SEV3-${name}-WriteCapacityAlarm`, {
+      alarmName: `${SERVICE_NAME}-SEV3-${name}-WriteCapacityAlarm`,
+      metric: table.metricConsumedWriteCapacityUnits(),
+      threshold: 80,
+      evaluationPeriods: 2,
+    });
+
+    const readThrottleAlarm = new aws_cloudwatch.Alarm(this, `${SERVICE_NAME}-SEV3-${name}-ReadThrottlesAlarm`, {
+      alarmName: `${SERVICE_NAME}-SEV3-${name}-ReadThrottlesAlarm`,
+      metric: table.metricThrottledRequestsForOperations({
+        operations: [
+          Operation.GET_ITEM,
+          Operation.BATCH_GET_ITEM,
+          Operation.BATCH_WRITE_ITEM,
+          Operation.PUT_ITEM,
+          Operation.QUERY,
+          Operation.SCAN,
+          Operation.UPDATE_ITEM,
+          Operation.DELETE_ITEM,
+        ],
+      }),
+      threshold: 10,
+      evaluationPeriods: 2,
+    });
+
+    const writeThrottleAlarm = new aws_cloudwatch.Alarm(this, `${SERVICE_NAME}-SEV3-${name}-WriteThrottlesAlarm`, {
+      alarmName: `${SERVICE_NAME}-SEV3-${name}-WriteThrottlesAlarm`,
+      metric: table.metricThrottledRequestsForOperations({
+        operations: [
+          Operation.GET_ITEM,
+          Operation.BATCH_GET_ITEM,
+          Operation.BATCH_WRITE_ITEM,
+          Operation.PUT_ITEM,
+          Operation.QUERY,
+          Operation.SCAN,
+          Operation.UPDATE_ITEM,
+          Operation.DELETE_ITEM,
+        ],
+      }),
+      threshold: 10,
+      evaluationPeriods: 2,
+    });
+
+    const systemErrorsAlarm = new aws_cloudwatch.Alarm(this, `${SERVICE_NAME}-SEV3-${name}-SystemErrorsAlarm`, {
+      alarmName: `${SERVICE_NAME}-SEV3-${name}-SystemErrorsAlarm`,
+      metric: table.metricSystemErrorsForOperations({
+        operations: [
+          Operation.GET_ITEM,
+          Operation.BATCH_GET_ITEM,
+          Operation.BATCH_WRITE_ITEM,
+          Operation.PUT_ITEM,
+          Operation.QUERY,
+          Operation.SCAN,
+          Operation.UPDATE_ITEM,
+          Operation.DELETE_ITEM,
+        ],
+      }),
+      threshold: 10,
+      evaluationPeriods: 2,
+    });
+
+    const userErrorsAlarm = new aws_cloudwatch.Alarm(this, `${SERVICE_NAME}-SEV3-${name}-UserErrorsAlarm`, {
+      alarmName: `${SERVICE_NAME}-SEV3-${name}-UserErrorsAlarm`,
+      metric: table.metricUserErrors(),
+      threshold: 10,
+      evaluationPeriods: 2,
+    });
+
+    if (chatbotSNSArn) {
+      const chatBotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
+      userErrorsAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      systemErrorsAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      writeThrottleAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      readThrottleAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      writeCapacityAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      readCapacityAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+    }
   }
 }

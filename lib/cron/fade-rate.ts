@@ -1,3 +1,4 @@
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DescribeStatementCommand,
   ExecuteStatementCommand,
@@ -5,9 +6,13 @@ import {
   RedshiftDataClient,
   StatusString,
 } from '@aws-sdk/client-redshift-data';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import { default as bunyan, default as Logger } from 'bunyan';
+import { Entity, Table } from 'dynamodb-toolbox';
+
+import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
 
 const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>) => {
   const log: Logger = bunyan.createLogger({
@@ -17,6 +22,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   });
 
   const client = new RedshiftDataClient({});
+  const fadeRateEntity = createDynamoEntity();
 
   const sharedConfig = {
     Database: process.env.REDSHIFT_DATABASE,
@@ -97,11 +103,19 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         log.error('no fade rate calculation result');
         throw new Error('No fade rate result');
       }
-      console.log(result);
+      log.info({ result }, 'fade rate result');
+      result.forEach(async (row) => {
+        try {
+          await fadeRateEntity.put({
+            filler: row[0].stringValue ?? '',
+            faderate: parseFloat(row[1].stringValue ?? ''),
+          });
+        } catch (e) {
+          log.error({ error: e }, 'Failed to put fade rate');
+          throw e;
+        }
+      });
       break;
-    } else {
-      log.error({ error: status.Error }, 'Unknown status');
-      throw new Error(status.Error);
     }
   }
 };
@@ -110,6 +124,33 @@ function sleep(ms: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function createDynamoEntity() {
+  const DocumentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+    marshallOptions: {
+      convertEmptyValues: true,
+    },
+    unmarshallOptions: {
+      wrapNumbers: true,
+    },
+  });
+
+  const table = new Table({
+    name: DYNAMO_TABLE_NAME.FADE_RATE,
+    partitionKey: DYNAMO_TABLE_KEY.FILLER,
+    DocumentClient,
+  });
+
+  return new Entity({
+    name: `${DYNAMO_TABLE_NAME.FADE_RATE}Entity`,
+    attributes: {
+      filler: { partitionKey: true, type: 'string' },
+      faderate: { type: 'number' },
+    },
+    table: table,
+    autoExecute: true,
+  } as const);
 }
 
 const CREATE_VIEW_SQL = `
