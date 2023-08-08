@@ -116,11 +116,11 @@ const CREATE_VIEW_SQL = `
 CREATE OR REPLACE VIEW rfqOrders 
 AS
 SELECT
-    archivedorders.quoteid as quoteId, archivedorders.filler as actualFiller, archivedorders.filltimestamp as fillTimestamp, archivedorders.txhash as txHash, rfqresponses.filler as rfqFiller
+    postedorders.filler as rfqFiller, postedorders.quoteid as quoteId, archivedorders.filler as actualFiller, archivedorders.filltimestamp as fillTimestamp, archivedorders.txhash as txHash
 FROM
-    archivedorders, rfqresponses
-WHERE archivedorders.quoteid = rfqresponses.quoteid
-AND rfqFiller IS NOT NULL
+    postedorders LEFT OUTER JOIN archivedorders ON postedorders.quoteid = archivedorders.quoteid
+where
+rfqFiller IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND
     fillTimestamp >= extract(epoch from (GETDATE() - INTERVAL '24 HOURS'));
