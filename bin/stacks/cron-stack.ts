@@ -24,7 +24,7 @@ export class CronStack extends cdk.NestedStack {
     super(scope, name, props);
     const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole } = props;
 
-    this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}CronLambda`, {
+    this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}FadeRate`, {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_16_X,
       entry: path.join(__dirname, '../../lib/cron/fade-rate.ts'),
