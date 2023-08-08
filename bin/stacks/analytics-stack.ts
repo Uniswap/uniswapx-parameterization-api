@@ -269,6 +269,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'outputStartAmount', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'outputEndAmount', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
       ],
     });
 
