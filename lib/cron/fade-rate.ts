@@ -106,10 +106,16 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       log.info({ result }, 'fade rate result');
       result.forEach(async (row) => {
         try {
-          await fadeRateEntity.put({
-            filler: row[0].stringValue ?? '',
-            faderate: parseFloat(row[1].stringValue ?? ''),
-          });
+          const res = await fadeRateEntity.put(
+            {
+              filler: row[0].stringValue ?? '',
+              faderate: parseFloat(row[1].stringValue ?? ''),
+            },
+            {
+              execute: true,
+            }
+          );
+          log.info({ res }, 'fade rate put result');
         } catch (e) {
           log.error({ error: e }, 'Failed to put fade rate');
           throw e;
@@ -157,14 +163,14 @@ const CREATE_VIEW_SQL = `
 CREATE OR REPLACE VIEW rfqOrders 
 AS
 SELECT
-    postedorders.filler as rfqFiller, postedorders.quoteid as quoteId, archivedorders.filler as actualFiller, archivedorders.filltimestamp as fillTimestamp, archivedorders.txhash as txHash
+    postedorders.filler as rfqFiller, postedorders.quoteid as quoteId, archivedorders.filler as actualFiller, postedorders.createdat as postTimestamp, archivedorders.txhash as txHash
 FROM
     postedorders LEFT OUTER JOIN archivedorders ON postedorders.quoteid = archivedorders.quoteid
 where
 rfqFiller IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND
-    fillTimestamp >= extract(epoch from (GETDATE() - INTERVAL '24 HOURS'));
+    postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '24 HOURS'));
 `;
 
 const FADE_RATE_SQL = `
