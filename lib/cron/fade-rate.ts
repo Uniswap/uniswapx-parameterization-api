@@ -168,6 +168,7 @@ FROM
     postedorders LEFT OUTER JOIN archivedorders ON postedorders.quoteid = archivedorders.quoteid
 where
 rfqFiller IS NOT NULL
+AND quoteId IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND
     postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '24 HOURS'));
