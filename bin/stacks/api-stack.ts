@@ -385,6 +385,26 @@ export class APIStack extends cdk.Stack {
       evaluationPeriods: 3,
     });
 
+    const apiAlarmLatencyP99Sev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-LatencyP99', {
+      alarmName: 'UniswapXParameterizationAPI-SEV2-LatencyP99',
+      metric: api.metricLatency({
+        period: Duration.minutes(5),
+        statistic: 'p99',
+      }),
+      threshold: 5000,
+      evaluationPeriods: 3,
+    });
+
+    const apiAlarmLatencyP99Sev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-LatencyP99', {
+      alarmName: 'UniswapXParameterizationAPI-SEV3-LatencyP99',
+      metric: api.metricLatency({
+        period: Duration.minutes(5),
+        statistic: 'p99',
+      }),
+      threshold: 4000,
+      evaluationPeriods: 3,
+    });
+
     // Alarm on calls to RFQ providers
     const rfqOverallSuccessMetric = new aws_cloudwatch.MathExpression({
       expression: '100*(success/invocations)',
@@ -474,6 +494,8 @@ export class APIStack extends cdk.Stack {
       apiAlarm4xxSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       apiAlarmLatencySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       apiAlarmLatencySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarmLatencyP99Sev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      apiAlarmLatencyP99Sev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
 
       rfqOverallSuccessRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       rfqOverallSuccessRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
