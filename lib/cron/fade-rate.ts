@@ -196,7 +196,7 @@ WITH ORDERS_CTE AS (
     SELECT 
         rfqFiller,
         COUNT(*) AS totalQuotes,
-        SUM(CASE WHEN rfqFiller != actualFiller OR (tradeType = 'EXACT_INPUT' AND quotedAmount > filledAmount) OR (tradeType = 'EXACT_OUTPUT' AND quotedAmount < filledAmount) THEN 1 ELSE 0 END) AS fadedQuotes
+        SUM(CASE WHEN (tradeType = 'EXACT_INPUT' AND quotedAmount > filledAmount) OR (tradeType = 'EXACT_OUTPUT' AND quotedAmount < filledAmount) THEN 1 ELSE 0 END) AS fadedQuotes
     FROM rfqOrders 
     GROUP BY rfqFiller
 )
