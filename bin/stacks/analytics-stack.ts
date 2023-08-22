@@ -241,6 +241,8 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'fillTimestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
