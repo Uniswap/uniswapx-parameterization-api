@@ -171,6 +171,10 @@ WITH latestOrders AS (
 SELECT
     latestOrders.chainid as chainId, latestOrders.filler as rfqFiller, latestOrders.quoteid, archivedorders.filler as actualFiller, latestOrders.createdat as postTimestamp, archivedorders.txhash as txHash,
     CASE
+      WHEN latestOrders.inputstartamount = latestOrders.inputendamount THEN 'EXACT_INPUT'
+      ELSE 'EXACT_OUTPUT'
+    END as tradeType, 
+    CASE
       WHEN latestOrders.inputstartamount = latestOrders.inputendamount THEN latestOrders.outputstartamount
       ELSE latestOrders.inputstartamount
     END as quotedAmount,
@@ -192,7 +196,7 @@ WITH ORDERS_CTE AS (
     SELECT 
         rfqFiller,
         COUNT(*) AS totalQuotes,
-        SUM(CASE WHEN rfqFiller != actualFiller OR quotedAmount != filledAmount THEN 1 ELSE 0 END) AS fadedQuotes
+        SUM(CASE WHEN rfqFiller != actualFiller OR (tradeType = 'EXACT_INPUT' AND quotedAmount > filledAmount) OR (tradeType = 'EXACT_OUTPUT' AND quotedAmount < filledAmount) THEN 1 ELSE 0 END) AS fadedQuotes
     FROM rfqOrders 
     GROUP BY rfqFiller
 )
