@@ -169,7 +169,12 @@ WITH latestOrders AS (
   WHERE row_num <= 20
 )
 SELECT
-    latestOrders.chainid as chainId, latestOrders.filler as rfqFiller, latestOrders.quoteid, archivedorders.filler as actualFiller, latestOrders.createdat as postTimestamp, archivedorders.txhash as txHash
+    latestOrders.chainid as chainId, latestOrders.filler as rfqFiller, latestOrders.quoteid, archivedorders.filler as actualFiller, latestOrders.createdat as postTimestamp, archivedorders.txhash as txHash,
+    CASE
+      WHEN latestOrders.inputstartamount = latestOrders.inputendamount THEN latestOrders.outputstartamount
+      ELSE latestOrders.inputstartamount
+    END as quotedAmount,
+    archivedorders.amountout as filledAmount
 FROM
     latestOrders LEFT OUTER JOIN archivedorders ON latestOrders.quoteid = archivedorders.quoteid
 where
@@ -178,7 +183,7 @@ AND latestOrders.quoteId IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND chainId NOT IN (5,8001,420,421613) -- exclude mainnet goerli, polygon goerli, optimism goerli and arbitrum goerli testnets 
 AND
-    postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '168 HOURS'))
+    postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '168 HOURS')) -- 7 days rolling window
 );
 `;
 
@@ -187,14 +192,15 @@ WITH ORDERS_CTE AS (
     SELECT 
         rfqFiller,
         COUNT(*) AS totalQuotes,
-        SUM(CASE WHEN rfqFiller != actualFiller THEN 1 ELSE 0 END) AS unfilledQuotes
+        SUM(CASE WHEN rfqFiller != actualFiller OR quotedAmount != filledAmount THEN 1 ELSE 0 END) AS fadedQuotes
     FROM rfqOrders 
     GROUP BY rfqFiller
 )
 SELECT 
     rfqFiller,
     totalQuotes,
-    unfilledQuotes
+    fadedQuotes,
+    fadedQuotes / totalQuotes as fadeRate
 FROM ORDERS_CTE
 WHERE totalQuotes >= 10;
 `;
