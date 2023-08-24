@@ -37,6 +37,7 @@ export interface CronStackProps extends cdk.NestedStackProps {
 
 export class CronStack extends cdk.NestedStack {
   public readonly fadeRateCronLambda: aws_lambda_nodejs.NodejsFunction;
+  public readonly synthSwitchCronLambda: aws_lambda_nodejs.NodejsFunction;
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
@@ -62,6 +63,29 @@ export class CronStack extends cdk.NestedStack {
     new aws_events.Rule(this, `${SERVICE_NAME}ScheduleCronLambda`, {
       schedule: aws_events.Schedule.rate(Duration.minutes(10)),
       targets: [new aws_events_targets.LambdaFunction(this.fadeRateCronLambda)],
+    });
+
+    this.synthSwitchCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}SynthSwitch`, {
+      role: lambdaRole,
+      runtime: aws_lambda.Runtime.NODEJS_16_X,
+      entry: path.join(__dirname, '../../lib/cron/synth-switch.ts'),
+      handler: 'handler',
+      timeout: Duration.seconds(240),
+      memorySize: 1024,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        REDSHIFT_DATABASE: RsDatabase,
+        REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
+        REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
+      },
+    });
+    new aws_events.Rule(this, `${SERVICE_NAME}SynthSwitchSchedule`, {
+      // TODO: change schedule
+      schedule: aws_events.Schedule.rate(Duration.hours(1)),
+      targets: [new aws_events_targets.LambdaFunction(this.synthSwitchCronLambda)],
     });
 
     /* RFQ fade rate table */
