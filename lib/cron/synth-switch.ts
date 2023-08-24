@@ -42,7 +42,6 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   const configs = await readTokenConfig(log);
   // TODO: format sql query string with configs
 
-  // create view
   try {
     const createViewResponse = await client.send(
       new ExecuteStatementCommand({ ...sharedConfig, Sql: fillMetricsSql(configs) })
