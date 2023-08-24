@@ -40,11 +40,50 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   let stmtId: string | undefined;
 
   const configs = await readTokenConfig(log);
-  // TODO: format sql query string with configs
+
+  // TODO: this may not be safe from injection but we might need to do it for LOWER
+  const tokenInList = "LOWER('" + configs.map((config) => config.inputToken).join("'), LOWER('") + "')";
+  const tokenOutList = "LOWER('" + configs.map((config) => config.outputToken).join("'), LOWER('") + "')";
+
+  log.info(
+    {
+      tokenInList,
+      tokenOutList,
+      valueTokenInList: String(tokenInList),
+      valueTokenOutList: String(tokenOutList),
+    },
+    'tokenInList, tokenOutList'
+  )
+
+  // TODO: get token prices
+
+  const endTime = Math.floor(Date.now() / 1000);
+  const startTime = endTime - 60 * 60 * 24 * 7; // 7 days ago
 
   try {
     const createViewResponse = await client.send(
-      new ExecuteStatementCommand({ ...sharedConfig, Sql: fillMetricsSql(configs) })
+      new ExecuteStatementCommand({
+        ...sharedConfig,
+        Sql: TEMPLATE_SYNTH_ORDERS_SQL,
+        Parameters: [
+          {
+            name: 'token_ins',
+            value: String(tokenInList)
+          },
+          {
+            name: 'token_outs',
+            value: String(tokenOutList)
+          },
+          {
+            name: 'start_time',
+            value: String(startTime),
+          },
+          {
+            name: 'end_time',
+            value: String(endTime)
+          },
+        ],
+      })
     );
     stmtId = createViewResponse.Id;
   } catch (e) {
@@ -108,7 +147,42 @@ async function readTokenConfig(log: Logger): Promise<TokenConfig[]> {
 
 function fillMetricsSql(_configs: TokenConfig[]) {
   // TODO: implement
-  return 'select * from archivedorders limit 10';
 }
+
+const TEMPLATE_SYNTH_ORDERS_SQL = `
+  WITH syntheticResponses AS (
+    SELECT
+        tokenin,
+        tokeninchainid,
+        amountin,
+        tokenout,
+        tokenoutchainid,
+        quoteid
+    FROM
+        "uniswap_x"."public"."unifiedroutingresponses"
+    WHERE routing = 'DUTCH_LIMIT'
+    AND filler = ''
+    /*
+    parameters
+    */
+    AND LOWER(tokenIn) IN (:token_ins)
+    AND LOWER(tokenOut) IN (:token_outs)
+  )
+  SELECT
+    sr.tokenin,
+    sr.tokeninchainid,
+    sr.amountin,
+    sr.tokenout,
+    sr.tokenoutchainid,
+    ao.amountout,
+    ao.filler,
+    ao.filltimestamp
+  FROM
+    "uniswap_x"."public"."archivedorders" ao
+  JOIN syntheticResponses sr ON ao.quoteid = sr.quoteid
+  WHERE ao.orderstatus = 'filled'
+  AND ao.filltimestamp BETWEEN :start_time AND :end_time
+  ORDER BY ao.filltimestamp DESC;
+`;
 
 module.exports = { handler };
