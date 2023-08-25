@@ -12,6 +12,7 @@ import { default as bunyan, default as Logger } from 'bunyan';
 
 import { PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
 import { checkDefined } from '../preconditions/preconditions';
+import { ethers } from 'ethers';
 
 type TokenConfig = {
   inputToken: string;
@@ -39,7 +40,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
   let stmtId: string | undefined;
 
-  const configs = await readTokenConfig(log);
+  const configs = validateConfigs(await readTokenConfig(log));
 
   // TODO: this may not be safe from injection but we might need to do it for LOWER
   const tokenInList = "LOWER('" + configs.map((config) => config.inputToken).join("'), LOWER('") + "')";
@@ -52,7 +53,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       valueTokenInList: String(tokenInList),
       valueTokenOutList: String(tokenOutList),
     },
-    'tokenInList, tokenOutList'
+    'formatted tokenInList, tokenOutList'
   )
 
   // TODO: get token prices
@@ -67,11 +68,11 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         Sql: TEMPLATE_SYNTH_ORDERS_SQL,
         Parameters: [
           {
-            name: 'token_ins',
+            name: 'token_in_list',
             value: String(tokenInList)
           },
           {
-            name: 'token_outs',
+            name: 'token_out_list',
             value: String(tokenOutList)
           },
           {
@@ -145,8 +146,13 @@ async function readTokenConfig(log: Logger): Promise<TokenConfig[]> {
   return configs;
 }
 
-function fillMetricsSql(_configs: TokenConfig[]) {
-  // TODO: implement
+function validateConfigs(configs: TokenConfig[]) {
+  // make sure all tokens are valid addresses
+  configs = configs.filter((config) => {
+    return ethers.utils.isAddress(config.inputToken) && ethers.utils.isAddress(config.outputToken);
+  });
+
+  return configs
 }
 
 const TEMPLATE_SYNTH_ORDERS_SQL = `
@@ -165,8 +171,8 @@ const TEMPLATE_SYNTH_ORDERS_SQL = `
     /*
     parameters
     */
-    AND LOWER(tokenIn) IN (:token_ins)
-    AND LOWER(tokenOut) IN (:token_outs)
+    AND LOWER(tokenIn) IN (:token_in_list)
+    AND LOWER(tokenOut) IN (:token_out_list)
   )
   SELECT
     sr.tokenin,
