@@ -6,7 +6,7 @@ import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
 import { SynthSwitchRequestBody } from '../handlers/synth-switch';
 import { BaseSwitchRepository } from './base';
 
-const PARTITION_KEY = `${DYNAMO_TABLE_KEY.INPUT_TOKEN}#${DYNAMO_TABLE_KEY.INPUT_TOKEN_CHAIN_ID}${DYNAMO_TABLE_KEY.OUTPUT_TOKEN}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
+export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.INPUT_TOKEN}#${DYNAMO_TABLE_KEY.INPUT_TOKEN_CHAIN_ID}${DYNAMO_TABLE_KEY.OUTPUT_TOKEN}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
 
 export class SwitchRepository implements BaseSwitchRepository {
   static log: Logger;
