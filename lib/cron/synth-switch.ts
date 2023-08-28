@@ -16,9 +16,11 @@ import { ethers } from 'ethers';
 
 type TokenConfig = {
   inputToken: string;
+  inputTokenChainId: number;
   outputToken: string;
+  outputTokenChainId: number;
   tradeTypes: string[];
-  tradeSizes: string[];
+  tradeSizes: string[]; // inclusive range [lower, upper]
 };
 
 const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>) => {
