@@ -3,7 +3,7 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import { INTEGRATION_WEBHOOK_CONFIG_KEY, PRODUCTION_WEBHOOK_CONFIG_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
+import { INTEGRATION_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
 import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { Quoter, WebhookQuoter } from '../../quoters';
@@ -30,7 +30,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const webhookProvider = new S3WebhookConfigurationProvider(
       log,
       `${WEBHOOK_CONFIG_BUCKET}-${stage}`,
-      PRODUCTION_WEBHOOK_CONFIG_KEY
+      PRODUCTION_S3_KEY
     );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
@@ -82,7 +82,7 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
     const webhookProvider = new S3WebhookConfigurationProvider(
       log,
       `${WEBHOOK_CONFIG_BUCKET}-${stage}`,
-      INTEGRATION_WEBHOOK_CONFIG_KEY
+      INTEGRATION_S3_KEY
     );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
