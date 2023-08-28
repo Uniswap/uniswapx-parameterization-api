@@ -15,9 +15,14 @@ import { checkDefined } from '../preconditions/preconditions';
 
 type TokenConfig = {
   inputToken: string;
+  inputTokenChainId: number;
   outputToken: string;
+  outputTokenChainId: number;
   tradeTypes: string[];
-  tradeSizes: string[];
+  tradeSizes: {
+    lower: string;
+    upper: string;
+  }[];
 };
 
 const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>) => {
