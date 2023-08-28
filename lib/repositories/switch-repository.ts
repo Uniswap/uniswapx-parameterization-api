@@ -39,7 +39,7 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   private constructor(
-    private readonly: Table<'SynthSwitch', 'inputToken', 'outputToken'>,
+    private readonly _switchTable: Table<'SynthSwitch', 'inputToken', 'outputToken'>,
     private readonly switchEntity: Entity
   ) {}
 
