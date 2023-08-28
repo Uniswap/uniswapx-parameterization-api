@@ -3,7 +3,7 @@ import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
-import { SynthSwitchRequestBody } from '../handlers/synth-switch';
+import { SynthSwitchRequestBody } from '../cron/synth-switch';
 import { BaseSwitchRepository } from './base';
 
 export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.INPUT_TOKEN}#${DYNAMO_TABLE_KEY.INPUT_TOKEN_CHAIN_ID}${DYNAMO_TABLE_KEY.OUTPUT_TOKEN}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
@@ -46,14 +46,13 @@ export class SwitchRepository implements BaseSwitchRepository {
   public async syntheticQuoteForTradeEnabled(trade: SynthSwitchRequestBody): Promise<boolean> {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type, amount } = trade;
 
-    // get row for which lower bucket <= amount < upper bucket
+    // get row for which lower <= amount
     const result = await this.switchEntity.query(
       `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
       {
         limit: 1,
         filters: [
-          { attr: 'lower', lte: amount },
-          { attr: 'upper', gt: amount },
+          { attr: 'lower', gte: amount },
         ],
       }
     );
@@ -66,7 +65,6 @@ export class SwitchRepository implements BaseSwitchRepository {
   public async putSynthSwitch(
     trade: SynthSwitchRequestBody,
     lower: string,
-    upper: string,
     enabled: boolean
   ): Promise<void> {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
@@ -74,8 +72,23 @@ export class SwitchRepository implements BaseSwitchRepository {
     await this.switchEntity.put({
       [PARTITION_KEY]: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
       [`${DYNAMO_TABLE_KEY.LOWER}`]: lower,
-      [`${DYNAMO_TABLE_KEY.UPPER}`]: upper,
       enabled: enabled,
     });
+  }
+  
+  static getKey(trade: SynthSwitchRequestBody): string {
+    const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
+    return `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`;
+  }
+
+  static parseKey(key: string): Omit<SynthSwitchRequestBody, "amount"> {
+    const [inputToken, inputTokenChainId, outputToken, outputTokenChainId, type] = key.split('#');
+    return {
+      inputToken,
+      inputTokenChainId,
+      outputToken,
+      outputTokenChainId,
+      type,
+    };
   }
 }
