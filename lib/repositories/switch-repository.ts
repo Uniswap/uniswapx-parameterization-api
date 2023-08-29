@@ -46,15 +46,12 @@ export class SwitchRepository implements BaseSwitchRepository {
   public async syntheticQuoteForTradeEnabled(trade: SynthSwitchRequestBody): Promise<boolean> {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type, amount } = trade;
 
-    // get row for which lower bucket <= amount < upper bucket
+    // get row for which lower bucket <= amount
     const result = await this.switchEntity.query(
       `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
       {
         limit: 1,
-        filters: [
-          { attr: 'lower', lte: amount },
-          { attr: 'upper', gt: amount },
-        ],
+        filters: [{ attr: 'lower', lte: amount }],
       }
     );
     if (result.Items && result.Items.length) {
@@ -63,18 +60,12 @@ export class SwitchRepository implements BaseSwitchRepository {
     return false;
   }
 
-  public async putSynthSwitch(
-    trade: SynthSwitchRequestBody,
-    lower: string,
-    upper: string,
-    enabled: boolean
-  ): Promise<void> {
+  public async putSynthSwitch(trade: SynthSwitchRequestBody, lower: string, enabled: boolean): Promise<void> {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
 
     await this.switchEntity.put({
       [PARTITION_KEY]: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
       [`${DYNAMO_TABLE_KEY.LOWER}`]: lower,
-      [`${DYNAMO_TABLE_KEY.UPPER}`]: upper,
       enabled: enabled,
     });
   }

@@ -15,7 +15,6 @@ export const DYNAMO_TABLE_KEY = {
   OUTPUT_TOKEN: 'outputToken',
   OUTPUT_TOKEN_CHAIN_ID: 'outputTokenChainId',
   TRADE_TYPE: 'type',
-  UPPER: 'upper',
   LOWER: 'lower',
   ENABLED: 'enabled',
 };
