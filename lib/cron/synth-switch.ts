@@ -118,17 +118,16 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         amount: tradeType == TradeType.EXACT_INPUT ? row.classic_amountin : row.classic_amountout,
       }
 
-      let priceImprovement: BigNumber;
-  
+      let priceImprovement: boolean;
       if(tradeType == TradeType.EXACT_INPUT) {
-        priceImprovement = BigNumber.from(row.settledAmountOut).div(row.classic_amountoutgasadjusted);
+        priceImprovement = BigNumber.from(row.settledAmountOut).gt(row.classic_amountoutgasadjusted);
       }
       else {
-        priceImprovement = BigNumber.from(row.classic_amountingasadjusted).div(row.settledAmountIn);
+        priceImprovement = BigNumber.from(row.classic_amountingasadjusted).gt(row.settledAmountIn);
       }
       
       const key = SwitchRepository.getKey(trade);
-      if(priceImprovement.gt(1)) {
+      if(priceImprovement) {
         await synthSwitchEntity.putSynthSwitch(
           trade, 
           // TODO: change lower to support minimum trade size. 0 enables all trade sizes
