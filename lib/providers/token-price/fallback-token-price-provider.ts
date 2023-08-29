@@ -23,6 +23,7 @@ export class FallbackTokenPriceProvider implements TokenPriceProvider {
     private log: Logger;
 
     constructor(
+        // @ts-expect-error
         private _log: Logger,
         protected chainId: number,
         protected endpoint: string,
@@ -64,6 +65,8 @@ export class FallbackTokenPriceProvider implements TokenPriceProvider {
               'content-type': 'application/json',
             },
           })
+        
+        this.log.info(response.data, 'Got USDC rate for token')
 
         return ethers.utils.parseUnits(response.data.quoteDecimals, token.decimals)
     }
