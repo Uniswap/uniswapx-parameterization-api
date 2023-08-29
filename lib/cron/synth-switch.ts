@@ -83,10 +83,9 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   let stmtId: string | undefined;
 
   const configs = validateConfigs(await readTokenConfig(log));
-
-  // TODO: this may not be safe from injection but we might need to do it for LOWER
-  const tokenInList = "LOWER('" + configs.map((config) => config.inputToken).join("'), LOWER('") + "')";
-  const tokenOutList = "LOWER('" + configs.map((config) => config.outputToken).join("'), LOWER('") + "')";
+  // tokens are all validated to be addresses + lowercased
+  const tokenInList = "('" + configs.map((config) => config.inputToken).join("', '") + "')";
+  const tokenOutList = "('" + configs.map((config) => config.outputToken).join("', '") + "')";
 
   log.info(
     {
@@ -272,6 +271,15 @@ function validateConfigs(configs: TokenConfig[]) {
   // make sure all tokens are valid addresses
   configs = configs.filter((config) => {
     return ethers.utils.isAddress(config.inputToken) && ethers.utils.isAddress(config.outputToken);
+  });
+
+  // normalize token addresses
+  configs = configs.map((config) => {
+    return {
+      ...config,
+      inputToken: ethers.utils.getAddress(config.inputToken).toLowerCase(),
+      outputToken: ethers.utils.getAddress(config.outputToken).toLowerCase(),
+    };
   });
 
   return configs
