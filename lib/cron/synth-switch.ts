@@ -1,7 +1,6 @@
 import {
   DescribeStatementCommand,
   ExecuteStatementCommand,
-  Field,
   GetStatementResultCommand,
   RedshiftDataClient,
   StatusString,
