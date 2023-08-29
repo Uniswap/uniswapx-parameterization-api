@@ -1,99 +1,73 @@
-// import { BigNumber, ethers } from "ethers";
-// import { default as Logger } from 'bunyan';
-// import { Token } from "@uniswap/sdk-core";
-// import { TokenPriceProvider } from "./fallback-token-price-provider";
+import { Token } from '@uniswap/sdk-core';
+import { USDC_ON } from '@uniswap/smart-order-router';
+import axios from 'axios';
+import { default as Logger } from 'bunyan';
+import { BigNumber, ethers } from 'ethers';
 
-// export type BucketRange = {
-//     lower: BigNumber;
-//     upper: BigNumber;
-// }
+export type BucketRange = {
+  lower: BigNumber;
+  upper: BigNumber;
+};
 
-// export type TokenAmountsBucket = {
-//     bucketRange: BucketRange 
-//     lower: BigNumber;
-//     upper: BigNumber;
-// }
+export type TokenAmountsBucket = {
+  bucketRange: BucketRange;
+  lower: BigNumber;
+  upper: BigNumber;
+};
 
-// const tokenPriceQuery = gql`
-//   query TokenPrice($chain: Chain!, $address: String = null, $duration: HistoryDuration!) {
-//     token(chain: $chain, address: $address) {
-//       id
-//       address
-//       chain
-//       market(currency: USD) {
-//         id
-//         price {
-//           id
-//           value
-//         }
-//         priceHistory(duration: $duration) {
-//           id
-//           timestamp
-//           value
-//         }
-//       }
-//     }
-//   }
-// `
+export interface TokenPriceProvider {
+  getTokenPrice(token: Token): Promise<BigNumber>;
+}
 
-// export class TokenPriceProviderWithFallback {
-//     private client: ApolloClient<any>;
-//     private log: Logger;
+export class FallbackTokenPriceProvider implements TokenPriceProvider {
+  private log: Logger;
 
-//     constructor(
-//         private _log: Logger,
-//         protected chainId: number,
-//         protected graphqlUrl: string,
-//         protected fallbackTokenPriceProvider: TokenPriceProvider,
-//     ) {
-//         this.log = _log.child({ quoter: 'TokenPriceProviderWithFallback' });
-//         this.client = new ApolloClient({
-//             uri: graphqlUrl,
-//             headers: {
-//                 'Content-Type': 'application/json',
-//                 Origin: 'https://app.uniswap.org',
-//               },
-//               cache: new InMemoryCache(),
-//         })
-//     }
+  constructor(
+    // @ts-expect-error
+    private _log: Logger,
+    protected chainId: number,
+    protected endpoint: string
+  ) {
+    this.log = _log.child({ quoter: 'FallbackTokenPriceProvider' });
+  }
 
-//     public async getPrices(tokens: Token[]): Promise<(BigNumber | undefined)[]> {
-//         const calls = tokens.map(token => {
-//             return this.getPrice(token)
-//         });
-//         const results = await Promise.allSettled(calls);
-//         const prices = results.map(result => {
-//             if (result.status === 'fulfilled') {
-//                 return result.value;
-//             } else {
-//                 this.log.info(`Failed to get price for token: ${result.reason}`)
-//                 return undefined;
-//             }
-//         });
-//         return prices;
-//     }
+  public async getTokenPrice(token: Token): Promise<BigNumber> {
+    return await this.getUSDCRate(token);
+  }
 
-//     public async getPrice(token: Token): Promise<BigNumber> {
-//         const price = await this.getTokenPriceFromGraphQL(token.address);
-//         if (!price) {
-//             return await this.fallbackTokenPriceProvider.getTokenPrice(token);
-//         }
-//         return ethers.utils.parseUnits(price.toString(), token.decimals);
-//     }
+  public async getTokenAmountsForUSDCBucket(token: Token, bucket: BucketRange): Promise<TokenAmountsBucket> {
+    const price = await this.getTokenPrice(token);
+    return {
+      bucketRange: bucket,
+      lower: bucket.lower.mul(price),
+      upper: bucket.upper.mul(price),
+    };
+  }
 
-//     public async getTokenPriceFromGraphQL(address: string): Promise<number | undefined> {
-//         const result = await this.client.query({
-//             query: tokenPriceQuery,
-//             variables: {
-//                 chain: this.chainId,
-//                 address: address,
-//                 duration: 'DAY',
-//             },
-//         })
-//         if (result.data.token === null) {
-//             this.log.info(`Failed to get price for token: ${address}`)
-//             return undefined;
-//         }
-//         return result.data.token.market.price.value;
-//     }
-// }
+  private async getUSDCRate(token: Token): Promise<BigNumber> {
+    const ONE_USDC = 10 ** 6; // USDC has 6 decimals across all chains
+    const payload = {
+      tokenIn: token.address,
+      tokenInChainId: this.chainId,
+      tokenOut: USDC_ON(this.chainId),
+      tokenOutChainId: this.chainId,
+      amount: ONE_USDC,
+      type: 'EXACT_OUTPUT',
+      configs: [
+        {
+          protocols: ['V2', 'V3', 'MIXED'],
+          routingType: 'CLASSIC',
+        },
+      ],
+    };
+    const response = await axios.post<any>(this.endpoint, payload, {
+      headers: {
+        'content-type': 'application/json',
+      },
+    });
+
+    this.log.info(response.data, 'Got USDC rate for token');
+
+    return ethers.utils.parseUnits(response.data.quoteDecimals, token.decimals);
+  }
+}

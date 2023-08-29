@@ -1,3 +1,4 @@
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DescribeStatementCommand,
   ExecuteStatementCommand,
@@ -6,18 +7,17 @@ import {
   StatusString,
 } from '@aws-sdk/client-redshift-data';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { TradeType } from '@uniswap/sdk-core';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import { default as bunyan, default as Logger } from 'bunyan';
+import { BigNumber, ethers } from 'ethers';
 
 import { PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
-import { checkDefined } from '../preconditions/preconditions';
-import { BigNumber, ethers } from 'ethers';
-import { TradeType } from '@uniswap/sdk-core';
-import { SwitchRepository } from '../repositories/switch-repository';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { SynthSwitchRequestBody } from '../handlers/synth-switch';
+import { checkDefined } from '../preconditions/preconditions';
+import { SwitchRepository } from '../repositories/switch-repository';
 
 type TokenConfig = {
   inputToken: string;
@@ -45,7 +45,7 @@ type ResultRowType = {
   settledAmountOut: string;
   filler: string;
   filltimestamp: string;
-}
+};
 
 const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>) => {
   const log: Logger = bunyan.createLogger({
@@ -55,14 +55,16 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   });
 
   const client = new RedshiftDataClient({});
-  const synthSwitchEntity = SwitchRepository.create(DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-    marshallOptions: {
-      convertEmptyValues: true,
-    },
-    unmarshallOptions: {
-      wrapNumbers: true,
-    },
-  }));
+  const synthSwitchEntity = SwitchRepository.create(
+    DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+      marshallOptions: {
+        convertEmptyValues: true,
+      },
+      unmarshallOptions: {
+        wrapNumbers: true,
+      },
+    })
+  );
 
   const sharedConfig = {
     Database: process.env.REDSHIFT_DATABASE,
@@ -87,19 +89,20 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       valueTokenOutList: String(tokenOutList),
     },
     'formatted tokenInList, tokenOutList'
-  )
+  );
 
   const endTime = Math.floor(Date.now() / 1000);
   const startTime = endTime - 60 * 60 * 24 * 7; // 7 days ago
 
   async function updateSynthSwitchRepository(result: ResultRowType[]) {
-    let numNegativePISwaps: {
-      [key: string]: number
-    } = {}
+    const numNegativePISwaps: {
+      [key: string]: number;
+    } = {};
     // turn on criteria: one profitable trade
-    for(const row of result) {
+    for (const row of result) {
       // determine tradeType
-      const tradeType = row.classic_amountin == row.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
+      const tradeType =
+        row.classic_amountin == row.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
       const trade: SynthSwitchRequestBody = {
         inputToken: row.tokenin,
         inputTokenChainId: Number(row.tokeninchainid),
@@ -108,46 +111,43 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         type: String(tradeType),
         // classic amount in here or synthetic amount in?
         amount: tradeType == TradeType.EXACT_INPUT ? row.classic_amountin : row.classic_amountout,
-      }
+      };
 
       let hasPriceImprovement: boolean;
-      if(tradeType == TradeType.EXACT_INPUT) {
+      if (tradeType == TradeType.EXACT_INPUT) {
         hasPriceImprovement = BigNumber.from(row.settledAmountOut).gt(row.classic_amountoutgasadjusted);
-      }
-      else {
+      } else {
         hasPriceImprovement = BigNumber.from(row.classic_amountingasadjusted).gt(row.settledAmountIn);
       }
-      
+
       const key = SwitchRepository.getKey(trade);
-      if(hasPriceImprovement) {
+      if (hasPriceImprovement) {
         await synthSwitchEntity.putSynthSwitch(
-          trade, 
+          trade,
           // TODO: change lower to support minimum trade size. 0 enables all trade sizes
-          '0', 
+          '0',
           true
-        )
-      }
-      else {
-        (key in numNegativePISwaps) ? numNegativePISwaps[key] += 1 : numNegativePISwaps[key] = 1;
+        );
+      } else {
+        key in numNegativePISwaps ? (numNegativePISwaps[key] += 1) : (numNegativePISwaps[key] = 1);
       }
     }
 
     // turn off criteria: 2 consecutive unprofitable trades over this window
     Object.keys(numNegativePISwaps).forEach(async (key) => {
-      if(numNegativePISwaps[key] >= 2) {
+      if (numNegativePISwaps[key] >= 2) {
         const trade = SwitchRepository.parseKey(key);
-        if(await synthSwitchEntity.syntheticQuoteForTradeEnabled({
-          ...trade,
-          // TODO: change to support different trade sizes
-          amount: '0'
-        })) {
-          await synthSwitchEntity.putSynthSwitch(
-            trade,
-            '0',
-            false)
-          }
+        if (
+          await synthSwitchEntity.syntheticQuoteForTradeEnabled({
+            ...trade,
+            // TODO: change to support different trade sizes
+            amount: '0',
+          })
+        ) {
+          await synthSwitchEntity.putSynthSwitch(trade, '0', false);
         }
-      });
+      }
+    });
   }
 
   try {
@@ -158,11 +158,11 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         Parameters: [
           {
             name: 'token_in_list',
-            value: String(tokenInList)
+            value: String(tokenInList),
           },
           {
             name: 'token_out_list',
-            value: String(tokenOutList)
+            value: String(tokenOutList),
           },
           {
             name: 'start_time',
@@ -170,7 +170,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           },
           {
             name: 'end_time',
-            value: String(endTime)
+            value: String(endTime),
           },
         ],
       })
@@ -277,7 +277,7 @@ function validateConfigs(configs: TokenConfig[]) {
     };
   });
 
-  return configs
+  return configs;
 }
 
 const TEMPLATE_SYNTH_ORDERS_SQL = `

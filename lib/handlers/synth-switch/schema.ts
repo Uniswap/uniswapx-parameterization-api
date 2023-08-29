@@ -13,7 +13,7 @@ export const SynthSwitchRequestBodyJoi = Joi.object({
 
 export type SynthSwitchRequestBody = SynthSwitchTrade & {
   amount: string;
-}
+};
 
 export type SynthSwitchTrade = {
   inputTokenChainId: number;
@@ -21,7 +21,7 @@ export type SynthSwitchTrade = {
   inputToken: string;
   outputToken: string;
   type: string;
-}
+};
 
 export const SynthSwitchResponseJoi = Joi.object({
   enabled: Joi.boolean().required(),

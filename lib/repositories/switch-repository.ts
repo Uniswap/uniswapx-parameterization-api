@@ -3,8 +3,8 @@ import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
-import { BaseSwitchRepository } from './base';
 import { SynthSwitchRequestBody, SynthSwitchTrade } from '../handlers/synth-switch';
+import { BaseSwitchRepository } from './base';
 
 export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.INPUT_TOKEN}#${DYNAMO_TABLE_KEY.INPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
 
@@ -75,7 +75,7 @@ export class SwitchRepository implements BaseSwitchRepository {
       enabled: enabled,
     });
   }
-  
+
   static getKey(trade: SynthSwitchTrade): string {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
     return `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`;
