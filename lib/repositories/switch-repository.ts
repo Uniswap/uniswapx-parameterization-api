@@ -35,13 +35,10 @@ export class SwitchRepository implements BaseSwitchRepository {
       autoExecute: true,
     } as const);
 
-    return new SwitchRepository(switchTable, switchEntity);
+    return new SwitchRepository(switchEntity);
   }
 
-  private constructor(
-    private readonly _switchTable: Table<'SynthSwitch', 'inputToken', 'outputToken'>,
-    private readonly switchEntity: Entity
-  ) {}
+  private constructor(private readonly switchEntity: Entity) {}
 
   public async syntheticQuoteForTradeEnabled(trade: SynthSwitchRequestBody): Promise<boolean> {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type, amount } = trade;
