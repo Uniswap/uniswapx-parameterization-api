@@ -17,6 +17,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import { SwitchRepository } from '../repositories/switch-repository';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { SynthSwitchRequestBody } from '../handlers/synth-switch';
 
 type TokenConfig = {
   inputToken: string;
@@ -26,15 +27,6 @@ type TokenConfig = {
   tradeTypes: string[];
   tradeSizes: string[]; // inclusive range [lower, upper]
 };
-
-export type SynthSwitchRequestBody = {
-  inputToken: string, 
-  inputTokenChainId: string, 
-  outputToken: string, 
-  outputTokenChainId: string, 
-  type: string, // tradeType
-  amount: string
-}
 
 type ResultRowType = {
   tokenin: string;
@@ -110,9 +102,9 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       const tradeType = row.classic_amountin == row.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
       const trade: SynthSwitchRequestBody = {
         inputToken: row.tokenin,
-        inputTokenChainId: row.tokeninchainid,
+        inputTokenChainId: Number(row.tokeninchainid),
         outputToken: row.tokenout,
-        outputTokenChainId: row.tokenoutchainid,
+        outputTokenChainId: Number(row.tokenoutchainid),
         type: String(tradeType),
         // classic amount in here or synthetic amount in?
         amount: tradeType == TradeType.EXACT_INPUT ? row.classic_amountin : row.classic_amountout,
@@ -144,7 +136,11 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     Object.keys(numNegativePISwaps).forEach(async (key) => {
       if(numNegativePISwaps[key] >= 2) {
         const trade = SwitchRepository.parseKey(key);
-        if(await synthSwitchEntity.syntheticQuoteForTradeEnabled(trade)) {
+        if(await synthSwitchEntity.syntheticQuoteForTradeEnabled({
+          ...trade,
+          // TODO: change to support different trade sizes
+          amount: '0'
+        })) {
           await synthSwitchEntity.putSynthSwitch(
             trade,
             '0',

@@ -24,6 +24,7 @@
     "deploy": "yarn build && cdk deploy"
   },
   "devDependencies": {
+    "@shelf/jest-dynamodb": "^3.4.1",
     "@types/aws-lambda": "^8.10.108",
     "@types/bunyan": "^1.8.8",
     "@types/chai": "^4.3.4",
