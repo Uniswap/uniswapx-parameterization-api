@@ -6,7 +6,7 @@ import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
 import { SynthSwitchRequestBody } from '../handlers/synth-switch';
 import { BaseSwitchRepository } from './base';
 
-export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.INPUT_TOKEN}#${DYNAMO_TABLE_KEY.INPUT_TOKEN_CHAIN_ID}${DYNAMO_TABLE_KEY.OUTPUT_TOKEN}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
+export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.INPUT_TOKEN}#${DYNAMO_TABLE_KEY.INPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
 
 export class SwitchRepository implements BaseSwitchRepository {
   static log: Logger;
@@ -25,7 +25,7 @@ export class SwitchRepository implements BaseSwitchRepository {
     });
 
     const switchEntity = new Entity({
-      name: 'SynthSwitch',
+      name: 'SynthSwitchEntity',
       attributes: {
         [PARTITION_KEY]: { partitionKey: true },
         lower: { sortKey: true },
@@ -35,10 +35,18 @@ export class SwitchRepository implements BaseSwitchRepository {
       autoExecute: true,
     } as const);
 
-    return new SwitchRepository(switchEntity);
+    return new SwitchRepository(switchTable, switchEntity);
   }
 
-  private constructor(private readonly switchEntity: Entity) {}
+  private constructor(
+    // eslint-disable-next-line
+    private readonly _switchTable: Table<
+      'SynthSwitch',
+      'inputToken#inputTokenChainId#outputToken#outputTokenChainId#type',
+      'lower'
+    >,
+    private readonly switchEntity: Entity
+  ) {}
 
   public async syntheticQuoteForTradeEnabled(trade: SynthSwitchRequestBody): Promise<boolean> {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type, amount } = trade;
@@ -48,7 +56,7 @@ export class SwitchRepository implements BaseSwitchRepository {
       `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
       {
         limit: 1,
-        filters: [{ attr: 'lower', lte: amount }],
+        lte: `${amount}`,
       }
     );
     if (result.Items && result.Items.length) {
@@ -58,6 +66,7 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   public async putSynthSwitch(trade: SynthSwitchRequestBody, lower: string, enabled: boolean): Promise<void> {
+    SwitchRepository.log.info({ tableName: this._switchTable.name, pk: PARTITION_KEY });
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
 
     await this.switchEntity.put({
