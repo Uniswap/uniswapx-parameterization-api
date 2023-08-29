@@ -33,13 +33,13 @@ jobs:
 
       - name: Lint
         run: yarn lint
-          
+
       - name: Setup DynamoDB Local
-      uses: rrainn/dynamodb-action@v2.0.1
-      with:
-        sharedDb: true
-        port: 8000
-        cors: '*'
+        uses: rrainn/dynamodb-action@v2.0.1
+        with:
+          sharedDb: true
+          port: 8000
+          cors: '*'
 
       - name: Test
         run: yarn test:unit
