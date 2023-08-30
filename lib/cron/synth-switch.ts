@@ -216,10 +216,6 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           {
             name: 'token_out_list',
             value: String(tokenOutList),
-          },
-          {
-            name: 'limit',
-            value: String(MINIMUM_ORDERS),
           }
         ],
       })
@@ -388,7 +384,6 @@ const TEMPLATE_SYNTH_ORDERS_SQL = `
   and 
   LOWER(res.tokenout) in (:token_out_list)
   ORDER by filltimestamp DESC
-  limit :limit;
 `;
 
 module.exports = { handler };
