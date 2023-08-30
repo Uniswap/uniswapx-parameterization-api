@@ -3,7 +3,7 @@ import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
-import { SynthSwitchRequestBody } from '../handlers/synth-switch';
+import { SynthSwitchQueryParams } from '../handlers/synth-switch';
 import { BaseSwitchRepository } from './base';
 
 export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.INPUT_TOKEN}#${DYNAMO_TABLE_KEY.INPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
@@ -48,9 +48,10 @@ export class SwitchRepository implements BaseSwitchRepository {
     private readonly switchEntity: Entity
   ) {}
 
-  public async syntheticQuoteForTradeEnabled(trade: SynthSwitchRequestBody): Promise<boolean> {
+  public async syntheticQuoteForTradeEnabled(trade: SynthSwitchQueryParams): Promise<boolean> {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type, amount } = trade;
 
+    SwitchRepository.log.info({ trade: trade });
     // get row for which lower bucket <= amount
     const result = await this.switchEntity.query(
       `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
@@ -73,7 +74,7 @@ export class SwitchRepository implements BaseSwitchRepository {
     return false;
   }
 
-  public async putSynthSwitch(trade: SynthSwitchRequestBody, lower: string, enabled: boolean): Promise<void> {
+  public async putSynthSwitch(trade: SynthSwitchQueryParams, lower: string, enabled: boolean): Promise<void> {
     SwitchRepository.log.info({ tableName: this._switchTable.name, pk: PARTITION_KEY });
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
 

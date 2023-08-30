@@ -3,7 +3,7 @@
 import { DynamoDBClient, DynamoDBClientConfig } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { SynthSwitchRequestBody } from '../../lib/handlers/synth-switch';
+import { SynthSwitchQueryParams } from '../../lib/handlers/synth-switch';
 import { SwitchRepository } from '../../lib/repositories/switch-repository';
 
 const dynamoConfig: DynamoDBClientConfig = {
@@ -15,7 +15,7 @@ const dynamoConfig: DynamoDBClientConfig = {
   },
 };
 
-const SWITCH: SynthSwitchRequestBody = {
+const SWITCH: SynthSwitchQueryParams = {
   inputToken: 'USDC',
   outputToken: 'UNI',
   inputTokenChainId: 1,
@@ -24,7 +24,7 @@ const SWITCH: SynthSwitchRequestBody = {
   type: 'EXACT_INPUT',
 };
 
-const NONEXISTENT_SWITCH: SynthSwitchRequestBody = {
+const NONEXISTENT_SWITCH: SynthSwitchQueryParams = {
   inputToken: 'USDC',
   outputToken: 'UNI',
   inputTokenChainId: 1,
