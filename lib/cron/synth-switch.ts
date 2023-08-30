@@ -15,7 +15,7 @@ import { default as bunyan, default as Logger } from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
 
 import { PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
-import { SynthSwitchRequestBody, SynthSwitchTrade } from '../handlers/synth-switch';
+import { SynthSwitchRequestBody } from '../handlers/synth-switch';
 import { checkDefined } from '../preconditions/preconditions';
 import { SwitchRepository } from '../repositories/switch-repository';
 
@@ -279,7 +279,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         };
         return formattedRow;
       });
-      await updateSynthSwitchRepository(formattedResult);
+      await updateSynthSwitchRepository(configs, formattedResult);
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
