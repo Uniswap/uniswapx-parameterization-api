@@ -110,7 +110,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
     for(const config of configs) {
       // totalTrades is both ExactIn and ExactOut
-      const totalTrades = configMap[`${config.inputToken}#${config.inputTokenChainId}#${config.outputToken}#${config.outputTokenChainId}`];
+      const ordersForConfig = configMap[`${config.inputToken}#${config.inputTokenChainId}#${config.outputToken}#${config.outputTokenChainId}`];
       // build trade objects differentiating between ExactIn and ExactOut
       let tradeOutcomesByKey: {
         [key: string]: {
@@ -118,24 +118,24 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           neg: number;
         };
       } = {}
-      for(const row of totalTrades) {
+      for(const order of ordersForConfig) {
         const tradeType =
-          row.classic_amountin == row.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
+          order.classic_amountin == order.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
         const trade: SynthSwitchRequestBody = {
-          inputToken: row.tokenin,
-          inputTokenChainId: Number(row.tokeninchainid),
-          outputToken: row.tokenout,
-          outputTokenChainId: Number(row.tokenoutchainid),
+          inputToken: order.tokenin,
+          inputTokenChainId: Number(order.tokeninchainid),
+          outputToken: order.tokenout,
+          outputTokenChainId: Number(order.tokenoutchainid),
           type: String(tradeType),
           // classic amount in here or synthetic amount in?
-          amount: tradeType == TradeType.EXACT_INPUT ? row.classic_amountin : row.classic_amountout,
+          amount: tradeType == TradeType.EXACT_INPUT ? order.classic_amountin : order.classic_amountout,
         };
         const key = SwitchRepository.getKey(trade);
         let hasPriceImprovement: boolean;
         if (tradeType == TradeType.EXACT_INPUT) {
-          hasPriceImprovement = BigNumber.from(row.settledAmountOut).gt(row.classic_amountoutgasadjusted);
+          hasPriceImprovement = BigNumber.from(order.settledAmountOut).gt(order.classic_amountoutgasadjusted);
         } else {
-          hasPriceImprovement = BigNumber.from(row.classic_amountingasadjusted).gt(row.settledAmountIn);
+          hasPriceImprovement = BigNumber.from(order.classic_amountingasadjusted).gt(order.settledAmountIn);
         }
 
         if(!(key in tradeOutcomesByKey)) {
@@ -153,18 +153,17 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       }
 
       Object.keys(tradeOutcomesByKey).forEach(async (key) => {
-        const { pos: positive, neg: negative } = tradeOutcomesByKey[key];
-        if(positive + negative >= MINIMUM_ORDERS) {
-          // can disable
-          if(negative / (positive + negative) >= DISABLE_THRESHOLD) {
-            // TODO: update tradeSizes
+        const { pos, neg } = tradeOutcomesByKey[key];
+        if(pos + neg >= MINIMUM_ORDERS) {
+          if(neg / (pos + neg) >= DISABLE_THRESHOLD) {
+            // TODO: update tradeSizes with new TokenConfig schema
             await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], false);
             return;
           }
         }
-        if(positive > 0) {
-          // TODO: update tradeSizes
-          await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], true);
+        if(pos > 0) {
+            // TODO: update tradeSizes with new TokenConfig schema
+            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], true);
         }
       });
     }
@@ -358,6 +357,7 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
   );
 `;
 
+// TODO: optionally we can add an additional time window here using filltimestamp
 const TEMPLATE_SYNTH_ORDERS_SQL = `
   SELECT 
           res.tokenin,
