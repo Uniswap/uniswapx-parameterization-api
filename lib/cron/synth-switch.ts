@@ -106,19 +106,22 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       } else {
         configMap[key] = [row];
       }
-    })
+    });
 
-    for(const config of configs) {
+    for (const config of configs) {
       // totalTrades is both ExactIn and ExactOut
-      const ordersForConfig = configMap[`${config.inputToken}#${config.inputTokenChainId}#${config.outputToken}#${config.outputTokenChainId}`];
+      const ordersForConfig =
+        configMap[
+          `${config.inputToken}#${config.inputTokenChainId}#${config.outputToken}#${config.outputTokenChainId}`
+        ];
       // build trade objects differentiating between ExactIn and ExactOut
       let tradeOutcomesByKey: {
         [key: string]: {
           pos: number;
           neg: number;
         };
-      } = {}
-      for(const order of ordersForConfig) {
+      } = {};
+      for (const order of ordersForConfig) {
         const tradeType =
           order.classic_amountin == order.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
         const trade: SynthSwitchRequestBody = {
@@ -138,32 +141,49 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           hasPriceImprovement = BigNumber.from(order.classic_amountingasadjusted).gt(order.settledAmountIn);
         }
 
-        if(!(key in tradeOutcomesByKey)) {
+        if (!(key in tradeOutcomesByKey)) {
           tradeOutcomesByKey[key] = {
             pos: 0,
             neg: 0,
-          }
+          };
         }
-        if(hasPriceImprovement) {
+        if (hasPriceImprovement) {
           tradeOutcomesByKey[key].pos++;
-        }
-        else {
+        } else {
           tradeOutcomesByKey[key].neg++;
         }
       }
 
       Object.keys(tradeOutcomesByKey).forEach(async (key) => {
         const { pos, neg } = tradeOutcomesByKey[key];
-        if(pos + neg >= MINIMUM_ORDERS) {
-          if(neg / (pos + neg) >= DISABLE_THRESHOLD) {
+        if (pos + neg >= MINIMUM_ORDERS) {
+          if (neg / (pos + neg) >= DISABLE_THRESHOLD) {
             // TODO: update tradeSizes with new TokenConfig schema
+            log.info(
+              {
+                key,
+                ordersWithNegativePriceImprovement: neg,
+                ordersWithPositivePriceImprovement: pos,
+                totalOrders: pos + neg,
+              },
+              'Disabling synthethics for trade'
+            );
             await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], false);
             return;
           }
         }
-        if(pos > 0) {
-            // TODO: update tradeSizes with new TokenConfig schema
-            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], true);
+        if (pos > 0) {
+          log.info(
+            {
+              key,
+              ordersWithNegativePriceImprovement: neg,
+              ordersWithPositivePriceImprovement: pos,
+              totalOrders: pos + neg,
+            },
+            'Enabling synthethics for trade'
+          );
+          // TODO: update tradeSizes with new TokenConfig schema
+          await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], true);
         }
       });
     }
@@ -215,7 +235,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           {
             name: 'token_out_list',
             value: String(tokenOutList),
-          }
+          },
         ],
       })
     );
