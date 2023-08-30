@@ -80,7 +80,9 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   let stmtId: string | undefined;
 
   const configs = validateConfigs(await readTokenConfig(log));
-  // tokens are all validated to be addresses + lowercased
+
+  // We can't pass in arrays as parameters to the query, so we have to build it into a formatted string
+  // inputToken and outputToken MUST be sanitized and lowercased before being passed into the query
   const tokenInList = "('" + configs.map((config) => config.inputToken).join("', '") + "')";
   const tokenOutList = "('" + configs.map((config) => config.outputToken).join("', '") + "')";
 
