@@ -15,7 +15,7 @@ import { default as bunyan, default as Logger } from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
 
 import { PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
-import { SynthSwitchRequestBody } from '../handlers/synth-switch';
+import { SynthSwitchRequestBody, SynthSwitchTrade } from '../handlers/synth-switch';
 import { checkDefined } from '../preconditions/preconditions';
 import { SwitchRepository } from '../repositories/switch-repository';
 
@@ -46,6 +46,9 @@ type ResultRowType = {
   filler: string;
   filltimestamp: string;
 };
+
+const MINIMUM_ORDERS = 10;
+const DISABLE_THRESHOLD = 0.2;
 
 const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>) => {
   const log: Logger = bunyan.createLogger({
@@ -91,67 +94,115 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     'formatted tokenInList, tokenOutList'
   );
 
-  const endTime = Math.floor(Date.now() / 1000);
-  const startTime = endTime - 60 * 60 * 24 * 7; // 7 days ago
-
-  async function updateSynthSwitchRepository(result: ResultRowType[]) {
-    const numNegativePISwaps: {
-      [key: string]: number;
+  async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[]) {
+    // match configs to results
+    const configMap: {
+      [key: string]: ResultRowType[];
     } = {};
-    // turn on criteria: one profitable trade
-    for (const row of result) {
-      // determine tradeType
-      const tradeType =
-        row.classic_amountin == row.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
-      const trade: SynthSwitchRequestBody = {
-        inputToken: row.tokenin,
-        inputTokenChainId: Number(row.tokeninchainid),
-        outputToken: row.tokenout,
-        outputTokenChainId: Number(row.tokenoutchainid),
-        type: String(tradeType),
-        // classic amount in here or synthetic amount in?
-        amount: tradeType == TradeType.EXACT_INPUT ? row.classic_amountin : row.classic_amountout,
-      };
-
-      let hasPriceImprovement: boolean;
-      if (tradeType == TradeType.EXACT_INPUT) {
-        hasPriceImprovement = BigNumber.from(row.settledAmountOut).gt(row.classic_amountoutgasadjusted);
+    result.map((row) => {
+      const key = `${row.tokenin}#${row.tokeninchainid}#${row.tokenout}#${row.tokenoutchainid}`;
+      if (key in configMap) {
+        configMap[key].push(row);
       } else {
-        hasPriceImprovement = BigNumber.from(row.classic_amountingasadjusted).gt(row.settledAmountIn);
+        configMap[key] = [row];
       }
+    })
 
-      const key = SwitchRepository.getKey(trade);
-      if (hasPriceImprovement) {
-        await synthSwitchEntity.putSynthSwitch(
-          trade,
-          // TODO: change lower to support minimum trade size. 0 enables all trade sizes
-          '0',
-          true
-        );
-      } else {
-        key in numNegativePISwaps ? (numNegativePISwaps[key] += 1) : (numNegativePISwaps[key] = 1);
-      }
-    }
+    for(const config of configs) {
+      // totalTrades is both ExactIn and ExactOut
+      const totalTrades = configMap[`${config.inputToken}#${config.inputTokenChainId}#${config.outputToken}#${config.outputTokenChainId}`];
+      // build trade objects differentiating between ExactIn and ExactOut
+      let tradeOutcomesByKey: {
+        [key: string]: {
+          pos: number;
+          neg: number;
+        };
+      } = {}
+      for(const row of totalTrades) {
+        const tradeType =
+          row.classic_amountin == row.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
+        const trade: SynthSwitchRequestBody = {
+          inputToken: row.tokenin,
+          inputTokenChainId: Number(row.tokeninchainid),
+          outputToken: row.tokenout,
+          outputTokenChainId: Number(row.tokenoutchainid),
+          type: String(tradeType),
+          // classic amount in here or synthetic amount in?
+          amount: tradeType == TradeType.EXACT_INPUT ? row.classic_amountin : row.classic_amountout,
+        };
+        const key = SwitchRepository.getKey(trade);
+        let hasPriceImprovement: boolean;
+        if (tradeType == TradeType.EXACT_INPUT) {
+          hasPriceImprovement = BigNumber.from(row.settledAmountOut).gt(row.classic_amountoutgasadjusted);
+        } else {
+          hasPriceImprovement = BigNumber.from(row.classic_amountingasadjusted).gt(row.settledAmountIn);
+        }
 
-    // turn off criteria: 2 consecutive unprofitable trades over this window
-    Object.keys(numNegativePISwaps).forEach(async (key) => {
-      if (numNegativePISwaps[key] >= 2) {
-        const trade = SwitchRepository.parseKey(key);
-        if (
-          await synthSwitchEntity.syntheticQuoteForTradeEnabled({
-            ...trade,
-            // TODO: change to support different trade sizes
-            amount: '0',
-          })
-        ) {
-          await synthSwitchEntity.putSynthSwitch(trade, '0', false);
+        if(!(key in tradeOutcomesByKey)) {
+          tradeOutcomesByKey[key] = {
+            pos: 0,
+            neg: 0,
+          }
+        }
+        if(hasPriceImprovement) {
+          tradeOutcomesByKey[key].pos++;
+        }
+        else {
+          tradeOutcomesByKey[key].neg++;
         }
       }
-    });
+
+      Object.keys(tradeOutcomesByKey).forEach(async (key) => {
+        const { pos: positive, neg: negative } = tradeOutcomesByKey[key];
+        if(positive + negative >= MINIMUM_ORDERS) {
+          // can disable
+          if(negative / (positive + negative) >= DISABLE_THRESHOLD) {
+            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), '0', false);
+            return;
+          }
+        }
+        if(positive > 0) {
+          await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], true);
+        }
+      });
+    }
+  }
+
+  // create view
+  try {
+    const createViewResponse = await client.send(
+      new ExecuteStatementCommand({ ...sharedConfig, Sql: CREATE_COMBINED_URA_RESPONSES_VIEW_SQL })
+    );
+    stmtId = createViewResponse.Id;
+  } catch (e) {
+    log.error({ error: e }, 'Failed to send create view command');
+    throw e;
+  }
+  for (;;) {
+    const status = await client.send(new DescribeStatementCommand({ Id: stmtId }));
+    if (status.Error) {
+      log.error({ error: status.Error }, 'Failed to create view');
+      throw new Error(status.Error);
+    }
+    if (status.Status === StatusString.ABORTED || status.Status === StatusString.FAILED) {
+      log.error({ error: status.Error }, 'Failed to execute create view command');
+      throw new Error(status.Error);
+    } else if (
+      status.Status === StatusString.PICKED ||
+      status.Status === StatusString.STARTED ||
+      status.Status === StatusString.SUBMITTED
+    ) {
+      await sleep(2000);
+    } else if (status.Status === StatusString.FINISHED) {
+      break;
+    } else {
+      log.error({ error: status.Error }, 'Unknown status');
+      throw new Error(status.Error);
+    }
   }
 
   try {
-    const createViewResponse = await client.send(
+    const executeResponse = await client.send(
       new ExecuteStatementCommand({
         ...sharedConfig,
         Sql: TEMPLATE_SYNTH_ORDERS_SQL,
@@ -165,17 +216,13 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
             value: String(tokenOutList),
           },
           {
-            name: 'start_time',
-            value: String(startTime),
-          },
-          {
-            name: 'end_time',
-            value: String(endTime),
-          },
+            name: 'limit',
+            value: String(MINIMUM_ORDERS),
+          }
         ],
       })
     );
-    stmtId = createViewResponse.Id;
+    stmtId = executeResponse.Id;
   } catch (e) {
     log.error({ error: e }, 'Failed to send command');
     throw e;
@@ -280,62 +327,66 @@ function validateConfigs(configs: TokenConfig[]) {
   return configs;
 }
 
-const TEMPLATE_SYNTH_ORDERS_SQL = `
-WITH sr AS (
-    SELECT
-        *
-    FROM
-        "uniswap_x"."public"."unifiedroutingresponses"
-    WHERE routing = 'DUTCH_LIMIT'
-    AND filler = ''
-    AND LOWER(tokenIn) IN (:token_in_list)
-    AND LOWER(tokenOut) IN (:token_out_list)
-), 
-r AS (
-    select
-        sr.quoteid,
-        sr.tokenin,
-        sr.tokeninchainid,
-        sr.amountin AS dutch_amountin,
-        ur.amountin as classic_amountin,
-        sr.amountingasadjusted as dutch_amountingasadjusted,
-        ur.amountingasadjusted as classic_amountingasadjusted,
-        sr.tokenout,
-        sr.tokenoutchainid,
-        sr.amountout as dutch_amountout,
-        ur.amountout as classic_amountout,
-        sr.amountoutgasadjusted as dutch_amountoutgasadjusted,
-        ur.amountoutgasadjusted as classic_amountoutgasadjusted
-    from sr 
-    join "uniswap_x"."public"."unifiedroutingresponses" ur
-    on ur.requestid = sr.requestid
-)
+const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
+  CREATE OR REPLACE VIEW combinedURAResponses AS
+  (
+      WITH synth AS (
+          SELECT
+              *
+          FROM
+              "uniswap_x"."public"."unifiedroutingresponses"
+          WHERE routing = 'DUTCH_LIMIT'
+          AND filler = ''
+      )
+      select
+              synth.createdat,
+              synth.quoteid,
+              synth.tokenin,
+              synth.tokeninchainid,
+              synth.amountin AS dutch_amountin,
+              ur.amountin as classic_amountin,
+              synth.amountingasadjusted as dutch_amountingasadjusted,
+              ur.amountingasadjusted as classic_amountingasadjusted,
+              synth.tokenout,
+              synth.tokenoutchainid,
+              synth.amountout as dutch_amountout,
+              ur.amountout as classic_amountout,
+              synth.amountoutgasadjusted as dutch_amountoutgasadjusted,
+              ur.amountoutgasadjusted as classic_amountoutgasadjusted
+          from synth 
+          join "uniswap_x"."public"."unifiedroutingresponses" ur
+          on ur.requestid = synth.requestid
+          WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '168 HOURS')) -- 7 days rolling window
+  );
+`;
 
-SELECT * FROM (
-    SELECT
-        r.tokenin,
-        r.tokeninchainid,
-        dutch_amountin,
-        classic_amountin,
-        dutch_amountingasadjusted,
-        classic_amountingasadjusted,
-        r.tokenout,
-        r.tokenoutchainid,
-        dutch_amountout,
-        classic_amountout,
-        dutch_amountoutgasadjusted,
-        classic_amountoutgasadjusted,
-        ao.amountin as settledAmountIn,
-        ao.amountout as settledAmountOut,
-        ao.filler,
-        ao.filltimestamp
-    FROM
-        "uniswap_x"."public"."archivedorders" ao
-    JOIN r ON ao.quoteid = r.quoteid
-    WHERE ao.orderstatus = 'filled'
-    AND ao.filltimestamp BETWEEN :start_time AND :end_time
-) as filled_synthetic_orders_and_responses
-ORDER BY filled_synthetic_orders_and_responses.filltimestamp DESC;
+const TEMPLATE_SYNTH_ORDERS_SQL = `
+  SELECT 
+          res.tokenin,
+          res.tokeninchainid,
+          dutch_amountin,
+          classic_amountin,
+          dutch_amountingasadjusted,
+          classic_amountingasadjusted,
+          res.tokenout,
+          res.tokenoutchainid,
+          dutch_amountout,
+          classic_amountout,
+          dutch_amountoutgasadjusted,
+          classic_amountoutgasadjusted,
+          orders.amountin as settledAmountIn,
+          orders.amountout as settledAmountOut,
+          filler,
+          filltimestamp
+  FROM archivedorders orders
+  JOIN combinedURAResponses res
+  ON orders.quoteid = res.quoteid
+  WHERE 
+  LOWER(res.tokenin) in (:token_in_list)
+  and 
+  LOWER(res.tokenout) in (:token_out_list)
+  ORDER by filltimestamp DESC
+  limit :limit;
 `;
 
 module.exports = { handler };
