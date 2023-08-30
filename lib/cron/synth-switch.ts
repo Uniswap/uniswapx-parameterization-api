@@ -156,15 +156,16 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
       Object.keys(tradeOutcomesByKey).forEach(async (key) => {
         const { pos, neg } = tradeOutcomesByKey[key];
-        if (pos + neg >= MINIMUM_ORDERS) {
-          if (neg / (pos + neg) >= DISABLE_THRESHOLD) {
+        const totalOrders = pos + neg;
+        if (totalOrders >= MINIMUM_ORDERS) {
+          if (neg / totalOrders >= DISABLE_THRESHOLD) {
             // TODO: update tradeSizes with new TokenConfig schema
             log.info(
               {
                 key,
                 ordersWithNegativePriceImprovement: neg,
                 ordersWithPositivePriceImprovement: pos,
-                totalOrders: pos + neg,
+                totalOrders,
               },
               'Disabling synthethics for trade'
             );
@@ -178,7 +179,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
               key,
               ordersWithNegativePriceImprovement: neg,
               ordersWithPositivePriceImprovement: pos,
-              totalOrders: pos + neg,
+              totalOrders,
             },
             'Enabling synthethics for trade'
           );
