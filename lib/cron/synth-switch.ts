@@ -157,11 +157,13 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         if(positive + negative >= MINIMUM_ORDERS) {
           // can disable
           if(negative / (positive + negative) >= DISABLE_THRESHOLD) {
-            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), '0', false);
+            // TODO: update tradeSizes
+            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], false);
             return;
           }
         }
         if(positive > 0) {
+          // TODO: update tradeSizes
           await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], true);
         }
       });
