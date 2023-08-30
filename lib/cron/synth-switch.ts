@@ -278,13 +278,13 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
       const formattedResult = filteredResult.map((row) => {
         const formattedRow: ResultRowType = {
-          tokenin: row[0].stringValue as string,
+          tokenin: (row[0].stringValue as string).toLowerCase(),
           tokeninchainid: row[1].stringValue as string,
           dutch_amountin: row[2].stringValue as string,
           classic_amountin: row[3].stringValue as string,
           dutch_amountingasadjusted: row[4].stringValue as string,
           classic_amountingasadjusted: row[5].stringValue as string,
-          tokenout: row[6].stringValue as string,
+          tokenout: (row[6].stringValue as string).toLowerCase(),
           tokenoutchainid: row[7].stringValue as string,
           dutch_amountout: row[8].stringValue as string,
           classic_amountout: row[9].stringValue as string,
@@ -292,7 +292,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           classic_amountoutgasadjusted: row[11].stringValue as string,
           settledAmountIn: row[12].stringValue as string,
           settledAmountOut: row[13].stringValue as string,
-          filler: row[14].stringValue as string,
+          filler: (row[14].stringValue as string).toLowerCase(),
           filltimestamp: row[15].stringValue as string,
         };
         return formattedRow;
