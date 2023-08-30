@@ -57,9 +57,17 @@ export class SwitchRepository implements BaseSwitchRepository {
       {
         limit: 1,
         lte: `${amount}`,
+        reverse: true,
       }
     );
     if (result.Items && result.Items.length) {
+      SwitchRepository.log.info({ res: result.Items });
+      // our design assumes that at most one row (thus one lower) will be present
+      // for the input/output/chains/type combo
+      // if somehow more than one row exists, return the one with highest 'upper'
+      if (result.Items.length > 1) {
+        SwitchRepository.log.error({ res: result.Items }, 'More than one row returned for switch query');
+      }
       return result.Items[0].enabled;
     }
     return false;
@@ -69,10 +77,11 @@ export class SwitchRepository implements BaseSwitchRepository {
     SwitchRepository.log.info({ tableName: this._switchTable.name, pk: PARTITION_KEY });
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
 
-    await this.switchEntity.put({
+    const res = await this.switchEntity.put({
       [PARTITION_KEY]: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
       [`${DYNAMO_TABLE_KEY.LOWER}`]: lower,
       enabled: enabled,
     });
+    console.log(JSON.stringify(res, null, 2));
   }
 }

@@ -20,7 +20,7 @@ const SWITCH: SynthSwitchRequestBody = {
   outputToken: 'UNI',
   inputTokenChainId: 1,
   outputTokenChainId: 1,
-  amount: '1000000000000000000',
+  amount: '10000000000',
   type: 'EXACT_INPUT',
 };
 
@@ -47,11 +47,18 @@ const switchRepository = SwitchRepository.create(documentClient);
 describe('put switch tests', () => {
   it('should put synth switch into db', async () => {
     expect(() => {
-      switchRepository.putSynthSwitch(SWITCH, '10000000000', true);
+      switchRepository.putSynthSwitch(SWITCH, '10000', true);
     }).not.toThrow();
 
-    const enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
+    let enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
     expect(enabled).toBe(true);
+
+    expect(() => {
+      switchRepository.putSynthSwitch(SWITCH, '1000000000', false);
+    }).not.toThrow();
+
+    enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
+    expect(enabled).toBe(false);
   });
 
   it('should return false for non-existent switch', async () => {
