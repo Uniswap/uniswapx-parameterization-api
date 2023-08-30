@@ -349,7 +349,7 @@ export class APIStack extends cdk.Stack {
         period: Duration.minutes(5),
         statistic: 'avg',
       }),
-      threshold: 0.98,
+      threshold: 0.99,
       evaluationPeriods: 3,
     });
 
@@ -359,7 +359,7 @@ export class APIStack extends cdk.Stack {
         period: Duration.minutes(5),
         statistic: 'avg',
       }),
-      threshold: 0.95,
+      threshold: 0.98,
       evaluationPeriods: 3,
     });
 
