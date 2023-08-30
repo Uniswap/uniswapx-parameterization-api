@@ -19,10 +19,7 @@ type TokenConfig = {
   outputToken: string;
   outputTokenChainId: number;
   tradeTypes: string[];
-  tradeSizes: {
-    lower: string;
-    upper: string;
-  }[];
+  tradeSizes: string[]; // inclusive range [lower, upper]
 };
 
 const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>) => {

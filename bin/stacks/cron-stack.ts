@@ -11,6 +11,7 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../../lib/constants';
+import { PARTITION_KEY } from '../../lib/repositories/switch-repository';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
 
@@ -25,6 +26,7 @@ type TableCapacityOptions = {
 
 export type TableCapacityConfig = {
   fadeRate: TableCapacityOptions;
+  synthSwitch: TableCapacityOptions;
 };
 
 export interface CronStackProps extends cdk.NestedStackProps {
@@ -100,8 +102,20 @@ export class CronStack extends cdk.NestedStack {
       contributorInsightsEnabled: true,
       ...PROD_TABLE_CAPACITY.fadeRate,
     });
-
     this.alarmsPerTable(fadeRateTable, DYNAMO_TABLE_NAME.FADE_RATE, chatbotSNSArn);
+
+    const synthSwitchTable = new aws_dynamo.Table(this, `${SERVICE_NAME}SynthSwitchTable`, {
+      tableName: DYNAMO_TABLE_NAME.SYNTH_SWITCH,
+      partitionKey: {
+        name: PARTITION_KEY,
+        type: aws_dynamo.AttributeType.STRING,
+      },
+      deletionProtection: true,
+      pointInTimeRecovery: true,
+      contributorInsightsEnabled: true,
+      ...PROD_TABLE_CAPACITY.synthSwitch,
+    });
+    this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTH_SWITCH, chatbotSNSArn);
   }
 
   private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSArn?: string): void {

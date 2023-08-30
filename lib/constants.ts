@@ -11,8 +11,10 @@ export const DYNAMO_TABLE_NAME = {
 export const DYNAMO_TABLE_KEY = {
   FILLER: 'filler',
   INPUT_TOKEN: 'inputToken',
-  OUTPUT_TKEN: 'outputToken',
-  TRADE_TYPE: 'tradeType',
-  TRADE_SIZE: 'tradeSize',
+  INPUT_TOKEN_CHAIN_ID: 'inputTokenChainId',
+  OUTPUT_TOKEN: 'outputToken',
+  OUTPUT_TOKEN_CHAIN_ID: 'outputTokenChainId',
+  TRADE_TYPE: 'type',
+  LOWER: 'lower',
   ENABLED: 'enabled',
 };

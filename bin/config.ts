@@ -4,4 +4,5 @@ import { TableCapacityConfig } from './stacks/cron-stack';
 
 export const PROD_TABLE_CAPACITY: TableCapacityConfig = {
   fadeRate: { billingMode: BillingMode.PROVISIONED, readCapacity: 50, writeCapacity: 5 },
+  synthSwitch: { billingMode: BillingMode.PROVISIONED, readCapacity: 2000, writeCapacity: 5 },
 };
