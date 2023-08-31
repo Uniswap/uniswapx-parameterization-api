@@ -96,6 +96,32 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     'formatted tokenInList, tokenOutList'
   );
 
+  function hasPositiveTradeOutcome(order: ResultRowType): {
+    key: string;
+    result: boolean;
+  } {
+    const tradeType =
+      order.classic_amountin == order.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
+    const trade: SynthSwitchRequestBody = {
+      inputToken: order.tokenin,
+      inputTokenChainId: parseInt(order.tokeninchainid),
+      outputToken: order.tokenout,
+      outputTokenChainId: parseInt(order.tokenoutchainid),
+      type: String(tradeType),
+      amount: tradeType == TradeType.EXACT_INPUT ? order.classic_amountin : order.classic_amountout,
+    };
+    const key = SwitchRepository.getKey(trade);
+    let hasPriceImprovement: boolean;
+    if (tradeType == TradeType.EXACT_INPUT) {
+      hasPriceImprovement = BigNumber.from(order.settledAmountOut).gt(order.classic_amountoutgasadjusted);
+    } else {
+      hasPriceImprovement = BigNumber.from(order.classic_amountingasadjusted).gt(order.settledAmountIn);
+    }
+    // can add more conditionals here
+    const result = hasPriceImprovement;
+    return { key, result};
+  }
+
   async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[]) {
     // match configs to results
     const configMap: {
@@ -124,32 +150,14 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         };
       } = {};
       for (const order of ordersForConfig) {
-        const tradeType =
-          order.classic_amountin == order.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
-        const trade: SynthSwitchRequestBody = {
-          inputToken: order.tokenin,
-          inputTokenChainId: Number(order.tokeninchainid),
-          outputToken: order.tokenout,
-          outputTokenChainId: Number(order.tokenoutchainid),
-          type: String(tradeType),
-          // classic amount in here or synthetic amount in?
-          amount: tradeType == TradeType.EXACT_INPUT ? order.classic_amountin : order.classic_amountout,
-        };
-        const key = SwitchRepository.getKey(trade);
-        let hasPriceImprovement: boolean;
-        if (tradeType == TradeType.EXACT_INPUT) {
-          hasPriceImprovement = BigNumber.from(order.settledAmountOut).gt(order.classic_amountoutgasadjusted);
-        } else {
-          hasPriceImprovement = BigNumber.from(order.classic_amountingasadjusted).gt(order.settledAmountIn);
-        }
-
+        const {key, result} = hasPositiveTradeOutcome(order);
         if (!(key in tradeOutcomesByKey)) {
           tradeOutcomesByKey[key] = {
             pos: 0,
             neg: 0,
           };
         }
-        if (hasPriceImprovement) {
+        if (result) {
           tradeOutcomesByKey[key].pos++;
         } else {
           tradeOutcomesByKey[key].neg++;
