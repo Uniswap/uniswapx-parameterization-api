@@ -71,6 +71,6 @@ describe('static helper function tests', () => {
     expect(() => {
       // missing type
       SwitchRepository.parseKey('token0#1#token1#1');
-    }).toThrow();
+    }).toThrowError('Invalid key: token0#1#token1#1');
   })
 })
