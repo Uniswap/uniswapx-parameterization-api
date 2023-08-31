@@ -47,6 +47,11 @@ type ResultRowType = {
   filltimestamp: string;
 };
 
+type TradeOutcome = {
+  pos: number;
+  neg: number;
+};
+
 const MINIMUM_ORDERS = 10;
 const DISABLE_THRESHOLD = 0.2;
 
@@ -144,10 +149,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         ];
       // build trade objects differentiating between ExactIn and ExactOut
       let tradeOutcomesByKey: {
-        [key: string]: {
-          pos: number;
-          neg: number;
-        };
+        [key: string]: TradeOutcome;
       } = {};
       for (const order of ordersForConfig) {
         const { key, result } = hasPositiveTradeOutcome(order);
@@ -234,7 +236,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     }
   }
 
-  const TEMPLATE_SYNTH_ORDERS_SQL = `
+  const TEMPLATE_SYNTH_ORDERS_AND_URA_RESPONSES_SQL = `
     SELECT 
             res.tokenin,
             res.tokeninchainid,
@@ -266,7 +268,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     const executeResponse = await client.send(
       new ExecuteStatementCommand({
         ...sharedConfig,
-        Sql: TEMPLATE_SYNTH_ORDERS_SQL
+        Sql: TEMPLATE_SYNTH_ORDERS_AND_URA_RESPONSES_SQL
       })
     );
     stmtId = executeResponse.Id;
