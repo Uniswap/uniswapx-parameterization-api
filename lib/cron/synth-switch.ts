@@ -19,7 +19,7 @@ import { SynthSwitchQueryParams } from '../handlers/synth-switch';
 import { checkDefined } from '../preconditions/preconditions';
 import { SwitchRepository } from '../repositories/switch-repository';
 
-type TokenConfig = {
+export type TokenConfig = {
   inputToken: string;
   inputTokenChainId: number;
   outputToken: string;
@@ -96,7 +96,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   log.info(
     {
       tokenInList,
-      tokenOutList
+      tokenOutList,
     },
     'formatted tokenInList, tokenOutList'
   );
@@ -258,8 +258,9 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     JOIN combinedURAResponses res
     ON orders.quoteid = res.quoteid
     ${
-      (tokenInListRaw.length > 0 && tokenOutListRaw.length > 0) 
-        ? `WHERE LOWER(res.tokenin) IN ${tokenInList} AND LOWER(res.tokenout) IN (${tokenOutList})` : ''
+      tokenInListRaw.length > 0 && tokenOutListRaw.length > 0
+        ? `WHERE LOWER(res.tokenin) IN ${tokenInList} AND LOWER(res.tokenout) IN ${tokenOutList}`
+        : ''
     }
     ORDER by filltimestamp DESC;
   `;
@@ -268,7 +269,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     const executeResponse = await client.send(
       new ExecuteStatementCommand({
         ...sharedConfig,
-        Sql: TEMPLATE_SYNTH_ORDERS_AND_URA_RESPONSES_SQL
+        Sql: TEMPLATE_SYNTH_ORDERS_AND_URA_RESPONSES_SQL,
       })
     );
     stmtId = executeResponse.Id;
@@ -353,7 +354,7 @@ async function readTokenConfig(log: Logger): Promise<TokenConfig[]> {
   return configs;
 }
 
-function validateConfigs(configs: TokenConfig[]) {
+export function validateConfigs(configs: TokenConfig[]) {
   // make sure all tokens are valid addresses
   configs = configs.filter((config) => {
     return ethers.utils.isAddress(config.inputToken) && ethers.utils.isAddress(config.outputToken);
