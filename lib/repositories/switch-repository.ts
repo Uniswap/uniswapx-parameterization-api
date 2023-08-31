@@ -77,12 +77,11 @@ export class SwitchRepository implements BaseSwitchRepository {
     SwitchRepository.log.info({ tableName: this._switchTable.name, pk: PARTITION_KEY });
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
 
-    const res = await this.switchEntity.put({
+    await this.switchEntity.put({
       [PARTITION_KEY]: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
       [`${DYNAMO_TABLE_KEY.LOWER}`]: lower,
       enabled: enabled,
     });
-    console.log(JSON.stringify(res, null, 2));
   }
 
   static getKey(trade: SynthSwitchTrade): string {
