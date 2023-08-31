@@ -72,7 +72,7 @@ export class CronStack extends cdk.NestedStack {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
       entry: path.join(__dirname, '../../lib/cron/synth-switch.ts'),
       handler: 'handler',
-      timeout: Duration.seconds(240),
+      timeout: Duration.seconds(600),
       memorySize: 1024,
       bundling: {
         minify: true,
