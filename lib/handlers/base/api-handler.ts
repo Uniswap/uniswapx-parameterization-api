@@ -1,3 +1,4 @@
+import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { metricScope, MetricsLogger } from 'aws-embedded-metrics';
 import {
   APIGatewayProxyEvent,
@@ -8,10 +9,9 @@ import {
 import { default as bunyan, default as Logger } from 'bunyan';
 import Joi from 'joi';
 
+import { Metric } from '../../entities';
 import { CustomError, ErrorCode } from '../../util/errors';
 import { BaseHandleRequestParams, BaseInjector, BaseLambdaHandler, BaseRInj } from './base';
-import { Metric } from '../../entities';
-import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 
 const INTERNAL_ERROR = (id?: string) => {
   return {

@@ -209,6 +209,31 @@ export class APIStack extends cdk.Stack {
       provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
     });
 
+    const switchLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Switch', {
+      role: lambdaRole,
+      runtime: aws_lambda.Runtime.NODEJS_16_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'switchHandler',
+      memorySize: 256,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+        ...props.envVars,
+        stage,
+      },
+      timeout: Duration.seconds(30),
+    });
+
+    const switchLambdaAlias = new aws_lambda.Alias(this, `SwitchLiveAlias`, {
+      aliasName: 'live',
+      version: switchLambda.currentVersion,
+      provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
+    });
+
     const mockQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'mockQuote', {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_16_X,
@@ -282,6 +307,27 @@ export class APIStack extends cdk.Stack {
       },
     });
     quote.addMethod('POST', quoteLambdaIntegration);
+
+    const switchLambdaIntegration = new aws_apigateway.LambdaIntegration(switchLambdaAlias, {});
+    const switchResource = api.root.addResource('synthetic-switch', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+        allowMethods: aws_apigateway.Cors.ALL_METHODS,
+      },
+    });
+    const enabled = switchResource.addResource('enabled');
+
+    /* add auth key */
+    const apiAuthzKey = api.addApiKey('AuthzKey');
+    const plan = api.addUsagePlan('AccessPlan', {
+      name: 'AccessPlan',
+    });
+    plan.addApiKey(apiAuthzKey);
+    plan.addApiStage({
+      stage: api.deploymentStage,
+    });
+
+    enabled.addMethod('GET', switchLambdaIntegration, { apiKeyRequired: true });
 
     const integration = api.root.addResource('integration', {
       defaultCorsPreflightOptions: {
