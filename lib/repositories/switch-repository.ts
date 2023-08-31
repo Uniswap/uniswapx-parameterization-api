@@ -50,18 +50,17 @@ export class SwitchRepository implements BaseSwitchRepository {
   public async syntheticQuoteForTradeEnabled(trade: SynthSwitchQueryParams): Promise<boolean> {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type, amount } = trade;
 
-    SwitchRepository.log.info({ trade: trade });
     // get row for which lower bucket <= amount
     const pk = `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`;
     const result = await this.switchEntity.get(
       {
         [PARTITION_KEY]: pk,
       },
-      { execute: true }
+      { execute: true, consistent: true }
     );
 
+    SwitchRepository.log.info({ res: result.Item }, 'get result');
     if (result.Item && result.Item.lower <= amount) {
-      SwitchRepository.log.info({ res: result.Item });
       return result.Item.enabled;
     } else {
       SwitchRepository.log.info({ pk }, 'No row found');
@@ -73,6 +72,10 @@ export class SwitchRepository implements BaseSwitchRepository {
     SwitchRepository.log.info({ tableName: this._switchTable.name, pk: PARTITION_KEY });
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
 
+    SwitchRepository.log.info(
+      { pk: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}` },
+      'put pk'
+    );
     await this.switchEntity.put({
       [PARTITION_KEY]: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
       [`${DYNAMO_TABLE_KEY.LOWER}`]: lower,
