@@ -46,9 +46,7 @@ const switchRepository = SwitchRepository.create(documentClient);
 
 describe('put switch tests', () => {
   it('should put synth switch into db and overwrites previous one if exists', async () => {
-    expect(() => {
-      switchRepository.putSynthSwitch(SWITCH, '10000', true);
-    }).not.toThrow();
+    await expect(switchRepository.putSynthSwitch(SWITCH, '10000', true)).resolves.not.toThrow();
 
     let enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
     expect(enabled).toBe(true);

@@ -76,10 +76,13 @@ export class SwitchRepository implements BaseSwitchRepository {
       { pk: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}` },
       'put pk'
     );
-    await this.switchEntity.put({
-      [PARTITION_KEY]: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
-      [`${DYNAMO_TABLE_KEY.LOWER}`]: lower,
-      enabled: enabled,
-    });
+    await this.switchEntity.put(
+      {
+        [PARTITION_KEY]: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
+        [`${DYNAMO_TABLE_KEY.LOWER}`]: lower,
+        enabled: enabled,
+      },
+      { execute: true }
+    );
   }
 }
