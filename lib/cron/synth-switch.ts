@@ -15,7 +15,7 @@ import { default as bunyan, default as Logger } from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
 
 import { PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
-import { SynthSwitchRequestBody } from '../handlers/synth-switch';
+import { SynthSwitchQueryParams } from '../handlers/synth-switch';
 import { checkDefined } from '../preconditions/preconditions';
 import { SwitchRepository } from '../repositories/switch-repository';
 
@@ -102,7 +102,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   } {
     const tradeType =
       order.classic_amountin == order.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
-    const trade: SynthSwitchRequestBody = {
+    const trade: SynthSwitchQueryParams = {
       inputToken: order.tokenin,
       inputTokenChainId: parseInt(order.tokeninchainid),
       outputToken: order.tokenout,

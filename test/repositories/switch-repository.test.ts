@@ -3,7 +3,7 @@
 import { DynamoDBClient, DynamoDBClientConfig } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { SynthSwitchRequestBody } from '../../lib/handlers/synth-switch';
+import { SynthSwitchQueryParams } from '../../lib/handlers/synth-switch';
 import { SwitchRepository } from '../../lib/repositories/switch-repository';
 
 const dynamoConfig: DynamoDBClientConfig = {
@@ -15,7 +15,7 @@ const dynamoConfig: DynamoDBClientConfig = {
   },
 };
 
-const SWITCH: SynthSwitchRequestBody = {
+const SWITCH: SynthSwitchQueryParams = {
   inputToken: 'USDC',
   outputToken: 'UNI',
   inputTokenChainId: 1,
@@ -24,7 +24,7 @@ const SWITCH: SynthSwitchRequestBody = {
   type: 'EXACT_INPUT',
 };
 
-const NONEXISTENT_SWITCH: SynthSwitchRequestBody = {
+const NONEXISTENT_SWITCH: SynthSwitchQueryParams = {
   inputToken: 'USDC',
   outputToken: 'UNI',
   inputTokenChainId: 1,
@@ -45,8 +45,8 @@ const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient(dynamoConf
 const switchRepository = SwitchRepository.create(documentClient);
 
 describe('put switch tests', () => {
-  it('should put synth switch into db', async () => {
-    await switchRepository.putSynthSwitch(SWITCH, '10000', true);
+  it('should put synth switch into db and overwrites previous one if exists', async () => {
+    await expect(switchRepository.putSynthSwitch(SWITCH, '10000', true)).resolves.not.toThrow();
 
     let enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
     expect(enabled).toBe(true);

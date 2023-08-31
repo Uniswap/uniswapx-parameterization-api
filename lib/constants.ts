@@ -4,8 +4,8 @@ export const INTEGRATION_S3_KEY = 'integration.json';
 export const PRODUCTION_S3_KEY = 'production.json';
 
 export const DYNAMO_TABLE_NAME = {
-  FADE_RATE: 'FadeRate',
-  SYNTH_SWITCH: 'SynthSwitch',
+  FADES: 'Fades',
+  SYNTHETIC_SWITCH: 'SyntheticSwitch',
 };
 
 export const DYNAMO_TABLE_KEY = {
