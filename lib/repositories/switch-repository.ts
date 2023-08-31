@@ -69,7 +69,6 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   public async putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void> {
-    SwitchRepository.log.info({ tableName: this._switchTable.name, pk: PARTITION_KEY });
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
 
     SwitchRepository.log.info(

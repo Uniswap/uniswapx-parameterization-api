@@ -30,13 +30,13 @@ type TokenConfig = {
 
 type ResultRowType = {
   tokenin: string;
-  tokeninchainid: string;
+  tokeninchainid: number;
   dutch_amountin: string;
   classic_amountin: string;
   dutch_amountingasadjusted: string;
   classic_amountingasadjusted: string;
   tokenout: string;
-  tokenoutchainid: string;
+  tokenoutchainid: number;
   dutch_amountout: string;
   classic_amountout: string;
   dutch_amountoutgasadjusted: string;
@@ -85,13 +85,13 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   // inputToken and outputToken MUST be sanitized and lowercased before being passed into the query
   const tokenInList = "('" + configs.map((config) => config.inputToken).join("', '") + "')";
   const tokenOutList = "('" + configs.map((config) => config.outputToken).join("', '") + "')";
+  const tokenInListRaw = configs.map((config) => config.inputToken);
+  const tokenOutListRaw = configs.map((config) => config.outputToken);
 
   log.info(
     {
       tokenInList,
-      tokenOutList,
-      valueTokenInList: String(tokenInList),
-      valueTokenOutList: String(tokenOutList),
+      tokenOutList
     },
     'formatted tokenInList, tokenOutList'
   );
@@ -104,9 +104,9 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       order.classic_amountin == order.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
     const trade: SynthSwitchQueryParams = {
       inputToken: order.tokenin,
-      inputTokenChainId: parseInt(order.tokeninchainid),
+      inputTokenChainId: order.tokeninchainid,
       outputToken: order.tokenout,
-      outputTokenChainId: parseInt(order.tokenoutchainid),
+      outputTokenChainId: order.tokenoutchainid,
       type: String(tradeType),
       amount: tradeType == TradeType.EXACT_INPUT ? order.classic_amountin : order.classic_amountout,
     };
@@ -226,6 +226,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     ) {
       await sleep(2000);
     } else if (status.Status === StatusString.FINISHED) {
+      log.info('view query execution finished');
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
@@ -233,21 +234,40 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     }
   }
 
+  // TODO: optionally we can add an additional time window here using filltimestamp
+  const TEMPLATE_SYNTH_ORDERS_SQL = `
+    SELECT 
+            res.tokenin,
+            res.tokeninchainid,
+            dutch_amountin,
+            classic_amountin,
+            dutch_amountingasadjusted,
+            classic_amountingasadjusted,
+            res.tokenout,
+            res.tokenoutchainid,
+            dutch_amountout,
+            classic_amountout,
+            dutch_amountoutgasadjusted,
+            classic_amountoutgasadjusted,
+            orders.amountin as settledAmountIn,
+            orders.amountout as settledAmountOut,
+            filler,
+            filltimestamp
+    FROM archivedorders orders
+    JOIN combinedURAResponses res
+    ON orders.quoteid = res.quoteid
+    ${
+      (tokenInListRaw.length > 0 && tokenOutListRaw.length > 0) 
+        ? `WHERE LOWER(res.tokenin) IN ${tokenInList} AND LOWER(res.tokenout) IN (${tokenOutList})` : ''
+    }
+    ORDER by filltimestamp DESC;
+  `;
+
   try {
     const executeResponse = await client.send(
       new ExecuteStatementCommand({
         ...sharedConfig,
-        Sql: TEMPLATE_SYNTH_ORDERS_SQL,
-        Parameters: [
-          {
-            name: 'token_in_list',
-            value: String(tokenInList),
-          },
-          {
-            name: 'token_out_list',
-            value: String(tokenOutList),
-          },
-        ],
+        Sql: TEMPLATE_SYNTH_ORDERS_SQL
       })
     );
     stmtId = executeResponse.Id;
@@ -281,21 +301,16 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       }
       log.info({ result }, 'query result');
 
-      const filteredResult = result.filter((row) => {
-        // throw away rows where any field is null
-        return Object.values(row).every((field) => field.stringValue);
-      });
-
-      const formattedResult = filteredResult.map((row) => {
+      const formattedResult = result.map((row) => {
         const formattedRow: ResultRowType = {
           tokenin: (row[0].stringValue as string).toLowerCase(),
-          tokeninchainid: row[1].stringValue as string,
+          tokeninchainid: row[1].longValue as number,
           dutch_amountin: row[2].stringValue as string,
           classic_amountin: row[3].stringValue as string,
           dutch_amountingasadjusted: row[4].stringValue as string,
           classic_amountingasadjusted: row[5].stringValue as string,
           tokenout: (row[6].stringValue as string).toLowerCase(),
-          tokenoutchainid: row[7].stringValue as string,
+          tokenoutchainid: row[7].longValue as number,
           dutch_amountout: row[8].stringValue as string,
           classic_amountout: row[9].stringValue as string,
           dutch_amountoutgasadjusted: row[10].stringValue as string,
@@ -307,7 +322,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         };
         return formattedRow;
       });
-      await updateSynthSwitchRepository(configs, formattedResult);
+      await updateSynthSwitchRepository(configs, validateRows(configs, formattedResult));
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
@@ -355,6 +370,22 @@ function validateConfigs(configs: TokenConfig[]) {
   return configs;
 }
 
+// this is highly inefficient but will work until we figure out how to
+// pass in arrays as parameters to the query
+function validateRows(configs: TokenConfig[], rows: ResultRowType[]): ResultRowType[] {
+  // filter out any rows that don't match a config
+  return rows.filter((row) => {
+    return configs.some((config) => {
+      return (
+        config.inputToken.toLowerCase() == row.tokenin.toLowerCase() &&
+        config.inputTokenChainId == row.tokeninchainid &&
+        config.outputToken.toLowerCase() == row.tokenout.toLowerCase() &&
+        config.outputTokenChainId == row.tokenoutchainid
+      );
+    });
+  });
+}
+
 const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
   CREATE OR REPLACE VIEW combinedURAResponses AS
   (
@@ -386,35 +417,6 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
           on ur.requestid = synth.requestid
           WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '168 HOURS')) -- 7 days rolling window
   );
-`;
-
-// TODO: optionally we can add an additional time window here using filltimestamp
-const TEMPLATE_SYNTH_ORDERS_SQL = `
-  SELECT 
-          res.tokenin,
-          res.tokeninchainid,
-          dutch_amountin,
-          classic_amountin,
-          dutch_amountingasadjusted,
-          classic_amountingasadjusted,
-          res.tokenout,
-          res.tokenoutchainid,
-          dutch_amountout,
-          classic_amountout,
-          dutch_amountoutgasadjusted,
-          classic_amountoutgasadjusted,
-          orders.amountin as settledAmountIn,
-          orders.amountout as settledAmountOut,
-          filler,
-          filltimestamp
-  FROM archivedorders orders
-  JOIN combinedURAResponses res
-  ON orders.quoteid = res.quoteid
-  WHERE 
-  LOWER(res.tokenin) in (:token_in_list)
-  and 
-  LOWER(res.tokenout) in (:token_out_list)
-  ORDER by filltimestamp DESC
 `;
 
 module.exports = { handler };
