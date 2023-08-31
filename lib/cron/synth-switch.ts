@@ -280,7 +280,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         throw new Error('empty query result');
       }
       log.info({ result }, 'query result');
-      // TODO: write result to a dynamo table
+
       const filteredResult = result.filter((row) => {
         // throw away rows where any field is null
         return Object.values(row).every((field) => field.stringValue);
