@@ -316,7 +316,18 @@ export class APIStack extends cdk.Stack {
       },
     });
     const enabled = switchResource.addResource('enabled');
-    enabled.addMethod('GET', switchLambdaIntegration);
+
+    /* add auth key */
+    const apiAuthzKey = api.addApiKey('AuthzKey');
+    const plan = api.addUsagePlan('AccessPlan', {
+      name: 'AccessPlan',
+    });
+    plan.addApiKey(apiAuthzKey);
+    plan.addApiStage({
+      stage: api.deploymentStage,
+    });
+
+    enabled.addMethod('GET', switchLambdaIntegration, { apiKeyRequired: true });
 
     const integration = api.root.addResource('integration', {
       defaultCorsPreflightOptions: {
