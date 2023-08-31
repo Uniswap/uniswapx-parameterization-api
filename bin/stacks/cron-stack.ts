@@ -91,8 +91,8 @@ export class CronStack extends cdk.NestedStack {
     });
 
     /* RFQ fade rate table */
-    const fadeRateTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FadeRateTable`, {
-      tableName: DYNAMO_TABLE_NAME.FADE_RATE,
+    const fadesTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FadesTable`, {
+      tableName: DYNAMO_TABLE_NAME.FADES,
       partitionKey: {
         name: DYNAMO_TABLE_KEY.FILLER,
         type: aws_dynamo.AttributeType.STRING,
@@ -102,10 +102,10 @@ export class CronStack extends cdk.NestedStack {
       contributorInsightsEnabled: true,
       ...PROD_TABLE_CAPACITY.fadeRate,
     });
-    this.alarmsPerTable(fadeRateTable, DYNAMO_TABLE_NAME.FADE_RATE, chatbotSNSArn);
+    this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
 
     const synthSwitchTable = new aws_dynamo.Table(this, `${SERVICE_NAME}SynthSwitchTable`, {
-      tableName: DYNAMO_TABLE_NAME.SYNTH_SWITCH,
+      tableName: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH,
       partitionKey: {
         name: PARTITION_KEY,
         type: aws_dynamo.AttributeType.STRING,
@@ -115,7 +115,7 @@ export class CronStack extends cdk.NestedStack {
       contributorInsightsEnabled: true,
       ...PROD_TABLE_CAPACITY.synthSwitch,
     });
-    this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTH_SWITCH, chatbotSNSArn);
+    this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH, chatbotSNSArn);
   }
 
   private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSArn?: string): void {

@@ -143,13 +143,13 @@ function createDynamoEntity() {
   });
 
   const table = new Table({
-    name: DYNAMO_TABLE_NAME.FADE_RATE,
+    name: DYNAMO_TABLE_NAME.FADES,
     partitionKey: DYNAMO_TABLE_KEY.FILLER,
     DocumentClient,
   });
 
   return new Entity({
-    name: `${DYNAMO_TABLE_NAME.FADE_RATE}Entity`,
+    name: `${DYNAMO_TABLE_NAME.FADES}Entity`,
     attributes: {
       filler: { partitionKey: true, type: 'string' },
       faderate: { type: 'number' },

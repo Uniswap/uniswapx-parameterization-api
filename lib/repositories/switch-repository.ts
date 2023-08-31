@@ -18,7 +18,7 @@ export class SwitchRepository implements BaseSwitchRepository {
     });
 
     const switchTable = new Table({
-      name: DYNAMO_TABLE_NAME.SYNTH_SWITCH,
+      name: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH,
       partitionKey: PARTITION_KEY,
       DocumentClient: documentClient,
     });
