@@ -343,15 +343,15 @@ export class APIStack extends cdk.Stack {
       evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
     });
 
-    const apiAlarm4xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-4XXAlarm', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-4XX',
-      metric: api.metricClientError({
-        period: Duration.minutes(5),
-        statistic: 'avg',
-      }),
-      threshold: 0.99,
-      evaluationPeriods: 3,
-    });
+    // const apiAlarm4xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-4XXAlarm', {
+    //   alarmName: 'UniswapXParameterizationAPI-SEV2-4XX',
+    //   metric: api.metricClientError({
+    //     period: Duration.minutes(5),
+    //     statistic: 'avg',
+    //   }),
+    //   threshold: 0.99,
+    //   evaluationPeriods: 3,
+    // });
 
     const apiAlarm4xxSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-4XXAlarm', {
       alarmName: 'UniswapXParameterizationAPI-SEV3-4XX',
@@ -489,7 +489,7 @@ export class APIStack extends cdk.Stack {
     if (chatbotSNSArn) {
       const chatBotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
       apiAlarm5xxSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      apiAlarm4xxSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      // apiAlarm4xxSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       apiAlarm5xxSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       apiAlarm4xxSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       apiAlarmLatencySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
