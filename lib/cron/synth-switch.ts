@@ -101,6 +101,35 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     'formatted tokenInList, tokenOutList'
   );
 
+  const FORMATTED_SYNTH_ORDERS_AND_URA_RESPONSES_SQL = `
+    SELECT 
+            res.tokenin,
+            res.tokeninchainid,
+            dutch_amountin,
+            classic_amountin,
+            dutch_amountingasadjusted,
+            classic_amountingasadjusted,
+            res.tokenout,
+            res.tokenoutchainid,
+            dutch_amountout,
+            classic_amountout,
+            dutch_amountoutgasadjusted,
+            classic_amountoutgasadjusted,
+            orders.amountin as settledAmountIn,
+            orders.amountout as settledAmountOut,
+            filler,
+            filltimestamp
+    FROM archivedorders orders
+    JOIN combinedURAResponses res
+    ON orders.quoteid = res.quoteid
+    ${
+      tokenInListRaw.length > 0 && tokenOutListRaw.length > 0
+        ? `WHERE LOWER(res.tokenin) IN ${tokenInList} AND LOWER(res.tokenout) IN ${tokenOutList}`
+        : ''
+    }
+    ORDER by filltimestamp DESC;
+  `;
+
   function hasPositiveTradeOutcome(order: ResultRowType): {
     key: string;
     result: boolean;
@@ -236,40 +265,11 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     }
   }
 
-  const TEMPLATE_SYNTH_ORDERS_AND_URA_RESPONSES_SQL = `
-    SELECT 
-            res.tokenin,
-            res.tokeninchainid,
-            dutch_amountin,
-            classic_amountin,
-            dutch_amountingasadjusted,
-            classic_amountingasadjusted,
-            res.tokenout,
-            res.tokenoutchainid,
-            dutch_amountout,
-            classic_amountout,
-            dutch_amountoutgasadjusted,
-            classic_amountoutgasadjusted,
-            orders.amountin as settledAmountIn,
-            orders.amountout as settledAmountOut,
-            filler,
-            filltimestamp
-    FROM archivedorders orders
-    JOIN combinedURAResponses res
-    ON orders.quoteid = res.quoteid
-    ${
-      tokenInListRaw.length > 0 && tokenOutListRaw.length > 0
-        ? `WHERE LOWER(res.tokenin) IN ${tokenInList} AND LOWER(res.tokenout) IN ${tokenOutList}`
-        : ''
-    }
-    ORDER by filltimestamp DESC;
-  `;
-
   try {
     const executeResponse = await client.send(
       new ExecuteStatementCommand({
         ...sharedConfig,
-        Sql: TEMPLATE_SYNTH_ORDERS_AND_URA_RESPONSES_SQL,
+        Sql: FORMATTED_SYNTH_ORDERS_AND_URA_RESPONSES_SQL,
       })
     );
     stmtId = executeResponse.Id;
