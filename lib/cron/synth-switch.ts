@@ -119,7 +119,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     }
     // can add more conditionals here
     const result = hasPriceImprovement;
-    return { key, result};
+    return { key, result };
   }
 
   async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[]) {
@@ -150,7 +150,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         };
       } = {};
       for (const order of ordersForConfig) {
-        const {key, result} = hasPositiveTradeOutcome(order);
+        const { key, result } = hasPositiveTradeOutcome(order);
         if (!(key in tradeOutcomesByKey)) {
           tradeOutcomesByKey[key] = {
             pos: 0,
@@ -169,16 +169,16 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         const totalOrders = pos + neg;
         if (totalOrders >= MINIMUM_ORDERS) {
           if (neg / totalOrders >= DISABLE_THRESHOLD) {
-            // TODO: update tradeSizes with new TokenConfig schema
             log.info(
               {
                 key,
-                ordersWithNegativePriceImprovement: neg,
-                ordersWithPositivePriceImprovement: pos,
+                ordersWithNegativeOutcome: neg,
+                ordersWithPositiveOutcome: pos,
                 totalOrders,
               },
               'Disabling synthethics for trade'
             );
+            // TODO: update tradeSizes with new TokenConfig schema
             await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], false);
             return;
           }
@@ -187,8 +187,8 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           log.info(
             {
               key,
-              ordersWithNegativePriceImprovement: neg,
-              ordersWithPositivePriceImprovement: pos,
+              ordersWithNegativeOutcome: neg,
+              ordersWithPositiveOutcome: pos,
               totalOrders,
             },
             'Enabling synthethics for trade'
