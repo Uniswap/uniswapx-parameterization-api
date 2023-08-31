@@ -20,7 +20,6 @@ export class SwitchRepository implements BaseSwitchRepository {
     const switchTable = new Table({
       name: DYNAMO_TABLE_NAME.SYNTH_SWITCH,
       partitionKey: PARTITION_KEY,
-      sortKey: `${DYNAMO_TABLE_KEY.LOWER}`,
       DocumentClient: documentClient,
     });
 
@@ -28,7 +27,7 @@ export class SwitchRepository implements BaseSwitchRepository {
       name: 'SynthSwitchEntity',
       attributes: {
         [PARTITION_KEY]: { partitionKey: true },
-        lower: { sortKey: true },
+        lower: { type: 'string' },
         enabled: { type: 'boolean' },
       },
       table: switchTable,
@@ -53,23 +52,19 @@ export class SwitchRepository implements BaseSwitchRepository {
 
     SwitchRepository.log.info({ trade: trade });
     // get row for which lower bucket <= amount
-    const result = await this.switchEntity.query(
-      `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
+    const pk = `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`;
+    const result = await this.switchEntity.get(
       {
-        limit: 1,
-        lte: `${amount}`,
-        reverse: true,
-      }
+        [PARTITION_KEY]: pk,
+      },
+      { execute: true }
     );
-    if (result.Items && result.Items.length) {
-      SwitchRepository.log.info({ res: result.Items });
-      // our design assumes that at most one row (thus one lower) will be present
-      // for the input/output/chains/type combo
-      // if somehow more than one row exists, return the one with highest 'upper'
-      if (result.Items.length > 1) {
-        SwitchRepository.log.error({ res: result.Items }, 'More than one row returned for switch query');
-      }
-      return result.Items[0].enabled;
+
+    if (result.Item && result.Item.lower <= amount) {
+      SwitchRepository.log.info({ res: result.Item });
+      return result.Item.enabled;
+    } else {
+      SwitchRepository.log.info({ pk }, 'No row found');
     }
     return false;
   }

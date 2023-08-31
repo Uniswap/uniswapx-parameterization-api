@@ -45,8 +45,10 @@ const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient(dynamoConf
 const switchRepository = SwitchRepository.create(documentClient);
 
 describe('put switch tests', () => {
-  it('should put synth switch into db', async () => {
-    await switchRepository.putSynthSwitch(SWITCH, '10000', true);
+  it('should put synth switch into db and overwrites previous one if exists', async () => {
+    expect(() => {
+      switchRepository.putSynthSwitch(SWITCH, '10000', true);
+    }).not.toThrow();
 
     let enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
     expect(enabled).toBe(true);

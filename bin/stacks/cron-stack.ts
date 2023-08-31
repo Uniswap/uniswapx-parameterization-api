@@ -110,10 +110,6 @@ export class CronStack extends cdk.NestedStack {
         name: PARTITION_KEY,
         type: aws_dynamo.AttributeType.STRING,
       },
-      sortKey: {
-        name: DYNAMO_TABLE_KEY.LOWER,
-        type: aws_dynamo.AttributeType.STRING,
-      },
       deletionProtection: true,
       pointInTimeRecovery: true,
       contributorInsightsEnabled: true,
