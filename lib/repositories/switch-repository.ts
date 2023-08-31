@@ -39,6 +39,7 @@ export class SwitchRepository implements BaseSwitchRepository {
 
   private constructor(
     // eslint-disable-next-line
+    // @ts-expect-error
     private readonly _switchTable: Table<
       'SynthSwitch',
       'inputToken#inputTokenChainId#outputToken#outputTokenChainId#type',

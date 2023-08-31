@@ -234,7 +234,6 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     }
   }
 
-  // TODO: optionally we can add an additional time window here using filltimestamp
   const TEMPLATE_SYNTH_ORDERS_SQL = `
     SELECT 
             res.tokenin,
@@ -299,7 +298,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         log.error('empty query result');
         throw new Error('empty query result');
       }
-      log.info({ result }, 'query result');
+      log.info({ numResults: result.length }, 'Retrieved query result');
 
       const formattedResult = result.map((row) => {
         const formattedRow: ResultRowType = {
@@ -322,7 +321,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         };
         return formattedRow;
       });
-      await updateSynthSwitchRepository(configs, validateRows(configs, formattedResult));
+      await updateSynthSwitchRepository(configs, formattedResult);
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
@@ -368,22 +367,6 @@ function validateConfigs(configs: TokenConfig[]) {
   });
 
   return configs;
-}
-
-// this is highly inefficient but will work until we figure out how to
-// pass in arrays as parameters to the query
-function validateRows(configs: TokenConfig[], rows: ResultRowType[]): ResultRowType[] {
-  // filter out any rows that don't match a config
-  return rows.filter((row) => {
-    return configs.some((config) => {
-      return (
-        config.inputToken.toLowerCase() == row.tokenin.toLowerCase() &&
-        config.inputTokenChainId == row.tokeninchainid &&
-        config.outputToken.toLowerCase() == row.tokenout.toLowerCase() &&
-        config.outputTokenChainId == row.tokenoutchainid
-      );
-    });
-  });
 }
 
 const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
