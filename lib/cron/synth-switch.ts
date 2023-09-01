@@ -88,10 +88,10 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
   // We can't pass in arrays as parameters to the query, so we have to build it into a formatted string
   // tokenIn and tokenOut MUST be sanitized and lowercased before being passed into the query
-  const tokenInList = "('" + configs.map((config) => config.tokenIn).join("', '") + "')";
-  const tokenOutList = "('" + configs.map((config) => config.tokenOut).join("', '") + "')";
-  const tokenInListRaw = configs.map((config) => config.tokenIn);
-  const tokenOutListRaw = configs.map((config) => config.tokenOut);
+  const tokenInListRaw = Array.from(new Set(configs.map((config) => config.tokenIn)));
+  const tokenOutListRaw = Array.from(new Set(configs.map((config) => config.tokenOut)));
+  const tokenInList = "('" + tokenInListRaw.join("', '") + "')";
+  const tokenOutList = "('" + tokenOutListRaw.join("', '") + "')";
 
   log.info(
     {
