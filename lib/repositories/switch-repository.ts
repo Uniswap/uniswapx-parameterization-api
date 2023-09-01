@@ -72,10 +72,7 @@ export class SwitchRepository implements BaseSwitchRepository {
   public async putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void> {
     const { tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type } = trade;
 
-    SwitchRepository.log.info(
-      { pk: `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}` },
-      'put pk'
-    );
+    SwitchRepository.log.info({ pk: `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}` }, 'put pk');
     await this.switchEntity.put(
       {
         [PARTITION_KEY]: `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}`,
@@ -87,18 +84,13 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   static getKey(trade: SynthSwitchTrade): string {
-    console.log('in getKey')
     const { tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type } = trade;
-    console.log(tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type)
     return `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}`;
   }
 
   static parseKey(key: string): SynthSwitchTrade {
-    console.log('in parseKey')
     const [tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type] = key.split('#');
-    console.log('after split')
-    if (!tokenIn || !tokenInChainId || !tokenOut || !tokenOutChainId || !type)
-      throw new Error(`Invalid key: ${key}`);
+    if (!tokenIn || !tokenInChainId || !tokenOut || !tokenOutChainId || !type) throw new Error(`Invalid key: ${key}`);
     return {
       tokenIn,
       tokenInChainId: parseInt(tokenInChainId),

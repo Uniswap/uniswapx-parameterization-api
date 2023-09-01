@@ -86,8 +86,6 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
   const configs = validateConfigs(await readTokenConfig(log));
 
-  log.info({ configs }, 'configs')
-
   // We can't pass in arrays as parameters to the query, so we have to build it into a formatted string
   // tokenIn and tokenOut MUST be sanitized and lowercased before being passed into the query
   const tokenInListRaw = Array.from(new Set(configs.map((config) => config.tokenIn)));
@@ -162,7 +160,6 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
   async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[]) {
     // match configs to results
-    log.info("updateSynthSwitchRepository")
     const configMap: {
       [key: string]: ResultRowType[];
     } = {};
@@ -174,25 +171,22 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         configMap[key] = [row];
       }
     });
-    log.info({ configMap }, 'configMap');
 
     for (const config of configs) {
-      // totalTrades is both ExactIn and ExactOut
       const ordersForConfig =
-        configMap[
-          `${config.tokenIn}#${config.tokenInChainId}#${config.tokenOut}#${config.tokenOutChainId}`
-        ];
-      log.info({ ordersForConfig })
+        configMap[`${config.tokenIn}#${config.tokenInChainId}#${config.tokenOut}#${config.tokenOutChainId}`];
+
+      if (!ordersForConfig) {
+        // no orders for that config, skip
+        continue;
+      }
+
       // build trade objects differentiating between ExactIn and ExactOut
       let tradeOutcomesByKey: {
         [key: string]: TradeOutcome;
       } = {};
       for (const order of ordersForConfig) {
         const { key, result } = hasPositiveTradeOutcome(order);
-        log.info({
-          key,
-          result
-        }, "after hasPositiveTradeOutcome");
         if (!(key in tradeOutcomesByKey)) {
           tradeOutcomesByKey[key] = {
             pos: 0,
@@ -209,18 +203,20 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       Object.keys(tradeOutcomesByKey).forEach(async (key) => {
         const { pos, neg } = tradeOutcomesByKey[key];
         const totalOrders = pos + neg;
+        log.info({
+          key,
+          ordersWithNegativeOutcome: neg,
+          ordersWithPositiveOutcome: pos,
+          totalOrders,
+        }, "Outcome for trade");
         if (totalOrders >= MINIMUM_ORDERS) {
           if (neg / totalOrders >= DISABLE_THRESHOLD) {
             log.info(
               {
                 key,
-                ordersWithNegativeOutcome: neg,
-                ordersWithPositiveOutcome: pos,
-                totalOrders,
               },
               'Disabling synthethics for trade'
             );
-            // TODO: update tradeSizes with new TokenConfig schema
             await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], false);
             return;
           }
@@ -229,13 +225,9 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           log.info(
             {
               key,
-              ordersWithNegativeOutcome: neg,
-              ordersWithPositiveOutcome: pos,
-              totalOrders,
             },
             'Enabling synthethics for trade'
           );
-          // TODO: update tradeSizes with new TokenConfig schema
           await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
         }
       });
@@ -312,9 +304,9 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         log.error('empty query result');
         throw new Error('empty query result');
       }
-      log.info({ numResults: result.length, result }, 'Retrieved query result');
+      log.info({ numResults: result.length }, 'Retrieved query result');
 
-      if(result.length == 0) {
+      if (result.length == 0) {
         log.info('No synthetic orders found for specified configs');
         return;
       }
@@ -338,7 +330,6 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           filler: (row[14].stringValue as string).toLowerCase(),
           filltimestamp: row[15].stringValue as string,
         };
-        log.info({ formattedRow }, 'formattedRow');
         return formattedRow;
       });
       await updateSynthSwitchRepository(configs, formattedResult);
