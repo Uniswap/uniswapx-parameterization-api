@@ -10,7 +10,7 @@ describe('synth-switch util tests', () => {
                     inputTokenChainId: 1,
                     outputTokenChainId: 1,
                     tradeTypes: ['EXACT_INPUT'],
-                    tradeSizes: ['0', '0']
+                    lowerBound: ['0']
                 }
             ]
             expect(validateConfigs(badAddresses)).toStrictEqual([]);

@@ -25,7 +25,7 @@ export type TokenConfig = {
   outputToken: string;
   outputTokenChainId: number;
   tradeTypes: string[];
-  tradeSizes: string[]; // inclusive range [lower, upper]
+  lowerBound: string[];
 };
 
 type ResultRowType = {
@@ -210,7 +210,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
               'Disabling synthethics for trade'
             );
             // TODO: update tradeSizes with new TokenConfig schema
-            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], false);
+            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], false);
             return;
           }
         }
@@ -225,7 +225,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
             'Enabling synthethics for trade'
           );
           // TODO: update tradeSizes with new TokenConfig schema
-          await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.tradeSizes[0], true);
+          await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
         }
       });
     }
