@@ -190,7 +190,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         log.info({
           key,
           result
-        }, "after hasPositiveTradeOutcome"")
+        }, "after hasPositiveTradeOutcome");
         if (!(key in tradeOutcomesByKey)) {
           tradeOutcomesByKey[key] = {
             pos: 0,
