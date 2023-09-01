@@ -1,7 +1,7 @@
 module.exports = {
   tables: [
     {
-      TableName: `SyntheticSwitch`,
+      TableName: `SyntheticSwitchTable`,
       KeySchema: [
         { AttributeName: 'tokenIn#tokenInChainId#tokenOut#tokenOutChainId#type', KeyType: 'HASH' },
       ],

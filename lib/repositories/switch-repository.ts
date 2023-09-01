@@ -18,7 +18,7 @@ export class SwitchRepository implements BaseSwitchRepository {
     });
 
     const switchTable = new Table({
-      name: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH,
+      name: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE,
       partitionKey: PARTITION_KEY,
       DocumentClient: documentClient,
     });
@@ -41,7 +41,7 @@ export class SwitchRepository implements BaseSwitchRepository {
     // eslint-disable-next-line
     // @ts-expect-error
     private readonly _switchTable: Table<
-      'SynthSwitch',
+      'SyntheticSwitchTable',
       'tokenIn#tokenInChainId#tokenOut#tokenOutChainId#type',
       'lower'
     >,

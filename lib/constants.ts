@@ -5,7 +5,7 @@ export const PRODUCTION_S3_KEY = 'production.json';
 
 export const DYNAMO_TABLE_NAME = {
   FADES: 'Fades',
-  SYNTHETIC_SWITCH: 'SyntheticSwitch',
+  SYNTHETIC_SWITCH_TABLE: 'SyntheticSwitchTable',
 };
 
 export const DYNAMO_TABLE_KEY = {
