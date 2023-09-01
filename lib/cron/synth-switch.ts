@@ -303,6 +303,11 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       }
       log.info({ numResults: result.length }, 'Retrieved query result');
 
+      if(result.length == 0) {
+        log.info('No synthetic orders found for specified configs');
+        return;
+      }
+
       const formattedResult = result.map((row) => {
         const formattedRow: ResultRowType = {
           tokenin: (row[0].stringValue as string).toLowerCase(),
