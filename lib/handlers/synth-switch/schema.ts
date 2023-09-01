@@ -11,12 +11,15 @@ export const SynthSwitchQueryParamsJoi = Joi.object({
   amount: FieldValidator.amount.required(), // tokenInAmount if EXACT_INPUT, tokenOutAmount if EXACT_OUTPUT
 });
 
-export type SynthSwitchQueryParams = {
+export type SynthSwitchQueryParams = SynthSwitchTrade & {
+  amount: string;
+};
+
+export type SynthSwitchTrade = {
   inputTokenChainId: number;
   outputTokenChainId: number;
   inputToken: string;
   outputToken: string;
-  amount: string;
   type: string;
 };
 

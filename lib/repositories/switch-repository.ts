@@ -3,7 +3,7 @@ import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
-import { SynthSwitchQueryParams } from '../handlers/synth-switch';
+import { SynthSwitchQueryParams, SynthSwitchTrade } from '../handlers/synth-switch';
 import { BaseSwitchRepository } from './base';
 
 export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.INPUT_TOKEN}#${DYNAMO_TABLE_KEY.INPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
@@ -39,6 +39,7 @@ export class SwitchRepository implements BaseSwitchRepository {
 
   private constructor(
     // eslint-disable-next-line
+    // @ts-expect-error
     private readonly _switchTable: Table<
       'SynthSwitch',
       'inputToken#inputTokenChainId#outputToken#outputTokenChainId#type',
@@ -68,8 +69,7 @@ export class SwitchRepository implements BaseSwitchRepository {
     return false;
   }
 
-  public async putSynthSwitch(trade: SynthSwitchQueryParams, lower: string, enabled: boolean): Promise<void> {
-    SwitchRepository.log.info({ tableName: this._switchTable.name, pk: PARTITION_KEY });
+  public async putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void> {
     const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
 
     SwitchRepository.log.info(
@@ -84,5 +84,23 @@ export class SwitchRepository implements BaseSwitchRepository {
       },
       { execute: true }
     );
+  }
+
+  static getKey(trade: SynthSwitchTrade): string {
+    const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
+    return `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`;
+  }
+
+  static parseKey(key: string): SynthSwitchTrade {
+    const [inputToken, inputTokenChainId, outputToken, outputTokenChainId, type] = key.split('#');
+    if (!inputToken || !inputTokenChainId || !outputToken || !outputTokenChainId || !type)
+      throw new Error(`Invalid key: ${key}`);
+    return {
+      inputToken,
+      inputTokenChainId: parseInt(inputTokenChainId),
+      outputToken,
+      outputTokenChainId: parseInt(outputTokenChainId),
+      type,
+    };
   }
 }

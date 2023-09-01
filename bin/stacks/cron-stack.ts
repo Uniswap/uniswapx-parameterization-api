@@ -72,7 +72,7 @@ export class CronStack extends cdk.NestedStack {
       runtime: aws_lambda.Runtime.NODEJS_16_X,
       entry: path.join(__dirname, '../../lib/cron/synth-switch.ts'),
       handler: 'handler',
-      timeout: Duration.seconds(240),
+      timeout: Duration.seconds(300), // should be more than enough
       memorySize: 1024,
       bundling: {
         minify: true,
@@ -85,8 +85,8 @@ export class CronStack extends cdk.NestedStack {
       },
     });
     new aws_events.Rule(this, `${SERVICE_NAME}SynthSwitchSchedule`, {
-      // TODO: change schedule
-      schedule: aws_events.Schedule.rate(Duration.hours(1)),
+      // TODO: fix schedule
+      schedule: aws_events.Schedule.rate(Duration.minutes(15)),
       targets: [new aws_events_targets.LambdaFunction(this.synthSwitchCronLambda)],
     });
 

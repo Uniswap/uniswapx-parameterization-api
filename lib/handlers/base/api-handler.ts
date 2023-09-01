@@ -132,7 +132,7 @@ export abstract class APIGLambdaHandler<
             requestQueryParams = requestValidation.requestQueryParams;
           } catch (err) {
             log.error({ err }, 'Unexpected error validating request');
-            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count)
+            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
             return INTERNAL_ERROR();
           }
 
@@ -153,7 +153,7 @@ export abstract class APIGLambdaHandler<
             );
           } catch (err) {
             log.error({ err, event }, 'Unexpected error building request injected.');
-            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count)
+            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
             return INTERNAL_ERROR();
           }
 
@@ -193,7 +193,7 @@ export abstract class APIGLambdaHandler<
             if (err instanceof CustomError) {
               return err.toJSON(id);
             }
-            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count)
+            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
             return INTERNAL_ERROR(id);
           }
 
@@ -208,7 +208,7 @@ export abstract class APIGLambdaHandler<
             response = responseValidation.response;
           } catch (err) {
             log.error({ err }, 'Unexpected error validating response');
-            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count)
+            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
             return INTERNAL_ERROR(id);
           }
 

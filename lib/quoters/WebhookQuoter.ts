@@ -131,10 +131,7 @@ export class WebhookQuoter implements Quoter {
           `Axios error fetching quote from ${endpoint}: ${e}`
         );
       } else {
-        this.log.error(
-          { endpoint },
-          `Error fetching quote from ${endpoint}: ${e}`
-        );
+        this.log.error({ endpoint }, `Error fetching quote from ${endpoint}: ${e}`);
       }
       return null;
     }

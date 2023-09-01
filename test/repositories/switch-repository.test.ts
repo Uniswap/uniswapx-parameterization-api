@@ -61,3 +61,12 @@ describe('put switch tests', () => {
     await expect(switchRepository.syntheticQuoteForTradeEnabled(NONEXISTENT_SWITCH)).resolves.toBe(false);
   });
 });
+
+describe('static helper function tests', () => {
+  it('should throw error for invalid key on parse', () => {
+    expect(() => {
+      // missing type
+      SwitchRepository.parseKey('token0#1#token1#1');
+    }).toThrowError('Invalid key: token0#1#token1#1');
+  })
+})
