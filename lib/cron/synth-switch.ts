@@ -137,10 +137,10 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     const tradeType =
       order.classic_amountin == order.classic_amountingasadjusted ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
     const trade: SynthSwitchQueryParams = {
-      inputToken: order.tokenin,
-      inputTokenChainId: order.tokeninchainid,
-      outputToken: order.tokenout,
-      outputTokenChainId: order.tokenoutchainid,
+      tokenIn: order.tokenin,
+      tokenInChainId: order.tokeninchainid,
+      tokenOut: order.tokenout,
+      tokenOutChainId: order.tokenoutchainid,
       type: String(tradeType),
       amount: tradeType == TradeType.EXACT_INPUT ? order.classic_amountin : order.classic_amountout,
     };

@@ -49,7 +49,7 @@ export class SwitchRepository implements BaseSwitchRepository {
   ) {}
 
   public async syntheticQuoteForTradeEnabled(trade: SynthSwitchQueryParams): Promise<boolean> {
-    const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type, amount } = trade;
+    const { tokenIn: inputToken, tokenInChainId: inputTokenChainId, tokenOut: outputToken, tokenOutChainId: outputTokenChainId, type, amount } = trade;
 
     // get row for which lower bucket <= amount
     const pk = `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`;
@@ -70,7 +70,7 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   public async putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void> {
-    const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
+    const { tokenIn: inputToken, tokenInChainId: inputTokenChainId, tokenOut: outputToken, tokenOutChainId: outputTokenChainId, type } = trade;
 
     SwitchRepository.log.info(
       { pk: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}` },
@@ -87,7 +87,7 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   static getKey(trade: SynthSwitchTrade): string {
-    const { inputToken, inputTokenChainId, outputToken, outputTokenChainId, type } = trade;
+    const { tokenIn: inputToken, tokenInChainId: inputTokenChainId, tokenOut: outputToken, tokenOutChainId: outputTokenChainId, type } = trade;
     return `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`;
   }
 
@@ -96,10 +96,10 @@ export class SwitchRepository implements BaseSwitchRepository {
     if (!inputToken || !inputTokenChainId || !outputToken || !outputTokenChainId || !type)
       throw new Error(`Invalid key: ${key}`);
     return {
-      inputToken,
-      inputTokenChainId: parseInt(inputTokenChainId),
-      outputToken,
-      outputTokenChainId: parseInt(outputTokenChainId),
+      tokenIn: inputToken,
+      tokenInChainId: parseInt(inputTokenChainId),
+      tokenOut: outputToken,
+      tokenOutChainId: parseInt(outputTokenChainId),
       type,
     };
   }

@@ -29,10 +29,10 @@ export class SwitchHandler extends APIGLambdaHandler<
     let enabled: boolean;
     try {
       enabled = await dbInterface.syntheticQuoteForTradeEnabled({
-        inputToken,
-        inputTokenChainId,
-        outputToken,
-        outputTokenChainId,
+        tokenIn: inputToken,
+        tokenInChainId: inputTokenChainId,
+        tokenOut: outputToken,
+        tokenOutChainId: outputTokenChainId,
         type,
         amount,
       });
