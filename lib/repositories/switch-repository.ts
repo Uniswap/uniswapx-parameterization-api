@@ -94,7 +94,9 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   static parseKey(key: string): SynthSwitchTrade {
+    console.log('in parseKey')
     const [tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type] = key.split('#');
+    console.log('after split')
     if (!tokenIn || !tokenInChainId || !tokenOut || !tokenOutChainId || !type)
       throw new Error(`Invalid key: ${key}`);
     return {
