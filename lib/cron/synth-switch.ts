@@ -88,10 +88,10 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
   // We can't pass in arrays as parameters to the query, so we have to build it into a formatted string
   // tokenIn and tokenOut MUST be sanitized and lowercased before being passed into the query
-  const tokenInList = "('" + configs.map((config) => config.tokenIn).join("', '") + "')";
-  const tokenOutList = "('" + configs.map((config) => config.tokenOut).join("', '") + "')";
-  const tokenInListRaw = configs.map((config) => config.tokenIn);
-  const tokenOutListRaw = configs.map((config) => config.tokenOut);
+  const tokenInListRaw = Array.from(new Set(configs.map((config) => config.tokenIn)));
+  const tokenOutListRaw = Array.from(new Set(configs.map((config) => config.tokenOut)));
+  const tokenInList = "('" + tokenInListRaw.join("', '") + "')";
+  const tokenOutList = "('" + tokenOutListRaw.join("', '") + "')";
 
   log.info(
     {
@@ -101,6 +101,8 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     'formatted tokenInList, tokenOutList'
   );
 
+  // TODO: WHERE in may have performance issues as num records increases
+  // potentially filter the tokens in the cron instead
   const FORMATTED_SYNTH_ORDERS_AND_URA_RESPONSES_SQL = `
     SELECT 
             res.tokenin,
@@ -302,6 +304,11 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         throw new Error('empty query result');
       }
       log.info({ numResults: result.length }, 'Retrieved query result');
+
+      if(result.length == 0) {
+        log.info('No synthetic orders found for specified configs');
+        return;
+      }
 
       const formattedResult = result.map((row) => {
         const formattedRow: ResultRowType = {
