@@ -173,7 +173,6 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     });
 
     for (const config of configs) {
-      // totalTrades is both ExactIn and ExactOut
       const ordersForConfig =
         configMap[`${config.tokenIn}#${config.tokenInChainId}#${config.tokenOut}#${config.tokenOutChainId}`];
 
