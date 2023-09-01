@@ -86,7 +86,7 @@ export class CronStack extends cdk.NestedStack {
     });
     new aws_events.Rule(this, `${SERVICE_NAME}SynthSwitchSchedule`, {
       // TODO: fix schedule
-      schedule: aws_events.Schedule.rate(Duration.minutes(15)),
+      schedule: aws_events.Schedule.rate(Duration.minutes(5)),
       targets: [new aws_events_targets.LambdaFunction(this.synthSwitchCronLambda)],
     });
 
