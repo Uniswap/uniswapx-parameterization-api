@@ -105,7 +105,7 @@ export class CronStack extends cdk.NestedStack {
     this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
 
     const synthSwitchTable = new aws_dynamo.Table(this, `${SERVICE_NAME}SynthSwitchTable`, {
-      tableName: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH,
+      tableName: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE,
       partitionKey: {
         name: PARTITION_KEY,
         type: aws_dynamo.AttributeType.STRING,
@@ -115,7 +115,7 @@ export class CronStack extends cdk.NestedStack {
       contributorInsightsEnabled: true,
       ...PROD_TABLE_CAPACITY.synthSwitch,
     });
-    this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH, chatbotSNSArn);
+    this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE, chatbotSNSArn);
   }
 
   private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSArn?: string): void {

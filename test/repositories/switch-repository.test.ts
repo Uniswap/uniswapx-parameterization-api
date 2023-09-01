@@ -16,19 +16,19 @@ const dynamoConfig: DynamoDBClientConfig = {
 };
 
 const SWITCH: SynthSwitchQueryParams = {
-  inputToken: 'USDC',
-  outputToken: 'UNI',
-  inputTokenChainId: 1,
-  outputTokenChainId: 1,
+  tokenIn: 'USDC',
+  tokenOut: 'UNI',
+  tokenInChainId: 1,
+  tokenOutChainId: 1,
   amount: '10000000000',
   type: 'EXACT_INPUT',
 };
 
 const NONEXISTENT_SWITCH: SynthSwitchQueryParams = {
-  inputToken: 'USDC',
-  outputToken: 'UNI',
-  inputTokenChainId: 1,
-  outputTokenChainId: 1,
+  tokenIn: 'USDC',
+  tokenOut: 'UNI',
+  tokenInChainId: 1,
+  tokenOutChainId: 1,
   amount: '1000000000000000000',
   type: 'EXACT_OUTPUT',
 };

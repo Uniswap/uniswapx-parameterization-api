@@ -1,12 +1,12 @@
 module.exports = {
   tables: [
     {
-      TableName: `SyntheticSwitch`,
+      TableName: `SyntheticSwitchTable`,
       KeySchema: [
-        { AttributeName: 'inputToken#inputTokenChainId#outputToken#outputTokenChainId#type', KeyType: 'HASH' },
+        { AttributeName: 'tokenIn#tokenInChainId#tokenOut#tokenOutChainId#type', KeyType: 'HASH' },
       ],
       AttributeDefinitions: [
-        { AttributeName: 'inputToken#inputTokenChainId#outputToken#outputTokenChainId#type', AttributeType: 'S' },
+        { AttributeName: 'tokenIn#tokenInChainId#tokenOut#tokenOutChainId#type', AttributeType: 'S' },
       ],
       ProvisionedThroughput: { ReadCapacityUnits: 10, WriteCapacityUnits: 10 },
     },

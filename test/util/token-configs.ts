@@ -5,10 +5,10 @@ describe('synth-switch util tests', () => {
         it('filters out bad configs', () => {
             const badAddresses: TokenConfig[] = [
                 {
-                    inputToken: '0xdead',
-                    outputToken: '0xbeef',
-                    inputTokenChainId: 1,
-                    outputTokenChainId: 1,
+                    tokenIn: '0xdead',
+                    tokenOut: '0xbeef',
+                    tokenInChainId: 1,
+                    tokenOutChainId: 1,
                     tradeTypes: ['EXACT_INPUT'],
                     lowerBound: ['0']
                 }
