@@ -86,8 +86,6 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
   const configs = validateConfigs(await readTokenConfig(log));
 
-  log.info({ configs }, 'configs')
-
   // We can't pass in arrays as parameters to the query, so we have to build it into a formatted string
   // tokenIn and tokenOut MUST be sanitized and lowercased before being passed into the query
   const tokenInListRaw = Array.from(new Set(configs.map((config) => config.tokenIn)));
@@ -305,7 +303,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         log.error('empty query result');
         throw new Error('empty query result');
       }
-      log.info({ numResults: result.length, result }, 'Retrieved query result');
+      log.info({ numResults: result.length }, 'Retrieved query result');
 
       if(result.length == 0) {
         log.info('No synthetic orders found for specified configs');
@@ -331,7 +329,6 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           filler: (row[14].stringValue as string).toLowerCase(),
           filltimestamp: row[15].stringValue as string,
         };
-        log.info({ formattedRow }, 'formattedRow');
         return formattedRow;
       });
       await updateSynthSwitchRepository(configs, formattedResult);

@@ -87,9 +87,7 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   static getKey(trade: SynthSwitchTrade): string {
-    console.log('in getKey')
     const { tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type } = trade;
-    console.log(tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type)
     return `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}`;
   }
 
