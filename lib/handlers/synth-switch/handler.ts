@@ -22,17 +22,17 @@ export class SwitchHandler extends APIGLambdaHandler<
     params: APIHandleRequestParams<ContainerInjected, RequestInjected, void, SynthSwitchQueryParams>
   ): Promise<ErrorResponse | Response<SynthSwitchResponse>> {
     const {
-      requestInjected: { log, inputToken, outputToken, inputTokenChainId, outputTokenChainId, amount, type },
+      requestInjected: { log, tokenIn, tokenOut, tokenInChainId, tokenOutChainId, amount, type },
       containerInjected: { dbInterface },
     } = params;
 
     let enabled: boolean;
     try {
       enabled = await dbInterface.syntheticQuoteForTradeEnabled({
-        tokenIn: inputToken,
-        tokenInChainId: inputTokenChainId,
-        tokenOut: outputToken,
-        tokenOutChainId: outputTokenChainId,
+        tokenIn,
+        tokenInChainId,
+        tokenOut,
+        tokenOutChainId,
         type,
         amount,
       });

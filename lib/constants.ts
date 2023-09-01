@@ -10,10 +10,10 @@ export const DYNAMO_TABLE_NAME = {
 
 export const DYNAMO_TABLE_KEY = {
   FILLER: 'filler',
-  INPUT_TOKEN: 'inputToken',
-  INPUT_TOKEN_CHAIN_ID: 'inputTokenChainId',
-  OUTPUT_TOKEN: 'outputToken',
-  OUTPUT_TOKEN_CHAIN_ID: 'outputTokenChainId',
+  TOKEN_IN: 'tokenIn',
+  TOKEN_IN_CHAIN_ID: 'tokenInChainId',
+  TOKEN_OUT: 'tokenOut',
+  TOKEN_OUT_CHAIN_ID: 'tokenOutChainId',
   TRADE_TYPE: 'type',
   LOWER: 'lower',
   ENABLED: 'enabled',

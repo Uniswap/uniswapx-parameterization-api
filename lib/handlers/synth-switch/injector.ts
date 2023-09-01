@@ -17,10 +17,10 @@ export interface ContainerInjected {
 
 export interface RequestInjected extends ApiRInj {
   _metric: IMetric;
-  inputToken: string;
-  outputToken: string;
-  inputTokenChainId: number;
-  outputTokenChainId: number;
+  tokenIn: string;
+  tokenOut: string;
+  tokenInChainId: number;
+  tokenOutChainId: number;
   amount: string;
   type: string;
 }
@@ -67,10 +67,10 @@ export class SwitchInjector extends ApiInjector<ContainerInjected, RequestInject
       log,
       _metric: metric,
       requestId,
-      inputToken: requestQueryParams.tokenIn,
-      outputToken: requestQueryParams.tokenOut,
-      inputTokenChainId: requestQueryParams.tokenInChainId,
-      outputTokenChainId: requestQueryParams.tokenOutChainId,
+      tokenIn: requestQueryParams.tokenIn,
+      tokenOut: requestQueryParams.tokenOut,
+      tokenInChainId: requestQueryParams.tokenInChainId,
+      tokenOutChainId: requestQueryParams.tokenOutChainId,
       amount: requestQueryParams.amount,
       type: requestQueryParams.type,
     };

@@ -6,7 +6,7 @@ import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
 import { SynthSwitchQueryParams, SynthSwitchTrade } from '../handlers/synth-switch';
 import { BaseSwitchRepository } from './base';
 
-export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.INPUT_TOKEN}#${DYNAMO_TABLE_KEY.INPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN}#${DYNAMO_TABLE_KEY.OUTPUT_TOKEN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
+export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.TOKEN_IN}#${DYNAMO_TABLE_KEY.TOKEN_IN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TOKEN_OUT}#${DYNAMO_TABLE_KEY.TOKEN_OUT_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
 
 export class SwitchRepository implements BaseSwitchRepository {
   static log: Logger;
@@ -42,17 +42,17 @@ export class SwitchRepository implements BaseSwitchRepository {
     // @ts-expect-error
     private readonly _switchTable: Table<
       'SynthSwitch',
-      'inputToken#inputTokenChainId#outputToken#outputTokenChainId#type',
+      'tokenIn#tokenInChainId#tokenOut#tokenOutChainId#type',
       'lower'
     >,
     private readonly switchEntity: Entity
   ) {}
 
   public async syntheticQuoteForTradeEnabled(trade: SynthSwitchQueryParams): Promise<boolean> {
-    const { tokenIn: inputToken, tokenInChainId: inputTokenChainId, tokenOut: outputToken, tokenOutChainId: outputTokenChainId, type, amount } = trade;
+    const { tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type, amount } = trade;
 
     // get row for which lower bucket <= amount
-    const pk = `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`;
+    const pk = `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}`;
     const result = await this.switchEntity.get(
       {
         [PARTITION_KEY]: pk,
@@ -70,15 +70,15 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   public async putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void> {
-    const { tokenIn: inputToken, tokenInChainId: inputTokenChainId, tokenOut: outputToken, tokenOutChainId: outputTokenChainId, type } = trade;
+    const { tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type } = trade;
 
     SwitchRepository.log.info(
-      { pk: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}` },
+      { pk: `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}` },
       'put pk'
     );
     await this.switchEntity.put(
       {
-        [PARTITION_KEY]: `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`,
+        [PARTITION_KEY]: `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}`,
         [`${DYNAMO_TABLE_KEY.LOWER}`]: lower,
         enabled: enabled,
       },
@@ -87,19 +87,19 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   static getKey(trade: SynthSwitchTrade): string {
-    const { tokenIn: inputToken, tokenInChainId: inputTokenChainId, tokenOut: outputToken, tokenOutChainId: outputTokenChainId, type } = trade;
-    return `${inputToken}#${inputTokenChainId}#${outputToken}#${outputTokenChainId}#${type}`;
+    const { tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type } = trade;
+    return `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}`;
   }
 
   static parseKey(key: string): SynthSwitchTrade {
-    const [inputToken, inputTokenChainId, outputToken, outputTokenChainId, type] = key.split('#');
-    if (!inputToken || !inputTokenChainId || !outputToken || !outputTokenChainId || !type)
+    const [tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type] = key.split('#');
+    if (!tokenIn || !tokenInChainId || !tokenOut || !tokenOutChainId || !type)
       throw new Error(`Invalid key: ${key}`);
     return {
-      tokenIn: inputToken,
-      tokenInChainId: parseInt(inputTokenChainId),
-      tokenOut: outputToken,
-      tokenOutChainId: parseInt(outputTokenChainId),
+      tokenIn,
+      tokenInChainId: parseInt(tokenInChainId),
+      tokenOut: tokenOut,
+      tokenOutChainId: parseInt(tokenOutChainId),
       type,
     };
   }

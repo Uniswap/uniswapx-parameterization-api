@@ -87,7 +87,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   const configs = validateConfigs(await readTokenConfig(log));
 
   // We can't pass in arrays as parameters to the query, so we have to build it into a formatted string
-  // inputToken and outputToken MUST be sanitized and lowercased before being passed into the query
+  // tokenIn and tokenOut MUST be sanitized and lowercased before being passed into the query
   const tokenInList = "('" + configs.map((config) => config.tokenIn).join("', '") + "')";
   const tokenOutList = "('" + configs.map((config) => config.tokenOut).join("', '") + "')";
   const tokenInListRaw = configs.map((config) => config.tokenIn);
@@ -364,8 +364,8 @@ export function validateConfigs(configs: TokenConfig[]) {
   configs = configs.map((config) => {
     return {
       ...config,
-      inputToken: ethers.utils.getAddress(config.tokenIn).toLowerCase(),
-      outputToken: ethers.utils.getAddress(config.tokenOut).toLowerCase(),
+      tokenIn: ethers.utils.getAddress(config.tokenIn).toLowerCase(),
+      tokenOut: ethers.utils.getAddress(config.tokenOut).toLowerCase(),
     };
   });
 
