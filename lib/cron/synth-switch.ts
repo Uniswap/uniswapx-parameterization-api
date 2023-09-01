@@ -20,10 +20,10 @@ import { checkDefined } from '../preconditions/preconditions';
 import { SwitchRepository } from '../repositories/switch-repository';
 
 export type TokenConfig = {
-  inputToken: string;
-  inputTokenChainId: number;
-  outputToken: string;
-  outputTokenChainId: number;
+  tokenIn: string;
+  tokenInChainId: number;
+  tokenOut: string;
+  tokenOutChainId: number;
   tradeTypes: string[];
   lowerBound: string[];
 };
@@ -88,10 +88,10 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
   // We can't pass in arrays as parameters to the query, so we have to build it into a formatted string
   // inputToken and outputToken MUST be sanitized and lowercased before being passed into the query
-  const tokenInList = "('" + configs.map((config) => config.inputToken).join("', '") + "')";
-  const tokenOutList = "('" + configs.map((config) => config.outputToken).join("', '") + "')";
-  const tokenInListRaw = configs.map((config) => config.inputToken);
-  const tokenOutListRaw = configs.map((config) => config.outputToken);
+  const tokenInList = "('" + configs.map((config) => config.tokenIn).join("', '") + "')";
+  const tokenOutList = "('" + configs.map((config) => config.tokenOut).join("', '") + "')";
+  const tokenInListRaw = configs.map((config) => config.tokenIn);
+  const tokenOutListRaw = configs.map((config) => config.tokenOut);
 
   log.info(
     {
@@ -174,7 +174,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       // totalTrades is both ExactIn and ExactOut
       const ordersForConfig =
         configMap[
-          `${config.inputToken}#${config.inputTokenChainId}#${config.outputToken}#${config.outputTokenChainId}`
+          `${config.tokenIn}#${config.tokenInChainId}#${config.tokenOut}#${config.tokenOutChainId}`
         ];
       // build trade objects differentiating between ExactIn and ExactOut
       let tradeOutcomesByKey: {
@@ -357,15 +357,15 @@ async function readTokenConfig(log: Logger): Promise<TokenConfig[]> {
 export function validateConfigs(configs: TokenConfig[]) {
   // make sure all tokens are valid addresses
   configs = configs.filter((config) => {
-    return ethers.utils.isAddress(config.inputToken) && ethers.utils.isAddress(config.outputToken);
+    return ethers.utils.isAddress(config.tokenIn) && ethers.utils.isAddress(config.tokenOut);
   });
 
   // normalize token addresses
   configs = configs.map((config) => {
     return {
       ...config,
-      inputToken: ethers.utils.getAddress(config.inputToken).toLowerCase(),
-      outputToken: ethers.utils.getAddress(config.outputToken).toLowerCase(),
+      inputToken: ethers.utils.getAddress(config.tokenIn).toLowerCase(),
+      outputToken: ethers.utils.getAddress(config.tokenOut).toLowerCase(),
     };
   });
 
