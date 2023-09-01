@@ -101,6 +101,8 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     'formatted tokenInList, tokenOutList'
   );
 
+  // TODO: WHERE in may have performance issues as num records increases
+  // potentially filter the tokens in the cron instead
   const FORMATTED_SYNTH_ORDERS_AND_URA_RESPONSES_SQL = `
     SELECT 
             res.tokenin,
