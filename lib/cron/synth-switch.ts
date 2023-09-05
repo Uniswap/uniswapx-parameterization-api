@@ -9,6 +9,7 @@ import {
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TradeType } from '@uniswap/sdk-core';
+import { metricScope, MetricsLogger, Unit } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import { default as bunyan, default as Logger } from 'bunyan';
@@ -16,6 +17,7 @@ import { BigNumber, ethers } from 'ethers';
 
 import { PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
 import { SynthSwitchQueryParams } from '../handlers/synth-switch';
+import { MetricName, MetricNamespace, SyntheticSwitchMetricDimension } from '../metrics';
 import { checkDefined } from '../preconditions/preconditions';
 import { SwitchRepository } from '../repositories/switch-repository';
 
@@ -55,7 +57,14 @@ type TradeOutcome = {
 const MINIMUM_ORDERS = 10;
 const DISABLE_THRESHOLD = 0.2;
 
-const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>) => {
+const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
+  await main(metrics);
+});
+
+async function main(metrics: MetricsLogger) {
+  metrics.setNamespace(MetricNamespace.Uniswap);
+  metrics.setDimensions(SyntheticSwitchMetricDimension);
+
   const log: Logger = bunyan.createLogger({
     name: 'SynthPairsCron',
     serializers: bunyan.stdSerializers,
@@ -150,35 +159,58 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     let hasPriceImprovement: boolean;
     if (tradeType == TradeType.EXACT_INPUT) {
       hasPriceImprovement = BigNumber.from(order.settledAmountOut).gt(order.classic_amountoutgasadjusted);
-      log.info({
-        type: TradeType[tradeType],
-        order,
-        hasPriceImprovement,
-        settledAmountOut: order.settledAmountOut,
-        classic_amountoutgasadjusted: order.classic_amountoutgasadjusted,
-        priceImprovementBps: hasPriceImprovement 
-          ? BigNumber.from(order.settledAmountOut).sub(order.classic_amountoutgasadjusted).div(order.classic_amountoutgasadjusted).mul(10000).toString() 
-          : BigNumber.from(order.classic_amountoutgasadjusted).sub(order.settledAmountOut).div(order.settledAmountOut).mul(10000).toString(),
-      }, 'trade outcome');
+      log.info(
+        {
+          type: TradeType[tradeType],
+          order,
+          hasPriceImprovement,
+          settledAmountOut: order.settledAmountOut,
+          classic_amountoutgasadjusted: order.classic_amountoutgasadjusted,
+          priceImprovementBps: hasPriceImprovement
+            ? BigNumber.from(order.settledAmountOut)
+                .sub(order.classic_amountoutgasadjusted)
+                .div(order.classic_amountoutgasadjusted)
+                .mul(10000)
+                .toString()
+            : BigNumber.from(order.classic_amountoutgasadjusted)
+                .sub(order.settledAmountOut)
+                .div(order.settledAmountOut)
+                .mul(10000)
+                .toString(),
+        },
+        'trade outcome'
+      );
     } else {
       hasPriceImprovement = BigNumber.from(order.classic_amountingasadjusted).gt(order.settledAmountIn);
-      log.info({
-        type: TradeType[tradeType],
-        order,
-        hasPriceImprovement,
-        settledAmountIn: order.settledAmountIn,
-        classic_amountingasadjusted: order.classic_amountingasadjusted,
-        priceImprovementBps: hasPriceImprovement
-          ? BigNumber.from(order.classic_amountingasadjusted).sub(order.settledAmountIn).div(order.settledAmountIn).mul(10000).toString()
-          : BigNumber.from(order.settledAmountIn).sub(order.classic_amountingasadjusted).div(order.classic_amountingasadjusted).mul(10000).toString(),
-      }, 'trade outcome');
+      log.info(
+        {
+          type: TradeType[tradeType],
+          order,
+          hasPriceImprovement,
+          settledAmountIn: order.settledAmountIn,
+          classic_amountingasadjusted: order.classic_amountingasadjusted,
+          priceImprovementBps: hasPriceImprovement
+            ? BigNumber.from(order.classic_amountingasadjusted)
+                .sub(order.settledAmountIn)
+                .div(order.settledAmountIn)
+                .mul(10000)
+                .toString()
+            : BigNumber.from(order.settledAmountIn)
+                .sub(order.classic_amountingasadjusted)
+                .div(order.classic_amountingasadjusted)
+                .mul(10000)
+                .toString(),
+        },
+        'trade outcome'
+      );
     }
     // can add more conditionals here
     const result = hasPriceImprovement;
     return { key, result };
   }
 
-  async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[]) {
+  async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[], metrics: MetricsLogger) {
+    const processingStartTime = Date.now();
     // match configs to results
     const configMap: {
       [key: string]: ResultRowType[];
@@ -205,18 +237,27 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         continue;
       }
 
-      const tradeOutcomesByKey = ordersForConfig.reduce((acc, order) => {
-        const { key, result } = hasPositiveTradeOutcome(order);
-        acc[key] = acc[key] || { pos: 0, neg: 0 };
-        result ? acc[key].pos++ : acc[key].neg++;
-        return acc;
-      }, {} as {
-        [key: string]: TradeOutcome;
-      });
+      const tradeOutcomesByKey = ordersForConfig.reduce(
+        (acc, order) => {
+          const { key, result } = hasPositiveTradeOutcome(order);
+          acc[key] = acc[key] || { pos: 0, neg: 0 };
+          result ? acc[key].pos++ : acc[key].neg++;
+          return acc;
+        },
+        {} as {
+          [key: string]: TradeOutcome;
+        }
+      );
 
       Object.keys(tradeOutcomesByKey).forEach(async (key) => {
         const { pos, neg } = tradeOutcomesByKey[key];
         const totalOrders = pos + neg;
+        const processingEndTime = Date.now();
+        metrics.putMetric(
+          MetricName.SynthOrdersProcessingTimeMs,
+          processingEndTime - processingStartTime,
+          Unit.Milliseconds
+        );
         log.info(
           {
             key,
@@ -234,8 +275,13 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
               },
               'Disabling synthethics for trade'
             );
-            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], false);
-            return;
+            try {
+              await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], false);
+              return;
+            } catch (e) {
+              log.error({ key, error: e }, 'Failed to disable synthethics for trade');
+              metrics.putMetric(MetricName.SynthOrdersDisabledCount, 1, Unit.Count);
+            }
           }
         }
         if (pos > 0) {
@@ -243,14 +289,19 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
             ...SwitchRepository.parseKey(key),
             amount: config.lowerBound[0],
           });
-          if(!enabled) {
+          if (!enabled) {
             log.info(
               {
                 key,
               },
               'Enabling synthethics for trade'
             );
-            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
+            try {
+              await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
+            } catch (e) {
+              log.error({ key, error: e }, 'Failed to enable synthethics for trade');
+              metrics.putMetric(MetricName.SynthOrdersEnabledCount, 1, Unit.Count);
+            }
           }
         }
       });
@@ -259,12 +310,14 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
   // create view
   try {
+    metrics.putMetric(MetricName.DynamoDBRequest('view_creation'), 1, Unit.Count);
     const createViewResponse = await client.send(
       new ExecuteStatementCommand({ ...sharedConfig, Sql: CREATE_COMBINED_URA_RESPONSES_VIEW_SQL })
     );
     stmtId = createViewResponse.Id;
   } catch (e) {
     log.error({ error: e }, 'Failed to send create view command');
+    metrics.putMetric(MetricName.DynamoRequestError('view_network'), 1, Unit.Count);
     throw e;
   }
   for (;;) {
@@ -275,6 +328,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     }
     if (status.Status === StatusString.ABORTED || status.Status === StatusString.FAILED) {
       log.error({ error: status.Error }, 'Failed to execute create view command');
+      metrics.putMetric(MetricName.DynamoRequestError('view_status'), 1, Unit.Count);
       throw new Error(status.Error);
     } else if (
       status.Status === StatusString.PICKED ||
@@ -287,11 +341,13 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
+      metrics.putMetric(MetricName.DynamoRequestError('view_unknown'), 1, Unit.Count);
       throw new Error(status.Error);
     }
   }
 
   try {
+    metrics.putMetric(MetricName.DynamoDBRequest('synth_orders'), 1, Unit.Count);
     const executeResponse = await client.send(
       new ExecuteStatementCommand({
         ...sharedConfig,
@@ -301,12 +357,14 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     stmtId = executeResponse.Id;
   } catch (e) {
     log.error({ error: e }, 'Failed to send command');
+    metrics.putMetric(MetricName.DynamoRequestError('orders_network'), 1, Unit.Count);
     throw e;
   }
   for (;;) {
     const status = await client.send(new DescribeStatementCommand({ Id: stmtId }));
     if (status.Error || status.Status === StatusString.ABORTED || status.Status === StatusString.FAILED) {
       log.error({ error: status.Error, status: status.Status }, 'Failed to execute query');
+      metrics.putMetric(MetricName.DynamoRequestError('orders_status'), 1, Unit.Count);
       throw new Error(status.Error);
     } else if (
       status.Status === StatusString.PICKED ||
@@ -355,14 +413,16 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         };
         return formattedRow;
       });
-      await updateSynthSwitchRepository(configs, formattedResult);
+      metrics.putMetric(MetricName.SynthOrdersCount, formattedResult.length, Unit.Count);
+      await updateSynthSwitchRepository(configs, formattedResult, metrics);
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
+      metrics.putMetric(MetricName.DynamoRequestError('orders_unknown'), 1, Unit.Count);
       throw new Error(status.Error);
     }
   }
-};
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => {
