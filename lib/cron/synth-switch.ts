@@ -431,7 +431,7 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
               ur.amountoutgasadjusted as classic_amountoutgasadjusted
           from synth
           join "uniswap_x"."public"."unifiedroutingresponses" ur
-          on ur.requestid = synth.requestid
+          on ur.requestid = synth.requestid and ur.quoteid != synth.quoteid
           WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '168 HOURS')) -- 7 days rolling window
   );
 `;
