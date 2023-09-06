@@ -57,6 +57,13 @@ describe('put switch tests', () => {
     expect(enabled).toBe(false);
   });
 
+  it('should not return true if amount is not greater than lower', async () => {
+    await switchRepository.putSynthSwitch(SWITCH, '1000000000000000000', true);
+
+    const enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
+    expect(enabled).toBe(false);
+  })
+
   it('should return false for non-existent switch', async () => {
     await expect(switchRepository.syntheticQuoteForTradeEnabled(NONEXISTENT_SWITCH)).resolves.toBe(false);
   });
