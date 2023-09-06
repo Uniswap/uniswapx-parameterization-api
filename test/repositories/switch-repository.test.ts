@@ -48,8 +48,6 @@ describe('put switch tests', () => {
   it('should put synth switch into db and overwrites previous one if exists', async () => {
     await expect(switchRepository.putSynthSwitch(SWITCH, '10000', true)).resolves.not.toThrow();
 
-    expect(SwitchRepository.getKey(SWITCH)).toBe('USDC#1#UNI#1#EXACT_INPUT');
-
     let enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
     expect(enabled).toBe(true);
 
@@ -65,6 +63,10 @@ describe('put switch tests', () => {
 });
 
 describe('static helper function tests', () => {
+  it('correctly serializes key from trade', () => {
+    expect(SwitchRepository.getKey(SWITCH)).toBe('usdc#1#uni#1#EXACT_INPUT');
+  })
+
   it('should throw error for invalid key on parse', () => {
     expect(() => {
       // missing type
