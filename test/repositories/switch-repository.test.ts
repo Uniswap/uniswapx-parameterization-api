@@ -63,6 +63,10 @@ describe('put switch tests', () => {
 });
 
 describe('static helper function tests', () => {
+  it('correctly serializes key from trade', () => {
+    expect(SwitchRepository.getKey(SWITCH)).toBe('usdc#1#uni#1#EXACT_INPUT');
+  })
+
   it('should throw error for invalid key on parse', () => {
     expect(() => {
       // missing type
