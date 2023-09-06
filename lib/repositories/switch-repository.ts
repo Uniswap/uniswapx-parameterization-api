@@ -5,6 +5,7 @@ import { Entity, Table } from 'dynamodb-toolbox';
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
 import { SynthSwitchQueryParams, SynthSwitchTrade } from '../handlers/synth-switch';
 import { BaseSwitchRepository } from './base';
+import { BigNumber } from 'ethers';
 
 export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.TOKEN_IN}#${DYNAMO_TABLE_KEY.TOKEN_IN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TOKEN_OUT}#${DYNAMO_TABLE_KEY.TOKEN_OUT_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
 
@@ -61,7 +62,7 @@ export class SwitchRepository implements BaseSwitchRepository {
     );
 
     SwitchRepository.log.info({ res: result.Item }, 'get result');
-    if (result.Item && result.Item.lower <= amount) {
+    if (result.Item && BigNumber.from(result.Item.lower).lte(amount)) {
       return result.Item.enabled;
     } else {
       SwitchRepository.log.info({ pk }, 'No row found');
