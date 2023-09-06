@@ -150,8 +150,28 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     let hasPriceImprovement: boolean;
     if (tradeType == TradeType.EXACT_INPUT) {
       hasPriceImprovement = BigNumber.from(order.settledAmountOut).gt(order.classic_amountoutgasadjusted);
+      log.info({
+        type: TradeType[tradeType],
+        order,
+        hasPriceImprovement,
+        settledAmountOut: order.settledAmountOut,
+        classic_amountoutgasadjusted: order.classic_amountoutgasadjusted,
+        priceImprovementBps: hasPriceImprovement 
+          ? BigNumber.from(order.settledAmountOut).sub(order.classic_amountoutgasadjusted).div(order.classic_amountoutgasadjusted).mul(10000).toString() 
+          : BigNumber.from(order.classic_amountoutgasadjusted).sub(order.settledAmountOut).div(order.settledAmountOut).mul(10000).toString(),
+      }, 'trade outcome');
     } else {
       hasPriceImprovement = BigNumber.from(order.classic_amountingasadjusted).gt(order.settledAmountIn);
+      log.info({
+        type: TradeType[tradeType],
+        order,
+        hasPriceImprovement,
+        settledAmountIn: order.settledAmountIn,
+        classic_amountingasadjusted: order.classic_amountingasadjusted,
+        priceImprovementBps: hasPriceImprovement
+          ? BigNumber.from(order.classic_amountingasadjusted).sub(order.settledAmountIn).div(order.settledAmountIn).mul(10000).toString()
+          : BigNumber.from(order.settledAmountIn).sub(order.classic_amountingasadjusted).div(order.classic_amountingasadjusted).mul(10000).toString(),
+      }, 'trade outcome');
     }
     // can add more conditionals here
     const result = hasPriceImprovement;
@@ -185,24 +205,14 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         continue;
       }
 
-      // build trade objects differentiating between ExactIn and ExactOut
-      const tradeOutcomesByKey: {
-        [key: string]: TradeOutcome;
-      } = {};
-      for (const order of ordersForConfig) {
+      const tradeOutcomesByKey = ordersForConfig.reduce((acc, order) => {
         const { key, result } = hasPositiveTradeOutcome(order);
-        if (!(key in tradeOutcomesByKey)) {
-          tradeOutcomesByKey[key] = {
-            pos: 0,
-            neg: 0,
-          };
-        }
-        if (result) {
-          tradeOutcomesByKey[key].pos++;
-        } else {
-          tradeOutcomesByKey[key].neg++;
-        }
-      }
+        acc[key] = acc[key] || { pos: 0, neg: 0 };
+        result ? acc[key].pos++ : acc[key].neg++;
+        return acc;
+      }, {} as {
+        [key: string]: TradeOutcome;
+      });
 
       Object.keys(tradeOutcomesByKey).forEach(async (key) => {
         const { pos, neg } = tradeOutcomesByKey[key];
