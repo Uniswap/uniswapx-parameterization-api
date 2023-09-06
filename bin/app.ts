@@ -126,7 +126,7 @@ export class APIPipeline extends Stack {
     // Prod us-east-2
     const prodUsEast2Stage = new APIStage(this, 'prod-us-east-2', {
       env: { account: '830217277613', region: 'us-east-2' },
-      provisionedConcurrency: 5,
+      provisionedConcurrency: 100,
       internalApiKey: internalApiKey.secretValue.toString(),
       chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
       envVars: {

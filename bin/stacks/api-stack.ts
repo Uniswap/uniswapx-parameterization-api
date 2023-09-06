@@ -256,7 +256,7 @@ export class APIStack extends cdk.Stack {
     const mockQuoteAlias = new aws_lambda.Alias(this, `MockQuoteLiveAlias`, {
       aliasName: 'live',
       version: mockQuoteLambda.currentVersion,
-      provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
+      provisionedConcurrentExecutions: 0,
     });
 
     const integrationRfqLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Rfq', {
@@ -294,6 +294,11 @@ export class APIStack extends cdk.Stack {
       });
 
       quoteTarget.node.addDependency(quoteLambdaAlias);
+
+      quoteTarget.scaleToTrackMetric('QuoteProvConcTracking', {
+        targetValue: 0.8,
+        predefinedMetric: aws_asg.PredefinedMetric.LAMBDA_PROVISIONED_CONCURRENCY_UTILIZATION,
+      })
     }
 
     /*
