@@ -143,7 +143,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       tokenInChainId: order.tokeninchainid,
       tokenOut: order.tokenout,
       tokenOutChainId: order.tokenoutchainid,
-      type: String(tradeType),
+      type: TradeType[tradeType],
       amount: tradeType == TradeType.EXACT_INPUT ? order.classic_amountin : order.classic_amountout,
     };
     const key = SwitchRepository.getKey(trade);

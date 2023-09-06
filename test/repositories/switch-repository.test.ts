@@ -48,6 +48,8 @@ describe('put switch tests', () => {
   it('should put synth switch into db and overwrites previous one if exists', async () => {
     await expect(switchRepository.putSynthSwitch(SWITCH, '10000', true)).resolves.not.toThrow();
 
+    expect(SwitchRepository.getKey(SWITCH)).toBe('USDC#1#UNI#1#EXACT_INPUT');
+
     let enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
     expect(enabled).toBe(true);
 
