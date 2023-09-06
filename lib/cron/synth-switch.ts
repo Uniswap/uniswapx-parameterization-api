@@ -229,13 +229,19 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
           }
         }
         if (pos > 0) {
-          log.info(
-            {
-              key,
-            },
-            'Enabling synthethics for trade'
-          );
-          await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
+          const enabled = await synthSwitchEntity.syntheticQuoteForTradeEnabled({
+            ...SwitchRepository.parseKey(key),
+            amount: config.lowerBound[0],
+          });
+          if(!enabled) {
+            log.info(
+              {
+                key,
+              },
+              'Enabling synthethics for trade'
+            );
+            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
+          }
         }
       });
     }
