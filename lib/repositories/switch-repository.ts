@@ -49,10 +49,10 @@ export class SwitchRepository implements BaseSwitchRepository {
   ) {}
 
   public async syntheticQuoteForTradeEnabled(trade: SynthSwitchQueryParams): Promise<boolean> {
-    const { tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type, amount } = trade;
+    const { amount } = trade;
 
     // get row for which lower bucket <= amount
-    const pk = `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}`;
+    const pk = `${SwitchRepository.getKey(trade)}`;
     const result = await this.switchEntity.get(
       {
         [PARTITION_KEY]: pk,
@@ -70,12 +70,10 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   public async putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void> {
-    const { tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type } = trade;
-
-    SwitchRepository.log.info({ pk: `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}` }, 'put pk');
+    SwitchRepository.log.info({ pk: `${SwitchRepository.getKey(trade)}` }, 'put pk');
     await this.switchEntity.put(
       {
-        [PARTITION_KEY]: `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}`,
+        [PARTITION_KEY]: `${SwitchRepository.getKey(trade)}`,
         [`${DYNAMO_TABLE_KEY.LOWER}`]: lower,
         enabled: enabled,
       },
@@ -85,7 +83,7 @@ export class SwitchRepository implements BaseSwitchRepository {
 
   static getKey(trade: SynthSwitchTrade): string {
     const { tokenIn, tokenInChainId, tokenOut, tokenOutChainId, type } = trade;
-    return `${tokenIn}#${tokenInChainId}#${tokenOut}#${tokenOutChainId}#${type}`;
+    return `${tokenIn.toLowerCase()}#${tokenInChainId}#${tokenOut.toLowerCase()}#${tokenOutChainId}#${type}`;
   }
 
   static parseKey(key: string): SynthSwitchTrade {

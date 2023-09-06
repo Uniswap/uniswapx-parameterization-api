@@ -104,7 +104,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
   // TODO: WHERE in may have performance issues as num records increases
   // potentially filter the tokens in the cron instead
   const FORMATTED_SYNTH_ORDERS_AND_URA_RESPONSES_SQL = `
-    SELECT 
+    SELECT
             res.tokenin,
             res.tokeninchainid,
             dutch_amountin,
@@ -174,7 +174,11 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
 
     for (const config of configs) {
       const ordersForConfig =
-        configMap[`${config.tokenIn}#${config.tokenInChainId}#${config.tokenOut}#${config.tokenOutChainId}`];
+        configMap[
+          `${config.tokenIn.toLowerCase()}#${config.tokenInChainId}#${config.tokenOut.toLowerCase()}#${
+            config.tokenOutChainId
+          }`
+        ];
 
       if (!ordersForConfig) {
         // no orders for that config, skip
@@ -182,7 +186,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       }
 
       // build trade objects differentiating between ExactIn and ExactOut
-      let tradeOutcomesByKey: {
+      const tradeOutcomesByKey: {
         [key: string]: TradeOutcome;
       } = {};
       for (const order of ordersForConfig) {
@@ -203,12 +207,15 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
       Object.keys(tradeOutcomesByKey).forEach(async (key) => {
         const { pos, neg } = tradeOutcomesByKey[key];
         const totalOrders = pos + neg;
-        log.info({
-          key,
-          ordersWithNegativeOutcome: neg,
-          ordersWithPositiveOutcome: pos,
-          totalOrders,
-        }, "Outcome for trade");
+        log.info(
+          {
+            key,
+            ordersWithNegativeOutcome: neg,
+            ordersWithPositiveOutcome: pos,
+            totalOrders,
+          },
+          'Outcome for trade'
+        );
         if (totalOrders >= MINIMUM_ORDERS) {
           if (neg / totalOrders >= DISABLE_THRESHOLD) {
             log.info(
@@ -406,7 +413,7 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
               ur.amountout as classic_amountout,
               synth.amountoutgasadjusted as dutch_amountoutgasadjusted,
               ur.amountoutgasadjusted as classic_amountoutgasadjusted
-          from synth 
+          from synth
           join "uniswap_x"."public"."unifiedroutingresponses" ur
           on ur.requestid = synth.requestid
           WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '168 HOURS')) -- 7 days rolling window
