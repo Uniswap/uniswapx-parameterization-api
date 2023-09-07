@@ -47,7 +47,7 @@ export class CronStack extends cdk.NestedStack {
 
     this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}FadeRate`, {
       role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_16_X,
+      runtime: aws_lambda.Runtime.NODEJS_18_X,
       entry: path.join(__dirname, '../../lib/cron/fade-rate.ts'),
       handler: 'handler',
       timeout: Duration.seconds(240),
@@ -69,7 +69,7 @@ export class CronStack extends cdk.NestedStack {
 
     this.synthSwitchCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}SynthSwitch`, {
       role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_16_X,
+      runtime: aws_lambda.Runtime.NODEJS_18_X,
       entry: path.join(__dirname, '../../lib/cron/synth-switch.ts'),
       handler: 'handler',
       timeout: Duration.seconds(300), // should be more than enough
