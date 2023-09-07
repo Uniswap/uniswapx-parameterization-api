@@ -261,50 +261,44 @@ async function main(metrics: MetricsLogger) {
           },
           'Outcome for trade'
         );
-        if (totalOrders >= MINIMUM_ORDERS) {
-          if (neg / totalOrders >= DISABLE_THRESHOLD) {
-            log.info(
-              {
-                key,
-              },
-              'Disabling synthethics for trade'
-            );
-            try {
-              await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], false);
-              return;
-            } catch (e) {
-              log.error({ key, error: e }, 'Failed to disable synthethics for trade');
-              metrics.putMetric(MetricName.SynthOrdersDisabledCount, 1, Unit.Count);
-            }
+        const enabled = await synthSwitchEntity.syntheticQuoteForTradeEnabled({
+          ...SwitchRepository.parseKey(key),
+          amount: config.lowerBound[0],
+        });
+
+        if (totalOrders >= MINIMUM_ORDERS && neg / totalOrders >= DISABLE_THRESHOLD && enabled) {
+          // disable synth
+          log.info(
+            {
+              key,
+            },
+            'Disabling synthethics for trade'
+          );
+          try {
+            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], false);
+            return;
+          } catch (e) {
+            log.error({ key, error: e }, 'Failed to disable synthethics for trade');
+            metrics.putMetric(MetricName.SynthOrdersDisabledCount, 1, Unit.Count);
           }
         }
-        if (pos > 0) {
-          const enabled = await synthSwitchEntity.syntheticQuoteForTradeEnabled({
-            ...SwitchRepository.parseKey(key),
-            amount: config.lowerBound[0],
-          });
-          if (!enabled) {
-            log.info(
-              {
-                key,
-              },
-              'Enabling synthethics for trade'
-            );
-            try {
-              await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
-            } catch (e) {
-              log.error({ key, error: e }, 'Failed to enable synthethics for trade');
-              metrics.putMetric(MetricName.SynthOrdersEnabledCount, 1, Unit.Count);
-            }
+        if (pos > 0 && !enabled) {
+          log.info(
+            {
+              key,
+            },
+            'Enabling synthethics for trade'
+          );
+          try {
+            await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
+          } catch (e) {
+            log.error({ key, error: e }, 'Failed to enable synthethics for trade');
+            metrics.putMetric(MetricName.SynthOrdersEnabledCount, 1, Unit.Count);
           }
         }
       });
     }
-    metrics.putMetric(
-      MetricName.SynthOrdersProcessingTimeMs,
-      Date.now() - beforeOrdersProcessing,
-      Unit.Milliseconds
-    );
+    metrics.putMetric(MetricName.SynthOrdersProcessingTimeMs, Date.now() - beforeOrdersProcessing, Unit.Milliseconds);
   }
 
   // create view
@@ -338,11 +332,7 @@ async function main(metrics: MetricsLogger) {
       await sleep(2000);
     } else if (status.Status === StatusString.FINISHED) {
       log.info('view query execution finished');
-      metrics.putMetric(
-        MetricName.SynthOrdersViewCreationTimeMs,
-        Date.now() - beforeViewCreation,
-        Unit.Milliseconds
-      );
+      metrics.putMetric(MetricName.SynthOrdersViewCreationTimeMs, Date.now() - beforeViewCreation, Unit.Milliseconds);
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
@@ -380,11 +370,7 @@ async function main(metrics: MetricsLogger) {
       await sleep(2000);
     } else if (status.Status === StatusString.FINISHED) {
       const getResultResponse = await client.send(new GetStatementResultCommand({ Id: stmtId }));
-      metrics.putMetric(
-        MetricName.SynthOrdersQueryTimeMs,
-        Date.now() - beforeOrdersQuery,
-        Unit.Milliseconds
-      );
+      metrics.putMetric(MetricName.SynthOrdersQueryTimeMs, Date.now() - beforeOrdersQuery, Unit.Milliseconds);
 
       /* result should be in the following format
         | column1     |   column2    | * not in the actual result object
