@@ -20,6 +20,8 @@ export const MetricName = {
   SynthOrdersDisabledCount: 'synth_orders_disabled_count',
   SynthOrdersCount: 'synth_orders_count',
   SynthOrdersProcessingTimeMs: 'synth_orders_processing_time_ms',
+  SynthOrdersViewCreationTimeMs: 'synth_orders_view_creation_time_ms',
+  SynthOrdersQueryTimeMs: 'synth_orders_query_time_ms',
 };
 
 export const SyntheticSwitchMetricDimension = {
