@@ -54,7 +54,7 @@ type TradeOutcome = {
   neg: number;
 };
 
-const MINIMUM_ORDERS = 10;
+const MINIMUM_ORDERS = 5;
 const DISABLE_THRESHOLD = 0.2;
 
 const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
@@ -168,14 +168,10 @@ async function main(metrics: MetricsLogger) {
           classic_amountoutgasadjusted: order.classic_amountoutgasadjusted,
           priceImprovementBps: hasPriceImprovement
             ? BigNumber.from(order.settledAmountOut)
-                .sub(order.classic_amountoutgasadjusted)
                 .div(order.classic_amountoutgasadjusted)
-                .mul(10000)
                 .toString()
             : BigNumber.from(order.classic_amountoutgasadjusted)
-                .sub(order.settledAmountOut)
                 .div(order.settledAmountOut)
-                .mul(10000)
                 .toString(),
         },
         'trade outcome'
@@ -191,14 +187,10 @@ async function main(metrics: MetricsLogger) {
           classic_amountingasadjusted: order.classic_amountingasadjusted,
           priceImprovementBps: hasPriceImprovement
             ? BigNumber.from(order.classic_amountingasadjusted)
-                .sub(order.settledAmountIn)
                 .div(order.settledAmountIn)
-                .mul(10000)
                 .toString()
             : BigNumber.from(order.settledAmountIn)
-                .sub(order.classic_amountingasadjusted)
                 .div(order.classic_amountingasadjusted)
-                .mul(10000)
                 .toString(),
         },
         'trade outcome'
@@ -489,7 +481,7 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
           from synth
           join "uniswap_x"."public"."unifiedroutingresponses" ur
           on ur.requestid = synth.requestid and ur.quoteid != synth.quoteid
-          WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '168 HOURS')) -- 7 days rolling window
+          WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '12 HOURS')) -- 12 hours rolling window
   );
 `;
 
