@@ -261,8 +261,14 @@ async function main(metrics: MetricsLogger) {
           },
           'Outcome for trade'
         );
-        if (totalOrders >= MINIMUM_ORDERS) {
-          if (neg / totalOrders >= DISABLE_THRESHOLD) {
+        const enabled = await synthSwitchEntity.syntheticQuoteForTradeEnabled({
+          ...SwitchRepository.parseKey(key),
+          amount: config.lowerBound[0],
+        });
+
+        if (totalOrders >= MINIMUM_ORDERS && neg / totalOrders >= DISABLE_THRESHOLD) {
+          // disable synth
+          if (enabled) {
             log.info(
               {
                 key,
@@ -279,10 +285,6 @@ async function main(metrics: MetricsLogger) {
           }
         }
         if (pos > 0) {
-          const enabled = await synthSwitchEntity.syntheticQuoteForTradeEnabled({
-            ...SwitchRepository.parseKey(key),
-            amount: config.lowerBound[0],
-          });
           if (!enabled) {
             log.info(
               {
