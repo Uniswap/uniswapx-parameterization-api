@@ -469,7 +469,7 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
           FROM
               "uniswap_x"."public"."unifiedroutingresponses"
           WHERE routing = 'DUTCH_LIMIT'
-          AND filler = ''
+          AND filler = '0x0000000000000000000000000000000000000000'
       )
       select
               synth.createdat,
