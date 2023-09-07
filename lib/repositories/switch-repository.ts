@@ -2,10 +2,10 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
+import { BigNumber } from 'ethers';
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
 import { SynthSwitchQueryParams, SynthSwitchTrade } from '../handlers/synth-switch';
 import { BaseSwitchRepository } from './base';
-import { BigNumber } from 'ethers';
 
 export const PARTITION_KEY = `${DYNAMO_TABLE_KEY.TOKEN_IN}#${DYNAMO_TABLE_KEY.TOKEN_IN_CHAIN_ID}#${DYNAMO_TABLE_KEY.TOKEN_OUT}#${DYNAMO_TABLE_KEY.TOKEN_OUT_CHAIN_ID}#${DYNAMO_TABLE_KEY.TRADE_TYPE}`;
 
