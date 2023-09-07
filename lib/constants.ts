@@ -1,5 +1,5 @@
 export const WEBHOOK_CONFIG_BUCKET = 'rfq-config';
-export const SYNTH_SWITCH_BUCKET = 'synth-config-prod';
+export const SYNTH_SWITCH_BUCKET = 'synth-config';
 export const INTEGRATION_S3_KEY = 'integration.json';
 export const PRODUCTION_S3_KEY = 'production.json';
 
