@@ -7,14 +7,28 @@ import {
   StatusString,
 } from '@aws-sdk/client-redshift-data';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { metricScope, MetricsLogger } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import { default as bunyan, default as Logger } from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
+import { FadeRateMetricDimension, MetricNamespace } from '../metrics';
 
-const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>) => {
+type FadesRowType = {
+  fillerAddress: string;
+  totalQuotes: number;
+  fadedQuotes: number;
+};
+
+const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
+  await main(metrics);
+});
+
+async function main(metrics: MetricsLogger) {
+  metrics.setNamespace(MetricNamespace.Uniswap);
+  metrics.setDimensions(FadeRateMetricDimension);
   const log: Logger = bunyan.createLogger({
     name: 'FadeRateCron',
     serializers: bunyan.stdSerializers,
@@ -75,6 +89,7 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
     log.error({ error: e }, 'Failed to send fade rate calc command');
     throw e;
   }
+  let formattedResult: FadesRowType[];
   for (;;) {
     const status = await client.send(new DescribeStatementCommand({ Id: stmtId }));
     if (status.Error) {
@@ -103,33 +118,31 @@ const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>)
         log.error('no fade rate calculation result');
         throw new Error('No fade rate result');
       }
-      log.info({ result }, 'fade rate result');
-      result.forEach(async (row) => {
-        try {
-          const res = await fadeRateEntity.put(
-            {
-              filler: row[0].stringValue ?? '',
-              faderate: parseFloat(row[1].stringValue ?? ''),
-            },
-            {
-              execute: true,
-            }
-          );
-          log.info({ res }, 'fade rate put result');
-        } catch (e) {
-          log.error({ error: e }, 'Failed to put fade rate');
-          throw e;
-        }
+      formattedResult = result.map((row) => {
+        const formattedRow: FadesRowType = {
+          fillerAddress: row[0].stringValue as string,
+          totalQuotes: Number(row[1].longValue as number),
+          fadedQuotes: Number(row[2].longValue as number),
+        };
+        return formattedRow;
       });
+      log.info({ result: formattedResult }, 'formatted redshift query result');
       break;
     }
   }
-};
+  if (formattedResult) {
+    const fillerFadeRate = calculateFillerFadeRates(formattedResult);
+  }
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+export function calculateFillerFadeRates(rows: FadesRowType[]): Map<string, number> {
+  const fadeRateMap = new Map<string, number>();
 }
 
 function createDynamoEntity() {

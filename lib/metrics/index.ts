@@ -25,3 +25,7 @@ export const MetricName = {
 export const SyntheticSwitchMetricDimension = {
   Service: 'SyntheticSwitch',
 };
+
+export const FadeRateMetricDimension = {
+  Service: 'FadeRate',
+};

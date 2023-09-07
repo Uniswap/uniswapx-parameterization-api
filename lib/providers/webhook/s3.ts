@@ -4,6 +4,8 @@ import { default as Logger } from 'bunyan';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '.';
 import { checkDefined } from '../../preconditions/preconditions';
 
+export type FillerAddressesMap = Map<string, Set<string>>;
+
 // reads endpoint configuration from a static file
 export class S3WebhookConfigurationProvider implements WebhookConfigurationProvider {
   private log: Logger;
@@ -17,6 +19,23 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     this.endpoints = [];
     this.log = _log.child({ quoter: 'S3WebhookConfigurationProvider' });
     this.lastUpdatedEndpointsTimestamp = Date.now();
+  }
+
+  fillers(): string[] {
+    return [...new Set(this.endpoints.map((endpoint) => endpoint.name))];
+  }
+
+  addressesByFillers(): FillerAddressesMap {
+    const map = new Map<string, Set<string>>();
+    this.endpoints.forEach((endpoint) => {
+      if (!map.has(endpoint.name)) {
+        map.set(endpoint.name, new Set<string>());
+      }
+      endpoint.addresses?.forEach((address) => {
+        map.get(endpoint.name)?.add(address);
+      });
+    });
+    return map;
   }
 
   async getEndpoints(): Promise<WebhookConfiguration[]> {
