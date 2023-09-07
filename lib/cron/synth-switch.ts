@@ -210,7 +210,7 @@ async function main(metrics: MetricsLogger) {
   }
 
   async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[], metrics: MetricsLogger) {
-    const processingStartTime = Date.now();
+    const beforeOrdersProcessing = Date.now();
     // match configs to results
     const configMap: {
       [key: string]: ResultRowType[];
@@ -252,12 +252,6 @@ async function main(metrics: MetricsLogger) {
       Object.keys(tradeOutcomesByKey).forEach(async (key) => {
         const { pos, neg } = tradeOutcomesByKey[key];
         const totalOrders = pos + neg;
-        const processingEndTime = Date.now();
-        metrics.putMetric(
-          MetricName.SynthOrdersProcessingTimeMs,
-          processingEndTime - processingStartTime,
-          Unit.Milliseconds
-        );
         log.info(
           {
             key,
@@ -306,9 +300,15 @@ async function main(metrics: MetricsLogger) {
         }
       });
     }
+    metrics.putMetric(
+      MetricName.SynthOrdersProcessingTimeMs,
+      Date.now() - beforeOrdersProcessing,
+      Unit.Milliseconds
+    );
   }
 
   // create view
+  const beforeViewCreation = Date.now();
   try {
     metrics.putMetric(MetricName.DynamoDBRequest('view_creation'), 1, Unit.Count);
     const createViewResponse = await client.send(
@@ -338,6 +338,11 @@ async function main(metrics: MetricsLogger) {
       await sleep(2000);
     } else if (status.Status === StatusString.FINISHED) {
       log.info('view query execution finished');
+      metrics.putMetric(
+        MetricName.SynthOrdersViewCreationTimeMs,
+        Date.now() - beforeViewCreation,
+        Unit.Milliseconds
+      );
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
@@ -346,6 +351,7 @@ async function main(metrics: MetricsLogger) {
     }
   }
 
+  const beforeOrdersQuery = Date.now();
   try {
     metrics.putMetric(MetricName.DynamoDBRequest('synth_orders'), 1, Unit.Count);
     const executeResponse = await client.send(
@@ -374,6 +380,11 @@ async function main(metrics: MetricsLogger) {
       await sleep(2000);
     } else if (status.Status === StatusString.FINISHED) {
       const getResultResponse = await client.send(new GetStatementResultCommand({ Id: stmtId }));
+      metrics.putMetric(
+        MetricName.SynthOrdersQueryTimeMs,
+        Date.now() - beforeOrdersQuery,
+        Unit.Milliseconds
+      );
 
       /* result should be in the following format
         | column1     |   column2    | * not in the actual result object
