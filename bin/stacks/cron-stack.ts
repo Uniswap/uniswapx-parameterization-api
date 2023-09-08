@@ -35,6 +35,7 @@ export interface CronStackProps extends cdk.NestedStackProps {
   RedshiftCredSecretArn: string;
   lambdaRole: aws_iam.Role;
   chatbotSNSArn?: string;
+  envVars?: { [key: string]: string };
 }
 
 export class CronStack extends cdk.NestedStack {
@@ -43,7 +44,7 @@ export class CronStack extends cdk.NestedStack {
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
-    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, chatbotSNSArn } = props;
+    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, chatbotSNSArn, envVars } = props;
 
     this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}FadeRate`, {
       role: lambdaRole,
@@ -60,6 +61,7 @@ export class CronStack extends cdk.NestedStack {
         REDSHIFT_DATABASE: RsDatabase,
         REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
         REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
+        ...envVars,
       },
     });
     new aws_events.Rule(this, `${SERVICE_NAME}ScheduleCronLambda`, {
@@ -82,6 +84,7 @@ export class CronStack extends cdk.NestedStack {
         REDSHIFT_DATABASE: RsDatabase,
         REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
         REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
+        ...envVars,
       },
     });
     new aws_events.Rule(this, `${SERVICE_NAME}SynthSwitchSchedule`, {

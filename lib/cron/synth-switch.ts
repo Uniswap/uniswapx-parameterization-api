@@ -413,9 +413,10 @@ function sleep(ms: number) {
 
 async function readTokenConfig(log: Logger): Promise<TokenConfig[]> {
   const s3Client = new S3Client({});
+  const stage = process.env['stage'];
   const s3Res = await s3Client.send(
     new GetObjectCommand({
-      Bucket: SYNTH_SWITCH_BUCKET,
+      Bucket: `${SYNTH_SWITCH_BUCKET}-${stage}-1`,
       Key: PRODUCTION_S3_KEY,
     })
   );
