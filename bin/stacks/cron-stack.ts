@@ -51,7 +51,7 @@ export class CronStack extends cdk.NestedStack {
       entry: path.join(__dirname, '../../lib/cron/fade-rate.ts'),
       handler: 'handler',
       timeout: Duration.seconds(240),
-      memorySize: 256,
+      memorySize: 512,
       bundling: {
         minify: true,
         sourceMap: true,

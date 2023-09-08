@@ -57,7 +57,7 @@ type TradeOutcome = {
 const MINIMUM_ORDERS = 5;
 const DISABLE_THRESHOLD = 0.2;
 
-const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
+export const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
   await main(metrics);
 });
 
@@ -167,12 +167,8 @@ async function main(metrics: MetricsLogger) {
           settledAmountOut: order.settledAmountOut,
           classic_amountoutgasadjusted: order.classic_amountoutgasadjusted,
           priceImprovementBps: hasPriceImprovement
-            ? BigNumber.from(order.settledAmountOut)
-                .div(order.classic_amountoutgasadjusted)
-                .toString()
-            : BigNumber.from(order.classic_amountoutgasadjusted)
-                .div(order.settledAmountOut)
-                .toString(),
+            ? BigNumber.from(order.settledAmountOut).div(order.classic_amountoutgasadjusted).toString()
+            : BigNumber.from(order.classic_amountoutgasadjusted).div(order.settledAmountOut).toString(),
         },
         'trade outcome'
       );
@@ -186,12 +182,8 @@ async function main(metrics: MetricsLogger) {
           settledAmountIn: order.settledAmountIn,
           classic_amountingasadjusted: order.classic_amountingasadjusted,
           priceImprovementBps: hasPriceImprovement
-            ? BigNumber.from(order.classic_amountingasadjusted)
-                .div(order.settledAmountIn)
-                .toString()
-            : BigNumber.from(order.settledAmountIn)
-                .div(order.classic_amountingasadjusted)
-                .toString(),
+            ? BigNumber.from(order.classic_amountingasadjusted).div(order.settledAmountIn).toString()
+            : BigNumber.from(order.settledAmountIn).div(order.classic_amountingasadjusted).toString(),
         },
         'trade outcome'
       );
@@ -484,5 +476,3 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
           WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '12 HOURS')) -- 12 hours rolling window
   );
 `;
-
-module.exports = { handler };
