@@ -3,9 +3,10 @@ import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 
-import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
+import { RfqResponse } from '../handlers/quote';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -53,10 +54,11 @@ export class WebhookQuoter implements Quoter {
         timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
         ...(!!headers && { headers }),
       };
-      const [hookResponse] = await Promise.all([
+      const [hookResponse, opposingResponse] = await Promise.all([
         axios.post(endpoint, request.toCleanJSON(), axiosConfig),
         axios.post(endpoint, request.toOpposingCleanJSON(), axiosConfig),
       ]);
+      this.tryLogOpposingResponse(endpoint, request, opposingResponse.data);
 
       metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);
       metric.putMetric(
@@ -134,6 +136,29 @@ export class WebhookQuoter implements Quoter {
         this.log.error({ endpoint }, `Error fetching quote from ${endpoint}: ${e}`);
       }
       return null;
+    }
+  }
+
+  tryLogOpposingResponse(endpoint: string, request: QuoteRequest, data: RfqResponse): void {
+    try {
+      // flip type as its opposing
+      const type = request.type === TradeType.EXACT_INPUT ? TradeType.EXACT_OUTPUT : TradeType.EXACT_INPUT;
+      const { response } = QuoteResponse.fromRFQ(
+        request,
+        Object.assign({}, data, { requestId: data.requestId + '-opposing' }),
+        type
+      );
+      const quote = type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;
+      this.log.info(
+        {
+          response: response.toLog(),
+        },
+        `WebhookQuoter: opposing request ${
+          request.requestId
+        } for endpoint ${endpoint}: ${request.amount.toString()} -> ${quote.toString()}}`
+      );
+    } catch (e) {
+      this.log.error('Error parsing opposing response', e);
     }
   }
 }
