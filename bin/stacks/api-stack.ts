@@ -367,6 +367,9 @@ export class APIStack extends cdk.Stack {
       RsClusterIdentifier: analyticsStack.clusterId,
       RedshiftCredSecretArn: analyticsStack.credSecretArn,
       lambdaRole: lambdaRole,
+      envVars: {
+        stage,
+      },
     });
 
     /* Alarms */
