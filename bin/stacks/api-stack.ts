@@ -214,7 +214,7 @@ export class APIStack extends cdk.Stack {
       runtime: aws_lambda.Runtime.NODEJS_18_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'switchHandler',
-      memorySize: 256,
+      memorySize: 512,
       bundling: {
         minify: true,
         sourceMap: true,
@@ -239,7 +239,7 @@ export class APIStack extends cdk.Stack {
       runtime: aws_lambda.Runtime.NODEJS_18_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'mockQuoteHandler',
-      memorySize: 256,
+      memorySize: 512,
       bundling: {
         minify: true,
         sourceMap: true,
@@ -264,7 +264,7 @@ export class APIStack extends cdk.Stack {
       runtime: aws_lambda.Runtime.NODEJS_18_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'rfqHandler',
-      memorySize: 256,
+      memorySize: 512,
       bundling: {
         minify: true,
         sourceMap: true,
@@ -298,7 +298,7 @@ export class APIStack extends cdk.Stack {
       quoteTarget.scaleToTrackMetric('QuoteProvConcTracking', {
         targetValue: 0.8,
         predefinedMetric: aws_asg.PredefinedMetric.LAMBDA_PROVISIONED_CONCURRENCY_UTILIZATION,
-      })
+      });
     }
 
     /*
