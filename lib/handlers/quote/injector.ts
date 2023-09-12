@@ -4,7 +4,7 @@ import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import { INTEGRATION_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
-import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
+import { AWSMetricsLogger, UniswapXParamServiceIntegrationMetricDimension, UniswapXParamServiceMetricDimension } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
@@ -58,7 +58,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     setGlobalLogger(log);
 
     metricsLogger.setNamespace('Uniswap');
-    metricsLogger.setDimensions({ Service: 'UniswapXParameterizationAPI' });
+    metricsLogger.setDimensions(UniswapXParamServiceMetricDimension);
     const metric = new AWSMetricsLogger(metricsLogger);
     setGlobalMetric(metric);
 
@@ -109,7 +109,7 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
     });
     setGlobalLogger(log);
     metricsLogger.setNamespace('Uniswap');
-    metricsLogger.setDimensions({ Service: 'UniswapXParameterizationAPI-Integration' });
+    metricsLogger.setDimensions(UniswapXParamServiceIntegrationMetricDimension);
     const metric = new AWSMetricsLogger(metricsLogger);
     setGlobalMetric(metric);
 
