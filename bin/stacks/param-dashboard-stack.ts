@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
+import { UniswapXParamServiceMetricDimension } from '../../lib/entities';
 
 export const NAMESPACE = 'Uniswap';
 
@@ -40,7 +41,7 @@ const LatencyWidget = (region: string): LambdaWidget => ({
   x: 0,
   type: 'metric',
   properties: {
-    metrics: [['Uniswap', 'QUOTE_LATENCY', 'Service', 'UniswapXParameterizationAPI']],
+    metrics: [['Uniswap', 'QUOTE_LATENCY', 'Service', UniswapXParamServiceMetricDimension.Service]],
     view: 'timeSeries',
     stacked: false,
     region,
@@ -61,7 +62,7 @@ const RFQLatencyWidget = (region: string, rfqProviders: string[]): LambdaWidget 
       'Uniswap',
       `RFQ_RESPONSE_TIME_${name}`,
       'Service',
-      'UniswapXParameterizationAPI',
+      UniswapXParamServiceMetricDimension.Service,
       { label: name },
     ]),
     view: 'timeSeries',
@@ -81,7 +82,7 @@ const QuotesRequestedWidget = (region: string): LambdaWidget => ({
   type: 'metric',
   properties: {
     metrics: [
-      ['Uniswap', 'QUOTE_REQUESTED', 'Service', 'UniswapXParameterizationAPI'],
+      ['Uniswap', 'QUOTE_REQUESTED', 'Service', UniswapXParamServiceMetricDimension.Service],
       ['.', 'QUOTE_200', '.', '.', { visible: false }],
     ],
     view: 'timeSeries',
@@ -103,7 +104,7 @@ const ErrorRatesWidget = (region: string): LambdaWidget => ({
     metrics: [
       [{ expression: '100*(m2/m4)', label: '200', id: 'e1', region }],
       [{ expression: '100*(m3/m4)', label: '404', id: 'e2', region }],
-      ['Uniswap', 'QUOTE_200', 'Service', 'UniswapXParameterizationAPI', { id: 'm2', visible: false }],
+      ['Uniswap', 'QUOTE_200', 'Service', UniswapXParamServiceMetricDimension.Service, { id: 'm2', visible: false }],
       ['.', 'QUOTE_404', '.', '.', { id: 'm3', visible: false }],
       ['.', 'QUOTE_REQUESTED', '.', '.', { id: 'm4', visible: false }],
     ],
@@ -163,21 +164,21 @@ const RFQFailRatesWidget = (region: string, rfqProviders: string[]): LambdaWidge
           'Uniswap',
           `RFQ_REQUESTED_${name}`,
           'Service',
-          'UniswapXParameterizationAPI',
+          UniswapXParamServiceMetricDimension.Service,
           { id: `m${rfqRequested}`, visible: false },
         ],
         [
           'Uniswap',
           `RFQ_FAIl_ERROR_${name}`,
           'Service',
-          'UniswapXParameterizationAPI',
+          UniswapXParamServiceMetricDimension.Service,
           { id: `m${rfqFailError}`, visible: false },
         ],
         [
           'Uniswap',
           `RFQ_FAIL_VALIDATION_${name}`,
           'Service',
-          'UniswapXParameterizationAPI',
+          UniswapXParamServiceMetricDimension.Service,
           { id: `m${rfqFailValidation}`, visible: false },
         ],
       ];

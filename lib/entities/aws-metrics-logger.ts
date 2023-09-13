@@ -1,6 +1,18 @@
 import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { MetricsLogger as AWSEmbeddedMetricsLogger } from 'aws-embedded-metrics';
 
+export const UniswapXParamServiceMetricDimension = {
+  Service: 'UniswapXParameterizationAPI',
+};
+
+export const UniswapXParamServiceIntegrationMetricDimension = {
+  Service: 'UniswapXParameterizationAPI-Integration',
+};
+
+export const SyntheticSwitchMetricDimension = {
+  Service: 'SyntheticSwitch',
+};
+
 export class AWSMetricsLogger implements IMetric {
   constructor(private awsMetricLogger: AWSEmbeddedMetricsLogger) {}
 
@@ -30,6 +42,18 @@ export enum Metric {
   RFQ_NON_QUOTE = 'RFQ_NON_QUOTE',
   RFQ_FAIL_VALIDATION = 'RFQ_FAIL_VALIDATION',
   RFQ_FAIL_ERROR = 'RFQ_FAIL_ERROR',
+
+  // Metrics for synth switch cron
+  DYNAMO_REQUEST = 'DYNAMO_REQUEST',
+  DYNAMO_REQUEST_ERROR = 'DYNAMO_REQUEST_ERROR',
+  SYTH_PAIR_ENABLED = 'SYTH_PAIR_ENABLED',
+  SYNTH_PAIR_DISABLED = 'SYNTH_PAIR_DISABLED',
+  SYNTH_ORDERS = 'SYTH_ORDERS',
+  SYNTH_ORDERS_PROCESSING_TIME = 'SYNTH_ORDERS_PROCESSING_TIME',
+  SYNTH_ORDERS_VIEW_CREATION_TIME = 'SYNTH_ORDERS_VIEW_CREATION_TIME',
+  SYNTH_ORDERS_QUERY_TIME = 'SYNTH_ORDERS_QUERY_TIME',
+  SYNTH_ORDERS_POSITIVE_OUTCOME = 'SYNTH_ORDERS_POSITIVE_OUTCOME',
+  SYNTH_ORDERS_NEGATIVE_OUTCOME = 'SYNTH_ORDERS_NEGATIVE_OUTCOME',
 }
 
 type MetricNeedingContext =
@@ -39,7 +63,13 @@ type MetricNeedingContext =
   | Metric.RFQ_FAIL_REQUEST_MATCH
   | Metric.RFQ_FAIL_VALIDATION
   | Metric.RFQ_NON_QUOTE
-  | Metric.RFQ_FAIL_ERROR;
+  | Metric.RFQ_FAIL_ERROR
+  | Metric.DYNAMO_REQUEST
+  | Metric.DYNAMO_REQUEST_ERROR
+  | Metric.SYTH_PAIR_ENABLED
+  | Metric.SYNTH_PAIR_DISABLED
+  | Metric.SYNTH_ORDERS_POSITIVE_OUTCOME
+  | Metric.SYNTH_ORDERS_NEGATIVE_OUTCOME;
 
 export function metricContext(metric: MetricNeedingContext, context: string): string {
   return `${metric}_${context}`;

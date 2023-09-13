@@ -9,7 +9,7 @@ import {
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TradeType } from '@uniswap/sdk-core';
-import { metricScope, MetricsLogger, Unit } from 'aws-embedded-metrics';
+import { metricScope, MetricsLogger } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import { default as bunyan, default as Logger } from 'bunyan';
@@ -17,9 +17,10 @@ import { BigNumber, ethers } from 'ethers';
 
 import { PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
 import { SynthSwitchQueryParams } from '../handlers/synth-switch';
-import { MetricName, MetricNamespace, SyntheticSwitchMetricDimension } from '../metrics';
 import { checkDefined } from '../preconditions/preconditions';
 import { SwitchRepository } from '../repositories/switch-repository';
+import { AWSMetricsLogger, Metric, metricContext } from '../entities';
+import { MetricLoggerUnit, setGlobalMetric } from '@uniswap/smart-order-router';
 
 export type TokenConfig = {
   tokenIn: string;
@@ -57,13 +58,17 @@ type TradeOutcome = {
 const MINIMUM_ORDERS = 5;
 const DISABLE_THRESHOLD = 0.2;
 
-export const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
-  await main(metrics);
+export const handler: ScheduledHandler = metricScope((metricsLogger) => async (_event: EventBridgeEvent<string, void>) => {
+  await main(metricsLogger);
 });
 
-async function main(metrics: MetricsLogger) {
-  metrics.setNamespace(MetricNamespace.Uniswap);
-  metrics.setDimensions(SyntheticSwitchMetricDimension);
+async function main(metricsLogger: MetricsLogger) {
+  metricsLogger.setNamespace('Uniswap');
+  metricsLogger.setDimensions({
+    Service: 'SyntheticSwitch'
+  });
+  const metrics = new AWSMetricsLogger(metricsLogger);
+  setGlobalMetric(metrics);
 
   const log: Logger = bunyan.createLogger({
     name: 'SynthPairsCron',
@@ -101,14 +106,6 @@ async function main(metrics: MetricsLogger) {
   const tokenOutListRaw = Array.from(new Set(configs.map((config) => config.tokenOut)));
   const tokenInList = "('" + tokenInListRaw.join("', '") + "')";
   const tokenOutList = "('" + tokenOutListRaw.join("', '") + "')";
-
-  log.info(
-    {
-      tokenInList,
-      tokenOutList,
-    },
-    'formatted tokenInList, tokenOutList'
-  );
 
   // TODO: WHERE in may have performance issues as num records increases
   // potentially filter the tokens in the cron instead
@@ -193,7 +190,7 @@ async function main(metrics: MetricsLogger) {
     return { key, result };
   }
 
-  async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[], metrics: MetricsLogger) {
+  async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[], metrics: AWSMetricsLogger) {
     const beforeOrdersProcessing = Date.now();
     // match configs to results
     const configMap: {
@@ -245,6 +242,11 @@ async function main(metrics: MetricsLogger) {
           },
           'Outcome for trade'
         );
+        metrics.putMetric(Metric.SYNTH_ORDERS_POSITIVE_OUTCOME, pos, MetricLoggerUnit.Count);
+        metrics.putMetric(metricContext(Metric.SYNTH_ORDERS_POSITIVE_OUTCOME, key), pos, MetricLoggerUnit.Count);
+        metrics.putMetric(Metric.SYNTH_ORDERS_NEGATIVE_OUTCOME, neg, MetricLoggerUnit.Count);
+        metrics.putMetric(metricContext(Metric.SYNTH_ORDERS_NEGATIVE_OUTCOME, key), neg, MetricLoggerUnit.Count);
+
         const enabled = await synthSwitchEntity.syntheticQuoteForTradeEnabled({
           ...SwitchRepository.parseKey(key),
           amount: config.lowerBound[0],
@@ -260,10 +262,12 @@ async function main(metrics: MetricsLogger) {
           );
           try {
             await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], false);
+            metrics.putMetric(Metric.SYNTH_PAIR_DISABLED, 1, MetricLoggerUnit.Count);
+            metrics.putMetric(metricContext(Metric.SYNTH_PAIR_DISABLED, key), 1, MetricLoggerUnit.Count);
             return;
           } catch (e) {
             log.error({ key, error: e }, 'Failed to disable synthethics for trade');
-            metrics.putMetric(MetricName.SynthOrdersDisabledCount, 1, Unit.Count);
+            metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'disable_synth'), 1, MetricLoggerUnit.Count);
           }
         }
         if (pos > 0 && !enabled) {
@@ -275,27 +279,29 @@ async function main(metrics: MetricsLogger) {
           );
           try {
             await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
+            metrics.putMetric(Metric.SYTH_PAIR_ENABLED, 1, MetricLoggerUnit.Count);
+            metrics.putMetric(metricContext(Metric.SYTH_PAIR_ENABLED, key), 1, MetricLoggerUnit.Count);
           } catch (e) {
             log.error({ key, error: e }, 'Failed to enable synthethics for trade');
-            metrics.putMetric(MetricName.SynthOrdersEnabledCount, 1, Unit.Count);
+            metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'enable_synth'), 1, MetricLoggerUnit.Count);
           }
         }
       });
     }
-    metrics.putMetric(MetricName.SynthOrdersProcessingTimeMs, Date.now() - beforeOrdersProcessing, Unit.Milliseconds);
+    metrics.putMetric(Metric.SYNTH_ORDERS_PROCESSING_TIME, Date.now() - beforeOrdersProcessing, MetricLoggerUnit.Milliseconds);
   }
 
   // create view
   const beforeViewCreation = Date.now();
   try {
-    metrics.putMetric(MetricName.DynamoDBRequest('view_creation'), 1, Unit.Count);
+    metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST, 'view_creation'), 1, MetricLoggerUnit.Count);
     const createViewResponse = await client.send(
       new ExecuteStatementCommand({ ...sharedConfig, Sql: CREATE_COMBINED_URA_RESPONSES_VIEW_SQL })
     );
     stmtId = createViewResponse.Id;
   } catch (e) {
     log.error({ error: e }, 'Failed to send create view command');
-    metrics.putMetric(MetricName.DynamoRequestError('view_network'), 1, Unit.Count);
+    metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'view_network'), 1, MetricLoggerUnit.Count);
     throw e;
   }
   for (;;) {
@@ -306,7 +312,7 @@ async function main(metrics: MetricsLogger) {
     }
     if (status.Status === StatusString.ABORTED || status.Status === StatusString.FAILED) {
       log.error({ error: status.Error }, 'Failed to execute create view command');
-      metrics.putMetric(MetricName.DynamoRequestError('view_status'), 1, Unit.Count);
+      metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'view_status'), 1, MetricLoggerUnit.Count);
       throw new Error(status.Error);
     } else if (
       status.Status === StatusString.PICKED ||
@@ -316,18 +322,18 @@ async function main(metrics: MetricsLogger) {
       await sleep(2000);
     } else if (status.Status === StatusString.FINISHED) {
       log.info('view query execution finished');
-      metrics.putMetric(MetricName.SynthOrdersViewCreationTimeMs, Date.now() - beforeViewCreation, Unit.Milliseconds);
+      metrics.putMetric(Metric.SYNTH_ORDERS_VIEW_CREATION_TIME, Date.now() - beforeViewCreation, MetricLoggerUnit.Milliseconds);
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
-      metrics.putMetric(MetricName.DynamoRequestError('view_unknown'), 1, Unit.Count);
+      metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'view_unknown'), 1, MetricLoggerUnit.Count);
       throw new Error(status.Error);
     }
   }
 
   const beforeOrdersQuery = Date.now();
   try {
-    metrics.putMetric(MetricName.DynamoDBRequest('synth_orders'), 1, Unit.Count);
+    metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST, 'synth_orders'), 1, MetricLoggerUnit.Count);
     const executeResponse = await client.send(
       new ExecuteStatementCommand({
         ...sharedConfig,
@@ -337,14 +343,14 @@ async function main(metrics: MetricsLogger) {
     stmtId = executeResponse.Id;
   } catch (e) {
     log.error({ error: e }, 'Failed to send command');
-    metrics.putMetric(MetricName.DynamoRequestError('orders_network'), 1, Unit.Count);
+    metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'orders_network'), 1, MetricLoggerUnit.Count);
     throw e;
   }
   for (;;) {
     const status = await client.send(new DescribeStatementCommand({ Id: stmtId }));
     if (status.Error || status.Status === StatusString.ABORTED || status.Status === StatusString.FAILED) {
       log.error({ error: status.Error, status: status.Status }, 'Failed to execute query');
-      metrics.putMetric(MetricName.DynamoRequestError('orders_status'), 1, Unit.Count);
+      metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'orders_status'), 1, MetricLoggerUnit.Count);
       throw new Error(status.Error);
     } else if (
       status.Status === StatusString.PICKED ||
@@ -354,7 +360,7 @@ async function main(metrics: MetricsLogger) {
       await sleep(2000);
     } else if (status.Status === StatusString.FINISHED) {
       const getResultResponse = await client.send(new GetStatementResultCommand({ Id: stmtId }));
-      metrics.putMetric(MetricName.SynthOrdersQueryTimeMs, Date.now() - beforeOrdersQuery, Unit.Milliseconds);
+      metrics.putMetric(Metric.SYNTH_ORDERS_QUERY_TIME, Date.now() - beforeOrdersQuery, MetricLoggerUnit.Milliseconds);
 
       /* result should be in the following format
         | column1     |   column2    | * not in the actual result object
@@ -394,12 +400,12 @@ async function main(metrics: MetricsLogger) {
         };
         return formattedRow;
       });
-      metrics.putMetric(MetricName.SynthOrdersCount, formattedResult.length, Unit.Count);
+      metrics.putMetric(Metric.SYNTH_ORDERS, formattedResult.length, MetricLoggerUnit.Count);
       await updateSynthSwitchRepository(configs, formattedResult, metrics);
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
-      metrics.putMetric(MetricName.DynamoRequestError('orders_unknown'), 1, Unit.Count);
+      metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'orders_unknown'), 1, MetricLoggerUnit.Count);
       throw new Error(status.Error);
     }
   }

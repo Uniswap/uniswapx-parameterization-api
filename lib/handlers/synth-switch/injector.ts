@@ -5,7 +5,7 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import { AWSMetricsLogger } from '../../entities';
+import { AWSMetricsLogger, UniswapXParamServiceMetricDimension } from '../../entities';
 import { BaseSwitchRepository } from '../../repositories/base';
 import { SwitchRepository } from '../../repositories/switch-repository';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
@@ -59,7 +59,7 @@ export class SwitchInjector extends ApiInjector<ContainerInjected, RequestInject
     setGlobalLogger(log);
 
     metricsLogger.setNamespace('Uniswap');
-    metricsLogger.setDimensions({ Service: 'UniswapXParameterizationAPI' });
+    metricsLogger.setDimensions(UniswapXParamServiceMetricDimension);
     const metric = new AWSMetricsLogger(metricsLogger);
     setGlobalMetric(metric);
 
