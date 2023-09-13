@@ -41,6 +41,7 @@ export interface CronStackProps extends cdk.NestedStackProps {
 export class CronStack extends cdk.NestedStack {
   public readonly fadeRateCronLambda: aws_lambda_nodejs.NodejsFunction;
   public readonly synthSwitchCronLambda: aws_lambda_nodejs.NodejsFunction;
+  public readonly redshiftReaperCronLambda: aws_lambda_nodejs.NodejsFunction;
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
@@ -91,6 +92,30 @@ export class CronStack extends cdk.NestedStack {
       // TODO: fix schedule
       schedule: aws_events.Schedule.rate(Duration.minutes(5)),
       targets: [new aws_events_targets.LambdaFunction(this.synthSwitchCronLambda)],
+    });
+
+    this.redshiftReaperCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}Reaper`, {
+      role: lambdaRole,
+      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      entry: path.join(__dirname, '../../lib/cron/redshift-reaper.ts'),
+      handler: 'handler',
+      timeout: Duration.seconds(600), // deletion of large number of rows can take a while
+      memorySize: 512,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        REDSHIFT_DATABASE: RsDatabase,
+        REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
+        REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
+        ...envVars,
+      },
+    });
+    new aws_events.Rule(this, `${SERVICE_NAME}ReaperSwitchSchedule`, {
+      // TODO: fix schedule
+      schedule: aws_events.Schedule.rate(Duration.days(1)),
+      targets: [new aws_events_targets.LambdaFunction(this.redshiftReaperCronLambda)],
     });
 
     /* RFQ fade rate table */
