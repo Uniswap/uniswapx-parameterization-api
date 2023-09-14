@@ -5,11 +5,11 @@ import { Construct } from 'constructs';
 import { Metric, metricContext, SyntheticSwitchMetricDimension } from '../../lib/entities';
 import { LambdaWidget } from './param-dashboard-stack';
 
-const PERIOD = 15 * 60;
+const PERIOD = 5 * 60;
 
 const OrdersQueryExecutionTime = (region: string): LambdaWidget => ({
-  height: 11,
-  width: 24,
+  height: 6,
+  width: 12,
   y: 0,
   x: 0,
   type: 'metric',
@@ -25,8 +25,8 @@ const OrdersQueryExecutionTime = (region: string): LambdaWidget => ({
 });
 
 const OrdersFetchedWidget = (region: string): LambdaWidget => ({
-  height: 11,
-  width: 24,
+  height: 6,
+  width: 12,
   y: 0,
   x: 0,
   type: 'metric',
@@ -37,13 +37,13 @@ const OrdersFetchedWidget = (region: string): LambdaWidget => ({
     stat: 'Sum',
     period: PERIOD,
     stacked: false,
-    title: 'Quotes Requested | 5 minutes',
+    title: 'Orders Fetched',
   },
 });
 
 const DynamoErrorRateWidget = (region: string): LambdaWidget => ({
-  height: 11,
-  width: 24,
+  height: 6,
+  width: 12,
   y: 0,
   x: 0,
   type: 'metric',
@@ -95,8 +95,8 @@ const DynamoErrorRateWidget = (region: string): LambdaWidget => ({
 });
 
 const DynamoErrorRateOrdersQueryWidget = (region: string): LambdaWidget => ({
-  height: 11,
-  width: 24,
+  height: 6,
+  width: 12,
   y: 0,
   x: 0,
   type: 'metric',
