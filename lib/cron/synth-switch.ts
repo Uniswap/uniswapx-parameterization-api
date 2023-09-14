@@ -158,34 +158,8 @@ async function main(metricsLogger: MetricsLogger) {
     let hasPriceImprovement: boolean;
     if (tradeType == TradeType.EXACT_INPUT) {
       hasPriceImprovement = BigNumber.from(order.settledAmountOut).gt(order.classic_amountoutgasadjusted);
-      log.info(
-        {
-          type: TradeType[tradeType],
-          order,
-          hasPriceImprovement,
-          settledAmountOut: order.settledAmountOut,
-          classic_amountoutgasadjusted: order.classic_amountoutgasadjusted,
-          priceImprovementBps: hasPriceImprovement
-            ? BigNumber.from(order.settledAmountOut).div(order.classic_amountoutgasadjusted).toString()
-            : BigNumber.from(order.classic_amountoutgasadjusted).div(order.settledAmountOut).toString(),
-        },
-        'trade outcome'
-      );
     } else {
       hasPriceImprovement = BigNumber.from(order.classic_amountingasadjusted).gt(order.settledAmountIn);
-      log.info(
-        {
-          type: TradeType[tradeType],
-          order,
-          hasPriceImprovement,
-          settledAmountIn: order.settledAmountIn,
-          classic_amountingasadjusted: order.classic_amountingasadjusted,
-          priceImprovementBps: hasPriceImprovement
-            ? BigNumber.from(order.classic_amountingasadjusted).div(order.settledAmountIn).toString()
-            : BigNumber.from(order.settledAmountIn).div(order.classic_amountingasadjusted).toString(),
-        },
-        'trade outcome'
-      );
     }
     // can add more conditionals here
     const result = hasPriceImprovement;
@@ -258,8 +232,8 @@ async function main(metricsLogger: MetricsLogger) {
           amount: config.lowerBound[0],
         });
 
-        if (totalOrders >= MINIMUM_ORDERS && neg / totalOrders >= DISABLE_THRESHOLD && enabled) {
-          // disable synth
+        const shouldDisable = totalOrders >= MINIMUM_ORDERS && neg / totalOrders >= DISABLE_THRESHOLD;
+        if (shouldDisable) {
           log.info(
             {
               key,
@@ -280,7 +254,9 @@ async function main(metricsLogger: MetricsLogger) {
             metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'disable_synth'), 1, MetricLoggerUnit.Count);
           }
         }
-        if (pos > 0 && !enabled) {
+        // disabling logic trumps enabling logic
+        // if we get more positive orders such that the ratio moves above the threshold, we will enable
+        if (!shouldDisable && pos > 0 && !enabled) {
           log.info(
             {
               key,
