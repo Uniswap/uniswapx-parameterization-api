@@ -16,9 +16,9 @@ import { Metric } from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
+import { CronDashboardStack } from './cron-dashboard-stack';
 import { CronStack } from './cron-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
-import { CronDashboardStack } from './cron-dashboard-stack';
 
 /**
  * APIStack
@@ -363,7 +363,7 @@ export class APIStack extends cdk.Stack {
       envVars: props.envVars,
     });
 
-    new CronStack(this, 'CronStack', {
+    const cronStack = new CronStack(this, 'CronStack', {
       RsDatabase: analyticsStack.dbName,
       RsClusterIdentifier: analyticsStack.clusterId,
       RedshiftCredSecretArn: analyticsStack.credSecretArn,
@@ -373,7 +373,9 @@ export class APIStack extends cdk.Stack {
       },
     });
 
-    new CronDashboardStack(this, 'CronDashboardStack', {});
+    new CronDashboardStack(this, 'CronDashboardStack', {
+      synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
+    });
 
     /* Alarms */
     const apiAlarm5xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {

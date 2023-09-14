@@ -9,6 +9,7 @@ import {
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TradeType } from '@uniswap/sdk-core';
+import { MetricLoggerUnit, setGlobalMetric } from '@uniswap/smart-order-router';
 import { metricScope, MetricsLogger } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
@@ -16,11 +17,10 @@ import { default as bunyan, default as Logger } from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
 
 import { PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
+import { AWSMetricsLogger, Metric, metricContext } from '../entities';
 import { SynthSwitchQueryParams } from '../handlers/synth-switch';
 import { checkDefined } from '../preconditions/preconditions';
 import { SwitchRepository } from '../repositories/switch-repository';
-import { AWSMetricsLogger, Metric, metricContext } from '../entities';
-import { MetricLoggerUnit, setGlobalMetric } from '@uniswap/smart-order-router';
 
 export type TokenConfig = {
   tokenIn: string;
@@ -58,14 +58,16 @@ type TradeOutcome = {
 const MINIMUM_ORDERS = 5;
 const DISABLE_THRESHOLD = 0.2;
 
-export const handler: ScheduledHandler = metricScope((metricsLogger) => async (_event: EventBridgeEvent<string, void>) => {
-  await main(metricsLogger);
-});
+export const handler: ScheduledHandler = metricScope(
+  (metricsLogger) => async (_event: EventBridgeEvent<string, void>) => {
+    await main(metricsLogger);
+  }
+);
 
 async function main(metricsLogger: MetricsLogger) {
   metricsLogger.setNamespace('Uniswap');
   metricsLogger.setDimensions({
-    Service: 'SyntheticSwitch'
+    Service: 'SyntheticSwitch',
   });
   const metrics = new AWSMetricsLogger(metricsLogger);
   setGlobalMetric(metrics);
@@ -190,7 +192,11 @@ async function main(metricsLogger: MetricsLogger) {
     return { key, result };
   }
 
-  async function updateSynthSwitchRepository(configs: TokenConfig[], result: ResultRowType[], metrics: AWSMetricsLogger) {
+  async function updateSynthSwitchRepository(
+    configs: TokenConfig[],
+    result: ResultRowType[],
+    metrics: AWSMetricsLogger
+  ) {
     const beforeOrdersProcessing = Date.now();
     // match configs to results
     const configMap: {
@@ -257,8 +263,12 @@ async function main(metricsLogger: MetricsLogger) {
           log.info(
             {
               key,
+              totalOrders,
+              negPIRate: neg / totalOrders,
             },
-            'Disabling synthethics for trade'
+            `[Disabling] ${key} - neg PI rate: ${
+              neg / totalOrders
+            } >= ${DISABLE_THRESHOLD}; totalOrders: ${totalOrders} >= ${MINIMUM_ORDERS}`
           );
           try {
             await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], false);
@@ -274,8 +284,10 @@ async function main(metricsLogger: MetricsLogger) {
           log.info(
             {
               key,
+              totalOrders,
+              positivePIOrders: pos,
             },
-            'Enabling synthethics for trade'
+            `[Enabling] ${key} - positive PI orders: ${pos} > 0; totalOrders: ${totalOrders} >= ${MINIMUM_ORDERS}`
           );
           try {
             await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
@@ -288,7 +300,11 @@ async function main(metricsLogger: MetricsLogger) {
         }
       });
     }
-    metrics.putMetric(Metric.SYNTH_ORDERS_PROCESSING_TIME, Date.now() - beforeOrdersProcessing, MetricLoggerUnit.Milliseconds);
+    metrics.putMetric(
+      Metric.SYNTH_ORDERS_PROCESSING_TIME,
+      Date.now() - beforeOrdersProcessing,
+      MetricLoggerUnit.Milliseconds
+    );
   }
 
   // create view
@@ -322,7 +338,11 @@ async function main(metricsLogger: MetricsLogger) {
       await sleep(2000);
     } else if (status.Status === StatusString.FINISHED) {
       log.info('view query execution finished');
-      metrics.putMetric(Metric.SYNTH_ORDERS_VIEW_CREATION_TIME, Date.now() - beforeViewCreation, MetricLoggerUnit.Milliseconds);
+      metrics.putMetric(
+        Metric.SYNTH_ORDERS_VIEW_CREATION_TIME,
+        Date.now() - beforeViewCreation,
+        MetricLoggerUnit.Milliseconds
+      );
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
