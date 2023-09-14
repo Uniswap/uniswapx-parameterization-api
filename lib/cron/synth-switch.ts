@@ -232,10 +232,8 @@ async function main(metricsLogger: MetricsLogger) {
           amount: config.lowerBound[0],
         });
 
-        const shouldDisable = totalOrders >= MINIMUM_ORDERS && neg / totalOrders >= DISABLE_THRESHOLD && enabled;
-
+        const shouldDisable = totalOrders >= MINIMUM_ORDERS && neg / totalOrders >= DISABLE_THRESHOLD;
         if (shouldDisable) {
-          // disable synth
           log.info(
             {
               key,
@@ -256,8 +254,9 @@ async function main(metricsLogger: MetricsLogger) {
             metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'disable_synth'), 1, MetricLoggerUnit.Count);
           }
         }
-        // disabling logic trumps enabling logic, so if we are planning on disabling we don't want to also enable
-        if (pos > 0 && !shouldDisable && !enabled) {
+        // disabling logic trumps enabling logic
+        // if we get more positive orders such that the ratio moves above the threshold, we will enable
+        if (!shouldDisable && pos > 0 && !enabled) {
           log.info(
             {
               key,
