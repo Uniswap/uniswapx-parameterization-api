@@ -4,7 +4,11 @@ import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import { INTEGRATION_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
-import { AWSMetricsLogger, UniswapXParamServiceIntegrationMetricDimension, UniswapXParamServiceMetricDimension } from '../../entities/aws-metrics-logger';
+import {
+  AWSMetricsLogger,
+  UniswapXParamServiceIntegrationMetricDimension,
+  UniswapXParamServiceMetricDimension,
+} from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
