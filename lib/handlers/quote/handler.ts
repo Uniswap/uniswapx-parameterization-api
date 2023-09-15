@@ -84,7 +84,23 @@ async function getBestQuote(
   metric: IMetric
 ): Promise<QuoteResponse | null> {
   const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat();
-  metric.putMetric(Metric.QUOTE_RESPONSE_COUNT, responses.length, MetricLoggerUnit.Count);
+  switch (responses.length) {
+    case 0:
+      metric.putMetric(Metric.RFQ_COUNT_0, 1, MetricLoggerUnit.Count);
+      break;
+    case 1:
+      metric.putMetric(Metric.RFQ_COUNT_1, 1, MetricLoggerUnit.Count);
+      break;
+    case 2:
+      metric.putMetric(Metric.RFQ_COUNT_2, 1, MetricLoggerUnit.Count);
+      break;
+    case 3:
+      metric.putMetric(Metric.RFQ_COUNT_3, 1, MetricLoggerUnit.Count);
+      break;
+    default:
+      metric.putMetric(Metric.RFQ_COUNT_4_PLUS, 1, MetricLoggerUnit.Count);
+      break;
+  }
 
   // return the response with the highest amountOut value
   return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
