@@ -263,7 +263,7 @@ async function main(metricsLogger: MetricsLogger) {
               totalOrders,
               positivePIOrders: pos,
             },
-            `[Enabling] ${key} - positive PI orders: ${pos} > 0; totalOrders: ${totalOrders} >= ${MINIMUM_ORDERS}`
+            `[Enabling] ${key} - positive PI orders: ${pos} > 0`
           );
           try {
             await synthSwitchEntity.putSynthSwitch(SwitchRepository.parseKey(key), config.lowerBound[0], true);
