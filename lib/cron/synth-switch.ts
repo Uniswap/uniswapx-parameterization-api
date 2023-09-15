@@ -255,7 +255,9 @@ async function main(metricsLogger: MetricsLogger) {
           }
         }
         // disabling logic trumps enabling logic
-        // if we get more positive orders such that the ratio moves above the threshold, we will enable
+        // if we get more positive orders such that the ratio moves above the threshold OR
+        //    the negative orders move past the moving window, we will enable
+        // otherwise, we enable if there is at least one positive order
         if (!shouldDisable && pos > 0 && !enabled) {
           log.info(
             {
