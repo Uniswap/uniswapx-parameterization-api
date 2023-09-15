@@ -55,8 +55,8 @@ type TradeOutcome = {
   neg: number;
 };
 
-const MINIMUM_ORDERS = 5;
-const DISABLE_THRESHOLD = 0.2;
+const MINIMUM_ORDERS = 10;
+const DISABLE_THRESHOLD = 0.25;
 
 export const handler: ScheduledHandler = metricScope(
   (metricsLogger) => async (_event: EventBridgeEvent<string, void>) => {
@@ -233,7 +233,7 @@ async function main(metricsLogger: MetricsLogger) {
         });
 
         const shouldDisable = totalOrders >= MINIMUM_ORDERS && neg / totalOrders >= DISABLE_THRESHOLD;
-        if (shouldDisable) {
+        if (shouldDisable && enabled) {
           log.info(
             {
               key,
@@ -476,6 +476,6 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
           from synth
           join "uniswap_x"."public"."unifiedroutingresponses" ur
           on ur.requestid = synth.requestid and ur.quoteid != synth.quoteid
-          WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '12 HOURS')) -- 12 hours rolling window
+          WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '1 HOURS')) -- 1 hours rolling window
   );
 `;
