@@ -114,7 +114,7 @@ export class CronStack extends cdk.NestedStack {
     });
     new aws_events.Rule(this, `${SERVICE_NAME}ReaperSwitchSchedule`, {
       // TODO: fix schedule
-      schedule: aws_events.Schedule.rate(Duration.days(1)),
+      schedule: aws_events.Schedule.rate(Duration.hours(12)),
       targets: [new aws_events_targets.LambdaFunction(this.redshiftReaperCronLambda)],
     });
 
