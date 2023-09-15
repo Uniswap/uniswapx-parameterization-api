@@ -422,13 +422,14 @@ async function readTokenConfig(log: Logger): Promise<TokenConfig[]> {
 }
 
 export function filterResults(configs: TokenConfig[], result: ResultRowType[]) {
+  // create set from configs
+  const configSet = new Set<string>(
+    configs.map((config) => {
+      return `${config.tokenIn.toLowerCase()}#${config.tokenOut.toLowerCase()}`;
+    })
+  );
   return result.filter((row) => {
-    return configs.some((config) => {
-      return (
-        config.tokenIn.toLowerCase() == row.tokenin.toLowerCase() &&
-        config.tokenOut.toLowerCase() == row.tokenout.toLowerCase()
-      );
-    });
+    return configSet.has(`${row.tokenin}#${row.tokenout}`);
   });
 }
 
