@@ -70,7 +70,7 @@ export class AnalyticsRepository implements BaseAnalyticsRepository {
       ) {
         await sleep(executionConfigs?.waitTimeMs ?? 2000);
       } else if (status.Status === StatusString.FINISHED) {
-        AnalyticsRepository.log.info({ describe: response }, 'Command finished');
+        AnalyticsRepository.log.info({ sql }, 'Command finished');
         break;
       } else {
         AnalyticsRepository.log.error({ error: status.Error }, 'Unknown status');

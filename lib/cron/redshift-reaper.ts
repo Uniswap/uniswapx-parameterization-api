@@ -4,7 +4,14 @@ import { checkDefined } from '../preconditions/preconditions';
 import { AnalyticsRepository, SharedConfigs, TimestampThreshold } from '../repositories/analytics-repository';
 
 const CREATEDAT = 'createdat';
-const TABLES_TO_CLEAN = ['unifiedroutingrequests', 'unifiedroutingresponses', 'rfqrequests', 'rfqresponses'];
+const TABLES_TO_CLEAN = [
+  'unifiedroutingrequests',
+  'unifiedroutingresponses',
+  'rfqrequests',
+  'rfqresponses',
+  'archivedorders',
+  'postedorders',
+];
 
 export const handler: ScheduledHandler = async (_event: EventBridgeEvent<string, void>) => {
   const sharedConfig: SharedConfigs = {
