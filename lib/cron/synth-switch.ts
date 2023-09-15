@@ -106,8 +106,6 @@ async function main(metricsLogger: MetricsLogger) {
   // tokenIn and tokenOut MUST be sanitized and lowercased before being passed into the query
   const tokenInListRaw = Array.from(new Set(configs.map((config) => config.tokenIn)));
   const tokenOutListRaw = Array.from(new Set(configs.map((config) => config.tokenOut)));
-  const tokenInList = "('" + tokenInListRaw.join("', '") + "')";
-  const tokenOutList = "('" + tokenOutListRaw.join("', '") + "')";
 
   // TODO: WHERE in may have performance issues as num records increases
   // potentially filter the tokens in the cron instead
@@ -132,11 +130,6 @@ async function main(metricsLogger: MetricsLogger) {
     FROM archivedorders orders
     JOIN combinedURAResponses res
     ON orders.quoteid = res.quoteid
-    ${
-      tokenInListRaw.length > 0 && tokenOutListRaw.length > 0
-        ? `WHERE LOWER(res.tokenin) IN ${tokenInList} AND LOWER(res.tokenout) IN ${tokenOutList}`
-        : ''
-    }
     ORDER by filltimestamp DESC;
   `;
 
@@ -398,8 +391,17 @@ async function main(metricsLogger: MetricsLogger) {
         };
         return formattedRow;
       });
-      metrics.putMetric(Metric.SYNTH_ORDERS, formattedResult.length, MetricLoggerUnit.Count);
-      await updateSynthSwitchRepository(configs, formattedResult, metrics);
+
+      // filter out orders that are not in the configs
+      const filteredResult = formattedResult.filter((row) => {
+        return (
+          tokenInListRaw.includes(row.tokenin.toLowerCase()) &&
+          tokenOutListRaw.includes(row.tokenout.toLowerCase())
+        );
+      });
+
+      metrics.putMetric(Metric.SYNTH_ORDERS, filteredResult.length, MetricLoggerUnit.Count);
+      await updateSynthSwitchRepository(configs, filteredResult, metrics);
       break;
     } else {
       log.error({ error: status.Error }, 'Unknown status');
