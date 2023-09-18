@@ -7,10 +7,11 @@ import * as aws_events_targets from 'aws-cdk-lib/aws-events-targets';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
-import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../../lib/constants';
+import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
 import { PARTITION_KEY } from '../../lib/repositories/switch-repository';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
@@ -34,6 +35,7 @@ export interface CronStackProps extends cdk.NestedStackProps {
   RsClusterIdentifier: string;
   RedshiftCredSecretArn: string;
   lambdaRole: aws_iam.Role;
+  stage: string;
   chatbotSNSArn?: string;
   envVars?: { [key: string]: string };
 }
@@ -45,7 +47,13 @@ export class CronStack extends cdk.NestedStack {
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
-    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, chatbotSNSArn, envVars } = props;
+    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, chatbotSNSArn, stage, envVars } = props;
+
+    new s3.Bucket(this, 'FadeRateS3', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      bucketName: `${FADE_RATE_BUCKET}-${stage}-1`,
+    });
 
     this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}FadeRate`, {
       role: lambdaRole,
@@ -62,6 +70,7 @@ export class CronStack extends cdk.NestedStack {
         REDSHIFT_DATABASE: RsDatabase,
         REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
         REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
+        stage: stage,
         ...envVars,
       },
     });

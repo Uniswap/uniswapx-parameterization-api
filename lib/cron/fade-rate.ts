@@ -1,12 +1,10 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { metricScope, MetricsLogger } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
-import { Entity, Table } from 'dynamodb-toolbox';
 
-import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
+import { FADE_RATE_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
 import { FadesRepository, FadesRowType, SharedConfigs } from '../repositories';
@@ -36,16 +34,21 @@ async function main(metrics: MetricsLogger) {
   await fadesRepository.createFadesView();
   const result = await fadesRepository.getFades();
 
-  const fadeRateEntity = createDynamoEntity();
+  const s3Client = new S3Client({});
 
   if (result) {
     await webhookProvider.getEndpoints();
     const addressToFiller = webhookProvider.addressToFiller();
     const fillerFadeRate = calculateFillerFadeRates(result, addressToFiller, log);
     log.info({ fillerFadeRate }, 'filler fade rate');
-    fillerFadeRate.forEach((fadeRate, filler) => {
-      fadeRateEntity.put({ filler, faderate: fadeRate });
-    });
+    const resultObject = Object.fromEntries(fillerFadeRate);
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: `${WEBHOOK_CONFIG_BUCKET}-${checkDefined(process.env.stage)}-1`,
+        Key: FADE_RATE_S3_KEY,
+        Body: JSON.stringify(resultObject),
+      })
+    );
   }
 }
 
@@ -77,31 +80,4 @@ export function calculateFillerFadeRates(
     fadeRateMap.set(key, fadeRate);
   });
   return fadeRateMap;
-}
-
-function createDynamoEntity() {
-  const DocumentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-    marshallOptions: {
-      convertEmptyValues: true,
-    },
-    unmarshallOptions: {
-      wrapNumbers: true,
-    },
-  });
-
-  const table = new Table({
-    name: DYNAMO_TABLE_NAME.FADES,
-    partitionKey: DYNAMO_TABLE_KEY.FILLER,
-    DocumentClient,
-  });
-
-  return new Entity({
-    name: `${DYNAMO_TABLE_NAME.FADES}Entity`,
-    attributes: {
-      filler: { partitionKey: true, type: 'string' },
-      faderate: { type: 'number' },
-    },
-    table: table,
-    autoExecute: true,
-  } as const);
 }
