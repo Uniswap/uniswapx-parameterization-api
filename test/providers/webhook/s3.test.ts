@@ -63,6 +63,8 @@ describe('S3WebhookConfigurationProvider', () => {
     await provider.getEndpoints();
     const map = provider.addressToFiller();
     expect(map.get('google.com')).toEqual('google');
+    expect(map.get('facebook.com')).toEqual('meta');
+    expect(map.get('meta.com')).toEqual('meta');
   });
 
   it('Refetches after cache expires', async () => {

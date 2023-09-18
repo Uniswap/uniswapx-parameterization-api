@@ -15,8 +15,8 @@ export class AnalyticsRepository extends BaseRedshiftRepository {
     return new AnalyticsRepository(new RedshiftDataClient({}), configs);
   }
 
-  constructor(readonly client: RedshiftDataClient, private readonly _configs: SharedConfigs) {
-    super(client, _configs);
+  constructor(readonly client: RedshiftDataClient, configs: SharedConfigs) {
+    super(client, configs);
   }
 
   public async cleanUpTable(

@@ -3,15 +3,15 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { metricScope, MetricsLogger } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
+import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
-import Logger from 'bunyan';
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
 import { checkDefined } from '../preconditions/preconditions';
-import { FillerAddressesMap, S3WebhookConfigurationProvider } from '../providers';
+import { S3WebhookConfigurationProvider } from '../providers';
 import { FadesRepository, FadesRowType, SharedConfigs } from '../repositories';
 
-const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
+export const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
   await main(metrics);
 });
 
@@ -36,19 +36,21 @@ async function main(metrics: MetricsLogger) {
   await fadesRepository.createFadesView();
   const result = await fadesRepository.getFades();
 
+  const fadeRateEntity = createDynamoEntity();
+
   if (result) {
     await webhookProvider.getEndpoints();
     const addressToFiller = webhookProvider.addressToFiller();
     const fillerFadeRate = calculateFillerFadeRates(result, addressToFiller, log);
+    log.info({ fillerFadeRate }, 'filler fade rate');
+    fillerFadeRate.forEach((fadeRate, filler) => {
+      fadeRateEntity.put({ filler, faderate: fadeRate });
+    });
   }
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
+// aggregates potentially multiple filler addresses into filler name
+// and calculates fade rate for each
 export function calculateFillerFadeRates(
   rows: FadesRowType[],
   addressToFiller: Map<string, string>,
@@ -62,10 +64,10 @@ export function calculateFillerFadeRates(
       log?.info({ fillerAddress: row.fillerAddress }, 'filler address not found in webhook config');
     } else {
       if (!fillerToQuotesMap.has(fillerName)) {
-        fillerToQuotesMap.set(row.fillerAddress, [row.fadedQuotes, row.totalQuotes]);
+        fillerToQuotesMap.set(fillerName, [row.fadedQuotes, row.totalQuotes]);
       } else {
-        const [fadedQuotes, totalQuotes] = fillerToQuotesMap.get(row.fillerAddress) as [number, number];
-        fillerToQuotesMap.set(row.fillerAddress, [fadedQuotes + row.fadedQuotes, totalQuotes + row.totalQuotes]);
+        const [fadedQuotes, totalQuotes] = fillerToQuotesMap.get(fillerName) as [number, number];
+        fillerToQuotesMap.set(fillerName, [fadedQuotes + row.fadedQuotes, totalQuotes + row.totalQuotes]);
       }
     }
   });
@@ -103,5 +105,3 @@ function createDynamoEntity() {
     autoExecute: true,
   } as const);
 }
-
-module.exports = { handler };
