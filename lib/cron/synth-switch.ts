@@ -480,6 +480,6 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
           from synth
           join "uniswap_x"."public"."unifiedroutingresponses" ur
           on ur.requestid = synth.requestid and ur.quoteid != synth.quoteid
-          WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '1 HOURS')) -- 1 hours rolling window
+          WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '4 HOURS')) -- 4 hours rolling window
   );
 `;
