@@ -1,6 +1,8 @@
 import {
   DescribeStatementCommand,
   ExecuteStatementCommand,
+  Field,
+  GetStatementResultCommand,
   RedshiftDataClient,
   StatusString,
 } from '@aws-sdk/client-redshift-data';
