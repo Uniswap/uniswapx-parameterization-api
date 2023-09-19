@@ -37,6 +37,7 @@ async function main(metrics: MetricsLogger) {
   if (result) {
     await webhookProvider.getEndpoints();
     const addressToFiller = webhookProvider.addressToFiller();
+    log.info({ addressToFiller }, 'address to filler map');
     const fillerFadeRate = calculateFillerFadeRates(result, addressToFiller, log);
     log.info({ fillerFadeRate }, 'filler fade rate');
 
@@ -62,6 +63,7 @@ export function calculateFillerFadeRates(
   rows.forEach((row) => {
     const fillerAddr = row.fillerAddress.toLowerCase();
     const fillerName = addressToFiller.get(fillerAddr);
+    log?.info({ row }, 'fade rate row');
     if (!fillerName) {
       log?.info({ addressToFiller, fillerAddress: fillerAddr }, 'filler address not found in webhook config');
     } else {
@@ -72,6 +74,7 @@ export function calculateFillerFadeRates(
         fillerToQuotesMap.set(fillerName, [fadedQuotes + row.fadedQuotes, totalQuotes + row.totalQuotes]);
       }
     }
+    log?.info({ fillerToQuotesMap }, 'filler to quotes map');
   });
 
   fillerToQuotesMap.forEach((value, key) => {
