@@ -60,7 +60,7 @@ export function calculateFillerFadeRates(
   const fadeRateMap = new Map<string, number>();
   const fillerToQuotesMap = new Map<string, [number, number]>();
   rows.forEach((row) => {
-    const fillerAddr = row.fillerAddress.toLocaleLowerCase();
+    const fillerAddr = row.fillerAddress.toLowerCase();
     const fillerName = addressToFiller.get(fillerAddr);
     if (!fillerName) {
       log?.info({ addressToFiller, fillerAddress: fillerAddr }, 'filler address not found in webhook config');
