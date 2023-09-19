@@ -49,7 +49,9 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
     for (const [filler, rate] of fillRates) {
       config.push({
         name: filler,
-        enabled: rate >= S3CircuitBreakerConfigurationProvider.FILL_RATE_THRESHOLD,
+        fadeRate: rate,
+        // enabled endpoints will be able to participate in RFQ
+        enabled: rate < S3CircuitBreakerConfigurationProvider.FILL_RATE_THRESHOLD,
       });
     }
     await this.client.send(
