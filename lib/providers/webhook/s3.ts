@@ -30,6 +30,7 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     if (this.endpoints.length === 0) {
       await this.fetchEndpoints();
     }
+    this.log.info({ endpoints: this.endpoints }, 'fetched endpoints from S3');
     this.endpoints.forEach((endpoint) => {
       endpoint.addresses?.forEach((address) => {
         map.set(address, endpoint.name);
