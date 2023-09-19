@@ -19,7 +19,8 @@ const CHAIN_ID = 1;
 const FILLER = '0x0000000000000000000000000000000000000001';
 
 const WEBHOOK_URL = 'https://uniswap.org';
-const WEBHOOK_URL_2 = 'https://1inch.io';
+const WEBHOOK_URL_ONEINCH = 'https://1inch.io';
+const WEBHOOK_URL_SEARCHER = 'https://searcher.com';
 
 describe('WebhookQuoter tests', () => {
   afterEach(() => {
@@ -28,10 +29,13 @@ describe('WebhookQuoter tests', () => {
 
   const webhookProvider = new MockWebhookConfigurationProvider([
     { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {} },
+    { name: '1inch', endpoint: WEBHOOK_URL_ONEINCH, headers: {} },
+    { name: 'searcher', endpoint: WEBHOOK_URL_SEARCHER, headers: {} },
   ]);
   const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
     { name: 'uniswap', fadeRate: 0.05, enabled: true },
     { name: '1inch', fadeRate: 0.5, enabled: false },
+    { name: 'searcher', fadeRate: 0.1, enabled: true },
   ]);
   const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   const webhookQuoter = new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider);
@@ -69,6 +73,69 @@ describe('WebhookQuoter tests', () => {
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
+  });
+
+  it('Only calls to eligible endpoints', async () => {
+    const quote = {
+      amountOut: ethers.utils.parseEther('2').toString(),
+      tokenIn: request.tokenIn,
+      tokenOut: request.tokenOut,
+      amountIn: request.amount.toString(),
+      swapper: request.swapper,
+      chainId: request.tokenInChainId,
+      requestId: request.requestId,
+      quoteId: QUOTE_ID,
+      filler: FILLER,
+    };
+
+    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: quote,
+      });
+    });
+    const response = await webhookQuoter.quote(request);
+
+    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), { headers: {}, timeout: 500 });
+    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_SEARCHER, request.toCleanJSON(), { headers: {}, timeout: 500 });
+    expect(mockedAxios);
+    expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL_ONEINCH, request.toCleanJSON(), {
+      headers: {},
+      timeout: 500,
+    });
+    expect(response.length).toEqual(1);
+    expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
+  });
+
+  it('Defaults to allowing endpoints not on circuit breaker config', async () => {
+    const quote = {
+      amountOut: ethers.utils.parseEther('2').toString(),
+      tokenIn: request.tokenIn,
+      tokenOut: request.tokenOut,
+      amountIn: request.amount.toString(),
+      swapper: request.swapper,
+      chainId: request.tokenInChainId,
+      requestId: request.requestId,
+      quoteId: QUOTE_ID,
+      filler: FILLER,
+    };
+
+    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: quote,
+      });
+    });
+    const cbProvider = new MockCircuitBreakerConfigurationProvider([
+      { name: 'uniswap', fadeRate: 0.05, enabled: true },
+    ]);
+    const quoter = new WebhookQuoter(logger, webhookProvider, cbProvider);
+    await quoter.quote(request);
+    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), { headers: {}, timeout: 500 });
+    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_SEARCHER, request.toCleanJSON(), { headers: {}, timeout: 500 });
+    expect(mockedAxios);
+    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_ONEINCH, request.toCleanJSON(), {
+      headers: {},
+      timeout: 500,
+    });
   });
 
   it('Simple request and response no swapper', async () => {
@@ -124,7 +191,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1] },
     ]);
-    const quoter = new WebhookQuoter(logger, provider);
+    const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider);
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
       tokenIn: request.tokenIn,
@@ -152,7 +219,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6] },
     ]);
-    const quoter = new WebhookQuoter(logger, provider);
+    const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider);
 
     const response = await quoter.quote(request);
 

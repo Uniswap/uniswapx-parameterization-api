@@ -5,7 +5,6 @@ import Logger from 'bunyan';
 
 import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
-import { checkDefined } from '../preconditions/preconditions';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 
@@ -38,13 +37,16 @@ export class WebhookQuoter implements Quoter {
 
   private async getEligibleEndpoints(): Promise<WebhookConfiguration[]> {
     const endpoints = await this.webhookProvider.getEndpoints();
-    const fillerToEndpointMap = new Map(endpoints.map((e) => [e.name, e]));
     const config = await this.circuitBreakerProvider.getConfigurations();
+    const fillerToConfigMap = new Map(config.map((c) => [c.name, c]));
     if (config) {
       const enabledEndpoints: WebhookConfiguration[] = [];
-      config.forEach((c) => {
-        if (c.enabled) {
-          enabledEndpoints.push(checkDefined(fillerToEndpointMap.get(c.name)));
+      endpoints.forEach((e) => {
+        if (
+          (fillerToConfigMap.has(e.name) && fillerToConfigMap.get(e.name)?.enabled) ||
+          !fillerToConfigMap.has(e.name) // default to allowing fillers not in the config
+        ) {
+          enabledEndpoints.push(e);
         }
       });
       return enabledEndpoints;
