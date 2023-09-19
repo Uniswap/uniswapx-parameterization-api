@@ -159,7 +159,7 @@ export class APIStack extends cdk.Stack {
       managedPolicies: [
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess'),
-        aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3ReadOnlyAccess'),
+        aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonRedshiftDataFullAccess'),
       ],
     });
@@ -368,9 +368,7 @@ export class APIStack extends cdk.Stack {
       RsClusterIdentifier: analyticsStack.clusterId,
       RedshiftCredSecretArn: analyticsStack.credSecretArn,
       lambdaRole: lambdaRole,
-      envVars: {
-        stage,
-      },
+      stage: stage,
     });
 
     new CronDashboardStack(this, 'CronDashboardStack', {

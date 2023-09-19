@@ -1,7 +1,7 @@
 import { EventBridgeEvent, ScheduledHandler } from 'aws-lambda';
 
 import { checkDefined } from '../preconditions/preconditions';
-import { AnalyticsRepository, SharedConfigs, TimestampThreshold } from '../repositories/analytics-repository';
+import { AnalyticsRepository, SharedConfigs, TimestampThreshold } from '../repositories';
 
 const CREATEDAT = 'createdat';
 const TABLES_TO_CLEAN = [
