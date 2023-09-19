@@ -33,6 +33,7 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     this.log.info({ endpoints: this.endpoints }, 'fetched endpoints from S3');
     this.endpoints.forEach((endpoint) => {
       endpoint.addresses?.forEach((address) => {
+        this.log.info({ address, endpoint }, 'address to filler mapping');
         map.set(address, endpoint.name);
       });
     });
