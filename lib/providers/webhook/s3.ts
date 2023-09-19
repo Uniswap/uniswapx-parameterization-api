@@ -27,6 +27,9 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
 
   async addressToFiller(): Promise<Map<string, string>> {
     const map = new Map<string, string>();
+    if (this.endpoints.length === 0) {
+      await this.fetchEndpoints();
+    }
     this.endpoints.forEach((endpoint) => {
       endpoint.addresses?.forEach((address) => {
         map.set(address, endpoint.name);
