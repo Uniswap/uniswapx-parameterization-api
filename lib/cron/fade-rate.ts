@@ -35,8 +35,7 @@ async function main(metrics: MetricsLogger) {
   const result = await fadesRepository.getFades();
 
   if (result) {
-    await webhookProvider.getEndpoints();
-    const addressToFiller = webhookProvider.addressToFiller();
+    const addressToFiller = await webhookProvider.addressToFiller();
     log.info({ addressToFiller }, 'address to filler map');
     const fillerFadeRate = calculateFillerFadeRates(result, addressToFiller, log);
     log.info({ fillerFadeRate }, 'filler fade rate');
