@@ -1,5 +1,6 @@
 export interface CircuitBreakerConfiguration {
   name: string;
+  fadeRate: number;
   enabled: boolean;
 }
 
