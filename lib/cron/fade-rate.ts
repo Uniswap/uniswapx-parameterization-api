@@ -4,9 +4,10 @@ import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
 
-import { FADE_RATE_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
+import { FADE_RATE_BUCKET, FADE_RATE_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
+import { S3CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker/s3';
 import { FadesRepository, FadesRowType, SharedConfigs } from '../repositories';
 
 export const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
@@ -34,21 +35,19 @@ async function main(metrics: MetricsLogger) {
   await fadesRepository.createFadesView();
   const result = await fadesRepository.getFades();
 
-  const s3Client = new S3Client({});
-
   if (result) {
     await webhookProvider.getEndpoints();
     const addressToFiller = webhookProvider.addressToFiller();
     const fillerFadeRate = calculateFillerFadeRates(result, addressToFiller, log);
     log.info({ fillerFadeRate }, 'filler fade rate');
-    const resultObject = Object.fromEntries(fillerFadeRate);
-    await s3Client.send(
-      new PutObjectCommand({
-        Bucket: `${WEBHOOK_CONFIG_BUCKET}-${checkDefined(process.env.stage)}-1`,
-        Key: FADE_RATE_S3_KEY,
-        Body: JSON.stringify(resultObject),
-      })
+
+    const configProvider = new S3CircuitBreakerConfigurationProvider(
+      log,
+      `${FADE_RATE_BUCKET}-prod-1`,
+      FADE_RATE_S3_KEY
     );
+    //TODO: fire an alert when circuit breaker is triggered
+    await configProvider.putConfigurations(fillerFadeRate);
   }
 }
 
