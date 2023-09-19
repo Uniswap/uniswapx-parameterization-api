@@ -5,7 +5,9 @@ import Logger from 'bunyan';
 
 import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
+import { checkDefined } from '../preconditions/preconditions';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
+import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -14,16 +16,17 @@ const WEBHOOK_TIMEOUT_MS = 500;
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
   private log: Logger;
-  private enabledWebhooks: WebhookConfiguration[] = [];
 
-  constructor(_log: Logger, private webhookProvider: WebhookConfigurationProvider) {
+  constructor(
+    _log: Logger,
+    private webhookProvider: WebhookConfigurationProvider,
+    private circuitBreakerProvider: CircuitBreakerConfigurationProvider
+  ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
 
-  public consumeCircuitBreakerConfig(_config: WebhookConfiguration[]): void {}
-
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
-    const endpoints = await this.webhookProvider.getEndpoints();
+    const endpoints = await this.getEligibleEndpoints();
     this.log.info(`Fetching quotes from ${endpoints.length} endpoints`, endpoints);
     const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));
     return quotes.filter((q) => q !== null) as QuoteResponse[];
@@ -31,6 +34,22 @@ export class WebhookQuoter implements Quoter {
 
   public type(): QuoterType {
     return QuoterType.RFQ;
+  }
+
+  private async getEligibleEndpoints(): Promise<WebhookConfiguration[]> {
+    const endpoints = await this.webhookProvider.getEndpoints();
+    const fillerToEndpointMap = new Map(endpoints.map((e) => [e.name, e]));
+    const config = await this.circuitBreakerProvider.getConfigurations();
+    if (config) {
+      const enabledEndpoints: WebhookConfiguration[] = [];
+      config.forEach((c) => {
+        if (c.enabled) {
+          enabledEndpoints.push(checkDefined(fillerToEndpointMap.get(c.name)));
+        }
+      });
+      return enabledEndpoints;
+    }
+    return endpoints;
   }
 
   private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
