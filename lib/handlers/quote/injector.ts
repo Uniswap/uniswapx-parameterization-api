@@ -3,19 +3,27 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import { INTEGRATION_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
+import {
+  FADE_RATE_BUCKET,
+  FADE_RATE_S3_KEY,
+  INTEGRATION_S3_KEY,
+  PRODUCTION_S3_KEY,
+  WEBHOOK_CONFIG_BUCKET,
+} from '../../constants';
 import {
   AWSMetricsLogger,
   UniswapXParamServiceIntegrationMetricDimension,
   UniswapXParamServiceMetricDimension,
 } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
+import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
 
 export interface ContainerInjected {
   quoters: Quoter[];
+  circuitBreakerProvider: S3CircuitBreakerConfigurationProvider;
 }
 
 export interface RequestInjected extends ApiRInj {
@@ -38,8 +46,10 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
+    const provider = new S3CircuitBreakerConfigurationProvider(log, `${FADE_RATE_BUCKET}-${stage}-1`, FADE_RATE_S3_KEY);
     return {
       quoters: quoters,
+      circuitBreakerProvider: provider,
     };
   }
 

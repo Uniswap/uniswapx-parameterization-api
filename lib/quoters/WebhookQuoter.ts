@@ -14,10 +14,13 @@ const WEBHOOK_TIMEOUT_MS = 500;
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
   private log: Logger;
+  private enabledWebhooks: WebhookConfiguration[] = [];
 
   constructor(_log: Logger, private webhookProvider: WebhookConfigurationProvider) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
+
+  public consumeCircuitBreakerConfig(_config: WebhookConfiguration[]): void {}
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
     const endpoints = await this.webhookProvider.getEndpoints();

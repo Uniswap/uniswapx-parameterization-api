@@ -25,7 +25,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     const {
       requestInjected: { log, metric },
       requestBody,
-      containerInjected: { quoters },
+      containerInjected: { quoters, circuitBreakerProvider },
     } = params;
     const before = Date.now();
 
@@ -46,6 +46,8 @@ export class QuoteHandler extends APIGLambdaHandler<
         createdAt: currentTimestampInSeconds(),
       },
     });
+
+    const circuitBreakerConfig = await circuitBreakerProvider.getConfigurations();
 
     const bestQuote = await getBestQuote(quoters, request, log, metric);
     if (!bestQuote) {
