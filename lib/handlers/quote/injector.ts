@@ -23,7 +23,6 @@ import { PostQuoteRequestBody } from './schema';
 
 export interface ContainerInjected {
   quoters: Quoter[];
-  circuitBreakerProvider: S3CircuitBreakerConfigurationProvider;
 }
 
 export interface RequestInjected extends ApiRInj {
@@ -45,11 +44,14 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       PRODUCTION_S3_KEY
     );
 
-    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
-    const provider = new S3CircuitBreakerConfigurationProvider(log, `${FADE_RATE_BUCKET}-${stage}-1`, FADE_RATE_S3_KEY);
+    const circuitBreakerProvider = new S3CircuitBreakerConfigurationProvider(
+      log,
+      `${FADE_RATE_BUCKET}-${stage}-1`,
+      FADE_RATE_S3_KEY
+    );
+    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider, circuitBreakerProvider)];
     return {
       quoters: quoters,
-      circuitBreakerProvider: provider,
     };
   }
 
@@ -98,8 +100,13 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
       `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`,
       INTEGRATION_S3_KEY
     );
+    const circuitBreakerProvider = new S3CircuitBreakerConfigurationProvider(
+      log,
+      `${FADE_RATE_BUCKET}-${stage}-1`,
+      FADE_RATE_S3_KEY
+    );
+    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider, circuitBreakerProvider)];
 
-    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider)];
     return {
       quoters: quoters,
     };

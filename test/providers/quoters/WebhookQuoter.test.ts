@@ -4,6 +4,7 @@ import { BigNumber, ethers } from 'ethers';
 
 import { QuoteRequest } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
+import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
@@ -18,6 +19,7 @@ const CHAIN_ID = 1;
 const FILLER = '0x0000000000000000000000000000000000000001';
 
 const WEBHOOK_URL = 'https://uniswap.org';
+const WEBHOOK_URL_2 = 'https://1inch.io';
 
 describe('WebhookQuoter tests', () => {
   afterEach(() => {
@@ -27,8 +29,12 @@ describe('WebhookQuoter tests', () => {
   const webhookProvider = new MockWebhookConfigurationProvider([
     { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {} },
   ]);
+  const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+    { name: 'uniswap', fadeRate: 0.05, enabled: true },
+    { name: '1inch', fadeRate: 0.5, enabled: false },
+  ]);
   const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
-  const webhookQuoter = new WebhookQuoter(logger, webhookProvider);
+  const webhookQuoter = new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider);
 
   const request = new QuoteRequest({
     tokenInChainId: CHAIN_ID,
