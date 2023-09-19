@@ -7,6 +7,7 @@ const SWAPPER = '0x0000000000000000000000000000000000000000';
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const REQUEST_ID = uuidv4();
+const QUOTE_ID = uuidv4();
 
 const validTokenIn = [USDC, WETH].reduce(lowerUpper, []);
 const validTokenOut = [USDC, WETH].reduce(lowerUpper, []);
@@ -289,6 +290,7 @@ describe('Schema tests', () => {
         tokenOut: WETH,
         amountIn: '1000',
         amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
       };
       const validated = RfqResponseJoi.validate(body);
       expect(validated.error).toBeUndefined();
@@ -299,6 +301,7 @@ describe('Schema tests', () => {
         tokenOut: WETH,
         amountIn: '1000',
         amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
       });
     });
 
@@ -309,6 +312,7 @@ describe('Schema tests', () => {
         tokenOut: WETH,
         amountIn: '1000',
         amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
       };
       const validated = RfqResponseJoi.validate(body);
       expect(validated.error?.message).toEqual('"requestId" is required');
@@ -321,6 +325,7 @@ describe('Schema tests', () => {
         tokenOut: WETH,
         amountIn: '1000',
         amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
       };
       const validated = RfqResponseJoi.validate(body);
       expect(validated.error?.message).toEqual('"tokenIn" is required');
@@ -333,6 +338,7 @@ describe('Schema tests', () => {
         tokenIn: USDC,
         amountIn: '1000',
         amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
       };
       const validated = RfqResponseJoi.validate(body);
       expect(validated.error?.message).toEqual('"tokenOut" is required');
@@ -345,6 +351,7 @@ describe('Schema tests', () => {
         tokenIn: USDC,
         tokenOut: WETH,
         amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
       };
       const validated = RfqResponseJoi.validate(body);
       expect(validated.error?.message).toEqual('"amountIn" is required');
@@ -357,9 +364,23 @@ describe('Schema tests', () => {
         tokenIn: USDC,
         tokenOut: WETH,
         amountIn: '1000000000000000000',
+        quoteId: QUOTE_ID,
       };
       const validated = RfqResponseJoi.validate(body);
       expect(validated.error?.message).toEqual('"amountOut" is required');
+    });
+
+    it('requires quoteId to be defined', () => {
+      const body = {
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000000000000000000',
+        amountOut: '1000000000000000000',
+      };
+      const validated = RfqResponseJoi.validate(body);
+      expect(validated.error?.message).toEqual('"quoteId" is required');
     });
 
     it('ignores swapper', () => {
@@ -371,6 +392,7 @@ describe('Schema tests', () => {
         amountIn: '1000000000000000000',
         amountOut: '1000000000000000000',
         swapper: SWAPPER,
+        quoteId: QUOTE_ID,
       };
       const validated = RfqResponseJoi.validate(body, {
         allowUnknown: true,
@@ -384,6 +406,7 @@ describe('Schema tests', () => {
         tokenOut: WETH,
         amountIn: '1000000000000000000',
         amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
       });
     });
 
@@ -396,6 +419,7 @@ describe('Schema tests', () => {
         amountIn: '1000000000000000000',
         amountOut: '1000000000000000000',
         swapper: null,
+        quoteId: QUOTE_ID,
       };
       const validated = RfqResponseJoi.validate(body, {
         allowUnknown: true,
@@ -409,6 +433,7 @@ describe('Schema tests', () => {
         tokenOut: WETH,
         amountIn: '1000000000000000000',
         amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
       });
     });
   });

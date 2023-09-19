@@ -2,10 +2,11 @@ import { TradeType } from '@uniswap/sdk-core';
 import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
+import { v4 as uuidv4 } from 'uuid';
 
-import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -53,9 +54,13 @@ export class WebhookQuoter implements Quoter {
         timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
         ...(!!headers && { headers }),
       };
+      const cleanRequest = request.toCleanJSON();
+      cleanRequest.quoteId = uuidv4();
+      const opposingCleanRequest = request.toOpposingCleanJSON();
+      opposingCleanRequest.quoteId = uuidv4();
       const [hookResponse] = await Promise.all([
-        axios.post(endpoint, request.toCleanJSON(), axiosConfig),
-        axios.post(endpoint, request.toOpposingCleanJSON(), axiosConfig),
+        axios.post(endpoint, cleanRequest, axiosConfig),
+        axios.post(endpoint, opposingCleanRequest, axiosConfig),
       ]);
 
       metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);

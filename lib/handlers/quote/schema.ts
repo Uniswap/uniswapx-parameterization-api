@@ -33,6 +33,7 @@ export const PostQuoteResponseJoi = Joi.object({
   amountOut: FieldValidator.amount.required(),
   swapper: FieldValidator.address.optional(),
   filler: FieldValidator.address,
+  quoteId: FieldValidator.uuid,
 });
 
 export type PostQuoteResponse = {
@@ -44,6 +45,7 @@ export type PostQuoteResponse = {
   amountOut: string;
   swapper: string;
   filler?: string;
+  quoteId?: string;
 };
 
 export const URAResponseJoi = Joi.object({
@@ -66,6 +68,7 @@ export const RfqResponseJoi = Joi.object({
   tokenOut: Joi.string().required(),
   amountOut: FieldValidator.amount.required(),
   filler: FieldValidator.address.optional(),
+  quoteId: FieldValidator.uuid.required(),
 });
 
 export type RfqResponse = {
