@@ -142,8 +142,8 @@ export class CronStack extends cdk.NestedStack {
     });
     this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
 
-    const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarm`, {
-      alarmName: `CircuitBreakerTriggeredAlarm`,
+    const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarmSev2`, {
+      alarmName: `CircuitBreakerTriggeredAlarmSev2`,
       metric: new aws_cloudwatch.Metric({
         metricName: 'CircuitBreakerTriggeredCount',
         namespace: 'Uniswap',
