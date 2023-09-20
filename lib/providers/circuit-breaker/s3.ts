@@ -14,7 +14,7 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
 
   // try to refetch endpoints every 5 mins
   private static UPDATE_PERIOD_MS = 5 * 60000;
-  private static FILL_RATE_THRESHOLD = 0.5;
+  private static FILL_RATE_THRESHOLD = 0.75;
 
   constructor(_log: Logger, private bucket: string, private key: string) {
     this.log = _log.child({ quoter: 'S3CircuitBreakerConfigurationProvider' });
