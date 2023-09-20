@@ -1,7 +1,9 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import Logger from 'bunyan';
 
+import { MetricsLogger, Unit } from 'aws-embedded-metrics';
 import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
+import { Metric } from '../../entities';
 import { checkDefined } from '../../preconditions/preconditions';
 
 export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
@@ -44,9 +46,13 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
     this.log.info({ config: this.fillers }, 'fetched circuit breaker config from S3');
   }
 
-  async putConfigurations(fillRates: Map<string, number>): Promise<void> {
+  async putConfigurations(fillRates: Map<string, number>, metrics: MetricsLogger): Promise<void> {
     const config: CircuitBreakerConfiguration[] = [];
     for (const [filler, rate] of fillRates) {
+      if (rate >= S3CircuitBreakerConfigurationProvider.FILL_RATE_THRESHOLD) {
+        metrics.putMetric(Metric.CIRCUIT_BREAKER_TRIGGERED, 1, Unit.Count);
+        this.log.info(`circuit breaker triggered for ${filler} at fill rate ${rate}`);
+      }
       config.push({
         name: filler,
         fadeRate: rate,

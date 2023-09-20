@@ -151,6 +151,21 @@ const OrdersOutcomeWidget = (region: string, lambdaName: string): LambdaWidget =
   },
 });
 
+const CircuitBreakerTriggeredWidget = (region: string, lambdaName: string): LambdaWidget => ({
+  height: 6,
+  width: 24,
+  y: 6,
+  x: 0,
+  type: 'log',
+  properties: {
+    view: 'table',
+    region,
+    stacked: false,
+    title: 'Circuit Breaker Triggered',
+    query: `SOURCE '/aws/lambda/${lambdaName}' | fields @timestamp, msg\n| filter msg like 'circuit breaker triggered'\n| sort @timestamp desc`,
+  },
+});
+
 const SynthSwitchFlippedWidget = (region: string): LambdaWidget => ({
   height: 11,
   width: 24,
@@ -173,6 +188,7 @@ const SynthSwitchFlippedWidget = (region: string): LambdaWidget => ({
 
 export interface CronDashboardStackProps extends cdk.NestedStackProps {
   synthSwitchLambdaName: string;
+  quoteLambdaName: string;
 }
 
 export class CronDashboardStack extends cdk.NestedStack {
@@ -191,6 +207,7 @@ export class CronDashboardStack extends cdk.NestedStack {
           DynamoErrorRateWidget(region),
           DynamoErrorRateOrdersQueryWidget(region),
           OrdersOutcomeWidget(region, props.synthSwitchLambdaName),
+          CircuitBreakerTriggeredWidget(region, props.quoteLambdaName),
           SynthSwitchFlippedWidget(region),
         ],
       }),

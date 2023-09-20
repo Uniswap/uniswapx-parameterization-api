@@ -12,6 +12,7 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
+import { CircuitBreakerMetricDimension } from '../../lib/entities';
 import { PARTITION_KEY } from '../../lib/repositories/switch-repository';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
@@ -140,6 +141,17 @@ export class CronStack extends cdk.NestedStack {
       ...PROD_TABLE_CAPACITY.fadeRate,
     });
     this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
+
+    new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarm`, {
+      alarmName: `CircuitBreakerTriggeredAlarm`,
+      metric: new aws_cloudwatch.Metric({
+        metricName: 'CircuitBreakerTriggeredCount',
+        namespace: 'Uniswap',
+        dimensionsMap: CircuitBreakerMetricDimension,
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+    });
 
     const synthSwitchTable = new aws_dynamo.Table(this, `${SERVICE_NAME}SynthSwitchTable`, {
       tableName: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE,

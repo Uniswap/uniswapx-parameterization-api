@@ -373,6 +373,7 @@ export class APIStack extends cdk.Stack {
 
     new CronDashboardStack(this, 'CronDashboardStack', {
       synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
+      quoteLambdaName: quoteLambda.functionName,
     });
 
     /* Alarms */
