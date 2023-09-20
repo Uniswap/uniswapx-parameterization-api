@@ -36,9 +36,8 @@ async function main(metrics: MetricsLogger) {
 
   if (result) {
     const addressToFiller = await webhookProvider.addressToFiller();
-    log.info({ addressToFiller }, 'address to filler map');
     const fillerFadeRate = calculateFillerFadeRates(result, addressToFiller, log);
-    log.info({ fillerFadeRate }, 'filler fade rate');
+    log.info({ fadeRates: [...fillerFadeRate.entries()] }, 'filler fade rate');
 
     const configProvider = new S3CircuitBreakerConfigurationProvider(
       log,
@@ -62,7 +61,6 @@ export function calculateFillerFadeRates(
   rows.forEach((row) => {
     const fillerAddr = row.fillerAddress.toLowerCase();
     const fillerName = addressToFiller.get(fillerAddr);
-    log?.info({ row }, 'fade rate row');
     if (!fillerName) {
       log?.info({ addressToFiller, fillerAddress: fillerAddr }, 'filler address not found in webhook config');
     } else {
