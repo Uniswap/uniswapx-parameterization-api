@@ -97,7 +97,6 @@ describe('WebhookQuoter tests', () => {
 
     expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), { headers: {}, timeout: 500 });
     expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_SEARCHER, request.toCleanJSON(), { headers: {}, timeout: 500 });
-    expect(mockedAxios);
     expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL_ONEINCH, request.toCleanJSON(), {
       headers: {},
       timeout: 500,
@@ -131,7 +130,6 @@ describe('WebhookQuoter tests', () => {
     await quoter.quote(request);
     expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), { headers: {}, timeout: 500 });
     expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_SEARCHER, request.toCleanJSON(), { headers: {}, timeout: 500 });
-    expect(mockedAxios);
     expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_ONEINCH, request.toCleanJSON(), {
       headers: {},
       timeout: 500,

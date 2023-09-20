@@ -142,7 +142,7 @@ export class CronStack extends cdk.NestedStack {
     });
     this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
 
-    new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarm`, {
+    const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarm`, {
       alarmName: `CircuitBreakerTriggeredAlarm`,
       metric: new aws_cloudwatch.Metric({
         metricName: 'CircuitBreakerTriggeredCount',
@@ -152,6 +152,12 @@ export class CronStack extends cdk.NestedStack {
       threshold: 1,
       evaluationPeriods: 1,
     });
+
+    if (chatbotSNSArn) {
+      circuitBreakerTriggeredAlarm.addAlarmAction(
+        new cdk.aws_cloudwatch_actions.SnsAction(cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn))
+      );
+    }
 
     const synthSwitchTable = new aws_dynamo.Table(this, `${SERVICE_NAME}SynthSwitchTable`, {
       tableName: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE,
