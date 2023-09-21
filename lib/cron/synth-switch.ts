@@ -262,6 +262,12 @@ async function main(metricsLogger: MetricsLogger) {
             metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'enable_synth'), 1, MetricLoggerUnit.Count);
           }
         }
+        if (!shouldDisable) {
+          log.info(
+            { key, totalOrders, negPIRate: neg / totalOrders },
+            `[Skipping] ${key} - neg PI rate: ${neg / totalOrders}; totalOrders: ${totalOrders}`
+          );
+        }
       });
     }
     metrics.putMetric(
