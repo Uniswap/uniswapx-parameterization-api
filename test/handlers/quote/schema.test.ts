@@ -370,19 +370,6 @@ describe('Schema tests', () => {
       expect(validated.error?.message).toEqual('"amountOut" is required');
     });
 
-    it('requires quoteId to be defined', () => {
-      const body = {
-        chainId: 1,
-        requestId: REQUEST_ID,
-        tokenIn: USDC,
-        tokenOut: WETH,
-        amountIn: '1000000000000000000',
-        amountOut: '1000000000000000000',
-      };
-      const validated = RfqResponseJoi.validate(body);
-      expect(validated.error?.message).toEqual('"quoteId" is required');
-    });
-
     it('ignores swapper', () => {
       const body = {
         chainId: 1,
