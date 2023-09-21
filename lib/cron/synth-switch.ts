@@ -55,7 +55,7 @@ type TradeOutcome = {
   neg: number;
 };
 
-const MINIMUM_ORDERS = 10;
+const MINIMUM_ORDERS = 5;
 const DISABLE_THRESHOLD = 0.25;
 
 export const handler: ScheduledHandler = metricScope(
@@ -261,6 +261,12 @@ async function main(metricsLogger: MetricsLogger) {
             log.error({ key, error: e }, 'Failed to enable synthethics for trade');
             metrics.putMetric(metricContext(Metric.DYNAMO_REQUEST_ERROR, 'enable_synth'), 1, MetricLoggerUnit.Count);
           }
+        }
+        if (!shouldDisable) {
+          log.info(
+            { key, totalOrders, negPIRate: neg / totalOrders },
+            `[Skipping] ${key} - neg PI rate: ${neg / totalOrders}; totalOrders: ${totalOrders}`
+          );
         }
       });
     }
@@ -480,6 +486,6 @@ const CREATE_COMBINED_URA_RESPONSES_VIEW_SQL = `
           from synth
           join "uniswap_x"."public"."unifiedroutingresponses" ur
           on ur.requestid = synth.requestid and ur.quoteid != synth.quoteid
-          WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '4 HOURS')) -- 4 hours rolling window
+          WHERE synth.createdat >= extract(epoch from (GETDATE() - INTERVAL '8 HOURS')) -- 8 hours rolling window
   );
 `;

@@ -164,7 +164,7 @@ const SynthSwitchFlippedWidget = (region: string): LambdaWidget => ({
     ],
     view: 'timeSeries',
     region,
-    stat: 'Sum',
+    stat: 'Average',
     period: PERIOD,
     stacked: true,
     title: 'Orders Outcome',
