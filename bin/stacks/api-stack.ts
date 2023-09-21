@@ -4,7 +4,7 @@ import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
 import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import { CfnEIP, NatProvider, SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2';
+import { CfnEIP, NatProvider, Vpc } from 'aws-cdk-lib/aws-ec2';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -16,9 +16,9 @@ import * as path from 'path';
 import { Metric } from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
-// import { AnalyticsStack } from './analytics-stack';
-// import { CronDashboardStack } from './cron-dashboard-stack';
-// import { CronStack } from './cron-stack';
+import { AnalyticsStack } from './analytics-stack';
+import { CronDashboardStack } from './cron-dashboard-stack';
+import { CronStack } from './cron-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
 
 /**
@@ -193,68 +193,24 @@ export class APIStack extends cdk.Stack {
       })
     );
 
-    // Implementation
-    const getElasticIps = (stack: Construct, nIps = 5, baseId = 'my-eip') => {
-      const elasticIps: CfnEIP[] = [];
-      for (let i = 1; i <= nIps; i++) {
-        const elasticIp = new CfnEIP(stack, `${baseId}${i}`, {
-          domain: 'vpc',
-        });
-        elasticIps.push(elasticIp);
-      }
-      return elasticIps;
-    };
-    const elasticIps = getElasticIps(
-      this,
-      4, // <-- Max 5 per region per az
-      'my-ip-id'
-    );
-    const vpc = new Vpc(this, 'vpc-id', {
-      vpcName: 'vpc-name',
-      natGateways: 1, // <-- Having a NAT includes some costs!
-      natGatewayProvider: NatProvider.gateway({
-        // <-- Here your IPs
-        eipAllocationIds: elasticIps.map((elasticIp) => elasticIp.attrAllocationId),
-      }),
-      maxAzs: 3, // <-- At least 2 Az needed for load balanced Fargate Apps
-      subnetConfiguration: [
+    const quoteLambdaElasticIp = new CfnEIP(this, `QuoteLambdaElasticIp`, {
+      domain: 'vpc',
+      tags: [
         {
-          cidrMask: 20,
-          name: 'public',
-          subnetType: SubnetType.PUBLIC,
-        },
-        {
-          cidrMask: 20,
-          name: 'application',
-          subnetType: SubnetType.PRIVATE_WITH_EGRESS,
-        },
-        {
-          cidrMask: 20,
-          name: 'data',
-          subnetType: SubnetType.PRIVATE_ISOLATED,
+          key: 'Name',
+          value: 'QuoteLambdaEIP',
         },
       ],
     });
 
-    // const vpc = new Vpc(this, 'QuoteLambdaVPC', {
-    //   maxAzs: 2,
-    //   cidr: '10.1.0.0/24', // Make sure this CIDR block doesn't conflict
-    // });
-    // const elasticIp = new CfnEIP(this, 'QuoteLambdaElasticIp', {});
-    // const natGateway = new CfnNatGateway(this, 'QuoteLambdaNatGateway', {
-    //   allocationId: elasticIp.attrAllocationId,
-    //   subnetId: vpc.publicSubnets[0].subnetId,
-    // });
-    // const privateSubnet = new PrivateSubnet(this, 'QuoteLambdaPrivateSubnet', {
-    //   vpcId: vpc.vpcId,
-    //   availabilityZone: vpc.availabilityZones[0],
-    //   cidrBlock: vpc.vpcCidrBlock,
-    // });
-    // new CfnRoute(this, 'QuoteLambdaNatRoute', {
-    //   routeTableId: privateSubnet.routeTable.routeTableId,
-    //   destinationCidrBlock: '0.0.0.0/0',
-    //   natGatewayId: natGateway.ref,
-    // });
+    const vpc = new Vpc(this, 'QuoteLambdaVpc', {
+      vpcName: 'QuoteLambdaVpc',
+      natGateways: 1,
+      natGatewayProvider: NatProvider.gateway({
+        eipAllocationIds: [quoteLambdaElasticIp.attrAllocationId],
+      }),
+      maxAzs: 3,
+    });
 
     const quoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Quote', {
       role: lambdaRole,
@@ -430,25 +386,25 @@ export class APIStack extends cdk.Stack {
       quoteLambda,
     });
 
-    // /*
-    //  * Analytics Stack Initialization
-    //  */
-    // const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
-    //   quoteLambda,
-    //   envVars: props.envVars,
-    // });
+    /*
+     * Analytics Stack Initialization
+     */
+    const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
+      quoteLambda,
+      envVars: props.envVars,
+    });
 
-    // const cronStack = new CronStack(this, 'CronStack', {
-    //   RsDatabase: analyticsStack.dbName,
-    //   RsClusterIdentifier: analyticsStack.clusterId,
-    //   RedshiftCredSecretArn: analyticsStack.credSecretArn,
-    //   lambdaRole: lambdaRole,
-    //   stage: stage,
-    // });
+    const cronStack = new CronStack(this, 'CronStack', {
+      RsDatabase: analyticsStack.dbName,
+      RsClusterIdentifier: analyticsStack.clusterId,
+      RedshiftCredSecretArn: analyticsStack.credSecretArn,
+      lambdaRole: lambdaRole,
+      stage: stage,
+    });
 
-    // new CronDashboardStack(this, 'CronDashboardStack', {
-    //   synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
-    // });
+    new CronDashboardStack(this, 'CronDashboardStack', {
+      synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
+    });
 
     /* Alarms */
     const apiAlarm5xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {

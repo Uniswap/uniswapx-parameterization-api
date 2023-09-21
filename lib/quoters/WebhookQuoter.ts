@@ -2,10 +2,11 @@ import { TradeType } from '@uniswap/sdk-core';
 import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
+import { v4 as uuidv4 } from 'uuid';
 
-import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -43,8 +44,13 @@ export class WebhookQuoter implements Quoter {
     metric.putMetric(Metric.RFQ_REQUESTED, 1, MetricLoggerUnit.Count);
     metric.putMetric(metricContext(Metric.RFQ_REQUESTED, name), 1, MetricLoggerUnit.Count);
     try {
-      this.log.info({ request: request.toCleanJSON(), headers }, `Webhook request to: ${endpoint}`);
-      this.log.info({ request: request.toOpposingCleanJSON(), headers }, `Webhook request to: ${endpoint}`);
+      const cleanRequest = request.toCleanJSON();
+      cleanRequest.quoteId = uuidv4();
+      const opposingCleanRequest = request.toOpposingCleanJSON();
+      opposingCleanRequest.quoteId = uuidv4();
+
+      this.log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
+      this.log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
 
       const before = Date.now();
       const timeoutOverride = config.overrides?.timeout;
@@ -53,9 +59,10 @@ export class WebhookQuoter implements Quoter {
         timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
         ...(!!headers && { headers }),
       };
+
       const [hookResponse] = await Promise.all([
-        axios.post(endpoint, request.toCleanJSON(), axiosConfig),
-        axios.post(endpoint, request.toOpposingCleanJSON(), axiosConfig),
+        axios.post(endpoint, cleanRequest, axiosConfig),
+        axios.post(endpoint, opposingCleanRequest, axiosConfig),
       ]);
 
       metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);
@@ -63,6 +70,11 @@ export class WebhookQuoter implements Quoter {
         metricContext(Metric.RFQ_RESPONSE_TIME, name),
         Date.now() - before,
         MetricLoggerUnit.Milliseconds
+      );
+
+      this.log.info(
+        { response: hookResponse.data, status: hookResponse.status },
+        `Raw webhook response from: ${endpoint}`
       );
 
       const { response, validation } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);

@@ -13,6 +13,7 @@ export interface QuoteRequestData {
   amount: BigNumber;
   tokenOut: string;
   type: TradeType;
+  quoteId?: string;
 }
 
 export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amount' | 'type'> {
@@ -47,6 +48,7 @@ export class QuoteRequest {
       tokenOut: getAddress(this.tokenOut),
       amount: this.amount.toString(),
       type: TradeType[this.type],
+      ...(this.quoteId && { quoteId: this.quoteId }),
     };
   }
 
@@ -60,6 +62,7 @@ export class QuoteRequest {
       amount: this.amount.toString(),
       swapper: ethers.constants.AddressZero,
       type: TradeType[this.type],
+      ...(this.quoteId && { quoteId: this.quoteId }),
     };
   }
 
@@ -78,6 +81,7 @@ export class QuoteRequest {
       swapper: ethers.constants.AddressZero,
       // switch tradeType
       type: TradeType[type],
+      ...(this.quoteId && { quoteId: this.quoteId }),
     };
   }
 
@@ -111,5 +115,13 @@ export class QuoteRequest {
 
   public get type(): TradeType {
     return this.data.type;
+  }
+
+  public get quoteId(): string | undefined {
+    return this.data.quoteId;
+  }
+
+  public set quoteId(quoteId: string | undefined) {
+    this.data.quoteId = quoteId;
   }
 }
