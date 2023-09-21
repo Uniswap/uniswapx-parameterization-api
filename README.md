@@ -73,6 +73,7 @@ This data will be included in the body of the request and will be sent to the gi
    tokenInChainId: number,
    tokenOutChainId: number,
    requestId: string,
+   quoteId: string,
    tokenIn: string,
    tokenOut: string,
    amount: string,
@@ -91,6 +92,7 @@ _Note: if a quoter elects to not quote a swap they should still send back a resp
 {
   chainId: number,
   requestId: number,
+  quoteId: string,
   tokenIn: string,
   amountIn: string,
   tokenOut: string,
@@ -99,4 +101,4 @@ _Note: if a quoter elects to not quote a swap they should still send back a resp
 }
 ```
 
-The `requestId`, `tokenIn`, `chainId`, `tokenIn`, and `tokenOut` fields should be mirrored from the request. The `filler` address should be the address of the fill contract.
+The `quoteId`, `requestId`, `tokenIn`, `chainId`, `tokenIn`, and `tokenOut` fields should be mirrored from the request. The `filler` address should be the address of the fill contract.
