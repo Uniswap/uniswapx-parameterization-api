@@ -2,13 +2,21 @@ import * as cdk from 'aws-cdk-lib';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
+
 import { UniswapXParamServiceMetricDimension } from '../../lib/entities';
 
 export const NAMESPACE = 'Uniswap';
 
 export type MetricPath =
   | string
-  | { expression?: string; visible?: boolean; id?: string; label?: string; region?: string };
+  | {
+      expression?: string;
+      visible?: boolean;
+      id?: string;
+      label?: string;
+      region?: string;
+      stat?: string;
+    };
 
 export type LambdaWidget = {
   type: string;
@@ -41,13 +49,34 @@ const LatencyWidget = (region: string): LambdaWidget => ({
   x: 0,
   type: 'metric',
   properties: {
-    metrics: [['Uniswap', 'QUOTE_LATENCY', 'Service', UniswapXParamServiceMetricDimension.Service]],
+    metrics: [
+      [
+        'Uniswap',
+        'QUOTE_LATENCY',
+        'Service',
+        UniswapXParamServiceMetricDimension.Service,
+        { stat: 'p90', label: 'p90' },
+      ],
+      [
+        'Uniswap',
+        'QUOTE_LATENCY',
+        'Service',
+        UniswapXParamServiceMetricDimension.Service,
+        { stat: 'p99', label: 'p99' },
+      ],
+      [
+        'Uniswap',
+        'QUOTE_LATENCY',
+        'Service',
+        UniswapXParamServiceMetricDimension.Service,
+        { stat: 'p50', label: 'p50' },
+      ],
+    ],
     view: 'timeSeries',
     stacked: false,
     region,
-    stat: 'p90',
     period: 300,
-    title: 'Latency P90 | 5 minutes',
+    title: 'Latency | 5 minutes',
   },
 });
 
