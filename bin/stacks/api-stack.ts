@@ -4,6 +4,7 @@ import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
 import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import { CfnEIP, NatProvider, Vpc } from 'aws-cdk-lib/aws-ec2';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -179,17 +180,47 @@ export class APIStack extends cdk.Stack {
 
     lambdaRole.addToPolicy(
       new aws_iam.PolicyStatement({
+        actions: ['ec2:CreateNetworkInterface', 'ec2:DescribeNetworkInterfaces', 'ec2:DeleteNetworkInterface'],
+        resources: ['*'],
+      })
+    );
+
+    lambdaRole.addToPolicy(
+      new aws_iam.PolicyStatement({
         actions: ['kms:Decrypt', 'kms:DescribeKey', 'kms:GenerateDataKey'],
         resources: ['*'],
         effect: aws_iam.Effect.ALLOW,
       })
     );
 
+    const quoteLambdaElasticIp = new CfnEIP(this, `QuoteLambdaElasticIp`, {
+      domain: 'vpc',
+      tags: [
+        {
+          key: 'Name',
+          value: 'QuoteLambdaEIP',
+        },
+      ],
+    });
+
+    const vpc = new Vpc(this, 'QuoteLambdaVpc', {
+      vpcName: 'QuoteLambdaVpc',
+      natGateways: 1,
+      natGatewayProvider: NatProvider.gateway({
+        eipAllocationIds: [quoteLambdaElasticIp.attrAllocationId],
+      }),
+      maxAzs: 3,
+    });
+
     const quoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Quote', {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_18_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'quoteHandler',
+      vpc,
+      vpcSubnets: {
+        subnets: [...vpc.privateSubnets],
+      },
       memorySize: 1024,
       bundling: {
         minify: true,
