@@ -41,6 +41,7 @@ export class RfqHandler extends APIGLambdaHandler<
         amountOut: request.type === TradeType.EXACT_OUTPUT ? request.amount.toString() : '1',
         swapper: request.swapper,
         filler: ethers.constants.AddressZero,
+        quoteId: request.quoteId,
       },
     };
   }

@@ -95,6 +95,7 @@ export class CronStack extends cdk.NestedStack {
         REDSHIFT_DATABASE: RsDatabase,
         REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
         REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
+        stage: stage,
         ...envVars,
       },
     });
@@ -119,6 +120,7 @@ export class CronStack extends cdk.NestedStack {
         REDSHIFT_DATABASE: RsDatabase,
         REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
         REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
+        stage: stage,
         ...envVars,
       },
     });
