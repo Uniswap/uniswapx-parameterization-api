@@ -82,16 +82,22 @@ describe('WebhookQuoter tests', () => {
         data: quote,
       });
     });
-    const response = await webhookQuoter.quote(request);
+    await webhookQuoter.quote(request);
 
-    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), { headers: {}, timeout: 500 });
-    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_SEARCHER, request.toCleanJSON(), { headers: {}, timeout: 500 });
+    expect(mockedAxios.post).toBeCalledWith(
+      WEBHOOK_URL,
+      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      { headers: {}, timeout: 500 }
+    );
+    expect(mockedAxios.post).toBeCalledWith(
+      WEBHOOK_URL_SEARCHER,
+      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      { headers: {}, timeout: 500 }
+    );
     expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL_ONEINCH, request.toCleanJSON(), {
       headers: {},
       timeout: 500,
     });
-    expect(response.length).toEqual(1);
-    expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
   });
 
   it('Allows those in allow list even when they are disabled in the config', async () => {
@@ -108,24 +114,24 @@ describe('WebhookQuoter tests', () => {
     });
 
     await webhookQuoter.quote(request);
-    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), { headers: {}, timeout: 500 });
-    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_SEARCHER, request.toCleanJSON(), { headers: {}, timeout: 500 });
-    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_ONEINCH, request.toCleanJSON(), { headers: {}, timeout: 500 });
+    expect(mockedAxios.post).toBeCalledWith(
+      WEBHOOK_URL,
+      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      { headers: {}, timeout: 500 }
+    );
+    expect(mockedAxios.post).toBeCalledWith(
+      WEBHOOK_URL_SEARCHER,
+      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      { headers: {}, timeout: 500 }
+    );
+    expect(mockedAxios.post).toBeCalledWith(
+      WEBHOOK_URL_ONEINCH,
+      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      { headers: {}, timeout: 500 }
+    );
   });
 
   it('Defaults to allowing endpoints not on circuit breaker config', async () => {
-    const quote = {
-      amountOut: ethers.utils.parseEther('2').toString(),
-      tokenIn: request.tokenIn,
-      tokenOut: request.tokenOut,
-      amountIn: request.amount.toString(),
-      swapper: request.swapper,
-      chainId: request.tokenInChainId,
-      requestId: request.requestId,
-      quoteId: QUOTE_ID,
-      filler: FILLER,
-    };
-
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
@@ -136,26 +142,27 @@ describe('WebhookQuoter tests', () => {
     ]);
     const quoter = new WebhookQuoter(logger, webhookProvider, cbProvider);
     await quoter.quote(request);
-    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), { headers: {}, timeout: 500 });
-    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_SEARCHER, request.toCleanJSON(), { headers: {}, timeout: 500 });
-    expect(mockedAxios.post).toBeCalledWith(WEBHOOK_URL_ONEINCH, request.toCleanJSON(), {
-      headers: {},
-      timeout: 500,
-    });
+    expect(mockedAxios.post).toBeCalledWith(
+      WEBHOOK_URL,
+      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      { headers: {}, timeout: 500 }
+    );
+    expect(mockedAxios.post).toBeCalledWith(
+      WEBHOOK_URL_SEARCHER,
+      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      { headers: {}, timeout: 500 }
+    );
+    expect(mockedAxios.post).toBeCalledWith(
+      WEBHOOK_URL_ONEINCH,
+      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      {
+        headers: {},
+        timeout: 500,
+      }
+    );
   });
 
   it('Simple request and response no swapper', async () => {
-    const quote = {
-      amountOut: ethers.utils.parseEther('2').toString(),
-      tokenIn: request.tokenIn,
-      tokenOut: request.tokenOut,
-      amountIn: request.amount.toString(),
-      chainId: request.tokenInChainId,
-      requestId: request.requestId,
-      quoteId: QUOTE_ID,
-      filler: FILLER,
-    };
-
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,

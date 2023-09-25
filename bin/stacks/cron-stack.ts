@@ -14,6 +14,7 @@ import * as path from 'path';
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
 import { CircuitBreakerMetricDimension } from '../../lib/entities';
 import { PARTITION_KEY } from '../../lib/repositories/switch-repository';
+import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
 
@@ -42,7 +43,7 @@ export interface CronStackProps extends cdk.NestedStackProps {
 }
 
 export class CronStack extends cdk.NestedStack {
-  public readonly fadeRateCronLambda: aws_lambda_nodejs.NodejsFunction;
+  public readonly fadeRateCronLambda?: aws_lambda_nodejs.NodejsFunction;
   public readonly synthSwitchCronLambda: aws_lambda_nodejs.NodejsFunction;
   public readonly redshiftReaperCronLambda: aws_lambda_nodejs.NodejsFunction;
 
@@ -56,29 +57,61 @@ export class CronStack extends cdk.NestedStack {
       bucketName: `${FADE_RATE_BUCKET}-${stage}-1`,
     });
 
-    this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}FadeRate`, {
-      role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/cron/fade-rate.ts'),
-      handler: 'handler',
-      timeout: Duration.seconds(240),
-      memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        REDSHIFT_DATABASE: RsDatabase,
-        REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
-        REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
-        stage: stage,
-        ...envVars,
-      },
-    });
-    new aws_events.Rule(this, `${SERVICE_NAME}ScheduleCronLambda`, {
-      schedule: aws_events.Schedule.rate(Duration.minutes(10)),
-      targets: [new aws_events_targets.LambdaFunction(this.fadeRateCronLambda)],
-    });
+    if (stage == STAGE.PROD || STAGE.LOCAL) {
+      this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}FadeRate`, {
+        role: lambdaRole,
+        runtime: aws_lambda.Runtime.NODEJS_18_X,
+        entry: path.join(__dirname, '../../lib/cron/fade-rate.ts'),
+        handler: 'handler',
+        timeout: Duration.seconds(240),
+        memorySize: 512,
+        bundling: {
+          minify: true,
+          sourceMap: true,
+        },
+        environment: {
+          REDSHIFT_DATABASE: RsDatabase,
+          REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
+          REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
+          stage: stage,
+          ...envVars,
+        },
+      });
+      new aws_events.Rule(this, `${SERVICE_NAME}ScheduleCronLambda`, {
+        schedule: aws_events.Schedule.rate(Duration.minutes(10)),
+        targets: [new aws_events_targets.LambdaFunction(this.fadeRateCronLambda)],
+      });
+      /* RFQ fade rate table */
+      const fadesTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FadesTable`, {
+        tableName: DYNAMO_TABLE_NAME.FADES,
+        partitionKey: {
+          name: DYNAMO_TABLE_KEY.FILLER,
+          type: aws_dynamo.AttributeType.STRING,
+        },
+        deletionProtection: true,
+        pointInTimeRecovery: true,
+        contributorInsightsEnabled: true,
+        ...PROD_TABLE_CAPACITY.fadeRate,
+      });
+      this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
+
+      const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarmSev2`, {
+        alarmName: `CircuitBreakerTriggeredAlarmSev2`,
+        metric: new aws_cloudwatch.Metric({
+          metricName: 'CircuitBreakerTriggeredCount',
+          namespace: 'Uniswap',
+          dimensionsMap: CircuitBreakerMetricDimension,
+        }),
+        threshold: 1,
+        evaluationPeriods: 1,
+      });
+
+      if (chatbotSNSArn) {
+        circuitBreakerTriggeredAlarm.addAlarmAction(
+          new cdk.aws_cloudwatch_actions.SnsAction(cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn))
+        );
+      }
+    }
 
     this.synthSwitchCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}SynthSwitch`, {
       role: lambdaRole,
@@ -129,37 +162,6 @@ export class CronStack extends cdk.NestedStack {
       schedule: aws_events.Schedule.rate(Duration.hours(12)),
       targets: [new aws_events_targets.LambdaFunction(this.redshiftReaperCronLambda)],
     });
-
-    /* RFQ fade rate table */
-    const fadesTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FadesTable`, {
-      tableName: DYNAMO_TABLE_NAME.FADES,
-      partitionKey: {
-        name: DYNAMO_TABLE_KEY.FILLER,
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      deletionProtection: true,
-      pointInTimeRecovery: true,
-      contributorInsightsEnabled: true,
-      ...PROD_TABLE_CAPACITY.fadeRate,
-    });
-    this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
-
-    const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarmSev2`, {
-      alarmName: `CircuitBreakerTriggeredAlarmSev2`,
-      metric: new aws_cloudwatch.Metric({
-        metricName: 'CircuitBreakerTriggeredCount',
-        namespace: 'Uniswap',
-        dimensionsMap: CircuitBreakerMetricDimension,
-      }),
-      threshold: 1,
-      evaluationPeriods: 1,
-    });
-
-    if (chatbotSNSArn) {
-      circuitBreakerTriggeredAlarm.addAlarmAction(
-        new cdk.aws_cloudwatch_actions.SnsAction(cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn))
-      );
-    }
 
     const synthSwitchTable = new aws_dynamo.Table(this, `${SERVICE_NAME}SynthSwitchTable`, {
       tableName: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE,
