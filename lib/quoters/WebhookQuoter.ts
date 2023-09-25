@@ -40,22 +40,28 @@ export class WebhookQuoter implements Quoter {
 
   private async getEligibleEndpoints(): Promise<WebhookConfiguration[]> {
     const endpoints = await this.webhookProvider.getEndpoints();
-    const config = await this.circuitBreakerProvider.getConfigurations();
-    const fillerToConfigMap = new Map(config.map((c) => [c.name, c]));
-    if (config) {
-      const enabledEndpoints: WebhookConfiguration[] = [];
-      endpoints.forEach((e) => {
-        if (
-          this.ALLOW_LIST.has(e.name) ||
-          (fillerToConfigMap.has(e.name) && fillerToConfigMap.get(e.name)?.enabled) ||
-          !fillerToConfigMap.has(e.name) // default to allowing fillers not in the config
-        ) {
-          enabledEndpoints.push(e);
-        }
-      });
-      return enabledEndpoints;
+    try {
+      const config = await this.circuitBreakerProvider.getConfigurations();
+      const fillerToConfigMap = new Map(config.map((c) => [c.name, c]));
+      if (config) {
+        const enabledEndpoints: WebhookConfiguration[] = [];
+        endpoints.forEach((e) => {
+          if (
+            this.ALLOW_LIST.has(e.name) ||
+            (fillerToConfigMap.has(e.name) && fillerToConfigMap.get(e.name)?.enabled) ||
+            !fillerToConfigMap.has(e.name) // default to allowing fillers not in the config
+          ) {
+            enabledEndpoints.push(e);
+          }
+        });
+        return enabledEndpoints;
+      }
+
+      return endpoints;
+    } catch (e) {
+      this.log.error({ error: e }, `Error getting eligible endpoints, default to returning all`);
+      return endpoints;
     }
-    return endpoints;
   }
 
   private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
