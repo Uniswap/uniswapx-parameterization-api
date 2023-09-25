@@ -11,6 +11,8 @@ import {
   SynthSwitchResponseJoi,
 } from './schema';
 
+const SYNTHETIC_SWITCH_DISABLED = true;
+
 export class SwitchHandler extends APIGLambdaHandler<
   ContainerInjected,
   RequestInjected,
@@ -25,6 +27,12 @@ export class SwitchHandler extends APIGLambdaHandler<
       requestInjected: { log, tokenIn, tokenOut, tokenInChainId, tokenOutChainId, amount, type },
       containerInjected: { dbInterface },
     } = params;
+
+    if (SYNTHETIC_SWITCH_DISABLED)
+      return {
+        statusCode: 200,
+        body: { enabled: false },
+      };
 
     let enabled: boolean;
     try {
