@@ -1,6 +1,7 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import Logger from 'bunyan';
 
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { MetricsLogger, Unit } from 'aws-embedded-metrics';
 import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 import { Metric } from '../../entities';
@@ -20,7 +21,11 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
     this.log = _log.child({ quoter: 'S3CircuitBreakerConfigurationProvider' });
     this.fillers = [];
     this.lastUpdatedTimestamp = Date.now();
-    this.client = new S3Client({});
+    this.client = new S3Client({
+      requestHandler: new NodeHttpHandler({
+        requestTimeout: 500,
+      }),
+    });
   }
 
   async getConfigurations(): Promise<CircuitBreakerConfiguration[]> {

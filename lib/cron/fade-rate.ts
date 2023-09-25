@@ -43,7 +43,6 @@ async function main(metrics: MetricsLogger) {
       `${FADE_RATE_BUCKET}-prod-1`,
       FADE_RATE_S3_KEY
     );
-    //TODO: fire an alert when circuit breaker is triggered
     await configProvider.putConfigurations(fillerFadeRate, metrics);
   }
 }
