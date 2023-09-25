@@ -75,6 +75,7 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
   });
 
+  // should only call 'uniswap' and 'searcher' given they are enabled in the config
   it('Only calls to eligible endpoints', async () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
