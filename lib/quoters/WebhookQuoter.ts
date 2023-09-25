@@ -15,13 +15,16 @@ const WEBHOOK_TIMEOUT_MS = 500;
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
   private log: Logger;
+  private readonly ALLOW_LIST: Set<string>;
 
   constructor(
     _log: Logger,
     private webhookProvider: WebhookConfigurationProvider,
-    private circuitBreakerProvider: CircuitBreakerConfigurationProvider
+    private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
+    _allow_list: Set<string> = new Set<string>()
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
+    this.ALLOW_LIST = _allow_list;
   }
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
@@ -43,6 +46,7 @@ export class WebhookQuoter implements Quoter {
       const enabledEndpoints: WebhookConfiguration[] = [];
       endpoints.forEach((e) => {
         if (
+          this.ALLOW_LIST.has(e.name) ||
           (fillerToConfigMap.has(e.name) && fillerToConfigMap.get(e.name)?.enabled) ||
           !fillerToConfigMap.has(e.name) // default to allowing fillers not in the config
         ) {
