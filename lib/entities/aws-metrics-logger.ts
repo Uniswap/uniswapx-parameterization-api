@@ -13,6 +13,10 @@ export const SyntheticSwitchMetricDimension = {
   Service: 'SyntheticSwitch',
 };
 
+export const CircuitBreakerMetricDimension = {
+  Service: 'CircuitBreaker',
+};
+
 export class AWSMetricsLogger implements IMetric {
   constructor(private awsMetricLogger: AWSEmbeddedMetricsLogger) {}
 
@@ -59,6 +63,9 @@ export enum Metric {
   SYNTH_ORDERS_QUERY_TIME = 'SYNTH_ORDERS_QUERY_TIME',
   SYNTH_ORDERS_POSITIVE_OUTCOME = 'SYNTH_ORDERS_POSITIVE_OUTCOME',
   SYNTH_ORDERS_NEGATIVE_OUTCOME = 'SYNTH_ORDERS_NEGATIVE_OUTCOME',
+
+  // Metrics for circuit breaker
+  CIRCUIT_BREAKER_TRIGGERED = 'CIRCUIT_BREAKER_TRIGGERED',
 }
 
 type MetricNeedingContext =

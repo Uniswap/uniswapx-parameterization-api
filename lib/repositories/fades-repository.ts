@@ -62,7 +62,8 @@ WITH latestOrders AS (
   SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders
   )
-  WHERE row_num <= 20
+  WHERE row_num <= 30
+  AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
 )
 SELECT
     latestOrders.chainid as chainId, latestOrders.filler as rfqFiller, latestOrders.quoteid, archivedorders.filler as actualFiller, latestOrders.createdat as postTimestamp, archivedorders.txhash as txHash,

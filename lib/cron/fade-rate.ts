@@ -4,6 +4,7 @@ import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
 
 import { FADE_RATE_BUCKET, FADE_RATE_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
+import { CircuitBreakerMetricDimension } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
 import { S3CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker/s3';
@@ -15,9 +16,7 @@ export const handler: ScheduledHandler = metricScope((metrics) => async (_event:
 
 async function main(metrics: MetricsLogger) {
   metrics.setNamespace('Uniswap');
-  metrics.setDimensions({
-    Service: 'FadeRate',
-  });
+  metrics.setDimensions(CircuitBreakerMetricDimension);
 
   const log = Logger.createLogger({
     name: 'FadeRate',
@@ -36,17 +35,15 @@ async function main(metrics: MetricsLogger) {
 
   if (result) {
     const addressToFiller = await webhookProvider.addressToFiller();
-    log.info({ addressToFiller }, 'address to filler map');
     const fillerFadeRate = calculateFillerFadeRates(result, addressToFiller, log);
-    log.info({ fillerFadeRate }, 'filler fade rate');
+    log.info({ fadeRates: [...fillerFadeRate.entries()] }, 'filler fade rate');
 
     const configProvider = new S3CircuitBreakerConfigurationProvider(
       log,
       `${FADE_RATE_BUCKET}-prod-1`,
       FADE_RATE_S3_KEY
     );
-    //TODO: fire an alert when circuit breaker is triggered
-    await configProvider.putConfigurations(fillerFadeRate);
+    await configProvider.putConfigurations(fillerFadeRate, metrics);
   }
 }
 
@@ -62,7 +59,6 @@ export function calculateFillerFadeRates(
   rows.forEach((row) => {
     const fillerAddr = row.fillerAddress.toLowerCase();
     const fillerName = addressToFiller.get(fillerAddr);
-    log?.info({ row }, 'fade rate row');
     if (!fillerName) {
       log?.info({ addressToFiller, fillerAddress: fillerAddr }, 'filler address not found in webhook config');
     } else {

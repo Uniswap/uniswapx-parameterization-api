@@ -14,7 +14,8 @@ import {
 } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
-import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
+import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter, WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -185,7 +186,11 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { endpoint: 'https://uniswap.org', headers: {}, name: 'uniswap' },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider)];
+
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { name: 'uniswap', fadeRate: 0.02, enabled: true },
+      ]);
+      const quoters = [new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -232,7 +237,10 @@ describe('Quote handler', () => {
           },
         },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider)];
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { name: 'uniswap', fadeRate: 0.02, enabled: true },
+      ]);
+      const quoters = [new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -265,7 +273,10 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider)];
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { name: 'uniswap', fadeRate: 0.02, enabled: true },
+      ]);
+      const quoters = [new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -288,7 +299,10 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider)];
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { name: 'uniswap', fadeRate: 0.02, enabled: true },
+      ]);
+      const quoters = [new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -312,7 +326,13 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider), new MockQuoter(logger, 1, 1)];
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { name: 'uniswap', fadeRate: 0.02, enabled: true },
+      ]);
+      const quoters = [
+        new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider),
+        new MockQuoter(logger, 1, 1),
+      ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -338,7 +358,13 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider), new MockQuoter(logger, 1, 1)];
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { name: 'uniswap', fadeRate: 0.02, enabled: true },
+      ]);
+      const quoters = [
+        new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider),
+        new MockQuoter(logger, 1, 1),
+      ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -373,7 +399,13 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {} },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider), new MockQuoter(logger, 1, 1)];
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { name: 'uniswap', fadeRate: 0.02, enabled: true },
+      ]);
+      const quoters = [
+        new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider),
+        new MockQuoter(logger, 1, 1),
+      ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 

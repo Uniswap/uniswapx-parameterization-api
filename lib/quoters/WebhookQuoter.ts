@@ -4,9 +4,10 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
+import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
-import { Quoter, QuoterType } from '.';
+import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -15,13 +16,20 @@ const WEBHOOK_TIMEOUT_MS = 500;
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
   private log: Logger;
+  private readonly ALLOW_LIST: Set<string>;
 
-  constructor(_log: Logger, private webhookProvider: WebhookConfigurationProvider) {
+  constructor(
+    _log: Logger,
+    private webhookProvider: WebhookConfigurationProvider,
+    private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
+    _allow_list: Set<string> = new Set<string>()
+  ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
+    this.ALLOW_LIST = _allow_list;
   }
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
-    const endpoints = await this.webhookProvider.getEndpoints();
+    const endpoints = await this.getEligibleEndpoints();
     this.log.info(`Fetching quotes from ${endpoints.length} endpoints`, endpoints);
     const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));
     return quotes.filter((q) => q !== null) as QuoteResponse[];
@@ -29,6 +37,32 @@ export class WebhookQuoter implements Quoter {
 
   public type(): QuoterType {
     return QuoterType.RFQ;
+  }
+
+  private async getEligibleEndpoints(): Promise<WebhookConfiguration[]> {
+    const endpoints = await this.webhookProvider.getEndpoints();
+    try {
+      const config = await this.circuitBreakerProvider.getConfigurations();
+      const fillerToConfigMap = new Map(config.map((c) => [c.name, c]));
+      if (config) {
+        const enabledEndpoints: WebhookConfiguration[] = [];
+        endpoints.forEach((e) => {
+          if (
+            this.ALLOW_LIST.has(e.name) ||
+            (fillerToConfigMap.has(e.name) && fillerToConfigMap.get(e.name)?.enabled) ||
+            !fillerToConfigMap.has(e.name) // default to allowing fillers not in the config
+          ) {
+            enabledEndpoints.push(e);
+          }
+        });
+        return enabledEndpoints;
+      }
+
+      return endpoints;
+    } catch (e) {
+      this.log.error({ error: e }, `Error getting eligible endpoints, default to returning all`);
+      return endpoints;
+    }
   }
 
   private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {

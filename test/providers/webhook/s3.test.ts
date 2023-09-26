@@ -57,10 +57,9 @@ describe('S3WebhookConfigurationProvider', () => {
     expect(endpoints).toEqual(mockEndpoints);
   });
 
-  it('Generates filler endpoint to addresses map', async () => {
+  it('Generates filler endpoint to filler map', async () => {
     applyMock(mockEndpoints);
     const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-    await provider.getEndpoints();
     const map = await provider.addressToFiller();
     expect(map.get('google.com')).toEqual('google');
     expect(map.get('facebook.com')).toEqual('meta');
