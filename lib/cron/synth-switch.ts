@@ -16,11 +16,12 @@ import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import { default as bunyan, default as Logger } from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
 
-import { PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
+import { BETA_S3_KEY, PRODUCTION_S3_KEY, SYNTH_SWITCH_BUCKET } from '../constants';
 import { AWSMetricsLogger, Metric, metricContext } from '../entities';
 import { SynthSwitchQueryParams } from '../handlers/synth-switch';
 import { checkDefined } from '../preconditions/preconditions';
 import { SwitchRepository } from '../repositories/switch-repository';
+import { STAGE } from '../util/stage';
 
 export type TokenConfig = {
   tokenIn: string;
@@ -414,10 +415,11 @@ function sleep(ms: number) {
 async function readTokenConfig(log: Logger): Promise<TokenConfig[]> {
   const s3Client = new S3Client({});
   const stage = process.env['stage'];
+  const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
   const s3Res = await s3Client.send(
     new GetObjectCommand({
       Bucket: `${SYNTH_SWITCH_BUCKET}-${stage}-1`,
-      Key: PRODUCTION_S3_KEY,
+      Key: s3Key,
     })
   );
   const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
