@@ -4,6 +4,7 @@ import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import {
+  BETA_S3_KEY,
   FADE_RATE_BUCKET,
   FADE_RATE_S3_KEY,
   INTEGRATION_S3_KEY,
@@ -18,6 +19,7 @@ import {
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { Quoter, WebhookQuoter } from '../../quoters';
+import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
 
@@ -38,11 +40,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     });
 
     const stage = process.env['stage'];
-    const webhookProvider = new S3WebhookConfigurationProvider(
-      log,
-      `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`,
-      PRODUCTION_S3_KEY
-    );
+    const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
+    const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
 
     const circuitBreakerProvider = new S3CircuitBreakerConfigurationProvider(
       log,

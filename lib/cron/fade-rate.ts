@@ -3,12 +3,19 @@ import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
 
-import { FADE_RATE_BUCKET, FADE_RATE_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
+import {
+  BETA_S3_KEY,
+  FADE_RATE_BUCKET,
+  FADE_RATE_S3_KEY,
+  PRODUCTION_S3_KEY,
+  WEBHOOK_CONFIG_BUCKET,
+} from '../constants';
 import { CircuitBreakerMetricDimension } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
 import { S3CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker/s3';
 import { FadesRepository, FadesRowType, SharedConfigs } from '../repositories';
+import { STAGE } from '../util/stage';
 
 export const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
   await main(metrics);
@@ -22,7 +29,9 @@ async function main(metrics: MetricsLogger) {
     name: 'FadeRate',
     serializers: Logger.stdSerializers,
   });
-  const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-prod-1`, PRODUCTION_S3_KEY);
+  const stage = process.env['stage'];
+  const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
+  const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
 
   const sharedConfig: SharedConfigs = {
     Database: checkDefined(process.env.REDSHIFT_DATABASE),
