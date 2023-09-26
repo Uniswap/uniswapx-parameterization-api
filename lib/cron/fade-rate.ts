@@ -29,8 +29,9 @@ async function main(metrics: MetricsLogger) {
     name: 'FadeRate',
     serializers: Logger.stdSerializers,
   });
-  const s3Key = process.env['stage'] === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
-  const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-prod-1`, s3Key);
+  const stage = process.env['stage'];
+  const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
+  const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
 
   const sharedConfig: SharedConfigs = {
     Database: checkDefined(process.env.REDSHIFT_DATABASE),
