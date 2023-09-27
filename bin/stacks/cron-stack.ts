@@ -12,7 +12,7 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
-import { CircuitBreakerMetricDimension } from '../../lib/entities';
+import { CircuitBreakerMetricDimension, Metric } from '../../lib/entities';
 import { PARTITION_KEY } from '../../lib/repositories/switch-repository';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
@@ -95,12 +95,13 @@ export class CronStack extends cdk.NestedStack {
       });
       this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
 
-      const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarmSev2`, {
-        alarmName: `CircuitBreakerTriggeredAlarmSev2`,
+      const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarmSev3`, {
+        alarmName: `CircuitBreakerTriggeredAlarmSev3`,
         metric: new aws_cloudwatch.Metric({
-          metricName: 'CircuitBreakerTriggeredCount',
+          metricName: Metric.CIRCUIT_BREAKER_TRIGGERED,
           namespace: 'Uniswap',
           dimensionsMap: CircuitBreakerMetricDimension,
+          statistic: 'sum',
         }),
         threshold: 1,
         evaluationPeriods: 1,
