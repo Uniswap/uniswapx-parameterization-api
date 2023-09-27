@@ -4,10 +4,10 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -30,7 +30,7 @@ export class WebhookQuoter implements Quoter {
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
     const endpoints = await this.getEligibleEndpoints();
-    this.log.info(`Fetching quotes from ${endpoints.length} endpoints`, endpoints);
+    this.log.info({ endpoints }, `Fetching quotes from ${endpoints.length} endpoints`);
     const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));
     return quotes.filter((q) => q !== null) as QuoteResponse[];
   }
@@ -162,10 +162,11 @@ export class WebhookQuoter implements Quoter {
       this.log.info(
         {
           response: response.toLog(),
+          endpoint: endpoint,
         },
         `WebhookQuoter: request ${
           request.requestId
-        } for endpoint ${endpoint}: ${request.amount.toString()} -> ${quote.toString()}}`
+        } for endpoint ${endpoint} successful quote: ${request.amount.toString()} -> ${quote.toString()}}`
       );
       return response;
     } catch (e) {

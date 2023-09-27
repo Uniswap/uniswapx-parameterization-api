@@ -60,6 +60,6 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     );
     const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
     this.endpoints = JSON.parse(await s3Body.transformToString()) as WebhookConfiguration[];
-    this.log.info(`Fetched ${this.endpoints.length} endpoints from S3`, this.endpoints);
+    this.log.info({ endpoints: this.endpoints }, `Fetched ${this.endpoints.length} endpoints from S3`);
   }
 }
