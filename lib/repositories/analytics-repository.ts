@@ -28,8 +28,8 @@ export class AnalyticsRepository extends BaseRedshiftRepository {
     DELETE FROM ${tableName}
     WHERE ${timestampField} < EXTRACT(EPOCH from (GETDATE() - INTERVAL ${timestampThreshold}))
     `;
-    // immediately reclaim storage space
-    const vacuumSql = `VACUUM DELETE ONLY ${tableName}`;
+    // immediately reclaim storage space, deleting at least 99% of the rows marked for deletion
+    const vacuumSql = `VACUUM DELETE ONLY ${tableName} TO 99 PERCENT`;
 
     await this.executeStatement(deleteSql, AnalyticsRepository.log, { waitTimeMs: 10_000 });
     await this.executeStatement(vacuumSql, AnalyticsRepository.log, { waitTimeMs: 2_000 });
