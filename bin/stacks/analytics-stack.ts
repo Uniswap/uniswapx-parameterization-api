@@ -249,6 +249,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'gasUsed', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'gasCostInETH', dataType: RS_DATA_TYPES.UnitInETH },
+        { name: 'logTime', dataType: RS_DATA_TYPES.TIMESTAMP },
       ],
     });
 
