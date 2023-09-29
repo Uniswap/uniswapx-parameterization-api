@@ -78,7 +78,6 @@ export function calculateFillerFadeRates(
         fillerToQuotesMap.set(fillerName, [fadedQuotes + row.fadedQuotes, totalQuotes + row.totalQuotes]);
       }
     }
-    log?.info({ fillerToQuotesMap }, 'filler to quotes map');
   });
 
   fillerToQuotesMap.forEach((value, key) => {
