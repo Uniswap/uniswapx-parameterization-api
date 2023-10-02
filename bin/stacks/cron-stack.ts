@@ -11,6 +11,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
+import { ITopic } from 'aws-cdk-lib/aws-sns';
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
 import { CircuitBreakerMetricDimension, Metric } from '../../lib/entities';
 import { PARTITION_KEY } from '../../lib/repositories/switch-repository';
@@ -93,7 +94,7 @@ export class CronStack extends cdk.NestedStack {
         contributorInsightsEnabled: true,
         ...PROD_TABLE_CAPACITY.fadeRate,
       });
-      this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
+      const chatbotTopic = this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
 
       const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarmSev3`, {
         alarmName: `UniswapXParameterizationAPI-SEV3-CircuitBreaker`,
@@ -107,10 +108,8 @@ export class CronStack extends cdk.NestedStack {
         evaluationPeriods: 1,
       });
 
-      if (chatbotSNSArn) {
-        circuitBreakerTriggeredAlarm.addAlarmAction(
-          new cdk.aws_cloudwatch_actions.SnsAction(cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn))
-        );
+      if (chatbotTopic) {
+        circuitBreakerTriggeredAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotTopic));
       }
     }
 
@@ -178,7 +177,7 @@ export class CronStack extends cdk.NestedStack {
     this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE, chatbotSNSArn);
   }
 
-  private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSArn?: string): void {
+  private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSArn?: string): ITopic | null {
     const readCapacityAlarm = new aws_cloudwatch.Alarm(this, `${SERVICE_NAME}-SEV3-${name}-ReadCapacityAlarm`, {
       alarmName: `${SERVICE_NAME}-SEV3-${name}-ReadCapacityAlarm`,
       metric: table.metricConsumedReadCapacityUnits(),
@@ -262,6 +261,8 @@ export class CronStack extends cdk.NestedStack {
       readThrottleAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       writeCapacityAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       readCapacityAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      return chatBotTopic;
     }
+    return null;
   }
 }
