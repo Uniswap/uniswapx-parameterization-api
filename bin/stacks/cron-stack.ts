@@ -58,6 +58,7 @@ export class CronStack extends cdk.NestedStack {
       bucketName: `${FADE_RATE_BUCKET}-${stage}-1`,
     });
 
+    let chatbotTopic: ITopic | undefined;
     if (stage == STAGE.PROD || STAGE.LOCAL) {
       this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}FadeRate`, {
         role: lambdaRole,
@@ -82,19 +83,6 @@ export class CronStack extends cdk.NestedStack {
         schedule: aws_events.Schedule.rate(Duration.minutes(10)),
         targets: [new aws_events_targets.LambdaFunction(this.fadeRateCronLambda)],
       });
-      /* RFQ fade rate table */
-      const fadesTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FadesTable`, {
-        tableName: DYNAMO_TABLE_NAME.FADES,
-        partitionKey: {
-          name: DYNAMO_TABLE_KEY.FILLER,
-          type: aws_dynamo.AttributeType.STRING,
-        },
-        deletionProtection: true,
-        pointInTimeRecovery: true,
-        contributorInsightsEnabled: true,
-        ...PROD_TABLE_CAPACITY.fadeRate,
-      });
-      const chatbotTopic = this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
 
       const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarmSev3`, {
         alarmName: `UniswapXParameterizationAPI-SEV3-CircuitBreaker`,
@@ -108,9 +96,23 @@ export class CronStack extends cdk.NestedStack {
         evaluationPeriods: 1,
       });
 
-      if (chatbotTopic) {
+      if (chatbotSNSArn) {
+        chatbotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
         circuitBreakerTriggeredAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotTopic));
       }
+      /* RFQ fade rate table */
+      const fadesTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FadesTable`, {
+        tableName: DYNAMO_TABLE_NAME.FADES,
+        partitionKey: {
+          name: DYNAMO_TABLE_KEY.FILLER,
+          type: aws_dynamo.AttributeType.STRING,
+        },
+        deletionProtection: true,
+        pointInTimeRecovery: true,
+        contributorInsightsEnabled: true,
+        ...PROD_TABLE_CAPACITY.fadeRate,
+      });
+      this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotTopic);
     }
 
     this.synthSwitchCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}SynthSwitch`, {
@@ -174,10 +176,10 @@ export class CronStack extends cdk.NestedStack {
       contributorInsightsEnabled: true,
       ...PROD_TABLE_CAPACITY.synthSwitch,
     });
-    this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE, chatbotSNSArn);
+    this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE, chatbotTopic);
   }
 
-  private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSArn?: string): ITopic | null {
+  private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSTopic?: ITopic): void {
     const readCapacityAlarm = new aws_cloudwatch.Alarm(this, `${SERVICE_NAME}-SEV3-${name}-ReadCapacityAlarm`, {
       alarmName: `${SERVICE_NAME}-SEV3-${name}-ReadCapacityAlarm`,
       metric: table.metricConsumedReadCapacityUnits(),
@@ -253,16 +255,13 @@ export class CronStack extends cdk.NestedStack {
       evaluationPeriods: 2,
     });
 
-    if (chatbotSNSArn) {
-      const chatBotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
-      userErrorsAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      systemErrorsAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      writeThrottleAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      readThrottleAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      writeCapacityAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      readCapacityAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      return chatBotTopic;
+    if (chatbotSNSTopic) {
+      userErrorsAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotSNSTopic));
+      systemErrorsAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotSNSTopic));
+      writeThrottleAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotSNSTopic));
+      readThrottleAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotSNSTopic));
+      writeCapacityAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotSNSTopic));
+      readCapacityAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotSNSTopic));
     }
-    return null;
   }
 }
