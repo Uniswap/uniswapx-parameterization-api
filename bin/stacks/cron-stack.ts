@@ -96,7 +96,7 @@ export class CronStack extends cdk.NestedStack {
       this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotSNSArn);
 
       const circuitBreakerTriggeredAlarm = new aws_cloudwatch.Alarm(this, `CircuitBreakerAlarmSev3`, {
-        alarmName: `CircuitBreakerTriggeredAlarmSev3`,
+        alarmName: `UniswapXParameterizationAPI-SEV3-CircuitBreaker`,
         metric: new aws_cloudwatch.Metric({
           metricName: Metric.CIRCUIT_BREAKER_TRIGGERED,
           namespace: 'Uniswap',
