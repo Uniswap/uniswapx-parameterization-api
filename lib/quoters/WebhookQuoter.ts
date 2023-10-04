@@ -83,9 +83,6 @@ export class WebhookQuoter implements Quoter {
       const opposingCleanRequest = request.toOpposingCleanJSON();
       opposingCleanRequest.quoteId = uuidv4();
 
-      this.log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
-      this.log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
-
       const before = Date.now();
       const timeoutOverride = config.overrides?.timeout;
 

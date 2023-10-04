@@ -286,6 +286,7 @@ describe('WebhookQuoter tests', () => {
         ],
         response: {
           createdAt: expect.any(String),
+          createdAtMs: expect.any(String),
           data: {
             ...quote,
             quoteId: expect.any(String),
