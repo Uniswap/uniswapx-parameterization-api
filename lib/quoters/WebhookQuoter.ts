@@ -4,10 +4,10 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Quoter, QuoterType } from '.';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -99,7 +99,9 @@ export class WebhookQuoter implements Quoter {
         axios.post(endpoint, opposingCleanRequest, axiosConfig),
       ]);
 
-      metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);
+      const responseTime = Date.now() - before;
+      metric.putMetric(metricContext(Metric.RFQ_RESPONSE_TIME, name), responseTime, MetricLoggerUnit.Milliseconds);
+      metric.putMetric(Metric.RFQ_RESPONSE_TIME, responseTime, MetricLoggerUnit.Milliseconds);
       metric.putMetric(
         metricContext(Metric.RFQ_RESPONSE_TIME, name),
         Date.now() - before,
