@@ -3,9 +3,9 @@ import { BigNumber } from 'ethers';
 import { ValidationResult } from 'joi';
 import { v4 as uuidv4 } from 'uuid';
 
-import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
-import { currentTimestampInSeconds } from '../util/time';
 import { QuoteRequestData } from '.';
+import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
+import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
 
 export interface QuoteResponseData
   extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type'> {
@@ -23,6 +23,8 @@ interface ValidatedResponse {
 
 // data class for QuoteRequest helpers and conversions
 export class QuoteResponse implements QuoteResponseData {
+  public createdAt: string;
+
   public static fromRequest(request: QuoteRequestData, amountQuoted: BigNumber, filler?: string): QuoteResponse {
     return new QuoteResponse(
       {
@@ -60,11 +62,9 @@ export class QuoteResponse implements QuoteResponseData {
     };
   }
 
-  constructor(
-    private data: QuoteResponseData,
-    public type: TradeType,
-    public createdAt = currentTimestampInSeconds()
-  ) {}
+  constructor(private data: QuoteResponseData, public type: TradeType, public createdAtMs = currentTimestampInMs()) {
+    this.createdAt = timestampInMstoSeconds(parseInt(this.createdAtMs));
+  }
 
   public toResponseJSON(): PostQuoteResponse & { quoteId: string } {
     return {
@@ -93,6 +93,7 @@ export class QuoteResponse implements QuoteResponseData {
       swapper: this.swapper,
       filler: this.filler,
       createdAt: this.createdAt,
+      createdAtMs: this.createdAtMs,
     };
   }
 

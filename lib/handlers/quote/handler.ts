@@ -6,7 +6,7 @@ import Joi from 'joi';
 import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';
 import { NoQuotesAvailable } from '../../util/errors';
-import { currentTimestampInSeconds } from '../../util/time';
+import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
 import { ContainerInjected, RequestInjected } from './injector';
@@ -27,7 +27,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       requestBody,
       containerInjected: { quoters },
     } = params;
-    const before = Date.now();
+    const start = Date.now();
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
@@ -43,7 +43,8 @@ export class QuoteHandler extends APIGLambdaHandler<
         tokenOut: request.tokenOut,
         amount: request.amount.toString(),
         type: TradeType[request.type],
-        createdAt: currentTimestampInSeconds(),
+        createdAt: timestampInMstoSeconds(start),
+        createdAtMs: start.toString(),
       },
     });
 
@@ -56,7 +57,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     log.info({ bestQuote: bestQuote }, 'bestQuote');
 
     metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
-    metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - before, MetricLoggerUnit.Milliseconds);
+    metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
     return {
       statusCode: 200,
       body: bestQuote.toResponseJSON(),

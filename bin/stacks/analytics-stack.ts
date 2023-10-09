@@ -23,6 +23,7 @@ enum RS_DATA_TYPES {
   TX_HASH = 'char(66)',
   UINT256 = 'varchar(78)',
   TIMESTAMP = 'char(10)', // unix timestamp in seconds
+  TIMESTAMP_MS = 'char(13)', // unix timestamp in milliseconds
   BIGINT = 'bigint',
   INTEGER = 'integer',
   TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled || 'new' || 'open'
@@ -156,6 +157,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'configs', dataType: RS_DATA_TYPES.ROUTING }, // array as string, e.g. '[DUTCH_LIMIT,CLASSIC]'
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
       ],
     });
 
@@ -174,6 +176,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
       ],
     });
 
@@ -202,6 +205,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'routing', dataType: RS_DATA_TYPES.ROUTING },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
       ],
     });
 
@@ -222,6 +226,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
       ],
     });
 
