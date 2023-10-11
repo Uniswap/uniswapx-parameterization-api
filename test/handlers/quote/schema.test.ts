@@ -29,6 +29,7 @@ const validCombinations = validTokenIn.flatMap((tokenIn) =>
       tokenOut,
       amount: amount,
       type: 'EXACT_INPUT',
+      numOutputs: 1,
     }))
   )
 );
@@ -48,6 +49,7 @@ describe('Schema tests', () => {
           amount: body.amount,
           swapper: SWAPPER,
           type: 'EXACT_INPUT',
+          numOutputs: 1,
         });
       }
     });

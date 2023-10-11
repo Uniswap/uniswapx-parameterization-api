@@ -8,7 +8,7 @@ import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quot
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
 
 export interface QuoteResponseData
-  extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type'> {
+  extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type' | 'numOutputs'> {
   chainId: number;
   amountOut: BigNumber;
   amountIn: BigNumber;

@@ -45,6 +45,7 @@ export class QuoteHandler extends APIGLambdaHandler<
         type: TradeType[request.type],
         createdAt: timestampInMstoSeconds(start),
         createdAtMs: start.toString(),
+        numOutputs: request.numOutputs,
       },
     });
 

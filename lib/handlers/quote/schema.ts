@@ -11,6 +11,7 @@ export const PostQuoteRequestBodyJoi = Joi.object({
   tokenOut: FieldValidator.address.required(),
   amount: FieldValidator.amount.required(),
   type: FieldValidator.tradeType.required(),
+  numOutputs: Joi.number().integer().min(1).required(),
 });
 
 export type PostQuoteRequestBody = {
@@ -22,6 +23,7 @@ export type PostQuoteRequestBody = {
   tokenOut: string;
   amount: string;
   type: string;
+  numOutputs: number;
 };
 
 export const PostQuoteResponseJoi = Joi.object({
