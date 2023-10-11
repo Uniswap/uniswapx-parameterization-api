@@ -77,6 +77,7 @@ describe('Quote endpoint integration test', function () {
       tokenOut: TOKEN_OUT,
       amount: '1',
       type: 'EXACT_INPUT',
+      numOutputs: 12341234,
     };
 
     await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
@@ -97,6 +98,7 @@ describe('Quote endpoint integration test', function () {
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
       type: 'EXACT_INPUT',
+      numOutputs: 12341234,
     };
 
     await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
@@ -118,6 +120,7 @@ describe('Quote endpoint integration test', function () {
       tokenOut: TOKEN_OUT,
       type: 'EXACT_NOTHING',
       amount: '1',
+      numOutputs: 12341234,
     };
 
     await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
@@ -139,6 +142,7 @@ describe('Quote endpoint integration test', function () {
       tokenOut: TOKEN_OUT,
       type: 'EXACT_OUTPUT',
       amount: '1',
+      numOutputs: 12341234,
     };
 
     await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
@@ -160,6 +164,7 @@ describe('Quote endpoint integration test', function () {
       tokenOut: TOKEN_OUT,
       type: 'EXACT_OUTPUT',
       amount: '1',
+      numOutputs: 12341234,
     };
 
     await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
