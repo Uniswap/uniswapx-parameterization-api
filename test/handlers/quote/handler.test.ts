@@ -72,6 +72,7 @@ describe('Quote handler', () => {
     amount: amountIn,
     tokenOut: TOKEN_OUT,
     type: 'EXACT_INPUT',
+    numOutputs: 1,
   });
 
   afterEach(() => {

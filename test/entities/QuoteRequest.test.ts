@@ -23,6 +23,7 @@ describe('QuoteRequest', () => {
     tokenOut: TOKEN_OUT,
     amount: ethers.utils.parseEther('1'),
     type: TradeType.EXACT_INPUT,
+    numOutputs: 1,
   });
 
   it('toCleanJSON', async () => {
@@ -35,6 +36,7 @@ describe('QuoteRequest', () => {
       amount: ethers.utils.parseEther('1').toString(),
       swapper: ethers.constants.AddressZero,
       type: 'EXACT_INPUT',
+      numOutputs: 1,
     });
   });
 
@@ -48,6 +50,7 @@ describe('QuoteRequest', () => {
       amount: ethers.utils.parseEther('1').toString(),
       swapper: ethers.constants.AddressZero,
       type: 'EXACT_OUTPUT',
+      numOutputs: 1,
     });
   });
 });

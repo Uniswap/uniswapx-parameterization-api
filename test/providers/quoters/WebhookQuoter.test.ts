@@ -49,6 +49,7 @@ describe('WebhookQuoter tests', () => {
     tokenOut: TOKEN_OUT,
     amount: ethers.utils.parseEther('1'),
     type: TradeType.EXACT_INPUT,
+    numOutputs: 1,
   });
 
   const quote = {
@@ -411,6 +412,7 @@ describe('WebhookQuoter tests', () => {
         tokenOut: TOKEN_OUT,
         amount: ethers.utils.parseEther('1'),
         type: TradeType.EXACT_OUTPUT,
+        numOutputs: 1,
       })
     );
 
