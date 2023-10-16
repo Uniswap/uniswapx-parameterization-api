@@ -23,6 +23,7 @@ export type ExecutionConfigs = {
 };
 
 export enum TimestampThreshold {
+  TWO_WEEKS = "'2 WEEKS'",
   ONE_MONTH = "'1 MONTH'",
   TWO_MONTHS = "'2 MONTHS'",
 }
