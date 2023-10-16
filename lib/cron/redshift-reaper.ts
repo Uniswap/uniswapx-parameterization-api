@@ -22,6 +22,6 @@ export const handler: ScheduledHandler = async (_event: EventBridgeEvent<string,
 
   // needs to be sequential be cause of the vacuum command
   for (const table of TABLES_TO_CLEAN) {
-    await analyticsRepository.cleanUpTable(table, CREATEDAT, TimestampThreshold.ONE_MONTH);
+    await analyticsRepository.cleanUpTable(table, CREATEDAT, TimestampThreshold.TWO_WEEKS);
   }
 };
