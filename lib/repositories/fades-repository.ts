@@ -66,16 +66,11 @@ WITH latestOrders AS (
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
 )
 SELECT
-    latestOrders.chainid as chainId, latestOrders.filler as rfqFiller, latestOrders.quoteid, archivedorders.filler as actualFiller, latestOrders.createdat as postTimestamp, archivedorders.txhash as txHash,
+    latestOrders.chainid as chainId, latestOrders.filler as rfqFiller, latestOrders.startTime as decayStartTime, latestOrders.quoteid, archivedorders.filler as actualFiller, latestOrders.createdat as postTimestamp, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp,
     CASE
       WHEN latestOrders.inputstartamount = latestOrders.inputendamount THEN 'EXACT_INPUT'
       ELSE 'EXACT_OUTPUT'
-    END as tradeType, 
-    CASE
-      WHEN latestOrders.inputstartamount = latestOrders.inputendamount THEN latestOrders.outputstartamount
-      ELSE latestOrders.inputstartamount
-    END as quotedAmount,
-    archivedorders.amountout as filledAmount
+    END as tradeType
 FROM
     latestOrders LEFT OUTER JOIN archivedorders ON latestOrders.quoteid = archivedorders.quoteid
 where
@@ -93,7 +88,7 @@ WITH ORDERS_CTE AS (
     SELECT 
         rfqFiller,
         COUNT(*) AS totalQuotes,
-        SUM(CASE WHEN (tradeType = 'EXACT_INPUT' AND quotedAmount > filledAmount) OR (tradeType = 'EXACT_OUTPUT' AND quotedAmount < filledAmount) THEN 1 ELSE 0 END) AS fadedQuotes
+        SUM(CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END) AS fadedQuotes
     FROM rfqOrders 
     GROUP BY rfqFiller
 )
