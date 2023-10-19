@@ -16,6 +16,7 @@ const WEBHOOK_TIMEOUT_MS = 500;
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
   private log: Logger;
+  private fillerAddresses: Map<string, Set<string>> = new Map<string, Set<string>>();
   private readonly ALLOW_LIST: Set<string>;
 
   constructor(
