@@ -56,7 +56,7 @@ export class FadesRepository extends BaseRedshiftRepository {
 }
 
 const CREATE_VIEW_SQL = `
-CREATE OR REPLACE VIEW rfqOrders 
+CREATE OR REPLACE VIEW rfqOrdersTimestamp 
 AS (
 WITH latestOrders AS (
   SELECT * FROM (
@@ -89,7 +89,7 @@ WITH ORDERS_CTE AS (
         rfqFiller,
         COUNT(*) AS totalQuotes,
         SUM(CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END) AS fadedQuotes
-    FROM rfqOrders 
+    FROM rfqOrdersTimestamp
     GROUP BY rfqFiller
 )
 SELECT 
