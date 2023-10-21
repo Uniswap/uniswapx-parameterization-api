@@ -184,7 +184,7 @@ describe('Quote handler', () => {
 
   describe('Webhook Quoter', () => {
     it('Simple request and response', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
+      const webhookProvider = new MockWebhookConfigurationProvider(logger, [
         { endpoint: 'https://uniswap.org', headers: {}, name: 'uniswap', hash: '0xuni' },
       ]);
 
@@ -229,7 +229,7 @@ describe('Quote handler', () => {
     });
 
     it('Passes headers', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
+      const webhookProvider = new MockWebhookConfigurationProvider(logger, [
         {
           name: 'uniswap',
           endpoint: 'https://uniswap.org',
@@ -272,7 +272,7 @@ describe('Quote handler', () => {
     });
 
     it('handles invalid responses', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
+      const webhookProvider = new MockWebhookConfigurationProvider(logger, [
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
@@ -298,7 +298,7 @@ describe('Quote handler', () => {
     });
 
     it('returns error if requestId is invalid', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
+      const webhookProvider = new MockWebhookConfigurationProvider(logger, [
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
@@ -325,7 +325,7 @@ describe('Quote handler', () => {
     });
 
     it('uses backup on failure', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
+      const webhookProvider = new MockWebhookConfigurationProvider(logger, [
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
@@ -357,7 +357,7 @@ describe('Quote handler', () => {
     });
 
     it('uses if better than backup', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
+      const webhookProvider = new MockWebhookConfigurationProvider(logger, [
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
@@ -398,7 +398,7 @@ describe('Quote handler', () => {
     });
 
     it('uses backup if better', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
+      const webhookProvider = new MockWebhookConfigurationProvider(logger, [
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([

@@ -1,5 +1,6 @@
 import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
+import { default as Logger } from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
 
 import { QuoteRequest } from '../../../lib/entities';
@@ -22,12 +23,16 @@ const WEBHOOK_URL = 'https://uniswap.org';
 const WEBHOOK_URL_ONEINCH = 'https://1inch.io';
 const WEBHOOK_URL_SEARCHER = 'https://searcher.com';
 
+// silent logger in tests
+const logger = Logger.createLogger({ name: 'test' });
+logger.level(Logger.FATAL);
+
 describe('WebhookQuoter tests', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  const webhookProvider = new MockWebhookConfigurationProvider([
+  const webhookProvider = new MockWebhookConfigurationProvider(logger, [
     { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, hash: "0xuni" },
     { name: '1inch', endpoint: WEBHOOK_URL_ONEINCH, headers: {}, hash: "0x1inch" },
     { name: 'searcher', endpoint: WEBHOOK_URL_SEARCHER, headers: {}, hash: "0xsearcher" },
@@ -37,7 +42,6 @@ describe('WebhookQuoter tests', () => {
     { hash: '0x1inch', fadeRate: 0.5, enabled: false },
     { hash: '0xsearcher', fadeRate: 0.1, enabled: true },
   ]);
-  const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   const webhookQuoter = new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider);
 
   const request = new QuoteRequest({
@@ -210,7 +214,7 @@ describe('WebhookQuoter tests', () => {
   });
 
   it('Simple request and response with explicit chainId', async () => {
-    const provider = new MockWebhookConfigurationProvider([
+    const provider = new MockWebhookConfigurationProvider(logger, [
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1], hash: "0xuni" },
     ]);
     const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider);
@@ -238,7 +242,7 @@ describe('WebhookQuoter tests', () => {
   });
 
   it('Skips if chainId not configured', async () => {
-    const provider = new MockWebhookConfigurationProvider([
+    const provider = new MockWebhookConfigurationProvider(logger, [
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6], hash: "0xuni" },
     ]);
     const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider);

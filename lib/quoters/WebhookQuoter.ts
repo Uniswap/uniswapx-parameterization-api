@@ -171,6 +171,10 @@ export class WebhookQuoter implements Quoter {
           request.requestId
         } for endpoint ${endpoint} successful quote: ${request.amount.toString()} -> ${quote.toString()}}`
       );
+
+      if (response.filler) {
+        this.storeEndpointAddr(endpoint, response.filler);
+      }
       return response;
     } catch (e) {
       metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
@@ -185,6 +189,13 @@ export class WebhookQuoter implements Quoter {
       }
       return null;
     }
+  }
+
+  private storeEndpointAddr(endpoint: string, addr: string): void {
+    if (!this.fillerAddresses.has(endpoint)) {
+      this.fillerAddresses.set(endpoint, new Set<string>());
+    }
+    this.fillerAddresses.get(endpoint)?.add(addr);
   }
 }
 

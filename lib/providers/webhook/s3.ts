@@ -2,23 +2,17 @@ import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { default as Logger } from 'bunyan';
 
 import { checkDefined } from '../../preconditions/preconditions';
-import { WebhookConfiguration, WebhookConfigurationProvider } from '.';
+import { WebhookConfiguration, WebhookConfigurationProvider } from './base';
 
 export type FillerAddressesMap = Map<string, Set<string>>;
 
 // reads endpoint configuration from a static file
-export class S3WebhookConfigurationProvider implements WebhookConfigurationProvider {
-  private log: Logger;
-  private endpoints: WebhookConfiguration[];
-  private lastUpdatedEndpointsTimestamp: number;
-
+export class S3WebhookConfigurationProvider extends WebhookConfigurationProvider {
   // try to refetch endpoints every 5 mins
   private static UPDATE_ENDPOINTS_PERIOD_MS = 5 * 60000;
 
   constructor(_log: Logger, private bucket: string, private key: string) {
-    this.endpoints = [];
-    this.log = _log.child({ quoter: 'S3WebhookConfigurationProvider' });
-    this.lastUpdatedEndpointsTimestamp = Date.now();
+    super(_log);
   }
 
   fillers(): string[] {

@@ -59,6 +59,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
     metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+
     return {
       statusCode: 200,
       body: bestQuote.toResponseJSON(),
