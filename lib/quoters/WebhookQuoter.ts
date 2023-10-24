@@ -53,6 +53,7 @@ export class WebhookQuoter implements Quoter {
             (fillerToConfigMap.has(e.hash) && fillerToConfigMap.get(e.hash)?.enabled) ||
             !fillerToConfigMap.has(e.hash) // default to allowing fillers not in the config
           ) {
+            this.log.info({ endpoint: e }, `Endpoint enabled`)
             enabledEndpoints.push(e);
           }
         });
