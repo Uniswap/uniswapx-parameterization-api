@@ -22,7 +22,7 @@ export class WebhookQuoter implements Quoter {
     _log: Logger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    _allow_list: Set<string> = new Set<string>(['9de8f2376fef4be567f2e242fce750cca347b71853816cbc64f70d568de41ef1'])
+    _allow_list: Set<string> = new Set<string>(['9de8f2376fef4be567f2e242fce750cca347b71853816cbc64f70d568de41ef1', '6857c23b1e170aff95b943da464d7203de04873323d7ec505f8bfd5cebf7d000'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
     this.ALLOW_LIST = _allow_list;
