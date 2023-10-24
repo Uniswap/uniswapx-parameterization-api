@@ -45,7 +45,7 @@ export class WebhookQuoter implements Quoter {
       const config = await this.circuitBreakerProvider.getConfigurations();
       const fillerToConfigMap = new Map(config.map((c) => [c.hash, c]));
       if (config) {
-        this.log.info({ fillerToCMap: fillerToConfigMap, config: config }, `Circuit breaker config used`)
+        this.log.info({ fillerToCMap: [...fillerToConfigMap.entries()], config: config }, `Circuit breaker config used`)
         const enabledEndpoints: WebhookConfiguration[] = [];
         endpoints.forEach((e) => {
           if (
@@ -53,6 +53,7 @@ export class WebhookQuoter implements Quoter {
             (fillerToConfigMap.has(e.hash) && fillerToConfigMap.get(e.hash)?.enabled) ||
             !fillerToConfigMap.has(e.hash) // default to allowing fillers not in the config
           ) {
+            this.log.info({ endpoint: e }, `Endpoint enabled`)
             enabledEndpoints.push(e);
           }
         });
