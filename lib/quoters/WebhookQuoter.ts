@@ -45,6 +45,7 @@ export class WebhookQuoter implements Quoter {
       const config = await this.circuitBreakerProvider.getConfigurations();
       const fillerToConfigMap = new Map(config.map((c) => [c.hash, c]));
       if (config) {
+        this.log.info({ fillerToCMap: fillerToConfigMap, config: config }, `Circuit breaker config used`)
         const enabledEndpoints: WebhookConfiguration[] = [];
         endpoints.forEach((e) => {
           if (
