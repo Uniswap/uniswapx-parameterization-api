@@ -1,11 +1,11 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import Logger from 'bunyan';
-
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { MetricsLogger, Unit } from 'aws-embedded-metrics';
-import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
+import Logger from 'bunyan';
+
 import { Metric } from '../../entities';
 import { checkDefined } from '../../preconditions/preconditions';
+import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 
 export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
   private log: Logger;
@@ -59,7 +59,7 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
         this.log.info(`circuit breaker triggered for ${filler} at fill rate ${rate}`);
       }
       config.push({
-        name: filler,
+        hash: filler,
         fadeRate: rate,
         // enabled endpoints will be able to participate in RFQ
         enabled: rate < S3CircuitBreakerConfigurationProvider.FILL_RATE_THRESHOLD,

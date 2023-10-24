@@ -43,8 +43,8 @@ async function main(metrics: MetricsLogger) {
   const result = await fadesRepository.getFades();
 
   if (result) {
-    const addressToFiller = await webhookProvider.addressToFiller();
-    const fillerFadeRate = calculateFillerFadeRates(result, addressToFiller, log);
+    const addressToFillerHash = await webhookProvider.addressToFillerHash();
+    const fillerFadeRate = calculateFillerFadeRates(result, addressToFillerHash, log);
     log.info({ fadeRates: [...fillerFadeRate.entries()] }, 'filler fade rate');
 
     const configProvider = new S3CircuitBreakerConfigurationProvider(
@@ -60,22 +60,22 @@ async function main(metrics: MetricsLogger) {
 // and calculates fade rate for each
 export function calculateFillerFadeRates(
   rows: FadesRowType[],
-  addressToFiller: Map<string, string>,
+  addressToFillerHash: Map<string, string>,
   log?: Logger
 ): Map<string, number> {
   const fadeRateMap = new Map<string, number>();
   const fillerToQuotesMap = new Map<string, [number, number]>();
   rows.forEach((row) => {
     const fillerAddr = row.fillerAddress.toLowerCase();
-    const fillerName = addressToFiller.get(fillerAddr);
-    if (!fillerName) {
-      log?.info({ addressToFiller, fillerAddress: fillerAddr }, 'filler address not found in webhook config');
+    const fillerHash = addressToFillerHash.get(fillerAddr);
+    if (!fillerHash) {
+      log?.info({ addressToFillerHash, fillerAddress: fillerAddr }, 'filler address not found in webhook config');
     } else {
-      if (!fillerToQuotesMap.has(fillerName)) {
-        fillerToQuotesMap.set(fillerName, [row.fadedQuotes, row.totalQuotes]);
+      if (!fillerToQuotesMap.has(fillerHash)) {
+        fillerToQuotesMap.set(fillerHash, [row.fadedQuotes, row.totalQuotes]);
       } else {
-        const [fadedQuotes, totalQuotes] = fillerToQuotesMap.get(fillerName) as [number, number];
-        fillerToQuotesMap.set(fillerName, [fadedQuotes + row.fadedQuotes, totalQuotes + row.totalQuotes]);
+        const [fadedQuotes, totalQuotes] = fillerToQuotesMap.get(fillerHash) as [number, number];
+        fillerToQuotesMap.set(fillerHash, [fadedQuotes + row.fadedQuotes, totalQuotes + row.totalQuotes]);
       }
     }
   });

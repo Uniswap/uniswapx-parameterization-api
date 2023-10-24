@@ -7,6 +7,7 @@ type WebhookOverrides = {
 
 export interface WebhookConfiguration {
   name: string;
+  hash: string;
   endpoint: string;
   headers?: { [key: string]: string };
   overrides?: WebhookOverrides;

@@ -22,7 +22,7 @@ export class WebhookQuoter implements Quoter {
     _log: Logger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    _allow_list: Set<string> = new Set<string>(['Altonomy'])
+    _allow_list: Set<string> = new Set<string>(['9de8f2376fef4be567f2e242fce750cca347b71853816cbc64f70d568de41ef1'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
     this.ALLOW_LIST = _allow_list;
@@ -43,14 +43,14 @@ export class WebhookQuoter implements Quoter {
     const endpoints = await this.webhookProvider.getEndpoints();
     try {
       const config = await this.circuitBreakerProvider.getConfigurations();
-      const fillerToConfigMap = new Map(config.map((c) => [c.name, c]));
+      const fillerToConfigMap = new Map(config.map((c) => [c.hash, c]));
       if (config) {
         const enabledEndpoints: WebhookConfiguration[] = [];
         endpoints.forEach((e) => {
           if (
-            this.ALLOW_LIST.has(e.name) ||
-            (fillerToConfigMap.has(e.name) && fillerToConfigMap.get(e.name)?.enabled) ||
-            !fillerToConfigMap.has(e.name) // default to allowing fillers not in the config
+            this.ALLOW_LIST.has(e.hash) ||
+            (fillerToConfigMap.has(e.hash) && fillerToConfigMap.get(e.hash)?.enabled) ||
+            !fillerToConfigMap.has(e.hash) // default to allowing fillers not in the config
           ) {
             enabledEndpoints.push(e);
           }
