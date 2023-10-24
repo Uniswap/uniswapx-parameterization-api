@@ -22,10 +22,10 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
   }
 
   fillers(): string[] {
-    return [...new Set(this.endpoints.map((endpoint) => endpoint.name))];
+    return [...new Set(this.endpoints.map((endpoint) => endpoint.hash))];
   }
 
-  async addressToFiller(): Promise<Map<string, string>> {
+  async addressToFillerHash(): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     if (this.endpoints.length === 0) {
       await this.fetchEndpoints();
@@ -33,7 +33,7 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     this.endpoints.forEach((endpoint) => {
       endpoint.addresses?.forEach((address) => {
         this.log.info({ address, endpoint }, 'address to filler mapping');
-        map.set(address, endpoint.name);
+        map.set(address, endpoint.hash);
       });
     });
     return map;
