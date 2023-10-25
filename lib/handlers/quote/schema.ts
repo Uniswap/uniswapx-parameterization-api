@@ -80,5 +80,6 @@ export type RfqResponse = {
   amountIn: string;
   tokenOut: string;
   amountOut: string;
+  quoteId: string;
   filler?: string;
 };

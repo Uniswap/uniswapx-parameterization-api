@@ -3,9 +3,9 @@ import { BigNumber } from 'ethers';
 import { ValidationResult } from 'joi';
 import { v4 as uuidv4 } from 'uuid';
 
-import { QuoteRequestData } from '.';
 import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
+import { QuoteRequestData } from '.';
 
 export interface QuoteResponseData
   extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type' | 'numOutputs'> {
@@ -52,7 +52,6 @@ export class QuoteResponse implements QuoteResponseData {
         {
           ...data,
           swapper: request.swapper,
-          quoteId: request.quoteId ?? uuidv4(),
           amountIn: BigNumber.from(data.amountIn ?? 0),
           amountOut: BigNumber.from(data.amountOut ?? 0),
         },
