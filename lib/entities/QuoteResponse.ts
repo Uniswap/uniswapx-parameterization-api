@@ -51,6 +51,7 @@ export class QuoteResponse implements QuoteResponseData {
       response: new QuoteResponse(
         {
           ...data,
+          quoteId: data.quoteId ?? uuidv4(),
           swapper: request.swapper,
           amountIn: BigNumber.from(data.amountIn ?? 0),
           amountOut: BigNumber.from(data.amountOut ?? 0),
