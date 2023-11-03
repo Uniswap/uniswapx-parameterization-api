@@ -63,15 +63,15 @@ describe('Quote handler', () => {
       body: JSON.stringify(request),
     } as APIGatewayProxyEvent);
 
-  const getRequest = (amountIn: string): PostQuoteRequestBody => ({
+  const getRequest = (amount: string, type = 'EXACT_INPUT'): PostQuoteRequestBody => ({
     requestId: REQUEST_ID,
     tokenInChainId: CHAIN_ID,
     tokenOutChainId: CHAIN_ID,
     swapper: SWAPPER,
     tokenIn: TOKEN_IN,
-    amount: amountIn,
+    amount,
     tokenOut: TOKEN_OUT,
-    type: 'EXACT_INPUT',
+    type,
     numOutputs: 1,
   });
 
@@ -130,7 +130,7 @@ describe('Quote handler', () => {
     ).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
 
-  it('Pick the greater of two quotes', async () => {
+  it('Pick the greater of two quotes - EXACT_IN', async () => {
     const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
     const amountIn = ethers.utils.parseEther('1');
     const request = getRequest(amountIn.toString());
@@ -141,7 +141,28 @@ describe('Quote handler', () => {
     );
     const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
-    expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject({
+    expect(
+      responseFromRequest(request, { amountOut: amountIn.mul(2).toString(), amountIn: amountIn.mul(1).toString() })
+    ).toMatchObject({
+      ...quoteResponse,
+      quoteId: expect.any(String),
+    });
+  });
+
+  it('Pick the lesser of two quotes - EXACT_OUT', async () => {
+    const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+    const amountOut = ethers.utils.parseEther('1');
+    const request = getRequest(amountOut.toString(), 'EXACT_OUTPUT');
+
+    const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+      getEvent(request),
+      {} as unknown as Context
+    );
+    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    expect(response.statusCode).toEqual(200);
+    expect(
+      responseFromRequest(request, { amountOut: amountOut.mul(1).toString(), amountIn: amountOut.mul(1).toString() })
+    ).toMatchObject({
       ...quoteResponse,
       quoteId: expect.any(String),
     });
@@ -236,7 +257,7 @@ describe('Quote handler', () => {
           headers: {
             'X-Authentication': '1234',
           },
-          hash: '0xuni'
+          hash: '0xuni',
         },
       ]);
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([

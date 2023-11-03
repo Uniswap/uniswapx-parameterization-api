@@ -111,7 +111,11 @@ async function getBestQuote(
       body: { ...quote.toLog(), offerer: quote.swapper },
     });
 
-    if (!bestQuote || quote.amountOut.gt(bestQuote.amountOut)) {
+    if (
+      !bestQuote ||
+      (quoteRequest.type == TradeType.EXACT_INPUT && quote.amountOut.gt(bestQuote.amountOut)) ||
+      (quoteRequest.type == TradeType.EXACT_OUTPUT && quote.amountIn.lt(bestQuote.amountIn))
+    ) {
       return quote;
     }
     return bestQuote;
