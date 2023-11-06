@@ -173,11 +173,13 @@ export class WebhookQuoter implements Quoter {
       
       //iff valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
-      const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type).response;
-      this.log.info({
-        eventType: 'QuoteResponse',
-        body: { ...opposingResponse.toLog(), offerer: opposingResponse.swapper },
-      });
+      const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
+      if (opposingResponse && !isNonQuote(opposingRequest, opposite, opposingResponse.response) && !opposingResponse.validation.error) {
+        this.log.info({
+          eventType: 'QuoteResponse',
+          body: { ...opposingResponse.response.toLog(), offerer: opposingResponse.response.swapper },
+        });
+      }
       
       return response;
     } catch (e) {
