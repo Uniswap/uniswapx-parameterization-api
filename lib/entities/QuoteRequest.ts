@@ -89,6 +89,15 @@ export class QuoteRequest {
       ...(this.quoteId && { quoteId: this.quoteId }),
     };
   }
+  
+  public toOpposingRequest(): QuoteRequest {
+    const opposingJSON = this.toOpposingCleanJSON();
+    return new QuoteRequest({
+      ...opposingJSON,
+      amount: BigNumber.from(opposingJSON.amount),
+      type: TradeType[opposingJSON.type as keyof typeof TradeType],
+    });
+}
 
   public get requestId(): string {
     return this.data.requestId;

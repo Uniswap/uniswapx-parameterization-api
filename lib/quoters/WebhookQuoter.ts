@@ -96,7 +96,7 @@ export class WebhookQuoter implements Quoter {
         ...(!!headers && { headers }),
       };
 
-      const [hookResponse] = await Promise.all([
+      const [hookResponse, opposite] = await Promise.all([
         axios.post(endpoint, cleanRequest, axiosConfig),
         axios.post(endpoint, opposingCleanRequest, axiosConfig),
       ]);
@@ -170,6 +170,15 @@ export class WebhookQuoter implements Quoter {
           request.requestId
         } for endpoint ${endpoint} successful quote: ${request.amount.toString()} -> ${quote.toString()}}`
       );
+      
+      //iff valid quote, log the opposing side as well
+      const opposingRequest = request.toOpposingRequest();
+      const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type).response;
+      this.log.info({
+        eventType: 'QuoteResponse',
+        body: { ...opposingResponse.toLog(), offerer: opposingResponse.swapper },
+      });
+      
       return response;
     } catch (e) {
       metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
