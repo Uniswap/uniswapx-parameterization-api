@@ -229,6 +229,19 @@ describe('Quote handler', () => {
             quoteId: QUOTE_ID,
           },
         });
+      }).mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            amountOut: amountIn.mul(3).toString(),
+            requestId: request.requestId,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+            amountIn: request.amount,
+            swapper: request.swapper,
+            chainId: request.tokenInChainId,
+            quoteId: QUOTE_ID,
+          },
+        });
       });
 
       const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
@@ -272,6 +285,16 @@ describe('Quote handler', () => {
         return Promise.resolve({
           data: {
             ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
+          },
+        });
+      }).mockImplementationOnce((_endpoint, _req, options: any) => {
+        expect(options.headers['X-Authentication']).toEqual('1234');
+        const res = responseFromRequest(request, { amountOut: amountIn.mul(3).toString() });
+        return Promise.resolve({
+          data: {
+            ...res,
+            tokenIn: res.tokenOut,
+            tokenOut: res.tokenIn,
           },
         });
       });
@@ -397,6 +420,19 @@ describe('Quote handler', () => {
             amountOut: amountIn.mul(2).toString(),
             tokenIn: request.tokenIn,
             tokenOut: request.tokenOut,
+            amountIn: request.amount,
+            swapper: request.swapper,
+            chainId: request.tokenInChainId,
+            requestId: request.requestId,
+            quoteId: QUOTE_ID,
+          },
+        });
+      }).mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            amountOut: amountIn.div(2).toString(),
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
             amountIn: request.amount,
             swapper: request.swapper,
             chainId: request.tokenInChainId,

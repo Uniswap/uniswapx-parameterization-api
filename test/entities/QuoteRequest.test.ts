@@ -53,4 +53,19 @@ describe('QuoteRequest', () => {
       numOutputs: 1,
     });
   });
+  
+  it('toOpposingRequest', async () => {
+    const opposingRequest = request.toOpposingRequest();
+    expect(opposingRequest.toCleanJSON()).toEqual({
+      tokenInChainId: CHAIN_ID,
+      tokenOutChainId: CHAIN_ID,
+      requestId: REQUEST_ID,
+      tokenIn: TOKEN_OUT,
+      tokenOut: TOKEN_IN,
+      amount: ethers.utils.parseEther('1').toString(),
+      swapper: SWAPPER,
+      type: 'EXACT_OUTPUT',
+      numOutputs: 1,
+    });
+  });
 });
