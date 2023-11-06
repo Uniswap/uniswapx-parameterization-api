@@ -69,6 +69,14 @@ describe('WebhookQuoter tests', () => {
       return Promise.resolve({
         data: quote,
       });
+    }).mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: {
+          ...quote,
+          tokenIn: request.tokenOut,
+          tokenOut: request.tokenIn,        
+        }
+      });
     });
     const response = await webhookQuoter.quote(request);
 
@@ -81,6 +89,14 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
+      });
+    }).mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: {
+          ...quote,
+          tokenIn: request.tokenOut,
+          tokenOut: request.tokenIn,        
+        }
       });
     });
     await webhookQuoter.quote(request);
@@ -168,6 +184,14 @@ describe('WebhookQuoter tests', () => {
       return Promise.resolve({
         data: quote,
       });
+    }).mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: {
+          ...quote,
+          tokenIn: request.tokenOut,
+          tokenOut: request.tokenIn,        
+        }
+      });
     });
     const response = await webhookQuoter.quote(request);
 
@@ -202,6 +226,14 @@ describe('WebhookQuoter tests', () => {
       return Promise.resolve({
         data: quote,
       });
+    }).mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: {
+          ...quote,
+          tokenIn: request.tokenOut,
+          tokenOut: request.tokenIn,        
+        }
+      });
     });
     const response = await webhookQuoter.quote(request);
 
@@ -229,6 +261,14 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
+      });
+    }).mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({
+        data: {
+          ...quote,
+          tokenIn: request.tokenOut,
+          tokenOut: request.tokenIn,        
+        }
       });
     });
     const response = await quoter.quote(request);
