@@ -22,7 +22,7 @@ export class WebhookQuoter implements Quoter {
     _log: Logger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    _allow_list: Set<string> = new Set<string>(['7b8d5830b35a2a2aa9b5581f8b87f6082335daacd1013fbbb05d690f3c4eae6d'])
+    _allow_list: Set<string> = new Set<string>(['9de8f2376fef4be567f2e242fce750cca347b71853816cbc64f70d568de41ef1'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
     this.ALLOW_LIST = _allow_list;
@@ -45,7 +45,10 @@ export class WebhookQuoter implements Quoter {
       const config = await this.circuitBreakerProvider.getConfigurations();
       const fillerToConfigMap = new Map(config.map((c) => [c.hash, c]));
       if (config) {
-        this.log.info({ fillerToCMap: [...fillerToConfigMap.entries()], config: config }, `Circuit breaker config used`)
+        this.log.info(
+          { fillerToCMap: [...fillerToConfigMap.entries()], config: config },
+          `Circuit breaker config used`
+        );
         const enabledEndpoints: WebhookConfiguration[] = [];
         endpoints.forEach((e) => {
           if (
@@ -53,7 +56,7 @@ export class WebhookQuoter implements Quoter {
             (fillerToConfigMap.has(e.hash) && fillerToConfigMap.get(e.hash)?.enabled) ||
             !fillerToConfigMap.has(e.hash) // default to allowing fillers not in the config
           ) {
-            this.log.info({ endpoint: e }, `Endpoint enabled`)
+            this.log.info({ endpoint: e }, `Endpoint enabled`);
             enabledEndpoints.push(e);
           }
         });
@@ -170,17 +173,21 @@ export class WebhookQuoter implements Quoter {
           request.requestId
         } for endpoint ${endpoint} successful quote: ${request.amount.toString()} -> ${quote.toString()}}`
       );
-      
+
       //iff valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
       const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
-      if (opposingResponse && !isNonQuote(opposingRequest, opposite, opposingResponse.response) && !opposingResponse.validation.error) {
+      if (
+        opposingResponse &&
+        !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&
+        !opposingResponse.validation.error
+      ) {
         this.log.info({
           eventType: 'QuoteResponse',
           body: { ...opposingResponse.response.toLog(), offerer: opposingResponse.response.swapper },
         });
       }
-      
+
       return response;
     } catch (e) {
       metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
