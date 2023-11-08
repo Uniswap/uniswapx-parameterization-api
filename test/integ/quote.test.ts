@@ -1,7 +1,13 @@
+import chai, {expect} from 'chai';
+import chaiAsPromised from 'chai-as-promised';
+import chaiSubset from 'chai-subset';
 import { v4 as uuidv4 } from 'uuid';
 
 import { PostQuoteRequestBody } from '../../lib/handlers/quote';
 import AxiosUtils from '../util/axios';
+
+chai.use(chaiAsPromised);
+chai.use(chaiSubset);
 
 if (!process.env.UNISWAP_API) {
   throw new Error('Must set UNISWAP_API env variable for integ tests. See README');
@@ -12,11 +18,6 @@ const REQUEST_ID = uuidv4();
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
-
-const call = async (method: string, url: string, body: any) => {
-  const { data, status } = await AxiosUtils.call(method, url, body);
-  return [data, status];
-};
 
 describe('Quote endpoint integration test', function () {
   // TODO: re-add these test cases once market makers are actively quoting
@@ -34,10 +35,15 @@ describe('Quote endpoint integration test', function () {
       numOutputs: 1
     };
 
-    const [data, status] = await call('POST', API, quoteReq);
-    expect([404, 200]).toContain(status);
+    const {data, status} = await AxiosUtils.callPassThroughFail('POST', API, quoteReq);
+    expect([404, 200]).to.include(status);
     if (status == 404) {
-      expect(data.details).toBe('No quotes available')
+      expect(data.detail).to.be.equal('No quotes available')
+    } else {
+      expect(data.requestId).to.be.equal(REQUEST_ID);
+      expect(data.swapper).to.be.equal(SWAPPER);
+      expect(data.tokenIn).to.be.equal(TOKEN_IN);
+      expect(data.tokenOut).to.be.equal(TOKEN_OUT);
     }
   });
 
