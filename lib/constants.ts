@@ -7,6 +7,7 @@ export const PRODUCTION_S3_KEY = 'production.json';
 export const BETA_S3_KEY = 'beta.json';
 export const FADE_RATE_S3_KEY = 'fade-rate.json';
 export const PROD_COMPLIANCE_S3_KEY = 'production.json';
+export const BETA_COMPLIANCE_S3_KEY = 'beta.json';
 
 export const DYNAMO_TABLE_NAME = {
   FADES: 'Fades',

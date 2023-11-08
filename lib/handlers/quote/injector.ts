@@ -4,6 +4,7 @@ import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import {
+  BETA_COMPLIANCE_S3_KEY,
   BETA_S3_KEY,
   COMPLIANCE_CONFIG_BUCKET,
   FADE_RATE_BUCKET,
@@ -52,10 +53,11 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       FADE_RATE_S3_KEY
     );
     
+    const complianceKey = stage === STAGE.BETA ? BETA_COMPLIANCE_S3_KEY : PROD_COMPLIANCE_S3_KEY;
     const fillerComplianceProvider = new S3FillerComplianceConfigurationProvider(
       log,
       `${COMPLIANCE_CONFIG_BUCKET}-${stage}-1`,
-      PROD_COMPLIANCE_S3_KEY
+      complianceKey
     );
 
     const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider, circuitBreakerProvider, fillerComplianceProvider)];
