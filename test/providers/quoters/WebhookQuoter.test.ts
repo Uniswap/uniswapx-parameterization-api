@@ -5,7 +5,6 @@ import { BigNumber, ethers } from 'ethers';
 import { QuoteRequest } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
-import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
@@ -23,11 +22,6 @@ const WEBHOOK_URL = 'https://uniswap.org';
 const WEBHOOK_URL_ONEINCH = 'https://1inch.io';
 const WEBHOOK_URL_SEARCHER = 'https://searcher.com';
 
-const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvider([]);
-const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([{
-  endpoints: ['https://uniswap.org', 'google.com'], addresses: [SWAPPER]
-}]);
-
 describe('WebhookQuoter tests', () => {
   afterEach(() => {
     jest.clearAllMocks();
@@ -44,7 +38,7 @@ describe('WebhookQuoter tests', () => {
     { hash: '0xsearcher', fadeRate: 0.1, enabled: true },
   ]);
   const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
-  const webhookQuoter = new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider);
+  const webhookQuoter = new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider);
 
   const request = new QuoteRequest({
     tokenInChainId: CHAIN_ID,
@@ -89,17 +83,6 @@ describe('WebhookQuoter tests', () => {
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
   });
-  
-  it('Respects filler compliance requirements', async () => {
-    const webhookQuoter = new WebhookQuoter(
-      logger,
-      webhookProvider,
-      circuitBreakerProvider,
-      mockComplianceProvider,
-    );
-
-    await expect(webhookQuoter.quote(request)).resolves.toStrictEqual([]);
-  });
 
   // should only call 'uniswap' and 'searcher' given they are enabled in the config
   it('Only calls to eligible endpoints', async () => {
@@ -139,7 +122,6 @@ describe('WebhookQuoter tests', () => {
       logger,
       webhookProvider,
       circuitBreakerProvider,
-      emptyMockComplianceProvider,
       new Set<string>(['0x1inch'])
     );
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
@@ -175,7 +157,7 @@ describe('WebhookQuoter tests', () => {
     const cbProvider = new MockCircuitBreakerConfigurationProvider([
       { hash: '0xuni', fadeRate: 0.05, enabled: true },
     ]);
-    const quoter = new WebhookQuoter(logger, webhookProvider, cbProvider, emptyMockComplianceProvider);
+    const quoter = new WebhookQuoter(logger, webhookProvider, cbProvider);
     await quoter.quote(request);
     expect(mockedAxios.post).toBeCalledWith(
       WEBHOOK_URL,
@@ -263,7 +245,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1], hash: "0xuni" },
     ]);
-    const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider, emptyMockComplianceProvider);
+    const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider);
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
       tokenIn: request.tokenIn,
@@ -299,7 +281,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6], hash: "0xuni" },
     ]);
-    const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider, emptyMockComplianceProvider);
+    const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider);
 
     const response = await quoter.quote(request);
 
