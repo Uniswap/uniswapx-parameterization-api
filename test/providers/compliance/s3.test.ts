@@ -45,13 +45,25 @@ describe('S3ComplianceConfigurationProvider', () => {
     expect(endpoints).toEqual(mockConfigs);
   });
   
-  it('generates addr to endpoints map', async () => {
+  // it('generates addr to endpoints map', async () => {
+  //   applyMock(mockConfigs);
+  //   const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
+  //   expect(await provider.getExcludedAddrToEndpointsMap()).toMatchObject(
+  //     new Map([
+  //       ['0x1234', new Set(['https://google.com', 'https://meta.com'])],
+  //       ['0x5678', new Set(['https://meta.com'])],
+  //     ])
+  //   )
+  // });
+  
+  it('generates endpoint to addrs map', async () => {
     applyMock(mockConfigs);
     const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
-    expect(await provider.getAddrToEndpointsMap()).toMatchObject(
+    const map = await provider.getEndpointToExcludedAddrsMap(); 
+    expect(map).toMatchObject(
       new Map([
-        ['0x1234', new Set(['https://google.com', 'https://meta.com'])],
-        ['0x5678', new Set(['https://meta.com'])],
+        ['https://google.com', new Set(['0x1234'])],
+        ['https://meta.com', new Set(['0x1234', '0x5678'])],
       ])
     )
   });

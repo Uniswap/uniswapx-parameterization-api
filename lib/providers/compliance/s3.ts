@@ -9,32 +9,52 @@ import { FillerComplianceConfiguration, FillerComplianceConfigurationProvider } 
 export class S3FillerComplianceConfigurationProvider implements FillerComplianceConfigurationProvider {
   private log: Logger;
   private configs: FillerComplianceConfiguration[];
-  private addrToEndpointsMap: Map<string, Set<string>>;
+  private endpointToExcludedAddrsMap: Map<string, Set<string>>;
 
   constructor(_log: Logger, private bucket: string, private key: string) {
     this.configs = [];
     this.log = _log.child({ quoter: 'S3FillerComplianceConfigurationProvider' });
-    this.addrToEndpointsMap = new Map<string, Set<string>>();
+    this.endpointToExcludedAddrsMap = new Map<string, Set<string>>();
   }
-
-  async getAddrToEndpointsMap(): Promise<Map<string, Set<string>>> {
+  async getEndpointToExcludedAddrsMap(): Promise<Map<string, Set<string>>> {
     if (this.configs.length === 0) {
       await this.fetchConfigs();
     }
-    if (this.addrToEndpointsMap.size === 0) {
-      this.configs.forEach((config) => {
-        config.addresses.forEach((address) => {
-          if (!this.addrToEndpointsMap.has(address)) {
-            this.addrToEndpointsMap.set(address, new Set<string>());
-          }
-          config.endpoints.forEach((endpoint) => {
-            this.addrToEndpointsMap.get(address)?.add(endpoint);
-          });
-        });
-      })
+    if (this.endpointToExcludedAddrsMap.size > 0) {
+      return this.endpointToExcludedAddrsMap;
     }
-    return this.addrToEndpointsMap;
+    this.configs.forEach((config) => {
+      config.endpoints.forEach((endpoint) => {
+        if (!this.endpointToExcludedAddrsMap.has(endpoint)) {
+          this.endpointToExcludedAddrsMap.set(endpoint, new Set<string>());
+        }
+        config.addresses.forEach((address) => {
+          this.endpointToExcludedAddrsMap.get(endpoint)?.add(address);
+        });
+      });
+    })
+    return this.endpointToExcludedAddrsMap;
   }
+
+  // async getExcludedAddrToEndpointsMap(): Promise<Map<string, Set<string>>> {
+  //   if (this.configs.length === 0) {
+  //     await this.fetchConfigs();
+  //   }
+  //   if (this.addrToEndpointsMap.size > 0) {
+  //     return this.addrToEndpointsMap;
+  //   }
+  //   this.configs.forEach((config) => {
+  //     config.addresses.forEach((address) => {
+  //       if (!this.addrToEndpointsMap.has(address)) {
+  //         this.addrToEndpointsMap.set(address, new Set<string>());
+  //       }
+  //       config.endpoints.forEach((endpoint) => {
+  //         this.addrToEndpointsMap.get(address)?.add(endpoint);
+  //       });
+  //     });
+  //   })
+  //   return this.addrToEndpointsMap;
+  // }
 
   async getConfigs(): Promise<FillerComplianceConfiguration[]> {
     if (

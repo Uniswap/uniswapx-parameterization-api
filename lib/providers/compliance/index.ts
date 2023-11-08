@@ -5,7 +5,8 @@ export interface FillerComplianceConfiguration {
 
 export interface FillerComplianceConfigurationProvider {
   getConfigs(): Promise<FillerComplianceConfiguration[]>;
-  getAddrToEndpointsMap(): Promise<Map<string, Set<string>>>;
+ // getExcludedAddrToEndpointsMap(): Promise<Map<string, Set<string>>>;
+  getEndpointToExcludedAddrsMap(): Promise<Map<string, Set<string>>>;
 }
 
 export * from './mock';
