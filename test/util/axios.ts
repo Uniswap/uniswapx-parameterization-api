@@ -36,6 +36,33 @@ export default class AxiosUtils {
     };
   }
 
+  static async callPassThroughFail(method: string, url: string, body: any, headers?: Record<string, string>) {
+    const axios = axiosStatic.create();
+
+    axiosRetry(axios, {
+      retries: 2,
+      retryCondition: (err) => err.response?.status == 429,
+      retryDelay: axiosRetry.exponentialDelay,
+    });
+
+    const option = AxiosUtils.buildAxiosOption(method, url, body, headers);
+    try {
+      const { data, status } = await axios(option);
+      return {
+        data,
+        status,
+      }
+    } catch (err: any) {
+      if (err.response) {
+        return {
+          data: err.response.data,
+          status: err.response.status,
+        }
+      }
+      throw err;
+    }
+  }
+
   static async callAndExpectFail(
     method: string,
     url: string,
