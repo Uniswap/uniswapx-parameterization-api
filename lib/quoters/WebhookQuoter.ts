@@ -38,16 +38,6 @@ export class WebhookQuoter implements Quoter {
       return endpointToAddrsMap.get(e.endpoint) === undefined ||
         !endpointToAddrsMap.get(e.endpoint)?.has(request.swapper); 
     });
-    // endpoints.forEach((endpoint) => {
-    //   // remove endpoint if it exists in addrToEndpointsMap.get(request.swapper)
-    //   if (addrToEndpointsMap.has(request.swapper)) {
-    //     const endpointSet = addrToEndpointsMap.get(request.swapper);
-    //     if (endpointSet?.has(endpoint.endpoint)) {
-    //       this.log.info({ endpoint: endpoint.endpoint }, `Endpoint is filtered out because of filler's compliance req`);
-    //       endpoints.splice(endpoints.indexOf(endpoint), 1);
-    //     }
-    //   }
-    // })
       
     this.log.info({ endpoints }, `Fetching quotes from ${endpoints.length} endpoints`);
     const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));

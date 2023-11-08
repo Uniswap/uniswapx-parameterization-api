@@ -36,26 +36,6 @@ export class S3FillerComplianceConfigurationProvider implements FillerCompliance
     return this.endpointToExcludedAddrsMap;
   }
 
-  // async getExcludedAddrToEndpointsMap(): Promise<Map<string, Set<string>>> {
-  //   if (this.configs.length === 0) {
-  //     await this.fetchConfigs();
-  //   }
-  //   if (this.addrToEndpointsMap.size > 0) {
-  //     return this.addrToEndpointsMap;
-  //   }
-  //   this.configs.forEach((config) => {
-  //     config.addresses.forEach((address) => {
-  //       if (!this.addrToEndpointsMap.has(address)) {
-  //         this.addrToEndpointsMap.set(address, new Set<string>());
-  //       }
-  //       config.endpoints.forEach((endpoint) => {
-  //         this.addrToEndpointsMap.get(address)?.add(endpoint);
-  //       });
-  //     });
-  //   })
-  //   return this.addrToEndpointsMap;
-  // }
-
   async getConfigs(): Promise<FillerComplianceConfiguration[]> {
     if (
       this.configs.length === 0
