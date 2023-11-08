@@ -5,9 +5,11 @@ import { default as bunyan, default as Logger } from 'bunyan';
 
 import {
   BETA_S3_KEY,
+  COMPLIANCE_CONFIG_BUCKET,
   FADE_RATE_BUCKET,
   FADE_RATE_S3_KEY,
   INTEGRATION_S3_KEY,
+  PROD_COMPLIANCE_S3_KEY,
   PRODUCTION_S3_KEY,
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
@@ -18,6 +20,7 @@ import {
 } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
+import { S3FillerComplianceConfigurationProvider } from '../../providers/compliance/s3';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
@@ -48,7 +51,14 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       `${FADE_RATE_BUCKET}-${stage}-1`,
       FADE_RATE_S3_KEY
     );
-    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider, circuitBreakerProvider)];
+    
+    const fillerComplianceProvider = new S3FillerComplianceConfigurationProvider(
+      log,
+      `${COMPLIANCE_CONFIG_BUCKET}-${stage}-1`,
+      PROD_COMPLIANCE_S3_KEY
+    );
+
+    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider, circuitBreakerProvider, fillerComplianceProvider)];
     return {
       quoters: quoters,
     };
@@ -104,7 +114,12 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
       `${FADE_RATE_BUCKET}-${stage}-1`,
       FADE_RATE_S3_KEY
     );
-    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider, circuitBreakerProvider)];
+    const fillerComplianceProvider = new S3FillerComplianceConfigurationProvider(
+      log,
+      `${COMPLIANCE_CONFIG_BUCKET}-${stage}-1`,
+      PROD_COMPLIANCE_S3_KEY
+    );
+    const quoters: Quoter[] = [new WebhookQuoter(log, webhookProvider, circuitBreakerProvider, fillerComplianceProvider)];
 
     return {
       quoters: quoters,
