@@ -7,7 +7,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
-import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
@@ -23,7 +22,6 @@ export class WebhookQuoter implements Quoter {
     _log: Logger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    private complianceProvider: FillerComplianceConfigurationProvider,
     _allow_list: Set<string> = new Set<string>(['9de8f2376fef4be567f2e242fce750cca347b71853816cbc64f70d568de41ef1'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
@@ -32,12 +30,6 @@ export class WebhookQuoter implements Quoter {
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
     const endpoints = await this.getEligibleEndpoints();
-    const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
-    endpoints.filter((e) => {
-      return endpointToAddrsMap.get(e.endpoint) === undefined ||
-        !endpointToAddrsMap.get(e.endpoint)?.has(request.swapper); 
-    });
-      
     this.log.info({ endpoints }, `Fetching quotes from ${endpoints.length} endpoints`);
     const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));
     return quotes.filter((q) => q !== null) as QuoteResponse[];
