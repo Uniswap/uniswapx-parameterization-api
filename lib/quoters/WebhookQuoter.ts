@@ -32,7 +32,6 @@ export class WebhookQuoter implements Quoter {
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
     const endpoints = await this.getEligibleEndpoints();
-    //const addrToEndpointsMap = await this.complianceProvider.getExcludedAddrToEndpointsMap();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     endpoints.filter((e) => {
       return endpointToAddrsMap.get(e.endpoint) === undefined ||
