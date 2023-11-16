@@ -9,6 +9,7 @@ import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { Quoter, QuoterType } from '.';
+import { timestampInMstoSeconds } from '../util/time';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -90,23 +91,35 @@ export class WebhookQuoter implements Quoter {
 
     metric.putMetric(Metric.RFQ_REQUESTED, 1, MetricLoggerUnit.Count);
     metric.putMetric(metricContext(Metric.RFQ_REQUESTED, name), 1, MetricLoggerUnit.Count);
-    try {
-      const cleanRequest = request.toCleanJSON();
-      cleanRequest.quoteId = uuidv4();
-      const opposingCleanRequest = request.toOpposingCleanJSON();
-      opposingCleanRequest.quoteId = uuidv4();
 
-      this.log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
-      this.log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
+    const cleanRequest = request.toCleanJSON();
+    cleanRequest.quoteId = uuidv4();
+    const opposingCleanRequest = request.toOpposingCleanJSON();
+    opposingCleanRequest.quoteId = uuidv4();
 
-      const before = Date.now();
-      const timeoutOverride = config.overrides?.timeout;
+    this.log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
+    this.log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
 
-      const axiosConfig = {
-        timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
-        ...(!!headers && { headers }),
-      };
+    const before = Date.now();
+    const timeoutOverride = config.overrides?.timeout;
 
+    const axiosConfig = {
+      timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
+      ...(!!headers && { headers }),
+    };
+
+    const requestContext = {
+      requestId: cleanRequest.requestId,
+      quoteId: cleanRequest.quoteId,
+      name: name,
+      endpoint: endpoint,
+      createdAt: timestampInMstoSeconds(before),
+      createdAtMs: before.toString(),
+      timeoutSettingMs: axiosConfig.timeout,
+    };
+
+  try {    
+    
       const [hookResponse, opposite] = await Promise.all([
         axios.post(endpoint, cleanRequest, axiosConfig),
         axios.post(endpoint, opposingCleanRequest, axiosConfig),
@@ -119,10 +132,11 @@ export class WebhookQuoter implements Quoter {
         MetricLoggerUnit.Milliseconds
       );
 
-      this.log.info(
-        { response: hookResponse.data, status: hookResponse.status },
-        `Raw webhook response from: ${endpoint}`
-      );
+      const rawResponse = {
+        status: hookResponse.status,
+        data: hookResponse.data,
+        responseTimeMs: Date.now() - before,
+      };
 
       const { response, validation } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
 
@@ -130,13 +144,14 @@ export class WebhookQuoter implements Quoter {
       if (isNonQuote(request, hookResponse, response)) {
         metric.putMetric(Metric.RFQ_NON_QUOTE, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
-        this.log.info(
-          {
-            response: hookResponse.data,
-            responseStatus: hookResponse.status,
+        this.log.info({
+          eventType: 'WebhookQuoterResponse',
+          body: {
+            ...requestContext,
+            ...rawResponse,
+            responseType: 'NO_QUOTE',
           },
-          `Webhook elected not to quote: ${endpoint}`
-        );
+        });
         return null;
       }
 
@@ -144,43 +159,43 @@ export class WebhookQuoter implements Quoter {
       if (validation.error) {
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
-        this.log.error(
-          {
-            error: validation.error?.details,
-            response,
-            webhookUrl: endpoint,
+        this.log.info({
+          eventType: 'WebhookQuoterResponse',
+          body: {
+            ...requestContext,
+            ...rawResponse,
+            responseType: 'VALIDATION_ERROR',
+            validationError: validation.error?.details,
           },
-          `Webhook Response failed validation. Webhook: ${endpoint}.`
-        );
+        });
         return null;
       }
 
       if (response.requestId !== request.requestId) {
         metric.putMetric(Metric.RFQ_FAIL_REQUEST_MATCH, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_REQUEST_MATCH, name), 1, MetricLoggerUnit.Count);
-        this.log.error(
-          {
-            requestId: request.requestId,
-            responseRequestId: response.requestId,
+        this.log.info({
+          eventType: 'WebhookQuoterResponse',
+          body: {
+            ...requestContext,
+            ...rawResponse,
+            responseType: 'REQUEST_ID_MISMATCH',
+            mismatchedRequestId: response.requestId,
           },
-          `Webhook ResponseId does not match request`
-        );
+        });
         return null;
       }
 
-      const quote = request.type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;
-
       metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
-      this.log.info(
-        {
-          response: response.toLog(),
-          endpoint: endpoint,
+      this.log.info({
+        eventType: 'WebhookQuoterResponse',
+        body: {
+          ...requestContext,
+          ...rawResponse,
+          responseType: 'OK',
         },
-        `WebhookQuoter: request ${
-          request.requestId
-        } for endpoint ${endpoint} successful quote: ${request.amount.toString()} -> ${quote.toString()}}`
-      );
+      });
 
       //iff valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
@@ -201,12 +216,27 @@ export class WebhookQuoter implements Quoter {
       metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_FAIL_ERROR, name), 1, MetricLoggerUnit.Count);
       if (e instanceof AxiosError) {
-        this.log.error(
-          { endpoint, status: e.response?.status?.toString() },
-          `Axios error fetching quote from ${endpoint}: ${e}`
-        );
+        const axiosResponseType = e.code === 'ECONNABORTED' ? 'TIMEOUT' : 'HTTP_ERROR';
+        this.log.info({
+          eventType: 'WebhookQuoterResponse',
+          body: {
+            ...requestContext,
+            status: e.response?.status,
+            data: e.response?.data,
+            responseTimeMs: Date.now() - before,
+            responseType: axiosResponseType,
+          },
+        });
       } else {
-        this.log.error({ endpoint }, `Error fetching quote from ${endpoint}: ${e}`);
+        this.log.info({
+          eventType: 'WebhookQuoterResponse',
+          body: {
+            ...requestContext,
+            responseTimeMs: Date.now() - before,
+            responseType: 'OTHER_ERROR',
+            otherError: `${e}`,
+          },
+        });
       }
       return null;
     }
