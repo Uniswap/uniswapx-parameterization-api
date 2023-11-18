@@ -17,7 +17,7 @@ import { Metric } from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
-import { AnalyticsStackV2 } from './analytics-stack-v2';
+import { FirehoseStack } from './firehose-stack';
 import { CronDashboardStack } from './cron-dashboard-stack';
 import { CronStack } from './cron-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
@@ -154,10 +154,10 @@ export class APIStack extends cdk.Stack {
     });
 
     /*
-     * Analytics V2 Initialization
+     * Firehose Initialization
      */
 
-    const analyticsStackV2 = new AnalyticsStackV2(this, 'AnalyticsStackV2');
+    const firehoseStack = new FirehoseStack(this, 'FirehoseStack');
 
     /*
      * Lambda Initialization
@@ -239,7 +239,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
-        ANALYTICS_STREAM_ARN: analyticsStackV2.streamArn,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(30),
     });
@@ -265,6 +265,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(30),
     });
@@ -290,7 +291,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
-        ANALYTICS_STREAM_ARN: analyticsStackV2.streamArn,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(15),
     });
@@ -316,6 +317,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(5),
     });

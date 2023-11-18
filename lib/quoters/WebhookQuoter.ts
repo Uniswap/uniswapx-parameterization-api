@@ -4,13 +4,12 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { sendAnalyticsEvent } from '../util/analytics';
-import { Metric, metricContext, QuoteRequest, QuoteResponse, EventName } from '../entities';
+import { FirehoseLogger } from '../repositories/firehose-repository';
+import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEventType } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { Quoter, QuoterType } from '.';
-import { timestampInMstoSeconds } from '../util/time';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -23,6 +22,7 @@ export class WebhookQuoter implements Quoter {
 
   constructor(
     _log: Logger,
+    private firehose: FirehoseLogger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
     private complianceProvider: FillerComplianceConfigurationProvider,
@@ -114,8 +114,7 @@ export class WebhookQuoter implements Quoter {
       quoteId: cleanRequest.quoteId,
       name: name,
       endpoint: endpoint,
-      createdAt: timestampInMstoSeconds(before),
-      createdAtMs: before.toString(),
+      requestTime: before,
       timeoutSettingMs: axiosConfig.timeout,
     };
 
@@ -136,7 +135,8 @@ export class WebhookQuoter implements Quoter {
       const rawResponse = {
         status: hookResponse.status,
         data: hookResponse.data,
-        responseTimeMs: Date.now() - before,
+        responseTime: Date.now(),
+        latencyMs: Date.now() - before,
       };
 
       const { response, validation } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
@@ -145,8 +145,8 @@ export class WebhookQuoter implements Quoter {
       if (isNonQuote(request, hookResponse, response)) {
         metric.putMetric(Metric.RFQ_NON_QUOTE, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
-        await sendAnalyticsEvent({
-          eventType: EventName.WEBHOOK_RESPONSE,
+        await this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
           eventProperties: {
             ...requestContext,
             ...rawResponse,
@@ -160,8 +160,8 @@ export class WebhookQuoter implements Quoter {
       if (validation.error) {
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
-        await sendAnalyticsEvent({
-          eventType: EventName.WEBHOOK_RESPONSE,
+        await this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
           eventProperties: {
             ...requestContext,
             ...rawResponse,
@@ -175,8 +175,8 @@ export class WebhookQuoter implements Quoter {
       if (response.requestId !== request.requestId) {
         metric.putMetric(Metric.RFQ_FAIL_REQUEST_MATCH, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_REQUEST_MATCH, name), 1, MetricLoggerUnit.Count);
-        await sendAnalyticsEvent({
-          eventType: EventName.WEBHOOK_RESPONSE,
+        await this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
           eventProperties: {
             ...requestContext,
             ...rawResponse,
@@ -189,8 +189,8 @@ export class WebhookQuoter implements Quoter {
 
       metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
-      await sendAnalyticsEvent({
-        eventType: EventName.WEBHOOK_RESPONSE,
+      await this.firehose.sendAnalyticsEvent({
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...requestContext,
           ...rawResponse,
@@ -216,24 +216,28 @@ export class WebhookQuoter implements Quoter {
     } catch (e) {
       metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_FAIL_ERROR, name), 1, MetricLoggerUnit.Count);
+      const errorLatency = {
+        responseTime: Date.now(),
+        latencyMs: Date.now() - before,
+      };
       if (e instanceof AxiosError) {
         const axiosResponseType = e.code === 'ECONNABORTED' ? 'TIMEOUT' : 'HTTP_ERROR';
-        await sendAnalyticsEvent({
-          eventType: EventName.WEBHOOK_RESPONSE,
+        await this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
           eventProperties: {
             ...requestContext,
             status: e.response?.status,
             data: e.response?.data,
-            responseTimeMs: Date.now() - before,
+            ...errorLatency,
             responseType: axiosResponseType,
           },
         });
       } else {
-        await sendAnalyticsEvent({
-          eventType: EventName.WEBHOOK_RESPONSE,
+        await this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
           eventProperties: {
             ...requestContext,
-            responseTimeMs: Date.now() - before,
+            ...errorLatency,
             responseType: 'OTHER_ERROR',
             otherError: `${e}`,
           },

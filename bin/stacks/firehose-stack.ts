@@ -5,13 +5,14 @@ import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
 /**
- * AnalyticsStackV2
+ * FirehoseStack
  *  Sets up a single Firehose stream that can be reused by all handlers to
- *  log analytics events to the same S3 bucket dynamically partitioned by eventType.
+ *  log analytics events to the same S3 bucket as GZIP compressed newline JSON.
+ *  This format is optimized for loading into BigQuery.
  */
 
-export class AnalyticsStackV2 extends cdk.NestedStack {
-  public readonly streamArn: string;
+export class FirehoseStack extends cdk.NestedStack {
+  public readonly analyticsStreamArn: string;
 
   constructor(scope: Construct, id: string) {
     super(scope, id);
@@ -32,44 +33,13 @@ export class AnalyticsStackV2 extends cdk.NestedStack {
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-kinesisfirehose-deliverystream.html
 
     const analyticsEventsStream = new aws_firehose.CfnDeliveryStream(this, 'AnalyticsEventsStream', {
-      extendedS3DestinationConfiguration: {
+      s3DestinationConfiguration: {
         bucketArn: analyticsEventsBucket.bucketArn,
         roleArn: firehoseRole.roleArn,
         compressionFormat: 'GZIP',
-        dynamicPartitioningConfiguration: {
-          enabled: true,
-        },
-        prefix: 'events/!{partitionKeyFromQuery:eventType}/!{timestamp:yyyy/MM/dd/HH}/',
-        errorOutputPrefix: "errors/!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd/HH}/",
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'MetadataExtraction',
-              parameters: [
-                {
-                  parameterName: 'MetadataExtractionQuery',
-                  parameterValue: '{eventType:.eventType}',
-                },
-                {
-                  parameterName: 'JsonParsingEngine',
-                  parameterValue: 'JQ-1.6',
-                },
-              ],
-            },
-            {
-              type: 'AppendDelimiterToRecord',
-              parameters: [
-                {
-                  parameterName: 'Delimiter',
-                  parameterValue: '\\n',
-                }
-              ],
-            },
-          ],
-        },
+        prefix: 'events/',
       } 
     });
-    this.streamArn = analyticsEventsStream.attrArn;
+    this.analyticsStreamArn = analyticsEventsStream.attrArn;
   }
 }
