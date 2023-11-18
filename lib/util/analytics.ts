@@ -4,7 +4,6 @@ const streamArn = process.env.ANALYTICS_STREAM_ARN!;
 const parsedStreamName = streamArn.split('/')[1];
 const streamName = parsedStreamName ? parsedStreamName : '';
 
-// Define an interface for your analytics event
 interface AnalyticsEvent {
   eventType: string;
   eventProperties: {

@@ -389,8 +389,8 @@ export class APIStack extends cdk.Stack {
     mockQuote.addMethod('POST', mockQuoteIntegration);
 
     /*
-    * Param Dashboard Stack Initialization
-    */
+     * Param Dashboard Stack Initialization
+     */
     new ParamDashboardStack(this, 'ParamDashboardStack', {
       quoteLambda,
     });
@@ -399,22 +399,22 @@ export class APIStack extends cdk.Stack {
      * Analytics Stack Initialization
      */
     const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
-          quoteLambda,
+      quoteLambda,
       envVars: props.envVars,
     });
 
     const cronStack = new CronStack(this, 'CronStack', {
-    RsDatabase: analyticsStack.dbName,
-    RsClusterIdentifier: analyticsStack.clusterId,
-    RedshiftCredSecretArn: analyticsStack.credSecretArn,
-    lambdaRole: lambdaRole,
-    chatbotSNSArn: chatbotSNSArn,
-    stage: stage,
+      RsDatabase: analyticsStack.dbName,
+      RsClusterIdentifier: analyticsStack.clusterId,
+      RedshiftCredSecretArn: analyticsStack.credSecretArn,
+      lambdaRole: lambdaRole,
+      chatbotSNSArn: chatbotSNSArn,
+      stage: stage,
     });
 
     new CronDashboardStack(this, 'CronDashboardStack', {
-    synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
-    quoteLambdaName: quoteLambda.functionName,
+      synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
+      quoteLambdaName: quoteLambda.functionName,
     });
 
     /* Alarms */
