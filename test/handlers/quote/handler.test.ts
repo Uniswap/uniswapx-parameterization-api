@@ -13,6 +13,7 @@ import {
   RequestInjected,
 } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
+import { FirehoseLogger } from '../../../lib/repositories/firehose-repository';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
@@ -36,7 +37,7 @@ const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvide
 const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([{
   endpoints: ['https://uniswap.org', 'google.com'], addresses: [SWAPPER]
 }]);
-
+const mockFirehoseLogger = new FirehoseLogger("arn:aws:deliverystream/dummy", true);
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
@@ -219,7 +220,7 @@ describe('Quote handler', () => {
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
         { fadeRate: 0.02, enabled: true, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -283,7 +284,7 @@ describe('Quote handler', () => {
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -329,7 +330,7 @@ describe('Quote handler', () => {
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -355,7 +356,7 @@ describe('Quote handler', () => {
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
-      const quoters = [new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -383,7 +384,7 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -415,7 +416,7 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -469,7 +470,7 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -510,7 +511,7 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, mockComplianceProvider),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, mockComplianceProvider),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
