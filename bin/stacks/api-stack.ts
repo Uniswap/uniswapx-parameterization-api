@@ -153,6 +153,12 @@ export class APIStack extends cdk.Stack {
     });
 
     /*
+     * Analytics V2 Initialization
+     */
+
+    const analyticsStackV2 = new AnalyticsStackV2(this, 'AnalyticsStackV2');
+
+    /*
      * Lambda Initialization
      */
     const lambdaRole = new aws_iam.Role(this, `$LambdaRole`, {
@@ -172,6 +178,7 @@ export class APIStack extends cdk.Stack {
           'secretsmanager:DescribeSecret',
           'secretsmanager:ListSecretVersionIds',
           'secretsmanager:GetResourcePolicy',
+          'firehose:PutRecord'
         ],
         resources: ['*'],
         effect: aws_iam.Effect.ALLOW,
@@ -231,6 +238,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
+        ANALYTICS_STREAM_ARN: analyticsStackV2.streamArn,
       },
       timeout: Duration.seconds(30),
     });
@@ -281,6 +289,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
+        ANALYTICS_STREAM_ARN: analyticsStackV2.streamArn,
       },
       timeout: Duration.seconds(15),
     });
@@ -380,8 +389,8 @@ export class APIStack extends cdk.Stack {
     mockQuote.addMethod('POST', mockQuoteIntegration);
 
     /*
-     * Param Dashboard Stack Initialization
-     */
+    * Param Dashboard Stack Initialization
+    */
     new ParamDashboardStack(this, 'ParamDashboardStack', {
       quoteLambda,
     });
@@ -390,22 +399,22 @@ export class APIStack extends cdk.Stack {
      * Analytics Stack Initialization
      */
     const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
-      quoteLambda,
+          quoteLambda,
       envVars: props.envVars,
     });
 
     const cronStack = new CronStack(this, 'CronStack', {
-      RsDatabase: analyticsStack.dbName,
-      RsClusterIdentifier: analyticsStack.clusterId,
-      RedshiftCredSecretArn: analyticsStack.credSecretArn,
-      lambdaRole: lambdaRole,
-      chatbotSNSArn: chatbotSNSArn,
-      stage: stage,
+    RsDatabase: analyticsStack.dbName,
+    RsClusterIdentifier: analyticsStack.clusterId,
+    RedshiftCredSecretArn: analyticsStack.credSecretArn,
+    lambdaRole: lambdaRole,
+    chatbotSNSArn: chatbotSNSArn,
+    stage: stage,
     });
 
     new CronDashboardStack(this, 'CronDashboardStack', {
-      synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
-      quoteLambdaName: quoteLambda.functionName,
+    synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
+    quoteLambdaName: quoteLambda.functionName,
     });
 
     /* Alarms */

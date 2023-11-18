@@ -68,7 +68,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     const botOrderLoaderBucket = new aws_s3.Bucket(this, 'BotOrderLoaderBucket');
     const botOrderRouterBucket = new aws_s3.Bucket(this, 'BotOrderRouterBucket');
     const botOrderBroadcasterBucket = new aws_s3.Bucket(this, 'BotOrderBroadcasterBucket');
-    const webhookResponseBucket = new aws_s3.Bucket(this, 'WebhookResponseBucket');
 
     const dsRole = aws_iam.Role.fromRoleArn(this, 'DsRole', 'arn:aws:iam::867401673276:user/bq-load-sa');
     rfqRequestBucket.grantRead(dsRole);
@@ -754,28 +753,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const webhookResponseStream = new aws_firehose.CfnDeliveryStream(this, 'webhookResponseStream', {
-      extendedS3DestinationConfiguration: {
-        bucketArn: webhookResponseBucket.bucketArn,
-        roleArn: firehoseRole.roleArn,
-        compressionFormat: 'GZIP',
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: quoteProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
     /* Subscription Filter Initialization */
     const subscriptionRole = new aws_iam.Role(this, 'SubscriptionRole', {
       assumedBy: new aws_iam.ServicePrincipal('logs.amazonaws.com'),
@@ -961,13 +938,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       filterPattern: '{ $.eventType = "QuoteResponse" }',
       logGroupName: quoteLambda.logGroup.logGroupName,
       roleArn: subscriptionRole.roleArn,
-    });
-
-    new aws_logs.CfnSubscriptionFilter(this, 'WebhookResponseSub', {
-      destinationArn: webhookResponseStream.attrArn,
-      filterPattern: '{ $.eventType = "WebhookQuoterResponse" }',
-      logGroupName: quoteLambda.logGroup.logGroupName,
-      roleArn: subscriptionRole.roleArn
     });
 
     new CfnOutput(this, 'fillDestinationName', {
