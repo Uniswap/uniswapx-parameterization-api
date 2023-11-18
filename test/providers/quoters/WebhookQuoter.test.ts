@@ -7,6 +7,7 @@ import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { WebhookQuoter } from '../../../lib/quoters';
+import { FirehoseLogger } from '../../../lib/repositories/firehose-repository';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -27,6 +28,7 @@ const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvide
 const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([{
   endpoints: ['https://uniswap.org', 'google.com'], addresses: [SWAPPER]
 }]);
+const mockFirehoseLogger = new FirehoseLogger("arn:aws:deliverystream/dummy", true);
 
 describe('WebhookQuoter tests', () => {
   afterEach(() => {
@@ -44,7 +46,7 @@ describe('WebhookQuoter tests', () => {
     { hash: '0xsearcher', fadeRate: 0.1, enabled: true },
   ]);
   const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
-  const webhookQuoter = new WebhookQuoter(logger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider);
+  const webhookQuoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider);
 
   const request = new QuoteRequest({
     tokenInChainId: CHAIN_ID,
@@ -93,6 +95,7 @@ describe('WebhookQuoter tests', () => {
   it('Respects filler compliance requirements', async () => {
     const webhookQuoter = new WebhookQuoter(
       logger,
+      mockFirehoseLogger,
       webhookProvider,
       circuitBreakerProvider,
       mockComplianceProvider,
@@ -137,6 +140,7 @@ describe('WebhookQuoter tests', () => {
   it('Allows those in allow list even when they are disabled in the config', async () => {
     const webhookQuoter = new WebhookQuoter(
       logger,
+      mockFirehoseLogger,
       webhookProvider,
       circuitBreakerProvider,
       emptyMockComplianceProvider,
@@ -175,7 +179,7 @@ describe('WebhookQuoter tests', () => {
     const cbProvider = new MockCircuitBreakerConfigurationProvider([
       { hash: '0xuni', fadeRate: 0.05, enabled: true },
     ]);
-    const quoter = new WebhookQuoter(logger, webhookProvider, cbProvider, emptyMockComplianceProvider);
+    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, cbProvider, emptyMockComplianceProvider);
     await quoter.quote(request);
     expect(mockedAxios.post).toBeCalledWith(
       WEBHOOK_URL,
@@ -263,7 +267,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1], hash: "0xuni" },
     ]);
-    const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider, emptyMockComplianceProvider);
+    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, provider, circuitBreakerProvider, emptyMockComplianceProvider);
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
       tokenIn: request.tokenIn,
@@ -299,7 +303,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6], hash: "0xuni" },
     ]);
-    const quoter = new WebhookQuoter(logger, provider, circuitBreakerProvider, emptyMockComplianceProvider);
+    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, provider, circuitBreakerProvider, emptyMockComplianceProvider);
 
     const response = await quoter.quote(request);
 
