@@ -11,6 +11,7 @@ import { FirehoseLogger } from '../../../lib/repositories/firehose-repository';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+jest.mock('../../../lib/repositories/firehose-repository')
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
