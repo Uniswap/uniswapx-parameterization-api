@@ -2,7 +2,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
-import { QuoteRequest } from '../../../lib/entities';
+import { QuoteRequest, AnalyticsEventType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
@@ -337,30 +337,33 @@ describe('WebhookQuoter tests', () => {
     });
     const response = await webhookQuoter.quote(request);
 
-    expect(logger.error).toHaveBeenCalledWith(
+    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       {
-        error: [
-          {
-            context: { key: 'amountIn', label: 'amountIn' },
-            message: '"amountIn" is required',
-            path: ['amountIn'],
-            type: 'any.required',
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: {
+          reponse: 'VALIDATION_ERROR',
+          validationError: [
+            {
+              context: { key: 'amountIn', label: 'amountIn' },
+              message: '"amountIn" is required',
+              path: ['amountIn'],
+              type: 'any.required',
+            },
+          ],
+          response: {
+            createdAt: expect.any(String),
+            createdAtMs: expect.any(String),
+            data: {
+              ...quote,
+              quoteId: expect.any(String),
+              amountOut: BigNumber.from(quote.amountOut),
+              amountIn: BigNumber.from(0),
+            },
+            type: 0,
           },
-        ],
-        response: {
-          createdAt: expect.any(String),
-          createdAtMs: expect.any(String),
-          data: {
-            ...quote,
-            quoteId: expect.any(String),
-            amountOut: BigNumber.from(quote.amountOut),
-            amountIn: BigNumber.from(0),
-          },
-          type: 0,
-        },
-        webhookUrl: WEBHOOK_URL,
+          endpoint: WEBHOOK_URL,
+        }
       },
-      `Webhook Response failed validation. Webhook: ${WEBHOOK_URL}.`
     );
     expect(response).toEqual([]);
   });
