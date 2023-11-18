@@ -17,6 +17,7 @@ import { Metric } from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
+import { AnalyticsStackV2 } from './analytics-stack-v2';
 import { CronDashboardStack } from './cron-dashboard-stack';
 import { CronStack } from './cron-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
