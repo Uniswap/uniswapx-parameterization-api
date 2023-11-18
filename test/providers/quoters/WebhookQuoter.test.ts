@@ -342,7 +342,7 @@ describe('WebhookQuoter tests', () => {
       {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
-          reponse: 'VALIDATION_ERROR',
+          responseType: 'VALIDATION_ERROR',
           validationError: [
             {
               context: { key: 'amountIn', label: 'amountIn' },
