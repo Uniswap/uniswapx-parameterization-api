@@ -37,7 +37,7 @@ const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvide
 const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([{
   endpoints: ['https://uniswap.org', 'google.com'], addresses: [SWAPPER]
 }]);
-const mockFirehoseLogger = new FirehoseLogger("arn:aws:deliverystream/dummy", true);
+const mockFirehoseLogger = new FirehoseLogger(logger, "arn:aws:deliverystream/dummy", true);
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
