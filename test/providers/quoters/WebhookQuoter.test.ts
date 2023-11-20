@@ -2,7 +2,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
 import { ethers } from 'ethers';
 
-import { QuoteRequest, AnalyticsEventType } from '../../../lib/entities';
+import { QuoteRequest, AnalyticsEventType, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
@@ -364,7 +364,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 200,
           data: quote,
-          responseType: 'VALIDATION_ERROR',
+          responseType: WebhookResponseType.VALIDATION_ERROR,
           validationError: [
             {
               context: { key: 'amountIn', label: 'amountIn' },
@@ -408,7 +408,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 200,
           data: quote,
-          responseType: 'REQUEST_ID_MISMATCH',
+          responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
           mismatchedRequestId: quote.requestId,
         }
       },
@@ -432,7 +432,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 404,
           data: '',
-          responseType: 'NON_QUOTE',
+          responseType: WebhookResponseType.NON_QUOTE,
         }
       },
     );
@@ -469,7 +469,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 200,
           data: quote,
-          responseType: 'NON_QUOTE',
+          responseType: WebhookResponseType.NON_QUOTE,
         }
       },
     );
@@ -517,7 +517,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 200,
           data: quote,
-          responseType: 'NON_QUOTE',
+          responseType: WebhookResponseType.NON_QUOTE,
         }
       },
     );

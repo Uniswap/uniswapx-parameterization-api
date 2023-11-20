@@ -6,8 +6,8 @@ import { Construct } from 'constructs';
 
 /**
  * FirehoseStack
- *  Sets up a single Firehose stream that can be reused by all handlers to
- *  log analytics events to the same S3 bucket as GZIP compressed newline JSON.
+ *  Sets up a single Firehose delivery stream that can be reused by all handlers to
+ *  log analytics events to the same destination S3 bucket as GZIP compressed newline JSON.
  *  This format is optimized for loading into BigQuery.
  */
 
