@@ -62,7 +62,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       complianceKey
     );
 
-    const firehose = new FirehoseLogger(process.env.ANALYTICS_STREAM_ARN!);
+    const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
     const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider)];
     return {
@@ -126,7 +126,7 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
       `${COMPLIANCE_CONFIG_BUCKET}-${stage}-1`,
       PROD_COMPLIANCE_S3_KEY
     );
-    const firehose = new FirehoseLogger(process.env.ANALYTICS_STREAM_ARN!);
+    const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
     const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider)];
 
     return {

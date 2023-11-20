@@ -1,6 +1,6 @@
 import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
-import { BigNumber, ethers } from 'ethers';
+import { ethers } from 'ethers';
 
 import { QuoteRequest, AnalyticsEventType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
@@ -11,7 +11,6 @@ import { FirehoseLogger } from '../../../lib/repositories/firehose-repository';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
-jest.mock('../../../lib/repositories/firehose-repository')
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -29,7 +28,16 @@ const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvide
 const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([{
   endpoints: ['https://uniswap.org', 'google.com'], addresses: [SWAPPER]
 }]);
-const mockFirehoseLogger = new FirehoseLogger("arn:aws:deliverystream/dummy", true);
+const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
+const mockFirehoseLogger = new FirehoseLogger(logger, "arn:aws:deliverystream/dummy", true);
+const spySendAnalyticsEvent = jest.spyOn(mockFirehoseLogger, 'sendAnalyticsEvent');
+async function assertSuccessfulFirehosePut() {
+  const resultPromises = spySendAnalyticsEvent.mock.results.map(result => result.value);
+  const results = await Promise.all(resultPromises);
+  results.forEach((value) => {
+    expect(value.statusCode).toEqual(200);
+  });
+}
 
 describe('WebhookQuoter tests', () => {
   afterEach(() => {
@@ -46,7 +54,6 @@ describe('WebhookQuoter tests', () => {
     { hash: '0x1inch', fadeRate: 0.5, enabled: false },
     { hash: '0xsearcher', fadeRate: 0.1, enabled: true },
   ]);
-  const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   const webhookQuoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider);
 
   const request = new QuoteRequest({
@@ -71,6 +78,17 @@ describe('WebhookQuoter tests', () => {
     requestId: request.requestId,
     quoteId: QUOTE_ID,
     filler: FILLER,
+  };
+
+  const sharedWebhookResponseEventProperties = {
+    requestId: expect.any(String),
+    quoteId: expect.any(String),
+    name: 'uniswap',
+    endpoint: WEBHOOK_URL,
+    requestTime: expect.any(Number),
+    timeoutSettingMs: 500,
+    responseTime: expect.any(Number),
+    latencyMs: expect.any(Number),
   };
 
   it('Simple request and response', async () => {
@@ -334,14 +352,18 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
+        status: 200,
       });
     });
     const response = await webhookQuoter.quote(request);
 
-    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+    expect(spySendAnalyticsEvent).toHaveBeenCalledWith(
       {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
+          ...sharedWebhookResponseEventProperties,
+          status: 200,
+          data: quote,
           responseType: 'VALIDATION_ERROR',
           validationError: [
             {
@@ -351,21 +373,10 @@ describe('WebhookQuoter tests', () => {
               type: 'any.required',
             },
           ],
-          response: {
-            createdAt: expect.any(String),
-            createdAtMs: expect.any(String),
-            data: {
-              ...quote,
-              quoteId: expect.any(String),
-              amountOut: BigNumber.from(quote.amountOut),
-              amountIn: BigNumber.from(0),
-            },
-            type: 0,
-          },
-          endpoint: WEBHOOK_URL,
         }
       },
     );
+    assertSuccessfulFirehosePut();
     expect(response).toEqual([]);
   });
 
@@ -385,17 +396,24 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
+        status: 200,
       });
     });
     const response = await webhookQuoter.quote(request);
 
-    expect(logger.error).toHaveBeenCalledWith(
+    expect(spySendAnalyticsEvent).toHaveBeenCalledWith(
       {
-        requestId: request.requestId,
-        responseRequestId: quote.requestId,
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: {
+          ...sharedWebhookResponseEventProperties,
+          status: 200,
+          data: quote,
+          responseType: 'REQUEST_ID_MISMATCH',
+          mismatchedRequestId: quote.requestId,
+        }
       },
-      'Webhook ResponseId does not match request'
     );
+    assertSuccessfulFirehosePut();
     expect(response).toEqual([]);
   });
 
@@ -407,14 +425,18 @@ describe('WebhookQuoter tests', () => {
       });
     });
     const response = await webhookQuoter.quote(request);
-    expect(logger.info).toHaveBeenCalledWith(
+    expect(spySendAnalyticsEvent).toHaveBeenCalledWith(
       {
-        response: '',
-        responseStatus: 404,
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: {
+          ...sharedWebhookResponseEventProperties,
+          status: 404,
+          data: '',
+          responseType: 'NON_QUOTE',
+        }
       },
-      `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
-
+    assertSuccessfulFirehosePut();
     expect(response.length).toEqual(0);
   });
 
@@ -440,13 +462,18 @@ describe('WebhookQuoter tests', () => {
     const response = await webhookQuoter.quote(request);
 
     expect(response.length).toEqual(0);
-    expect(logger.info).toHaveBeenCalledWith(
+    expect(spySendAnalyticsEvent).toHaveBeenCalledWith(
       {
-        response: quote,
-        responseStatus: 200,
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: {
+          ...sharedWebhookResponseEventProperties,
+          status: 200,
+          data: quote,
+          responseType: 'NON_QUOTE',
+        }
       },
-      `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
+    assertSuccessfulFirehosePut();
   });
 
   it('Counts as non-quote if response is zero exactOutput', async () => {
@@ -483,12 +510,17 @@ describe('WebhookQuoter tests', () => {
     );
 
     expect(response.length).toEqual(0);
-    expect(logger.info).toHaveBeenCalledWith(
+    expect(spySendAnalyticsEvent).toHaveBeenCalledWith(
       {
-        response: quote,
-        responseStatus: 200,
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: {
+          ...sharedWebhookResponseEventProperties,
+          status: 200,
+          data: quote,
+          responseType: 'NON_QUOTE',
+        }
       },
-      `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
+    assertSuccessfulFirehosePut();
   });
 });

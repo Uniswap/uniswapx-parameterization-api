@@ -5,7 +5,7 @@ import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
 import { FirehoseLogger } from '../repositories/firehose-repository';
-import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEventType } from '../entities';
+import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEventType, WebhookResponseType } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
@@ -150,7 +150,7 @@ export class WebhookQuoter implements Quoter {
           eventProperties: {
             ...requestContext,
             ...rawResponse,
-            responseType: 'NO_QUOTE',
+            responseType: WebhookResponseType.NON_QUOTE,
           },
         });
         return null;
@@ -165,7 +165,7 @@ export class WebhookQuoter implements Quoter {
           eventProperties: {
             ...requestContext,
             ...rawResponse,
-            responseType: 'VALIDATION_ERROR',
+            responseType: WebhookResponseType.VALIDATION_ERROR,
             validationError: validation.error?.details,
           },
         });
@@ -180,7 +180,7 @@ export class WebhookQuoter implements Quoter {
           eventProperties: {
             ...requestContext,
             ...rawResponse,
-            responseType: 'REQUEST_ID_MISMATCH',
+            responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
             mismatchedRequestId: response.requestId,
           },
         });
@@ -194,7 +194,7 @@ export class WebhookQuoter implements Quoter {
         eventProperties: {
           ...requestContext,
           ...rawResponse,
-          responseType: 'OK',
+          responseType: WebhookResponseType.OK,
         },
       });
 
@@ -221,7 +221,7 @@ export class WebhookQuoter implements Quoter {
         latencyMs: Date.now() - before,
       };
       if (e instanceof AxiosError) {
-        const axiosResponseType = e.code === 'ECONNABORTED' ? 'TIMEOUT' : 'HTTP_ERROR';
+        const axiosResponseType = e.code === 'ECONNABORTED' ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
         await this.firehose.sendAnalyticsEvent({
           eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
           eventProperties: {
@@ -238,7 +238,7 @@ export class WebhookQuoter implements Quoter {
           eventProperties: {
             ...requestContext,
             ...errorLatency,
-            responseType: 'OTHER_ERROR',
+            responseType: WebhookResponseType.OTHER_ERROR,
             otherError: `${e}`,
           },
         });

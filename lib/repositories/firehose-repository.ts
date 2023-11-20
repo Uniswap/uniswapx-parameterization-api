@@ -1,12 +1,15 @@
 import { Firehose } from 'aws-sdk';
 import { AnalyticsEvent, AnalyticsEventType } from '../entities/analytics-events';
+import { default as Logger } from 'bunyan';
 
 export class FirehoseLogger {
+  private log: Logger;
   private readonly streamName: string;
   private readonly firehose: Firehose;
   private readonly isMock: boolean;
 
-  constructor(streamArn: string, isMock: boolean = false) {
+  constructor(_log: Logger, streamArn: string, isMock: boolean = false) {
+    this.log = _log;
     // Split the streamArn to extract the streamName
     const streamArnParts = streamArn.split('/');
     if (streamArnParts.length !== 2) {
@@ -42,7 +45,9 @@ export class FirehoseLogger {
       await this.firehose.putRecord(params).promise();
       return { statusCode: 200, body: 'Record put successful' };
     } catch (error) {
-      return { statusCode: 500, body: 'Error putting record' };
+      const errorResponse = `Error putting record. ${error}`
+      this.log.error({ error, streamName: this.streamName }, errorResponse)
+      return { statusCode: 500, body: errorResponse };
     }
   }
 }
