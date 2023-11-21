@@ -5,7 +5,7 @@ import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
 import { FirehoseLogger } from '../providers/analytics';
-import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEvent, AnalyticsEventType, WebhookResponseType } from '../entities';
+import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEventType, WebhookResponseType } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
@@ -145,7 +145,14 @@ export class WebhookQuoter implements Quoter {
       if (isNonQuote(request, hookResponse, response)) {
         metric.putMetric(Metric.RFQ_NON_QUOTE, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
-        await this.firehose.sendAnalyticsEvent({
+        this.log.info(
+          {
+            response: hookResponse.data,
+            responseStatus: hookResponse.status,
+          },
+          `Webhook elected not to quote: ${endpoint}`
+        );
+        this.firehose.sendAnalyticsEvent({
           eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
           eventProperties: {
             ...requestContext,
@@ -160,46 +167,69 @@ export class WebhookQuoter implements Quoter {
       if (validation.error) {
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
-        const webhookResponseEvent = new AnalyticsEvent(
-          AnalyticsEventType.WEBHOOK_RESPONSE,
+        this.log.error(
           {
+            error: validation.error?.details,
+            response,
+            webhookUrl: endpoint,
+          },
+          `Webhook Response failed validation. Webhook: ${endpoint}.`
+        );
+        this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+          eventProperties: {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.VALIDATION_ERROR,
             validationError: validation.error?.details,
           }
-        );
-        this.firehose.sendAnalyticsEvent(webhookResponseEvent);
+        });
         return null;
       }
 
       if (response.requestId !== request.requestId) {
         metric.putMetric(Metric.RFQ_FAIL_REQUEST_MATCH, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_REQUEST_MATCH, name), 1, MetricLoggerUnit.Count);
-        const webhookResponseEvent = new AnalyticsEvent(
-          AnalyticsEventType.WEBHOOK_RESPONSE,
+        this.log.error(
           {
+            requestId: request.requestId,
+            responseRequestId: response.requestId,
+          },
+          `Webhook ResponseId does not match request`
+        );
+        this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+          eventProperties: {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
             mismatchedRequestId: response.requestId,
           }
-        );
-        this.firehose.sendAnalyticsEvent(webhookResponseEvent);
+        });
         return null;
       }
 
+      const quote = request.type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;   
+    
       metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
-      const webhookResponseEvent = new AnalyticsEvent(
-        AnalyticsEventType.WEBHOOK_RESPONSE,
+      this.log.info(
         {
+          response: response.toLog(),
+          endpoint: endpoint,
+        },
+        `WebhookQuoter: request ${
+          request.requestId
+        } for endpoint ${endpoint} successful quote: ${request.amount.toString()} -> ${quote.toString()}}`
+      );    
+      this.firehose.sendAnalyticsEvent({
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: {
           ...requestContext,
           ...rawResponse,
           responseType: WebhookResponseType.OK,
         }
-      );
-      this.firehose.sendAnalyticsEvent(webhookResponseEvent);  
+      });
 
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
@@ -224,29 +254,32 @@ export class WebhookQuoter implements Quoter {
         latencyMs: Date.now() - before,
       };
       if (e instanceof AxiosError) {
+        this.log.error(
+          { endpoint, status: e.response?.status?.toString() },
+          `Axios error fetching quote from ${endpoint}: ${e}`
+        );
         const axiosResponseType = e.code === 'ECONNABORTED' ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
-        const webhookResponseEvent = new AnalyticsEvent(
-          AnalyticsEventType.WEBHOOK_RESPONSE,
-          {
+        this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+          eventProperties: {
             ...requestContext,
             status: e.response?.status,
             data: e.response?.data,
             ...errorLatency,
             responseType: axiosResponseType,
           }
-        );
-        this.firehose.sendAnalyticsEvent(webhookResponseEvent);
+        });
       } else {
-        const webhookResponseEvent = new AnalyticsEvent(
-          AnalyticsEventType.WEBHOOK_RESPONSE,
-          {
+        this.log.error({ endpoint }, `Error fetching quote from ${endpoint}: ${e}`);
+        this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+          eventProperties: {
             ...requestContext,
             ...errorLatency,
             responseType: WebhookResponseType.OTHER_ERROR,
             otherError: `${e}`,
           }
-        );
-        this.firehose.sendAnalyticsEvent(webhookResponseEvent);
+        });
       }
       return null;
     }

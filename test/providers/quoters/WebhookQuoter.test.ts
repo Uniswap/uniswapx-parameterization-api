@@ -351,7 +351,7 @@ describe('WebhookQuoter tests', () => {
     const response = await webhookQuoter.quote(request);
 
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -367,7 +367,7 @@ describe('WebhookQuoter tests', () => {
             },
           ],
         }
-      }),
+      },
     );
     expect(response).toEqual([]);
   });
@@ -394,7 +394,7 @@ describe('WebhookQuoter tests', () => {
     const response = await webhookQuoter.quote(request);
 
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -403,7 +403,7 @@ describe('WebhookQuoter tests', () => {
           responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
           mismatchedRequestId: quote.requestId,
         }
-      }),
+      },
     );
     expect(response).toEqual([]);
   });
@@ -417,7 +417,7 @@ describe('WebhookQuoter tests', () => {
     });
     const response = await webhookQuoter.quote(request);
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -425,7 +425,7 @@ describe('WebhookQuoter tests', () => {
           data: '',
           responseType: WebhookResponseType.NON_QUOTE,
         }
-      }),
+      },
     );
     expect(response.length).toEqual(0);
   });
@@ -453,7 +453,7 @@ describe('WebhookQuoter tests', () => {
 
     expect(response.length).toEqual(0);
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -461,7 +461,7 @@ describe('WebhookQuoter tests', () => {
           data: quote,
           responseType: WebhookResponseType.NON_QUOTE,
         }
-      }),
+      },
     );
   });
 
@@ -500,7 +500,7 @@ describe('WebhookQuoter tests', () => {
 
     expect(response.length).toEqual(0);
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -508,7 +508,7 @@ describe('WebhookQuoter tests', () => {
           data: quote,
           responseType: WebhookResponseType.NON_QUOTE,
         }
-      }),
+      },
     );
   });
 });
