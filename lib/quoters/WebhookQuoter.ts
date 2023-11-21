@@ -4,8 +4,8 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { FirehoseLogger } from '../repositories/firehose-repository';
-import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEventType, WebhookResponseType } from '../entities';
+import { FirehoseLogger } from '../providers/analytics';
+import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEvent, AnalyticsEventType, WebhookResponseType } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
@@ -160,45 +160,48 @@ export class WebhookQuoter implements Quoter {
       if (validation.error) {
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
-        await this.firehose.sendAnalyticsEvent({
-          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-          eventProperties: {
+        const webhookResponseEvent = new AnalyticsEvent(
+          AnalyticsEventType.WEBHOOK_RESPONSE,
+          {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.VALIDATION_ERROR,
             validationError: validation.error?.details,
-          },
-        });
+          }
+        );
+        this.firehose.sendAnalyticsEvent(webhookResponseEvent);
         return null;
       }
 
       if (response.requestId !== request.requestId) {
         metric.putMetric(Metric.RFQ_FAIL_REQUEST_MATCH, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_REQUEST_MATCH, name), 1, MetricLoggerUnit.Count);
-        await this.firehose.sendAnalyticsEvent({
-          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-          eventProperties: {
+        const webhookResponseEvent = new AnalyticsEvent(
+          AnalyticsEventType.WEBHOOK_RESPONSE,
+          {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
             mismatchedRequestId: response.requestId,
-          },
-        });
+          }
+        );
+        this.firehose.sendAnalyticsEvent(webhookResponseEvent);
         return null;
       }
 
       metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
-      await this.firehose.sendAnalyticsEvent({
-        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-        eventProperties: {
+      const webhookResponseEvent = new AnalyticsEvent(
+        AnalyticsEventType.WEBHOOK_RESPONSE,
+        {
           ...requestContext,
           ...rawResponse,
           responseType: WebhookResponseType.OK,
-        },
-      });
+        }
+      );
+      this.firehose.sendAnalyticsEvent(webhookResponseEvent);  
 
-      //iff valid quote, log the opposing side as well
+      //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
       const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
       if (
@@ -222,26 +225,28 @@ export class WebhookQuoter implements Quoter {
       };
       if (e instanceof AxiosError) {
         const axiosResponseType = e.code === 'ECONNABORTED' ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
-        await this.firehose.sendAnalyticsEvent({
-          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-          eventProperties: {
+        const webhookResponseEvent = new AnalyticsEvent(
+          AnalyticsEventType.WEBHOOK_RESPONSE,
+          {
             ...requestContext,
             status: e.response?.status,
             data: e.response?.data,
             ...errorLatency,
             responseType: axiosResponseType,
-          },
-        });
+          }
+        );
+        this.firehose.sendAnalyticsEvent(webhookResponseEvent);
       } else {
-        await this.firehose.sendAnalyticsEvent({
-          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-          eventProperties: {
+        const webhookResponseEvent = new AnalyticsEvent(
+          AnalyticsEventType.WEBHOOK_RESPONSE,
+          {
             ...requestContext,
             ...errorLatency,
             responseType: WebhookResponseType.OTHER_ERROR,
             otherError: `${e}`,
-          },
-        });
+          }
+        );
+        this.firehose.sendAnalyticsEvent(webhookResponseEvent);
       }
       return null;
     }

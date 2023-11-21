@@ -26,7 +26,7 @@ import { Quoter, WebhookQuoter } from '../../quoters';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
-import { FirehoseLogger } from '../../repositories/firehose-repository';
+import { FirehoseLogger } from '../../providers/analytics';
 
 export interface ContainerInjected {
   quoters: Quoter[];

@@ -13,7 +13,7 @@ import {
   RequestInjected,
 } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
-import { FirehoseLogger } from '../../../lib/repositories/firehose-repository';
+import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
@@ -37,7 +37,7 @@ const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvide
 const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([{
   endpoints: ['https://uniswap.org', 'google.com'], addresses: [SWAPPER]
 }]);
-const mockFirehoseLogger = new FirehoseLogger(logger, "arn:aws:deliverystream/dummy", true);
+const mockFirehoseLogger = new FirehoseLogger(logger, "arn:aws:deliverystream/dummy");
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
