@@ -1,6 +1,6 @@
 import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
-import { ethers } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
 
 import { QuoteRequest, AnalyticsEventType, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
@@ -350,6 +350,31 @@ describe('WebhookQuoter tests', () => {
     });
     const response = await webhookQuoter.quote(request);
 
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        error: [
+          {
+            context: { key: 'amountIn', label: 'amountIn' },
+            message: '"amountIn" is required',
+            path: ['amountIn'],
+            type: 'any.required',
+          },
+        ],
+        response: {
+          createdAt: expect.any(String),
+          createdAtMs: expect.any(String),
+          data: {
+            ...quote,
+            quoteId: expect.any(String),
+            amountOut: BigNumber.from(quote.amountOut),
+            amountIn: BigNumber.from(0),
+          },
+          type: 0,
+        },
+        webhookUrl: WEBHOOK_URL,
+      },
+      `Webhook Response failed validation. Webhook: ${WEBHOOK_URL}.`
+    );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
@@ -393,6 +418,13 @@ describe('WebhookQuoter tests', () => {
     });
     const response = await webhookQuoter.quote(request);
 
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        requestId: request.requestId,
+        responseRequestId: quote.requestId,
+      },
+      'Webhook ResponseId does not match request'
+    );    
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
@@ -416,6 +448,13 @@ describe('WebhookQuoter tests', () => {
       });
     });
     const response = await webhookQuoter.quote(request);
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        response: '',
+        responseStatus: 404,
+      },
+      `Webhook elected not to quote: ${WEBHOOK_URL}`
+    );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
@@ -452,6 +491,13 @@ describe('WebhookQuoter tests', () => {
     const response = await webhookQuoter.quote(request);
 
     expect(response.length).toEqual(0);
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        response: quote,
+        responseStatus: 200,
+      },
+      `Webhook elected not to quote: ${WEBHOOK_URL}`
+    );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
@@ -499,6 +545,13 @@ describe('WebhookQuoter tests', () => {
     );
 
     expect(response.length).toEqual(0);
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        response: quote,
+        responseStatus: 200,
+      },
+      `Webhook elected not to quote: ${WEBHOOK_URL}`
+    );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       {
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,

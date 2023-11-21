@@ -132,6 +132,10 @@ export class WebhookQuoter implements Quoter {
         MetricLoggerUnit.Milliseconds
       );
 
+      this.log.info(
+        { response: hookResponse.data, status: hookResponse.status },
+        `Raw webhook response from: ${endpoint}`
+      );
       const rawResponse = {
         status: hookResponse.status,
         data: hookResponse.data,
@@ -209,8 +213,8 @@ export class WebhookQuoter implements Quoter {
         return null;
       }
 
-      const quote = request.type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;   
-    
+      const quote = request.type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;
+
       metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
       this.log.info(
@@ -221,7 +225,7 @@ export class WebhookQuoter implements Quoter {
         `WebhookQuoter: request ${
           request.requestId
         } for endpoint ${endpoint} successful quote: ${request.amount.toString()} -> ${quote.toString()}}`
-      );    
+      );
       this.firehose.sendAnalyticsEvent({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
