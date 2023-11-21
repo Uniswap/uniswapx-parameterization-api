@@ -17,6 +17,7 @@ import { Metric } from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
+import { FirehoseStack } from './firehose-stack';
 import { CronDashboardStack } from './cron-dashboard-stack';
 import { CronStack } from './cron-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
@@ -153,6 +154,12 @@ export class APIStack extends cdk.Stack {
     });
 
     /*
+     * Firehose Initialization
+     */
+
+    const firehoseStack = new FirehoseStack(this, 'FirehoseStack');
+
+    /*
      * Lambda Initialization
      */
     const lambdaRole = new aws_iam.Role(this, `$LambdaRole`, {
@@ -172,6 +179,7 @@ export class APIStack extends cdk.Stack {
           'secretsmanager:DescribeSecret',
           'secretsmanager:ListSecretVersionIds',
           'secretsmanager:GetResourcePolicy',
+          'firehose:PutRecord'
         ],
         resources: ['*'],
         effect: aws_iam.Effect.ALLOW,
@@ -231,6 +239,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(30),
     });
@@ -256,6 +265,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(30),
     });
@@ -281,6 +291,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(15),
     });
@@ -306,6 +317,7 @@ export class APIStack extends cdk.Stack {
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(5),
     });

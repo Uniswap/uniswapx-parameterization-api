@@ -4,7 +4,8 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Metric, metricContext, QuoteRequest, QuoteResponse } from '../entities';
+import { FirehoseLogger } from '../providers/analytics';
+import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEventType, WebhookResponseType } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
@@ -21,6 +22,7 @@ export class WebhookQuoter implements Quoter {
 
   constructor(
     _log: Logger,
+    private firehose: FirehoseLogger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
     private complianceProvider: FillerComplianceConfigurationProvider,
@@ -90,23 +92,34 @@ export class WebhookQuoter implements Quoter {
 
     metric.putMetric(Metric.RFQ_REQUESTED, 1, MetricLoggerUnit.Count);
     metric.putMetric(metricContext(Metric.RFQ_REQUESTED, name), 1, MetricLoggerUnit.Count);
-    try {
-      const cleanRequest = request.toCleanJSON();
-      cleanRequest.quoteId = uuidv4();
-      const opposingCleanRequest = request.toOpposingCleanJSON();
-      opposingCleanRequest.quoteId = uuidv4();
 
-      this.log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
-      this.log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
+    const cleanRequest = request.toCleanJSON();
+    cleanRequest.quoteId = uuidv4();
+    const opposingCleanRequest = request.toOpposingCleanJSON();
+    opposingCleanRequest.quoteId = uuidv4();
 
-      const before = Date.now();
-      const timeoutOverride = config.overrides?.timeout;
+    this.log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
+    this.log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
 
-      const axiosConfig = {
-        timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
-        ...(!!headers && { headers }),
-      };
+    const before = Date.now();
+    const timeoutOverride = config.overrides?.timeout;
 
+    const axiosConfig = {
+      timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
+      ...(!!headers && { headers }),
+    };
+
+    const requestContext = {
+      requestId: cleanRequest.requestId,
+      quoteId: cleanRequest.quoteId,
+      name: name,
+      endpoint: endpoint,
+      requestTime: before,
+      timeoutSettingMs: axiosConfig.timeout,
+    };
+
+  try {    
+    
       const [hookResponse, opposite] = await Promise.all([
         axios.post(endpoint, cleanRequest, axiosConfig),
         axios.post(endpoint, opposingCleanRequest, axiosConfig),
@@ -123,6 +136,12 @@ export class WebhookQuoter implements Quoter {
         { response: hookResponse.data, status: hookResponse.status },
         `Raw webhook response from: ${endpoint}`
       );
+      const rawResponse = {
+        status: hookResponse.status,
+        data: hookResponse.data,
+        responseTime: Date.now(),
+        latencyMs: Date.now() - before,
+      };
 
       const { response, validation } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
 
@@ -137,6 +156,14 @@ export class WebhookQuoter implements Quoter {
           },
           `Webhook elected not to quote: ${endpoint}`
         );
+        this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+          eventProperties: {
+            ...requestContext,
+            ...rawResponse,
+            responseType: WebhookResponseType.NON_QUOTE,
+          },
+        });
         return null;
       }
 
@@ -152,6 +179,15 @@ export class WebhookQuoter implements Quoter {
           },
           `Webhook Response failed validation. Webhook: ${endpoint}.`
         );
+        this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+          eventProperties: {
+            ...requestContext,
+            ...rawResponse,
+            responseType: WebhookResponseType.VALIDATION_ERROR,
+            validationError: validation.error?.details,
+          }
+        });
         return null;
       }
 
@@ -165,6 +201,15 @@ export class WebhookQuoter implements Quoter {
           },
           `Webhook ResponseId does not match request`
         );
+        this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+          eventProperties: {
+            ...requestContext,
+            ...rawResponse,
+            responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
+            mismatchedRequestId: response.requestId,
+          }
+        });
         return null;
       }
 
@@ -181,8 +226,16 @@ export class WebhookQuoter implements Quoter {
           request.requestId
         } for endpoint ${endpoint} successful quote: ${request.amount.toString()} -> ${quote.toString()}}`
       );
+      this.firehose.sendAnalyticsEvent({
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: {
+          ...requestContext,
+          ...rawResponse,
+          responseType: WebhookResponseType.OK,
+        }
+      });
 
-      //iff valid quote, log the opposing side as well
+      //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
       const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
       if (
@@ -200,13 +253,37 @@ export class WebhookQuoter implements Quoter {
     } catch (e) {
       metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_FAIL_ERROR, name), 1, MetricLoggerUnit.Count);
+      const errorLatency = {
+        responseTime: Date.now(),
+        latencyMs: Date.now() - before,
+      };
       if (e instanceof AxiosError) {
         this.log.error(
           { endpoint, status: e.response?.status?.toString() },
           `Axios error fetching quote from ${endpoint}: ${e}`
         );
+        const axiosResponseType = e.code === 'ECONNABORTED' ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
+        this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+          eventProperties: {
+            ...requestContext,
+            status: e.response?.status,
+            data: e.response?.data,
+            ...errorLatency,
+            responseType: axiosResponseType,
+          }
+        });
       } else {
         this.log.error({ endpoint }, `Error fetching quote from ${endpoint}: ${e}`);
+        this.firehose.sendAnalyticsEvent({
+          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+          eventProperties: {
+            ...requestContext,
+            ...errorLatency,
+            responseType: WebhookResponseType.OTHER_ERROR,
+            otherError: `${e}`,
+          }
+        });
       }
       return null;
     }
