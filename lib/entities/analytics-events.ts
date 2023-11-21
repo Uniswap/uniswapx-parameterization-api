@@ -1,3 +1,5 @@
+import { v4 as uuidv4 } from 'uuid';
+
 export enum AnalyticsEventType {
   WEBHOOK_RESPONSE = 'WebhookQuoterResponse',
 };
@@ -13,11 +15,13 @@ export enum WebhookResponseType {
 };
 
 export class AnalyticsEvent {
+  eventId?: string; // gets set in constructor
   eventType: AnalyticsEventType;
   eventTime?: number; // gets set in constructor
   eventProperties: { [key: string]: any };
 
   constructor(eventType: AnalyticsEventType, eventProperties: { [key: string]: any }) {
+    this.eventId = uuidv4();
     this.eventType = eventType;
     this.eventTime = Date.now();
     this.eventProperties = eventProperties;
