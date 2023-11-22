@@ -78,9 +78,9 @@ describe('WebhookQuoter tests', () => {
     quoteId: expect.any(String),
     name: 'uniswap',
     endpoint: WEBHOOK_URL,
-    requestTime: expect.any(Number),
+    requestTime: expect.any(String),
     timeoutSettingMs: 500,
-    responseTime: expect.any(Number),
+    responseTime: expect.any(String),
     latencyMs: expect.any(Number),
   };
 
