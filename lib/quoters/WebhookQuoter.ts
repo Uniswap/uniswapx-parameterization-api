@@ -5,7 +5,7 @@ import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
 import { FirehoseLogger } from '../providers/analytics';
-import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEventType, WebhookResponseType } from '../entities';
+import { Metric, metricContext, QuoteRequest, QuoteResponse, AnalyticsEvent, AnalyticsEventType, WebhookResponseType } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
@@ -156,14 +156,14 @@ export class WebhookQuoter implements Quoter {
           },
           `Webhook elected not to quote: ${endpoint}`
         );
-        this.firehose.sendAnalyticsEvent({
-          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-          eventProperties: {
+        this.firehose.sendAnalyticsEvent(new AnalyticsEvent(
+          AnalyticsEventType.WEBHOOK_RESPONSE,
+          {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.NON_QUOTE,
-          },
-        });
+          }
+        ));
         return null;
       }
 
@@ -179,15 +179,15 @@ export class WebhookQuoter implements Quoter {
           },
           `Webhook Response failed validation. Webhook: ${endpoint}.`
         );
-        this.firehose.sendAnalyticsEvent({
-          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-          eventProperties: {
+        this.firehose.sendAnalyticsEvent(new AnalyticsEvent(
+          AnalyticsEventType.WEBHOOK_RESPONSE,
+          {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.VALIDATION_ERROR,
             validationError: validation.error?.details,
           }
-        });
+        ));
         return null;
       }
 
@@ -201,15 +201,15 @@ export class WebhookQuoter implements Quoter {
           },
           `Webhook ResponseId does not match request`
         );
-        this.firehose.sendAnalyticsEvent({
-          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-          eventProperties: {
+        this.firehose.sendAnalyticsEvent(new AnalyticsEvent(
+          AnalyticsEventType.WEBHOOK_RESPONSE,
+          {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
             mismatchedRequestId: response.requestId,
           }
-        });
+        ));
         return null;
       }
 
@@ -226,14 +226,14 @@ export class WebhookQuoter implements Quoter {
           request.requestId
         } for endpoint ${endpoint} successful quote: ${request.amount.toString()} -> ${quote.toString()}}`
       );
-      this.firehose.sendAnalyticsEvent({
-        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-        eventProperties: {
+      this.firehose.sendAnalyticsEvent(new AnalyticsEvent(
+        AnalyticsEventType.WEBHOOK_RESPONSE,
+        {
           ...requestContext,
           ...rawResponse,
           responseType: WebhookResponseType.OK,
         }
-      });
+      ));
 
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
@@ -263,27 +263,27 @@ export class WebhookQuoter implements Quoter {
           `Axios error fetching quote from ${endpoint}: ${e}`
         );
         const axiosResponseType = e.code === 'ECONNABORTED' ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
-        this.firehose.sendAnalyticsEvent({
-          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-          eventProperties: {
+        this.firehose.sendAnalyticsEvent(new AnalyticsEvent(
+          AnalyticsEventType.WEBHOOK_RESPONSE,
+          {
             ...requestContext,
             status: e.response?.status,
             data: e.response?.data,
             ...errorLatency,
             responseType: axiosResponseType,
           }
-        });
+        ));
       } else {
         this.log.error({ endpoint }, `Error fetching quote from ${endpoint}: ${e}`);
-        this.firehose.sendAnalyticsEvent({
-          eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-          eventProperties: {
+        this.firehose.sendAnalyticsEvent(new AnalyticsEvent(
+          AnalyticsEventType.WEBHOOK_RESPONSE,
+          {
             ...requestContext,
             ...errorLatency,
             responseType: WebhookResponseType.OTHER_ERROR,
             otherError: `${e}`,
           }
-        });
+        ));
       }
       return null;
     }

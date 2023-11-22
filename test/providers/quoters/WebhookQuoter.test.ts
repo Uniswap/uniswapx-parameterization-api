@@ -376,7 +376,7 @@ describe('WebhookQuoter tests', () => {
       `Webhook Response failed validation. Webhook: ${WEBHOOK_URL}.`
     );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -392,7 +392,7 @@ describe('WebhookQuoter tests', () => {
             },
           ],
         }
-      },
+      }),
     );
     expect(response).toEqual([]);
   });
@@ -426,7 +426,7 @@ describe('WebhookQuoter tests', () => {
       'Webhook ResponseId does not match request'
     );    
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -435,7 +435,7 @@ describe('WebhookQuoter tests', () => {
           responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
           mismatchedRequestId: quote.requestId,
         }
-      },
+      }),
     );
     expect(response).toEqual([]);
   });
@@ -456,7 +456,7 @@ describe('WebhookQuoter tests', () => {
       `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -464,7 +464,7 @@ describe('WebhookQuoter tests', () => {
           data: '',
           responseType: WebhookResponseType.NON_QUOTE,
         }
-      },
+      }),
     );
     expect(response.length).toEqual(0);
   });
@@ -499,7 +499,7 @@ describe('WebhookQuoter tests', () => {
       `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -507,7 +507,7 @@ describe('WebhookQuoter tests', () => {
           data: quote,
           responseType: WebhookResponseType.NON_QUOTE,
         }
-      },
+      }),
     );
   });
 
@@ -553,7 +553,7 @@ describe('WebhookQuoter tests', () => {
       `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
           ...sharedWebhookResponseEventProperties,
@@ -561,7 +561,7 @@ describe('WebhookQuoter tests', () => {
           data: quote,
           responseType: WebhookResponseType.NON_QUOTE,
         }
-      },
+      }),
     );
   });
 });

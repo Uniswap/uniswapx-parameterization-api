@@ -15,9 +15,9 @@ export enum WebhookResponseType {
 };
 
 export class AnalyticsEvent {
-  eventId?: string; // gets set in constructor
+  eventId: string; // gets set in constructor
   eventType: AnalyticsEventType;
-  eventTime?: number; // gets set in constructor
+  eventTime: number; // gets set in constructor
   eventProperties: { [key: string]: any };
 
   constructor(eventType: AnalyticsEventType, eventProperties: { [key: string]: any }) {

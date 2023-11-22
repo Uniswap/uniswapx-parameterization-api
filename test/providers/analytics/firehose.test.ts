@@ -36,7 +36,7 @@ describe('FirehoseLogger', () => {
 
   it('should send analytics event to Firehose', async () => {
     const firehose = new FirehoseLogger(logger, validStreamArn);
-    const analyticsEvent: AnalyticsEvent = { eventType: AnalyticsEventType.WEBHOOK_RESPONSE, eventProperties: { status: 200 } };
+    const analyticsEvent =  new AnalyticsEvent(AnalyticsEventType.WEBHOOK_RESPONSE,{ status: 200 });
 
     const putRecordMock = jest.fn();
     mockedFirehose.prototype.putRecord = putRecordMock;
