@@ -10,6 +10,7 @@ import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { Quoter, QuoterType } from '.';
+import { timestampInMstoISOString } from '../util/time';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -114,7 +115,7 @@ export class WebhookQuoter implements Quoter {
       quoteId: cleanRequest.quoteId,
       name: name,
       endpoint: endpoint,
-      requestTime: before,
+      requestTime: timestampInMstoISOString(before),
       timeoutSettingMs: axiosConfig.timeout,
     };
 
@@ -139,7 +140,7 @@ export class WebhookQuoter implements Quoter {
       const rawResponse = {
         status: hookResponse.status,
         data: hookResponse.data,
-        responseTime: Date.now(),
+        responseTime: timestampInMstoISOString(Date.now()),
         latencyMs: Date.now() - before,
       };
 
@@ -254,7 +255,7 @@ export class WebhookQuoter implements Quoter {
       metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_FAIL_ERROR, name), 1, MetricLoggerUnit.Count);
       const errorLatency = {
-        responseTime: Date.now(),
+        responseTime: timestampInMstoISOString(Date.now()),
         latencyMs: Date.now() - before,
       };
       if (e instanceof AxiosError) {
