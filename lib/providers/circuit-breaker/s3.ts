@@ -3,9 +3,9 @@ import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { MetricsLogger, Unit } from 'aws-embedded-metrics';
 import Logger from 'bunyan';
 
+import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 import { Metric } from '../../entities';
 import { checkDefined } from '../../preconditions/preconditions';
-import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 
 export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
   private log: Logger;
@@ -13,8 +13,8 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
   private lastUpdatedTimestamp: number;
   private client: S3Client;
 
-  // try to refetch endpoints every 5 mins
-  private static UPDATE_PERIOD_MS = 5 * 60000;
+  // try to refetch endpoints every minute
+  private static UPDATE_PERIOD_MS = 1 * 60000;
   private static FILL_RATE_THRESHOLD = 0.75;
 
   constructor(_log: Logger, private bucket: string, private key: string) {

@@ -65,3 +65,7 @@ export interface BaseSwitchRepository {
   putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void>;
   syntheticQuoteForTradeEnabled(trade: SynthSwitchQueryParams): Promise<boolean>;
 }
+
+export interface BaseTimestampRepository {
+  updateTimestamp(hash: string, ts: number): Promise<void>;
+}
