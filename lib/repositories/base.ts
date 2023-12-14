@@ -28,6 +28,17 @@ export enum TimestampThreshold {
   TWO_MONTHS = "'2 MONTHS'",
 }
 
+export type TimestampRepoRow = {
+  hash: string;
+  lastPostTimestamp: number;
+  blockUntilTimestamp: number;
+};
+
+export type DynamoTimestampRepoRow = Exclude<TimestampRepoRow, 'lastPostTimestamp' | 'blockUntilTimestamp'> & {
+  lastPostTimestamp: string;
+  blockUntilTimestamp: string;
+};
+
 export abstract class BaseRedshiftRepository {
   constructor(readonly client: RedshiftDataClient, private readonly configs: SharedConfigs) {}
 
@@ -67,5 +78,7 @@ export interface BaseSwitchRepository {
 }
 
 export interface BaseTimestampRepository {
-  updateTimestamp(hash: string, ts: number): Promise<void>;
+  updateTimestampsBatch(toUpdate: [string, number][], ts: number): Promise<void>;
+  getFillerTimestamps(hash: string): Promise<TimestampRepoRow>;
+  getTimestampsBatch(hashes: string[]): Promise<TimestampRepoRow[]>;
 }

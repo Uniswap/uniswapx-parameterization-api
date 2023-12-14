@@ -5,8 +5,8 @@ import { BaseRedshiftRepository, SharedConfigs } from './base';
 
 export type FadesRowType = {
   fillerAddress: string;
-  totalQuotes: number;
-  fadedQuotes: number;
+  faded: number;
+  postTimestamp: number;
 };
 
 export class FadesRepository extends BaseRedshiftRepository {
@@ -33,9 +33,9 @@ export class FadesRepository extends BaseRedshiftRepository {
     const stmtId = await this.executeStatement(FADE_RATE_SQL, FadesRepository.log, { waitTimeMs: 2_000 });
     const response = await this.client.send(new GetStatementResultCommand({ Id: stmtId }));
     /* result should be in the following format
-        | rfqFiller    |   fade_rate    |
-        |---- foo ------|---- 0.05 ------|
-        |---- bar ------|---- 0.01 ------|
+        | rfqFiller    |     faded     |   postTimestamp  |
+        |---- foo ------|---- 1 ----|---- 12345678 ----|
+        |---- bar ------|---- 0 ----|---- 12222222 ----|
       */
     const result = response.Records;
     if (!result) {
@@ -45,8 +45,8 @@ export class FadesRepository extends BaseRedshiftRepository {
     const formattedResult = result.map((row) => {
       const formattedRow: FadesRowType = {
         fillerAddress: row[0].stringValue as string,
-        totalQuotes: Number(row[1].longValue as number),
-        fadedQuotes: Number(row[2].longValue as number),
+        faded: Number(row[1].longValue as number),
+        postTimestamp: Number(row[2].longValue as number),
       };
       return formattedRow;
     });
@@ -62,7 +62,7 @@ WITH latestOrders AS (
   SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders
   )
-  WHERE row_num <= 30
+  WHERE row_num <= 10
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
 )
 SELECT
@@ -87,16 +87,13 @@ const FADE_RATE_SQL = `
 WITH ORDERS_CTE AS (
     SELECT 
         rfqFiller,
-        COUNT(*) AS totalQuotes,
-        SUM(CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END) AS fadedQuotes
+        postTimestamp,
+        CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END AS faded,
     FROM rfqOrdersTimestamp
-    GROUP BY rfqFiller
 )
 SELECT 
     rfqFiller,
-    totalQuotes,
-    fadedQuotes,
-    fadedQuotes / totalQuotes as fadeRate
+    postTimestamp,
+    faded
 FROM ORDERS_CTE
-WHERE totalQuotes >= 10;
 `;

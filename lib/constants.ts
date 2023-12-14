@@ -24,5 +24,7 @@ export const DYNAMO_TABLE_KEY = {
   TRADE_TYPE: 'type',
   LOWER: 'lower',
   ENABLED: 'enabled',
-  TIMESTAMP: 'timestamp',
+  BLOCK_UNTIL_TIMESTAMP: 'blockUntilTimestamp',
+  LAST_POST_TIMESTAMP: 'lastPostTimestamp',
+  FADED: 'faded',
 };

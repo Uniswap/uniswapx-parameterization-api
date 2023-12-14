@@ -10,6 +10,16 @@ module.exports = {
       ],
       ProvisionedThroughput: { ReadCapacityUnits: 10, WriteCapacityUnits: 10 },
     },
+    {
+      TableName: 'Timestamp',
+      KeySchema: [
+        { AttributeName: 'hash', KeyType: 'HASH' },
+      ],
+      AttributeDefinitions: [
+        { AttributeName: 'hash', AttributeType: 'S' },
+      ],
+      ProvisionedThroughput: { ReadCapacityUnits: 10, WriteCapacityUnits: 10 },
+    }
   ],
   port: 8000,
 };
