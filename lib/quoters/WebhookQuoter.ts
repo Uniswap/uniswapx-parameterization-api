@@ -276,6 +276,7 @@ export class WebhookQuoter implements Quoter {
             data: e.response?.data,
             ...errorLatency,
             responseType: axiosResponseType,
+            axiosError: `${e}`,
           })
         );
       } else {
