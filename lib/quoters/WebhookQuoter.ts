@@ -19,6 +19,7 @@ import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { timestampInMstoISOString } from '../util/time';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -33,7 +34,8 @@ export class WebhookQuoter implements Quoter {
     private firehose: FirehoseLogger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    private complianceProvider: FillerComplianceConfigurationProvider
+    private complianceProvider: FillerComplianceConfigurationProvider,
+    _allow_list: Set<string> = new Set<string>(['1ed189c4b20479e36acf74e2bc87e03bfdce765ecba6696970caee8299fc005f'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
@@ -272,6 +274,7 @@ export class WebhookQuoter implements Quoter {
             data: e.response?.data,
             ...errorLatency,
             responseType: axiosResponseType,
+            axiosError: `${e}`,
           })
         );
       } else {
