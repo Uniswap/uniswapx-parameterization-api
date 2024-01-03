@@ -61,7 +61,6 @@ export class SwitchRepository implements BaseSwitchRepository {
       { execute: true, consistent: true }
     );
 
-    SwitchRepository.log.info({ res: result.Item }, 'get result');
     if (result.Item && BigNumber.from(result.Item.lower).lte(amount)) {
       return result.Item.enabled;
     } else {
@@ -71,7 +70,6 @@ export class SwitchRepository implements BaseSwitchRepository {
   }
 
   public async putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void> {
-    SwitchRepository.log.info({ pk: `${SwitchRepository.getKey(trade)}` }, 'put pk');
     await this.switchEntity.put(
       {
         [PARTITION_KEY]: `${SwitchRepository.getKey(trade)}`,

@@ -69,7 +69,6 @@ export class TimestampRepository implements BaseTimestampRepository {
         execute: true,
       }
     );
-    TimestampRepository.log.info({ Item }, 'get result');
     return {
       hash: Item?.hash,
       lastPostTimestamp: parseInt(Item?.lastPostTimestamp),
