@@ -22,6 +22,10 @@ const FADES_ROWS: FadesRowType[] = [
   { fillerAddress: '0x3', faded: 1, postTimestamp: now - 100 },
   // filler3
   { fillerAddress: '0x4', faded: 1, postTimestamp: now - 100 },
+  // filler4
+  { fillerAddress: '0x5', faded: 0, postTimestamp: now - 100 },
+  // filler5
+  { fillerAddress: '0x6', faded: 0, postTimestamp: now - 100 },
 ];
 
 const ADDRESS_TO_FILLER = new Map<string, string>([
@@ -29,12 +33,16 @@ const ADDRESS_TO_FILLER = new Map<string, string>([
   ['0x2', 'filler1'],
   ['0x3', 'filler2'],
   ['0x4', 'filler3'],
+  ['0x5', 'filler4'],
+  ['0x6', 'filler5'],
 ]);
 
 const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
   ['filler1', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN }],
   ['filler2', { lastPostTimestamp: now - 75, blockUntilTimestamp: now - 50 }],
   ['filler3', { lastPostTimestamp: now - 101, blockUntilTimestamp: now + 1000 }],
+  ['filler4', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN }],
+  ['filler5', { lastPostTimestamp: now - 150, blockUntilTimestamp: now + 100 }],
 ]);
 
 // silent logger in tests
@@ -53,6 +61,8 @@ describe('FadeRateCron test', () => {
         filler1: 3, // count all fades in FADES_ROWS
         filler2: 1, // only count postTimestamp == now - 70
         filler3: 1,
+        filler4: 0,
+        filler5: 0,
       });
     });
   });
@@ -69,6 +79,11 @@ describe('FadeRateCron test', () => {
         ['filler1', now, now + BLOCK_PER_FADE_SECS * 3],
         ['filler2', now, now + BLOCK_PER_FADE_SECS * 1],
       ]);
+    });
+
+    it('keep old blockUntilTimestamp if no new fades', () => {
+      expect(newTimestamps).not.toMatchObject([['filler5', expect.anything(), expect.anything()]]);
+      expect(newTimestamps).not.toMatchObject([['filler4', expect.anything(), expect.anything()]]);
     });
 
     it('ignores fillers with blockUntilTimestamp > current timestamp', () => {

@@ -91,7 +91,7 @@ export function calculateNewTimestamps(
     }
     const newFades = fillersNewFades[hash];
     if (newFades) {
-      const blockUntilTimestamp = Math.floor(Date.now() / 1000) + newFades * BLOCK_PER_FADE_SECS;
+      const blockUntilTimestamp = newPostTimestamp + newFades * BLOCK_PER_FADE_SECS;
       updatedTimestamps.push([hash, newPostTimestamp, blockUntilTimestamp]);
     }
   });
