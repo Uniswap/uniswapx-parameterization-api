@@ -5,21 +5,18 @@ import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
 
-import {
-  BETA_S3_KEY,
-  FADE_RATE_BUCKET,
-  FADE_RATE_S3_KEY,
-  FILL_RATE_THRESHOLD,
-  PRODUCTION_S3_KEY,
-  WEBHOOK_CONFIG_BUCKET,
-} from '../constants';
+import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
 import { CircuitBreakerMetricDimension } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
-import { S3CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker/s3';
-import { BaseTimestampRepository, FadesRepository, FadesRowType, SharedConfigs } from '../repositories';
+import { FadesRepository, FadesRowType, SharedConfigs, TimestampRepoRow } from '../repositories';
 import { TimestampRepository } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
+
+export type FillerFades = Record<string, number>;
+export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
+
+export const BLOCK_PER_FADE_SECS = 60 * 5; // 5 minutes
 
 export const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
   await main(metrics);
@@ -56,51 +53,75 @@ async function main(metrics: MetricsLogger) {
   const result = await fadesRepository.getFades();
 
   if (result) {
+    const fillerHashes = webhookProvider.fillers();
+    const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerHashes);
     const addressToFillerHash = await webhookProvider.addressToFillerHash();
-    const fillersNewFades = calculateFillerFadeRates(result, addressToFillerHash, log);
-    log.info({ fadeRates: [...fillerFadeRate.entries()] }, 'filler fade rate');
 
-    const toUpdate = [...fillerFadeRate.entries()].filter(([, rate]) => rate >= FILL_RATE_THRESHOLD);
-    log.info({ toUpdate }, 'filler for which to update timestamp');
-    await timestampDB.updateTimestampsBatch(toUpdate, Math.floor(Date.now() / 1000));
+    // get fillers new fades from last checked timestamp:
+    //  | rfqFiller    |     faded  |   postTimestamp  |
+    //  |---- foo ------|---- 3 ----|---- 12345678 ----|
+    //  |---- bar ------|---- 1 ----|---- 12222222 ----|
+    const fillersNewFades = getFillersNewFades(result, addressToFillerHash, fillerTimestamps, log);
+
+    const updatedTimestamps = calculateNewTimestamps(
+      fillerTimestamps,
+      fillersNewFades,
+      Math.floor(Date.now() / 1000),
+      log
+    );
+    log.info({ updatedTimestamps }, 'filler for which to update timestamp');
+    await timestampDB.updateTimestampsBatch(updatedTimestamps);
   }
+}
+
+/* compute blockUntil timestamp for each filler
+  blockedUntilTimestamp > current timestamp: skip
+  lastPostTimestamp < blockedUntilTimestamp < current timestamp: block for # * unit block time from now
+*/
+export function calculateNewTimestamps(
+  fillerTimestamps: FillerTimestamps,
+  fillersNewFades: FillerFades,
+  newPostTimestamp: number,
+  log?: Logger
+): [string, number, number][] {
+  const updatedTimestamps: [string, number, number][] = [];
+  fillerTimestamps.forEach((row, hash) => {
+    if (row.blockUntilTimestamp > newPostTimestamp) {
+      return;
+    }
+    const newFades = fillersNewFades[hash];
+    if (newFades) {
+      const blockUntilTimestamp = Math.floor(Date.now() / 1000) + newFades * BLOCK_PER_FADE_SECS;
+      updatedTimestamps.push([hash, newPostTimestamp, blockUntilTimestamp]);
+    }
+  });
+  log?.info({ updatedTimestamps }, 'updated timestamps');
+  return updatedTimestamps;
 }
 
 export function getFillersNewFades(
   rows: FadesRowType[],
   addressToFillerHash: Map<string, string>,
+  fillerTimestamps: FillerTimestamps,
   log?: Logger
-): Map<string, [number, number]> {
-  const;
-}
-
-// aggregates potentially multiple filler addresses into filler name
-// and calculates fade rate for each
-export function calculateFillerFadeRates(
-  rows: FadesRowType[],
-  addressToFillerHash: Map<string, string>,
-  log?: Logger
-): Map<string, number> {
-  const fadeRateMap = new Map<string, number>();
-  const fillerToQuotesMap = new Map<string, [number, number]>();
+): FillerFades {
+  const newFadesMap: FillerFades = {}; // filler hash -> # of new fades
   rows.forEach((row) => {
     const fillerAddr = row.fillerAddress.toLowerCase();
     const fillerHash = addressToFillerHash.get(fillerAddr);
     if (!fillerHash) {
-      log?.info({ addressToFillerHash, fillerAddress: fillerAddr }, 'filler address not found in webhook config');
-    } else {
-      if (!fillerToQuotesMap.has(fillerHash)) {
-        fillerToQuotesMap.set(fillerHash, [row.fadedQuotes, row.totalQuotes]);
+      log?.info({ fillerAddr }, 'filler address not found in webhook config');
+    } else if (
+      fillerTimestamps.has(fillerHash) &&
+      row.postTimestamp > fillerTimestamps.get(fillerHash)!.lastPostTimestamp
+    ) {
+      if (!newFadesMap[fillerHash]) {
+        newFadesMap[fillerHash] = row.faded;
       } else {
-        const [fadedQuotes, totalQuotes] = fillerToQuotesMap.get(fillerHash) as [number, number];
-        fillerToQuotesMap.set(fillerHash, [fadedQuotes + row.fadedQuotes, totalQuotes + row.totalQuotes]);
+        newFadesMap[fillerHash] += row.faded;
       }
     }
   });
-
-  fillerToQuotesMap.forEach((value, key) => {
-    const fadeRate = value[0] / value[1];
-    fadeRateMap.set(key, fadeRate);
-  });
-  return fadeRateMap;
+  log?.info({ newFadesMap }, '# of new fades by filler');
+  return newFadesMap;
 }

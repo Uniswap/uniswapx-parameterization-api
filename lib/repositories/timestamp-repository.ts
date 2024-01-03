@@ -47,13 +47,13 @@ export class TimestampRepository implements BaseTimestampRepository {
     private readonly entity: Entity
   ) {}
 
-  public async updateTimestampsBatch(toUpdate: [string, number][], ts: number): Promise<void> {
+  public async updateTimestampsBatch(updatedTimestamps: [string, number, number?][]): Promise<void> {
     await this.table.batchWrite(
-      toUpdate.map(([hash, postTs]) => {
+      updatedTimestamps.map(([hash, lastTs, postTs]) => {
         return this.entity.putBatch({
           [TimestampRepository.PARTITION_KEY]: hash,
-          [`${DYNAMO_TABLE_KEY.LAST_POST_TIMESTAMP}`]: postTs,
-          [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: ts,
+          [`${DYNAMO_TABLE_KEY.LAST_POST_TIMESTAMP}`]: lastTs,
+          [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: postTs,
         });
       }),
       {
@@ -96,5 +96,17 @@ export class TimestampRepository implements BaseTimestampRepository {
         blockUntilTimestamp: parseInt(row.blockUntilTimestamp),
       };
     });
+  }
+
+  public async getFillerTimestampsMap(hashes: string[]): Promise<Map<string, Omit<TimestampRepoRow, 'hash'>>> {
+    const rows = await this.getTimestampsBatch(hashes);
+    const res = new Map<string, Omit<TimestampRepoRow, 'hash'>>();
+    rows.forEach((row) => {
+      res.set(row.hash, {
+        lastPostTimestamp: row.lastPostTimestamp,
+        blockUntilTimestamp: row.blockUntilTimestamp,
+      });
+    });
+    return res;
   }
 }
