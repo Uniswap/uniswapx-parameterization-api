@@ -3,23 +3,17 @@ import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { MetricsLogger, Unit } from 'aws-embedded-metrics';
 import Logger from 'bunyan';
 
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 import { Metric } from '../../entities';
 import { checkDefined } from '../../preconditions/preconditions';
-import { BaseTimestampRepository } from '../../repositories';
-import { TimestampRepository } from '../../repositories/timestamp-repository';
 
 export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
   private log: Logger;
   private fillers: CircuitBreakerConfiguration[];
   private lastUpdatedTimestamp: number;
   private client: S3Client;
-  private timestampDB: BaseTimestampRepository;
-
-  // try to refetch endpoints every minute
   private static UPDATE_PERIOD_MS = 1 * 60000;
+  private static FILL_RATE_THRESHOLD = 0.75;
 
   constructor(_log: Logger, private bucket: string, private key: string) {
     this.log = _log.child({ quoter: 'S3CircuitBreakerConfigurationProvider' });
@@ -30,15 +24,6 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
         requestTimeout: 500,
       }),
     });
-    const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-      marshallOptions: {
-        convertEmptyValues: true,
-      },
-      unmarshallOptions: {
-        wrapNumbers: true,
-      },
-    });
-    this.timestampDB = TimestampRepository.create(documentClient);
   }
 
   async getConfigurations(): Promise<CircuitBreakerConfiguration[]> {
