@@ -1,9 +1,5 @@
-export interface CircuitBreakerConfiguration {
-  hash: string;
-  fadeRate: number;
-  enabled: boolean;
-}
+import { FillerTimestampMap } from '../../repositories';
 
 export interface CircuitBreakerConfigurationProvider {
-  getConfigurations(): Promise<CircuitBreakerConfiguration[]>;
+  getConfigurations(): Promise<FillerTimestampMap>;
 }

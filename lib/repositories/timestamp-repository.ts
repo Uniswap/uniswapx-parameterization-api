@@ -3,7 +3,7 @@ import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
-import { BaseTimestampRepository, DynamoTimestampRepoRow, TimestampRepoRow } from './base';
+import { BaseTimestampRepository, DynamoTimestampRepoRow, FillerTimestampMap, TimestampRepoRow } from './base';
 
 export type BatchGetResponse = {
   tableName: string;
@@ -97,9 +97,9 @@ export class TimestampRepository implements BaseTimestampRepository {
     });
   }
 
-  public async getFillerTimestampsMap(hashes: string[]): Promise<Map<string, Omit<TimestampRepoRow, 'hash'>>> {
+  public async getFillerTimestampsMap(hashes: string[]): Promise<FillerTimestampMap> {
     const rows = await this.getTimestampsBatch(hashes);
-    const res = new Map<string, Omit<TimestampRepoRow, 'hash'>>();
+    const res: FillerTimestampMap = new Map();
     rows.forEach((row) => {
       res.set(row.hash, {
         lastPostTimestamp: row.lastPostTimestamp,
