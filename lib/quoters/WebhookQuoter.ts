@@ -27,18 +27,15 @@ const WEBHOOK_TIMEOUT_MS = 500;
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
   private log: Logger;
-  private readonly ALLOW_LIST: Set<string>;
 
   constructor(
     _log: Logger,
     private firehose: FirehoseLogger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    private complianceProvider: FillerComplianceConfigurationProvider,
-    _allow_list: Set<string> = new Set<string>(['1ed189c4b20479e36acf74e2bc87e03bfdce765ecba6696970caee8299fc005f'])
+    private complianceProvider: FillerComplianceConfigurationProvider
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
-    this.ALLOW_LIST = _allow_list;
   }
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
@@ -62,24 +59,21 @@ export class WebhookQuoter implements Quoter {
   private async getEligibleEndpoints(): Promise<WebhookConfiguration[]> {
     const endpoints = await this.webhookProvider.getEndpoints();
     try {
-      const config = await this.circuitBreakerProvider.getConfigurations();
-      const fillerToConfigMap = new Map(config.map((c) => [c.hash, c]));
-      if (config) {
-        this.log.info(
-          { fillerToCMap: [...fillerToConfigMap.entries()], config: config },
-          `Circuit breaker config used`
-        );
+      const now = Math.floor(Date.now() / 1000);
+      const fillerTimestamps = await this.circuitBreakerProvider.getConfigurations();
+      if (fillerTimestamps.size) {
+        this.log.info({ fillerTimestamps: [...fillerTimestamps.entries()] }, `Circuit breaker config used`);
         const enabledEndpoints: WebhookConfiguration[] = [];
         endpoints.forEach((e) => {
           if (
-            this.ALLOW_LIST.has(e.hash) ||
-            (fillerToConfigMap.has(e.hash) && fillerToConfigMap.get(e.hash)?.enabled) ||
-            !fillerToConfigMap.has(e.hash) // default to allowing fillers not in the config
+            fillerTimestamps.has(e.hash) &&
+            (fillerTimestamps.get(e.hash)!.blockUntilTimestamp < now ||
+              isNaN(fillerTimestamps.get(e.hash)!.blockUntilTimestamp))
           ) {
-            this.log.info({ endpoint: e }, `Endpoint enabled`);
             enabledEndpoints.push(e);
           }
         });
+        this.log.info({ endpoints: enabledEndpoints }, `Endpoint enabled`);
         return enabledEndpoints;
       }
 
