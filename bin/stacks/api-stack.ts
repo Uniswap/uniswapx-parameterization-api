@@ -17,9 +17,9 @@ import { Metric } from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
-import { FirehoseStack } from './firehose-stack';
 import { CronDashboardStack } from './cron-dashboard-stack';
 import { CronStack } from './cron-stack';
+import { FirehoseStack } from './firehose-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
 
 /**
@@ -54,6 +54,7 @@ export class APIStack extends cdk.Stack {
       restApiName: `${SERVICE_NAME}`,
       deployOptions: {
         tracingEnabled: true,
+        metricsEnabled: true,
         loggingLevel: MethodLoggingLevel.ERROR,
         accessLogDestination: new aws_apigateway.LogGroupLogDestination(accessLogGroup),
         accessLogFormat: aws_apigateway.AccessLogFormat.jsonWithStandardFields({
@@ -179,7 +180,7 @@ export class APIStack extends cdk.Stack {
           'secretsmanager:DescribeSecret',
           'secretsmanager:ListSecretVersionIds',
           'secretsmanager:GetResourcePolicy',
-          'firehose:PutRecord'
+          'firehose:PutRecord',
         ],
         resources: ['*'],
         effect: aws_iam.Effect.ALLOW,
