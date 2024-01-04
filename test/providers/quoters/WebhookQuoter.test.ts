@@ -2,12 +2,12 @@ import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
-import { QuoteRequest, AnalyticsEventType, WebhookResponseType } from '../../../lib/entities';
+import { AnalyticsEventType, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
+import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { WebhookQuoter } from '../../../lib/quoters';
-import { FirehoseLogger } from '../../../lib/providers/analytics';
 
 jest.mock('axios');
 jest.mock('../../../lib/providers/analytics');
@@ -26,9 +26,12 @@ const WEBHOOK_URL_ONEINCH = 'https://1inch.io';
 const WEBHOOK_URL_SEARCHER = 'https://searcher.com';
 
 const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvider([]);
-const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([{
-  endpoints: ['https://uniswap.org', 'google.com'], addresses: [SWAPPER]
-}]);
+const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([
+  {
+    endpoints: ['https://uniswap.org', 'google.com'],
+    addresses: [SWAPPER],
+  },
+]);
 
 describe('WebhookQuoter tests', () => {
   afterEach(() => {
@@ -36,18 +39,30 @@ describe('WebhookQuoter tests', () => {
   });
 
   const webhookProvider = new MockWebhookConfigurationProvider([
-    { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, hash: "0xuni" },
-    { name: '1inch', endpoint: WEBHOOK_URL_ONEINCH, headers: {}, hash: "0x1inch" },
-    { name: 'searcher', endpoint: WEBHOOK_URL_SEARCHER, headers: {}, hash: "0xsearcher" },
+    { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, hash: '0xuni' },
+    { name: '1inch', endpoint: WEBHOOK_URL_ONEINCH, headers: {}, hash: '0x1inch' },
+    { name: 'searcher', endpoint: WEBHOOK_URL_SEARCHER, headers: {}, hash: '0xsearcher' },
   ]);
-  const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-    { hash: '0xuni', fadeRate: 0.05, enabled: true },
-    { hash: '0x1inch', fadeRate: 0.5, enabled: false },
-    { hash: '0xsearcher', fadeRate: 0.1, enabled: true },
-  ]);
+
+  const now = Math.floor(Date.now() / 1000);
+  const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+    ['0xuni', '0x1inch', '0xsearcher'],
+    new Map([
+      ['0xuni', { lastPostTimestamp: 100, blockUntilTimestamp: NaN }],
+      ['0x1inch', { lastPostTimestamp: 100, blockUntilTimestamp: now + 100 }],
+      ['0xsearcher', { lastPostTimestamp: 100, blockUntilTimestamp: now - 20 }],
+    ])
+  );
+
   const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
-  const mockFirehoseLogger = new FirehoseLogger(logger, "arn:aws:deliverystream/dummy");
-  const webhookQuoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider);
+  const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
+  const webhookQuoter = new WebhookQuoter(
+    logger,
+    mockFirehoseLogger,
+    webhookProvider,
+    circuitBreakerProvider,
+    emptyMockComplianceProvider
+  );
 
   const request = new QuoteRequest({
     tokenInChainId: CHAIN_ID,
@@ -85,52 +100,56 @@ describe('WebhookQuoter tests', () => {
   };
 
   it('Simple request and response', async () => {
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: quote,
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: quote,
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
       });
-    }).mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: {
-          ...quote,
-          tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
-        }
-      });
-    });
     const response = await webhookQuoter.quote(request);
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
   });
-  
+
   it('Respects filler compliance requirements', async () => {
     const webhookQuoter = new WebhookQuoter(
       logger,
       mockFirehoseLogger,
       webhookProvider,
       circuitBreakerProvider,
-      mockComplianceProvider,
+      mockComplianceProvider
     );
 
     await expect(webhookQuoter.quote(request)).resolves.toStrictEqual([]);
   });
 
-  // should only call 'uniswap' and 'searcher' given they are enabled in the config
+  // should only call 'uniswap' and 'searcher'
   it('Only calls to eligible endpoints', async () => {
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: quote,
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: quote,
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
       });
-    }).mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: {
-          ...quote,
-          tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
-        }
-      });
-    });
     await webhookQuoter.quote(request);
 
     expect(mockedAxios.post).toBeCalledWith(
@@ -149,49 +168,25 @@ describe('WebhookQuoter tests', () => {
     });
   });
 
-  it('Allows those in allow list even when they are disabled in the config', async () => {
-    const webhookQuoter = new WebhookQuoter(
-      logger,
-      mockFirehoseLogger,
-      webhookProvider,
-      circuitBreakerProvider,
-      emptyMockComplianceProvider,
-      new Set<string>(['0x1inch'])
-    );
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: quote,
-      });
-    });
-
-    await webhookQuoter.quote(request);
-    expect(mockedAxios.post).toBeCalledWith(
-      WEBHOOK_URL,
-      { quoteId: expect.any(String), ...request.toCleanJSON() },
-      { headers: {}, timeout: 500 }
-    );
-    expect(mockedAxios.post).toBeCalledWith(
-      WEBHOOK_URL_SEARCHER,
-      { quoteId: expect.any(String), ...request.toCleanJSON() },
-      { headers: {}, timeout: 500 }
-    );
-    expect(mockedAxios.post).toBeCalledWith(
-      WEBHOOK_URL_ONEINCH,
-      { quoteId: expect.any(String), ...request.toCleanJSON() },
-      { headers: {}, timeout: 500 }
-    );
-  });
-
   it('Defaults to allowing endpoints not on circuit breaker config', async () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
       });
     });
-    const cbProvider = new MockCircuitBreakerConfigurationProvider([
-      { hash: '0xuni', fadeRate: 0.05, enabled: true },
-    ]);
-    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, cbProvider, emptyMockComplianceProvider);
+
+    const cbProvider = new MockCircuitBreakerConfigurationProvider(
+      ['0xuni'],
+      new Map([['0xuni', { lastPostTimestamp: 100, blockUntilTimestamp: NaN }]])
+    );
+
+    const quoter = new WebhookQuoter(
+      logger,
+      mockFirehoseLogger,
+      webhookProvider,
+      cbProvider,
+      emptyMockComplianceProvider
+    );
     await quoter.quote(request);
     expect(mockedAxios.post).toBeCalledWith(
       WEBHOOK_URL,
@@ -214,19 +209,21 @@ describe('WebhookQuoter tests', () => {
   });
 
   it('Simple request and response no swapper', async () => {
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: quote,
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: quote,
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
       });
-    }).mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: {
-          ...quote,
-          tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
-        }
-      });
-    });
     const response = await webhookQuoter.quote(request);
 
     expect(response.length).toEqual(1);
@@ -256,19 +253,21 @@ describe('WebhookQuoter tests', () => {
       filler: FILLER,
     };
 
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: quote,
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: quote,
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
       });
-    }).mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: {
-          ...quote,
-          tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
-        }
-      });
-    });
     const response = await webhookQuoter.quote(request);
 
     expect(response.length).toEqual(1);
@@ -277,9 +276,15 @@ describe('WebhookQuoter tests', () => {
 
   it('Simple request and response with explicit chainId', async () => {
     const provider = new MockWebhookConfigurationProvider([
-      { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1], hash: "0xuni" },
+      { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1], hash: '0xuni' },
     ]);
-    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, provider, circuitBreakerProvider, emptyMockComplianceProvider);
+    const quoter = new WebhookQuoter(
+      logger,
+      mockFirehoseLogger,
+      provider,
+      circuitBreakerProvider,
+      emptyMockComplianceProvider
+    );
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
       tokenIn: request.tokenIn,
@@ -292,19 +297,21 @@ describe('WebhookQuoter tests', () => {
       filler: FILLER,
     };
 
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: quote,
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: quote,
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
       });
-    }).mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: {
-          ...quote,
-          tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
-        }
-      });
-    });
     const response = await quoter.quote(request);
 
     expect(response.length).toEqual(1);
@@ -313,9 +320,15 @@ describe('WebhookQuoter tests', () => {
 
   it('Skips if chainId not configured', async () => {
     const provider = new MockWebhookConfigurationProvider([
-      { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6], hash: "0xuni" },
+      { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6], hash: '0xuni' },
     ]);
-    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, provider, circuitBreakerProvider, emptyMockComplianceProvider);
+    const quoter = new WebhookQuoter(
+      logger,
+      mockFirehoseLogger,
+      provider,
+      circuitBreakerProvider,
+      emptyMockComplianceProvider
+    );
 
     const response = await quoter.quote(request);
 
@@ -391,8 +404,8 @@ describe('WebhookQuoter tests', () => {
               type: 'any.required',
             },
           ],
-        }
-      }),
+        },
+      })
     );
     expect(response).toEqual([]);
   });
@@ -424,7 +437,7 @@ describe('WebhookQuoter tests', () => {
         responseRequestId: quote.requestId,
       },
       'Webhook ResponseId does not match request'
-    );    
+    );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
@@ -434,8 +447,8 @@ describe('WebhookQuoter tests', () => {
           data: quote,
           responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
           mismatchedRequestId: quote.requestId,
-        }
-      }),
+        },
+      })
     );
     expect(response).toEqual([]);
   });
@@ -463,8 +476,8 @@ describe('WebhookQuoter tests', () => {
           status: 404,
           data: '',
           responseType: WebhookResponseType.NON_QUOTE,
-        }
-      }),
+        },
+      })
     );
     expect(response.length).toEqual(0);
   });
@@ -506,8 +519,8 @@ describe('WebhookQuoter tests', () => {
           status: 200,
           data: quote,
           responseType: WebhookResponseType.NON_QUOTE,
-        }
-      }),
+        },
+      })
     );
   });
 
@@ -560,8 +573,8 @@ describe('WebhookQuoter tests', () => {
           status: 200,
           data: quote,
           responseType: WebhookResponseType.NON_QUOTE,
-        }
-      }),
+        },
+      })
     );
   });
 });
