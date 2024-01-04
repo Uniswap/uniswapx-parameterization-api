@@ -133,7 +133,10 @@ describe('WebhookQuoter tests', () => {
     await expect(webhookQuoter.quote(request)).resolves.toStrictEqual([]);
   });
 
-  // should only call 'uniswap' and 'searcher'
+  /* should only call the following two fillers:
+   * 1. uniswap: blockUntilTimestamp == NaN
+   * 2. searcher: blockUntilTimestamp < now
+   */
   it('Only calls to eligible endpoints', async () => {
     mockedAxios.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
