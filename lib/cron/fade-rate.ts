@@ -33,6 +33,7 @@ async function main(metrics: MetricsLogger) {
   const stage = process.env['stage'];
   const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
   const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
+  await webhookProvider.fetchEndpoints();
   const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
     marshallOptions: {
       convertEmptyValues: true,
@@ -85,13 +86,14 @@ export function calculateNewTimestamps(
   log?: Logger
 ): [string, number, number][] {
   const updatedTimestamps: [string, number, number][] = [];
-  fillerTimestamps.forEach((row, hash) => {
-    if (row.blockUntilTimestamp > newPostTimestamp) {
+  Object.entries(fillersNewFades).forEach((row) => {
+    const hash = row[0];
+    const fades = row[1];
+    if (fillerTimestamps.has(hash) && fillerTimestamps.get(hash)!.blockUntilTimestamp > newPostTimestamp) {
       return;
     }
-    const newFades = fillersNewFades[hash];
-    if (newFades) {
-      const blockUntilTimestamp = newPostTimestamp + newFades * BLOCK_PER_FADE_SECS;
+    if (fades) {
+      const blockUntilTimestamp = newPostTimestamp + fades * BLOCK_PER_FADE_SECS;
       updatedTimestamps.push([hash, newPostTimestamp, blockUntilTimestamp]);
     }
   });
@@ -112,8 +114,8 @@ export function getFillersNewFades(
     if (!fillerHash) {
       log?.info({ fillerAddr }, 'filler address not found in webhook config');
     } else if (
-      fillerTimestamps.has(fillerHash) &&
-      row.postTimestamp > fillerTimestamps.get(fillerHash)!.lastPostTimestamp
+      (fillerTimestamps.has(fillerHash) && row.postTimestamp > fillerTimestamps.get(fillerHash)!.lastPostTimestamp) ||
+      !fillerTimestamps.has(fillerHash)
     ) {
       if (!newFadesMap[fillerHash]) {
         newFadesMap[fillerHash] = row.faded;

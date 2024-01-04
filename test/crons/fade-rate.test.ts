@@ -26,6 +26,8 @@ const FADES_ROWS: FadesRowType[] = [
   { fillerAddress: '0x5', faded: 0, postTimestamp: now - 100 },
   // filler5
   { fillerAddress: '0x6', faded: 0, postTimestamp: now - 100 },
+  // filler6
+  { fillerAddress: '0x7', faded: 1, postTimestamp: now - 100 },
 ];
 
 const ADDRESS_TO_FILLER = new Map<string, string>([
@@ -35,6 +37,7 @@ const ADDRESS_TO_FILLER = new Map<string, string>([
   ['0x4', 'filler3'],
   ['0x5', 'filler4'],
   ['0x6', 'filler5'],
+  ['0x7', 'filler6'],
 ]);
 
 const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
@@ -63,32 +66,38 @@ describe('FadeRateCron test', () => {
         filler3: 1,
         filler4: 0,
         filler5: 0,
+        filler6: 1,
       });
     });
   });
 
   describe('calculateNewTimestamps', () => {
-    let newTimestamps: [string, number, number?][];
+    let newTimestamps: [string, number, number][];
 
     beforeAll(() => {
       newTimestamps = calculateNewTimestamps(FILLER_TIMESTAMPS, newFades, now, logger);
     });
 
     it('calculates blockUntilTimestamp for each filler', () => {
-      expect(newTimestamps).toMatchObject([
-        ['filler1', now, now + BLOCK_PER_FADE_SECS * 3],
-        ['filler2', now, now + BLOCK_PER_FADE_SECS * 1],
-      ]);
+      expect(newTimestamps).toEqual(
+        expect.arrayContaining([
+          ['filler1', now, now + BLOCK_PER_FADE_SECS * 3],
+          ['filler2', now, now + BLOCK_PER_FADE_SECS * 1],
+        ])
+      );
+    });
+
+    it('notices new fillers not already in fillerTimestamps', () => {
+      expect(newTimestamps).toEqual(expect.arrayContaining([['filler6', now, now + BLOCK_PER_FADE_SECS * 1]]));
     });
 
     it('keep old blockUntilTimestamp if no new fades', () => {
-      expect(newTimestamps).not.toMatchObject([['filler5', expect.anything(), expect.anything()]]);
-      expect(newTimestamps).not.toMatchObject([['filler4', expect.anything(), expect.anything()]]);
+      expect(newTimestamps).not.toContain([['filler5', expect.anything(), expect.anything()]]);
+      expect(newTimestamps).not.toContain([['filler4', expect.anything(), expect.anything()]]);
     });
 
     it('ignores fillers with blockUntilTimestamp > current timestamp', () => {
-      expect(newTimestamps).toHaveLength(2);
-      expect(newTimestamps).not.toMatchObject([['filler3', expect.anything(), expect.anything()]]);
+      expect(newTimestamps).not.toContain([['filler3', expect.anything(), expect.anything()]]);
     });
   });
 });
