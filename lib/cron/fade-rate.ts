@@ -108,6 +108,9 @@ export function calculateNewTimestamps(
   return updatedTimestamps;
 }
 
+/* find the number of new fades, for each filler entity, from 
+   the last time this cron is run
+*/
 export function getFillersNewFades(
   rows: FadesRowType[],
   addressToFillerHash: Map<string, string>,
