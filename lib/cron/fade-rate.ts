@@ -51,6 +51,13 @@ async function main(metrics: MetricsLogger) {
   };
   const fadesRepository = FadesRepository.create(sharedConfig);
   await fadesRepository.createFadesView();
+  /*
+   query redshift for recent orders
+        | fillerAddress |    faded  |   postTimestamp |
+        |---- 0x1 ------|---- 0 ----|---- 12222222 ---|
+        |---- 0x2 ------|---- 1 ----|---- 12345679 --|
+        |---- 0x1 ------|---- 0 ----|---- 12345678 ---|
+  */
   const result = await fadesRepository.getFades();
 
   if (result) {
@@ -58,8 +65,8 @@ async function main(metrics: MetricsLogger) {
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerHashes);
     const addressToFillerHash = await webhookProvider.addressToFillerHash();
 
-    // get fillers new fades from last checked timestamp:
-    //  | rfqFiller    |     faded  |   postTimestamp  |
+    // aggregated # of fades by filler entity (not address)
+    //  | hash    |     faded  |   postTimestamp  |
     //  |---- foo ------|---- 3 ----|---- 12345678 ----|
     //  |---- bar ------|---- 1 ----|---- 12222222 ----|
     const fillersNewFades = getFillersNewFades(result, addressToFillerHash, fillerTimestamps, log);
