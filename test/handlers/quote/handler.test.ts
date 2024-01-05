@@ -29,9 +29,11 @@ const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const CHAIN_ID = 1;
+const NOW = Math.floor(Date.now() / 1000);
 const FILLER_TIMESTAMPS: FillerTimestampMap = new Map([
-  ['0xuni', { lastPostTimestamp: 100, blockUntilTimestamp: NaN }],
-  ['google', { lastPostTimestamp: 100, blockUntilTimestamp: 150 }],
+  ['0xuni', { lastPostTimestamp: NOW - 100, blockUntilTimestamp: NaN }],
+  ['google', { lastPostTimestamp: NOW - 100, blockUntilTimestamp: NOW + 100 }],
+  ['0xsearcher', { lastPostTimestamp: NOW - 100, blockUntilTimestamp: NOW - 20 }],
 ]);
 
 // silent logger in tests
@@ -599,6 +601,43 @@ describe('Quote handler', () => {
           errorCode: 'QUOTE_ERROR',
           detail: 'No quotes available',
         })
+      );
+    });
+
+    it('only calls eligible fillers', async () => {
+      const webhookProvider = new MockWebhookConfigurationProvider([
+        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
+        { name: 'google', endpoint: 'https://google.com', headers: {}, hash: 'google' },
+        { name: 'searcher', endpoint: 'https://searcher.org', headers: {}, hash: '0xsearcher' },
+      ]);
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+        ['0xuni', 'google', '0xsearcher'],
+        FILLER_TIMESTAMPS
+      );
+
+      const quoters = [
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, mockComplianceProvider),
+      ];
+      const amountIn = ethers.utils.parseEther('1');
+      const request = getRequest(amountIn.toString());
+
+      // spy on private method
+      const spy = jest.spyOn(quoters[0] as any, 'fetchQuote');
+
+      await getQuoteHandler(quoters).handler(getEvent(request), {} as unknown as Context);
+
+      expect(spy).toBeCalledTimes(2);
+      expect(spy).toBeCalledWith(
+        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
+        expect.anything()
+      );
+      expect(spy).toBeCalledWith(
+        { name: 'searcher', endpoint: 'https://searcher.org', headers: {}, hash: '0xsearcher' },
+        expect.anything()
+      );
+      expect(spy).not.toBeCalledWith(
+        { name: 'google', endpoint: 'https://google.com', headers: {}, hash: 'google' },
+        expect.anything()
       );
     });
   });
