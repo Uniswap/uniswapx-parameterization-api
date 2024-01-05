@@ -71,6 +71,9 @@ async function main(metrics: MetricsLogger) {
     //  |---- bar ------|---- 1 ----|---- 12222222 ----|
     const fillersNewFades = getFillersNewFades(result, addressToFillerHash, fillerTimestamps, log);
 
+    //  | hash        |lastPostTimestamp|blockUntilTimestamp|
+    //  |---- foo ----|---- 1300000 ----|---- now + fades * block_per_fade ----|
+    //  |---- bar ----|---- 1300000 ----|----      13500000                ----|
     const updatedTimestamps = calculateNewTimestamps(
       fillerTimestamps,
       fillersNewFades,
