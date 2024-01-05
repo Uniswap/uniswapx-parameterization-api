@@ -66,9 +66,9 @@ async function main(metrics: MetricsLogger) {
     const addressToFillerHash = await webhookProvider.addressToFillerHash();
 
     // aggregated # of fades by filler entity (not address)
-    //  | hash    |     faded  |   postTimestamp  |
-    //  |---- foo ------|---- 3 ----|---- 12345678 ----|
-    //  |---- bar ------|---- 1 ----|---- 12222222 ----|
+    //  | hash    |  faded  |
+    //  |-- foo --|--- 3 ---|`
+    //  |-- bar --|--- 1 ---|
     const fillersNewFades = getFillersNewFades(result, addressToFillerHash, fillerTimestamps, log);
 
     //  | hash        |lastPostTimestamp|blockUntilTimestamp|
