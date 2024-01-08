@@ -234,6 +234,7 @@ export class APIStack extends cdk.Stack {
       bundling: {
         minify: true,
         sourceMap: true,
+        externalModules: [],
       },
       environment: {
         VERSION: '2',
