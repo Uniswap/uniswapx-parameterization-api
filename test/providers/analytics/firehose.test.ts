@@ -1,10 +1,9 @@
-import { FirehoseLogger } from '../../../lib/providers/analytics';
+import { FirehoseClient } from '@aws-sdk/client-firehose';
+
 import { AnalyticsEvent, AnalyticsEventType } from '../../../lib/entities/analytics-events';
-import { Firehose } from 'aws-sdk';
+import { FirehoseLogger } from '../../../lib/providers/analytics';
 
-jest.mock('aws-sdk');
-
-const mockedFirehose = Firehose as jest.Mocked<typeof Firehose>;
+const mockedFirehose = FirehoseClient as jest.Mocked<typeof FirehoseClient>;
 
 const logger = { error: jest.fn() } as any;
 
@@ -36,22 +35,28 @@ describe('FirehoseLogger', () => {
 
   it('should send analytics event to Firehose', async () => {
     const firehose = new FirehoseLogger(logger, validStreamArn);
-    const analyticsEvent =  new AnalyticsEvent(AnalyticsEventType.WEBHOOK_RESPONSE,{ status: 200 });
+    const analyticsEvent = new AnalyticsEvent(AnalyticsEventType.WEBHOOK_RESPONSE, { status: 200 });
 
     const putRecordMock = jest.fn();
-    mockedFirehose.prototype.putRecord = putRecordMock;
+    mockedFirehose.prototype.send = putRecordMock;
 
-    putRecordMock.mockImplementationOnce((_params, callback) => {
-      callback(null, { "Encrypted": true, "RecordId": "123" });
-    });
+    //putRecordMock.mockImplementationOnce((_input: PutRecordCommandInput) => {
+    //  return;
+    //});
 
     await firehose.sendAnalyticsEvent(analyticsEvent);
 
-    expect(putRecordMock).toHaveBeenCalledWith({
+    const input = {
       DeliveryStreamName: 'stream-name',
       Record: {
-        Data: JSON.stringify(analyticsEvent) + '\n',
+        Data: Buffer.from(JSON.stringify(analyticsEvent) + '\n', 'base64'),
       },
-    });
+    };
+
+    expect(putRecordMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: input,
+      })
+    );
   });
 });
