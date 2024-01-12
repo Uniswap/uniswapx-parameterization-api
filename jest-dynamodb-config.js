@@ -11,7 +11,7 @@ module.exports = {
       ProvisionedThroughput: { ReadCapacityUnits: 10, WriteCapacityUnits: 10 },
     },
     {
-      TableName: 'Timestamp',
+      TableName: 'FillerCBTimestamps',
       KeySchema: [
         { AttributeName: 'hash', KeyType: 'HASH' },
       ],
