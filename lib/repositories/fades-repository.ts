@@ -5,8 +5,8 @@ import { BaseRedshiftRepository, SharedConfigs } from './base';
 
 export type FadesRowType = {
   fillerAddress: string;
-  totalQuotes: number;
-  fadedQuotes: number;
+  faded: number;
+  postTimestamp: number;
 };
 
 export class FadesRepository extends BaseRedshiftRepository {
@@ -29,13 +29,15 @@ export class FadesRepository extends BaseRedshiftRepository {
     await this.executeStatement(CREATE_VIEW_SQL, FadesRepository.log, { waitTimeMs: 2_000 });
   }
 
+  //get latest 20 orders for each filler address, and whether they are faded or not
   async getFades(): Promise<FadesRowType[]> {
     const stmtId = await this.executeStatement(FADE_RATE_SQL, FadesRepository.log, { waitTimeMs: 2_000 });
     const response = await this.client.send(new GetStatementResultCommand({ Id: stmtId }));
     /* result should be in the following format
-        | rfqFiller    |   fade_rate    |
-        |---- foo ------|---- 0.05 ------|
-        |---- bar ------|---- 0.01 ------|
+        | rfqFiller    |     faded  |   postTimestamp  |
+        |---- bar ------|---- 0 ----|---- 12222222 ----|
+        |---- foo ------|---- 1 ----|---- 12345679 ----|
+        |---- foo ------|---- 0 ----|---- 12345678 ----|
       */
     const result = response.Records;
     if (!result) {
@@ -45,8 +47,8 @@ export class FadesRepository extends BaseRedshiftRepository {
     const formattedResult = result.map((row) => {
       const formattedRow: FadesRowType = {
         fillerAddress: row[0].stringValue as string,
-        totalQuotes: Number(row[1].longValue as number),
-        fadedQuotes: Number(row[2].longValue as number),
+        faded: Number(row[1].longValue as number),
+        postTimestamp: Number(row[2].longValue as number),
       };
       return formattedRow;
     });
@@ -56,14 +58,15 @@ export class FadesRepository extends BaseRedshiftRepository {
 }
 
 const CREATE_VIEW_SQL = `
-CREATE OR REPLACE VIEW rfqOrdersTimestamp 
+CREATE OR REPLACE VIEW latestRfqs 
 AS (
 WITH latestOrders AS (
   SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders
   )
-  WHERE row_num <= 30
+  WHERE row_num <= 20
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
+  LIMIT 1000
 )
 SELECT
     latestOrders.chainid as chainId, latestOrders.filler as rfqFiller, latestOrders.startTime as decayStartTime, latestOrders.quoteid, archivedorders.filler as actualFiller, latestOrders.createdat as postTimestamp, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp,
@@ -80,23 +83,17 @@ AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND chainId NOT IN (5,8001,420,421613) -- exclude mainnet goerli, polygon goerli, optimism goerli and arbitrum goerli testnets 
 AND
     postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '168 HOURS')) -- 7 days rolling window
-);
+)
+ORDER BY rfqFiller, postTimestamp DESC
+LIMIT 1000 
 `;
 
 const FADE_RATE_SQL = `
-WITH ORDERS_CTE AS (
-    SELECT 
-        rfqFiller,
-        COUNT(*) AS totalQuotes,
-        SUM(CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END) AS fadedQuotes
-    FROM rfqOrdersTimestamp
-    GROUP BY rfqFiller
-)
 SELECT 
     rfqFiller,
-    totalQuotes,
-    fadedQuotes,
-    fadedQuotes / totalQuotes as fadeRate
-FROM ORDERS_CTE
-WHERE totalQuotes >= 10;
+    postTimestamp,
+    CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END AS faded
+FROM latestRfqs
+ORDER BY rfqFiller, postTimestamp DESC
+LIMIT 1000
 `;

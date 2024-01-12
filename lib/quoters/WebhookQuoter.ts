@@ -4,6 +4,7 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
+import { Quoter, QuoterType } from '.';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
@@ -18,7 +19,6 @@ import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { timestampInMstoISOString } from '../util/time';
-import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
