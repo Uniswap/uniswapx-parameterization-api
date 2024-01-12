@@ -1,27 +1,25 @@
-import { Firehose } from 'aws-sdk';
-import { AnalyticsEvent } from '../../entities/analytics-events';
+import { FirehoseClient, PutRecordCommand } from '@aws-sdk/client-firehose';
 import { default as Logger } from 'bunyan';
+
 import { IAnalyticsLogger } from '.';
+import { AnalyticsEvent } from '../../entities/analytics-events';
 
 export class FirehoseLogger implements IAnalyticsLogger {
   private log: Logger;
   private readonly streamName: string;
-  private readonly firehose: Firehose;
+  private readonly firehose: FirehoseClient;
 
   constructor(_log: Logger, streamArn: string) {
     this.log = _log;
     // Split the streamArn to extract the streamName
     const streamArnParts = streamArn.split('/');
-    
+
     if (streamArnParts.length !== 2) {
-      this.log.error(
-        { streamArn: streamArn },
-        `Firehose client error parsing stream from ${streamArn}.`
-      );
+      this.log.error({ streamArn: streamArn }, `Firehose client error parsing stream from ${streamArn}.`);
     }
 
     this.streamName = streamArnParts[1];
-    this.firehose = new Firehose();
+    this.firehose = new FirehoseClient();
   }
 
   async sendAnalyticsEvent(analyticsEvent: AnalyticsEvent): Promise<void> {
@@ -29,17 +27,14 @@ export class FirehoseLogger implements IAnalyticsLogger {
     const params = {
       DeliveryStreamName: this.streamName,
       Record: {
-        Data: jsonString,
+        Data: Buffer.from(jsonString, 'base64'),
       },
     };
 
     try {
-      await this.firehose.putRecord(params).promise();
+      await this.firehose.send(new PutRecordCommand(params));
     } catch (error) {
-      this.log.error(
-        { streamName: this.streamName },
-        `Firehose client error putting record. ${error}`
-      );
+      this.log.error({ streamName: this.streamName }, `Firehose client error putting record. ${error}`);
     }
   }
 }

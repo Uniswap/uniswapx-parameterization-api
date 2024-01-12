@@ -10,8 +10,8 @@ import {
   FADE_RATE_BUCKET,
   FADE_RATE_S3_KEY,
   INTEGRATION_S3_KEY,
-  PROD_COMPLIANCE_S3_KEY,
   PRODUCTION_S3_KEY,
+  PROD_COMPLIANCE_S3_KEY,
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
 import {
@@ -20,13 +20,13 @@ import {
   UniswapXParamServiceMetricDimension,
 } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
+import { FirehoseLogger } from '../../providers/analytics';
 import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { S3FillerComplianceConfigurationProvider } from '../../providers/compliance/s3';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
-import { FirehoseLogger } from '../../providers/analytics';
 
 export interface ContainerInjected {
   quoters: Quoter[];
@@ -54,7 +54,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       `${FADE_RATE_BUCKET}-${stage}-1`,
       FADE_RATE_S3_KEY
     );
-    
+
     const complianceKey = stage === STAGE.BETA ? BETA_COMPLIANCE_S3_KEY : PROD_COMPLIANCE_S3_KEY;
     const fillerComplianceProvider = new S3FillerComplianceConfigurationProvider(
       log,
@@ -64,7 +64,9 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
-    const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider)];
+    const quoters: Quoter[] = [
+      new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider),
+    ];
     return {
       quoters: quoters,
       firehose: firehose,
@@ -127,7 +129,9 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
       PROD_COMPLIANCE_S3_KEY
     );
     const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
-    const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider)];
+    const quoters: Quoter[] = [
+      new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider),
+    ];
 
     return {
       quoters: quoters,
