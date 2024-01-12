@@ -22,7 +22,7 @@ export class TimestampRepository implements BaseTimestampRepository {
     delete this.log.fields.hostname;
 
     const table = new Table({
-      name: DYNAMO_TABLE_NAME.TIMESTAMP,
+      name: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS,
       partitionKey: TimestampRepository.PARTITION_KEY,
       DocumentClient: documentClient,
     });
@@ -88,7 +88,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         parse: true,
       }
     );
-    return items[DYNAMO_TABLE_NAME.TIMESTAMP].map((row: DynamoTimestampRepoRow) => {
+    return items[DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS].map((row: DynamoTimestampRepoRow) => {
       return {
         hash: row.hash,
         lastPostTimestamp: parseInt(row.lastPostTimestamp),
