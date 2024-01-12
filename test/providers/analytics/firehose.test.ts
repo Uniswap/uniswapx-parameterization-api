@@ -40,10 +40,6 @@ describe('FirehoseLogger', () => {
     const putRecordMock = jest.fn();
     mockedFirehose.prototype.send = putRecordMock;
 
-    //putRecordMock.mockImplementationOnce((_input: PutRecordCommandInput) => {
-    //  return;
-    //});
-
     await firehose.sendAnalyticsEvent(analyticsEvent);
 
     const input = {
