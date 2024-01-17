@@ -2,6 +2,7 @@ import Joi from 'joi';
 
 import { FieldValidator } from '../../util/validator';
 
+/* request body to quote endpoint */
 export const PostQuoteRequestBodyJoi = Joi.object({
   requestId: FieldValidator.requestId.required(),
   tokenInChainId: FieldValidator.chainId.required(),
@@ -11,6 +12,9 @@ export const PostQuoteRequestBodyJoi = Joi.object({
   tokenOut: FieldValidator.address.required(),
   amount: FieldValidator.amount.required(),
   type: FieldValidator.tradeType.required(),
+  quoteType: FieldValidator.quoteType.required(),
+  cosigner: FieldValidator.address.required(),
+
   numOutputs: Joi.number().integer().min(1).required(),
 });
 
@@ -23,9 +27,12 @@ export type PostQuoteRequestBody = {
   tokenOut: string;
   amount: string;
   type: string;
+  quoteType: string;
+  cosigner: string;
   numOutputs: number;
 };
 
+/* response back to URA */
 export const PostQuoteResponseJoi = Joi.object({
   chainId: FieldValidator.chainId.required(),
   requestId: FieldValidator.uuid.required(),
