@@ -10,18 +10,23 @@ import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
 import { ContainerInjected, RequestInjected } from './injector';
-import { PostQuoteRequestBody, PostQuoteRequestBodyJoi, PostQuoteResponse, URAResponseJoi } from './schema';
+import {
+  IndicativePostQuoteRequestBody,
+  IndicativePostQuoteRequestBodyJoi,
+  IndicativePostQuoteResponse,
+  IndicativeURAResponseJoi,
+} from './schema';
 
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
   RequestInjected,
-  PostQuoteRequestBody,
+  IndicativePostQuoteRequestBody,
   void,
-  PostQuoteResponse
+  IndicativePostQuoteResponse
 > {
   public async handleRequest(
-    params: APIHandleRequestParams<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>
-  ): Promise<ErrorResponse | Response<PostQuoteResponse>> {
+    params: APIHandleRequestParams<ContainerInjected, RequestInjected, IndicativePostQuoteRequestBody, void>
+  ): Promise<ErrorResponse | Response<IndicativePostQuoteResponse>> {
     const {
       requestInjected: { log, metric },
       requestBody,
@@ -32,6 +37,8 @@ export class QuoteHandler extends APIGLambdaHandler<
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
     const request = QuoteRequest.fromRequestBody(requestBody);
+
+    // TODO: finalize on v2 metrics logging
     log.info({
       eventType: 'QuoteRequest',
       body: {
@@ -66,7 +73,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected requestBodySchema(): Joi.ObjectSchema | null {
-    return PostQuoteRequestBodyJoi;
+    return IndicativePostQuoteRequestBodyJoi;
   }
 
   protected requestQueryParamsSchema(): Joi.ObjectSchema | null {
@@ -74,7 +81,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected responseBodySchema(): Joi.ObjectSchema | null {
-    return URAResponseJoi;
+    return IndicativeURAResponseJoi;
   }
 }
 

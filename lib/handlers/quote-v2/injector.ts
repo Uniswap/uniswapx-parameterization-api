@@ -10,8 +10,8 @@ import {
   FADE_RATE_BUCKET,
   FADE_RATE_S3_KEY,
   INTEGRATION_S3_KEY,
-  PROD_COMPLIANCE_S3_KEY,
   PRODUCTION_S3_KEY,
+  PROD_COMPLIANCE_S3_KEY,
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
 import {
@@ -26,7 +26,7 @@ import { S3FillerComplianceConfigurationProvider } from '../../providers/complia
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
-import { PostQuoteRequestBody } from './schema';
+import { IndicativePostQuoteRequestBody } from './schema';
 
 export interface ContainerInjected {
   quoters: Quoter[];
@@ -37,7 +37,12 @@ export interface RequestInjected extends ApiRInj {
   metric: IMetric;
 }
 
-export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void> {
+export class QuoteInjector extends ApiInjector<
+  ContainerInjected,
+  RequestInjected,
+  IndicativePostQuoteRequestBody,
+  void
+> {
   public async buildContainerInjected(): Promise<ContainerInjected> {
     const log: Logger = bunyan.createLogger({
       name: this.injectorName,
@@ -75,7 +80,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
   public async getRequestInjected(
     _containerInjected: ContainerInjected,
-    requestBody: PostQuoteRequestBody,
+    requestBody: IndicativePostQuoteRequestBody,
     _requestQueryParams: void,
     _event: APIGatewayProxyEvent,
     context: Context,
@@ -141,7 +146,7 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
 
   public async getRequestInjected(
     _containerInjected: ContainerInjected,
-    requestBody: PostQuoteRequestBody,
+    requestBody: IndicativePostQuoteRequestBody,
     _requestQueryParams: void,
     _event: APIGatewayProxyEvent,
     context: Context,
