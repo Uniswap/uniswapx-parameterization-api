@@ -61,3 +61,25 @@ export const URAResponseJoi = Joi.object({
   filler: FieldValidator.address,
   quoteId: FieldValidator.uuid,
 });
+
+export const RfqResponseJoi = Joi.object({
+  chainId: FieldValidator.chainId.required(),
+  requestId: FieldValidator.uuid.required(),
+  tokenIn: Joi.string().required(),
+  amountIn: FieldValidator.amount.required(),
+  tokenOut: Joi.string().required(),
+  amountOut: FieldValidator.amount.required(),
+  filler: FieldValidator.address.optional(),
+  quoteId: FieldValidator.uuid,
+});
+
+export type RfqResponse = {
+  chainId: number;
+  requestId: string;
+  tokenIn: string;
+  amountIn: string;
+  tokenOut: string;
+  amountOut: string;
+  quoteId: string;
+  filler?: string;
+};
