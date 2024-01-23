@@ -4,6 +4,7 @@ import { getAddress } from 'ethers/lib/utils';
 
 import { PostQuoteRequestBody } from '../handlers/quote';
 
+//TODO: remove v1 definitions down below
 export * from './quote-request';
 
 export interface QuoteRequestData {
