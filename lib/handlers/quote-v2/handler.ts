@@ -1,2 +1,2 @@
-export * from './hard/handler';
-export * from './indicative/handler';
+export { QuoteHandler as HardQuoteHandler } from './hard/handler';
+export { QuoteHandler as IndicativeQuoteHandler } from './indicative/handler';

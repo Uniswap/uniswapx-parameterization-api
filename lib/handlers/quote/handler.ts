@@ -85,7 +85,7 @@ async function getBestQuote(
   log: Logger,
   metric: IMetric
 ): Promise<QuoteResponse | null> {
-  const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat();
+  const responses = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat() as QuoteResponse[];
   switch (responses.length) {
     case 0:
       metric.putMetric(Metric.RFQ_COUNT_0, 1, MetricLoggerUnit.Count);
