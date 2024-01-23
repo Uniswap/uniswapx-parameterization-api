@@ -5,7 +5,7 @@ export interface FillerComplianceConfiguration {
 
 export interface FillerComplianceConfigurationProvider {
   getConfigs(): Promise<FillerComplianceConfiguration[]>;
- // getExcludedAddrToEndpointsMap(): Promise<Map<string, Set<string>>>;
+  // getExcludedAddrToEndpointsMap(): Promise<Map<string, Set<string>>>;
   getEndpointToExcludedAddrsMap(): Promise<Map<string, Set<string>>>;
 }
 

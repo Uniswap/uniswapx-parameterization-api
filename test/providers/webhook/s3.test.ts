@@ -11,13 +11,13 @@ const mockEndpoints = [
       'x-api-key': '1234',
     },
     addresses: ['google.com'],
-    hash: '0xgoogle'
+    hash: '0xgoogle',
   },
   {
     name: 'meta',
     endpoint: 'https://meta.com',
     addresses: ['facebook.com', 'meta.com'],
-    hash: '0xmeta'
+    hash: '0xmeta',
   },
 ];
 
