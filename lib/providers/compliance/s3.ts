@@ -1,8 +1,8 @@
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { default as Logger } from 'bunyan';
 
-import { checkDefined } from '../../preconditions/preconditions';
 import { FillerComplianceConfiguration, FillerComplianceConfigurationProvider } from '.';
+import { checkDefined } from '../../preconditions/preconditions';
 
 export class S3FillerComplianceConfigurationProvider implements FillerComplianceConfigurationProvider {
   private log: Logger;

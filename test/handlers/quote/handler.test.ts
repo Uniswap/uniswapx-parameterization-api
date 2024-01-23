@@ -17,7 +17,7 @@ import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
-import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter, WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
