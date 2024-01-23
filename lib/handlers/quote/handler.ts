@@ -7,8 +7,7 @@ import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';
 import { NoQuotesAvailable } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
-import { APIGLambdaHandler } from '../base';
-import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
+import { APIGLambdaHandler, APIHandleRequestParams, ErrorResponse, Response } from '../base';
 import { ContainerInjected, RequestInjected } from './injector';
 import { PostQuoteRequestBody, PostQuoteRequestBodyJoi, PostQuoteResponse, URAResponseJoi } from './schema';
 
