@@ -4502,9 +4502,10 @@
   resolved "https://registry.yarnpkg.com/@uniswap/token-lists/-/token-lists-1.0.0-beta.31.tgz#ff3852bd505ec7b4c276625c762ea79a93a919ec"
   integrity sha512-BQVoelKCRf64IToPEs1wxiXOnhr/ukwPOF78XG11PrTAOL4F8umjYKFb8ZPv1/dIJsPaC7GhLSriEqyp94SasQ==
 
-"@uniswap/uniswapx-sdk@git+ssh://git@github.com/Uniswap/uniswapx-sdk.git#v2-alpha0":
-  version "1.4.0"
-  resolved "git+ssh://git@github.com/Uniswap/uniswapx-sdk.git#491858e958d9a49cfafa21e50a2140b933933cd0"
+"@uniswap/uniswapx-sdk@2.0.0-alpha.0":
+  version "2.0.0-alpha.0"
+  resolved "https://registry.npmjs.org/@uniswap/uniswapx-sdk/-/uniswapx-sdk-2.0.0-alpha.0.tgz#a2364a640233a8c39e011b08bdbb42de30fb53d8"
+  integrity sha512-fA/AJkCCvIlRzkDIyn2MI0e9C3iQEozyphVZJ/bCM8EeZz/0E9hb8+gsSjoVAh0a4ZQPLJwCtRZybrJCohf6DA==
   dependencies:
     "@ethersproject/bytes" "^5.7.0"
     "@ethersproject/providers" "^5.7.0"
