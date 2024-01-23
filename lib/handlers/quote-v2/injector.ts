@@ -26,7 +26,7 @@ import { S3FillerComplianceConfigurationProvider } from '../../providers/complia
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
-import { IndicativePostQuoteRequestBody } from './schema';
+import { V2PostQuoteRequestBody } from './schema';
 
 export interface ContainerInjected {
   quoters: Quoter[];
@@ -37,12 +37,7 @@ export interface RequestInjected extends ApiRInj {
   metric: IMetric;
 }
 
-export class QuoteInjector extends ApiInjector<
-  ContainerInjected,
-  RequestInjected,
-  IndicativePostQuoteRequestBody,
-  void
-> {
+export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjected, V2PostQuoteRequestBody, void> {
   public async buildContainerInjected(): Promise<ContainerInjected> {
     const log: Logger = bunyan.createLogger({
       name: this.injectorName,
@@ -80,7 +75,7 @@ export class QuoteInjector extends ApiInjector<
 
   public async getRequestInjected(
     _containerInjected: ContainerInjected,
-    requestBody: IndicativePostQuoteRequestBody,
+    requestBody: V2PostQuoteRequestBody,
     _requestQueryParams: void,
     _event: APIGatewayProxyEvent,
     context: Context,
@@ -146,7 +141,7 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
 
   public async getRequestInjected(
     _containerInjected: ContainerInjected,
-    requestBody: IndicativePostQuoteRequestBody,
+    requestBody: V2PostQuoteRequestBody,
     _requestQueryParams: void,
     _event: APIGatewayProxyEvent,
     context: Context,

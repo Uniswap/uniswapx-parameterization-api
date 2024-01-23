@@ -2,6 +2,10 @@ import Joi from 'joi';
 
 import { FieldValidator } from '../../util/validator';
 
+/*
+  Indicative quote
+*/
+
 /* request body to quote endpoint */
 export const V2PostQuoteRequestBodyJoi = Joi.object({
   requestId: FieldValidator.requestId.required(),
@@ -58,19 +62,6 @@ export type V2PostQuoteResponse = {
   quoteId: string;
 };
 
-//export const IndicativeURAResponseJoi = Joi.object({
-//  tokenInChainId: FieldValidator.chainId.required(),
-//  tokenOutChainId: FieldValidator.chainId.required(),
-//  requestId: FieldValidator.uuid.required(),
-//  tokenIn: Joi.string().required(),
-//  amountIn: FieldValidator.amount.required(),
-//  tokenOut: Joi.string().required(),
-//  amountOut: FieldValidator.amount.required(),
-//  swapper: FieldValidator.address.required(),
-//  cosigner: FieldValidator.address.required(),
-//  quoteId: FieldValidator.uuid.required(),
-//});
-
 /* v2 quote response from filler */
 export const V2RfqResponseJoi = Joi.object({
   tokenInChainId: FieldValidator.chainId.required(),
@@ -96,4 +87,23 @@ export type V2RfqResponse = {
   cosigner: string;
   quoteId: string;
   filler?: string;
+};
+
+/* Hard Quote */
+export const V2HardQuoteRequestBodyJoi = Joi.object({
+  requestId: FieldValidator.requestId.required(),
+  quoteId: FieldValidator.uuid.optional(),
+  encodedInnerOrder: Joi.string().required(),
+  innerSig: FieldValidator.rawSignature.required(),
+  tokenInChainId: FieldValidator.chainId.required(),
+  tokenOutChainId: FieldValidator.chainId.required(),
+});
+
+export type V2HardQuoteRequestBody = {
+  requestId: string;
+  quoteId?: string;
+  encodedInnerOrder: string;
+  innerSig: string;
+  tokenInChainId: number;
+  tokenOutChainId: number;
 };

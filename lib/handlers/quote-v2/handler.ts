@@ -3,7 +3,7 @@ import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
 import Joi from 'joi';
 
-import { Metric, QuoteResponse, V2QuoteRequest, V2QuoteResponse } from '../../entities';
+import { Metric, V2QuoteRequest, V2QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';
 import { NoQuotesAvailable } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
