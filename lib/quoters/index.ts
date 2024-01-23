@@ -1,4 +1,4 @@
-import { QuoteRequest, QuoteResponse } from '../entities';
+import { QuoteRequest, QuoteResponse, V2QuoteRequest, V2QuoteResponse } from '../entities';
 
 export enum QuoterType {
   TEST = 'TEST',
@@ -7,7 +7,7 @@ export enum QuoterType {
 }
 
 export interface Quoter {
-  quote(request: QuoteRequest): Promise<QuoteResponse[]>;
+  quote(request: QuoteRequest | V2QuoteRequest): Promise<QuoteResponse[] | V2QuoteResponse[]>;
   type(): QuoterType;
 }
 

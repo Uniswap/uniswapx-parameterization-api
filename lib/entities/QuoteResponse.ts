@@ -2,9 +2,10 @@ import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
-import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
+import { QuoteRequestData, V2QuoteRequestData } from '.';
+import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote';
+import { V2RfqResponse, V2RfqResponseJoi } from '../handlers/quote-v2';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
-import { QuoteRequestData } from '.';
 
 export interface QuoteResponseData
   extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type' | 'numOutputs'> {
@@ -15,14 +16,278 @@ export interface QuoteResponseData
   quoteId: string;
 }
 
+export interface V2QuoteResponseData extends Omit<V2QuoteRequestData, 'amount' | 'type' | 'numOutputs'> {
+  amountIn: BigNumber;
+  amountOut: BigNumber;
+  filler?: string;
+  quoteId: string;
+}
+
 type ValidationError = {
   message: string | undefined;
   value: { [key: string]: any };
 };
 
-interface ValidatedResponse {
+export interface V2QuoteResponseData extends Omit<V2QuoteRequestData, 'amount' | 'type' | 'numOutputs'> {
+  amountIn: BigNumber;
+  amountOut: BigNumber;
+  filler?: string;
+  quoteId: string;
+}
+
+export interface V2QuoteResponseData extends Omit<V2QuoteRequestData, 'amount' | 'type' | 'numOutputs'> {
+  amountIn: BigNumber;
+  amountOut: BigNumber;
+  filler?: string;
+  quoteId: string;
+}
+
+export interface ValidatedResponse {
   response: QuoteResponse;
   validationError?: ValidationError;
+}
+
+export interface ValidatedV2Response {
+  response: V2QuoteResponse;
+  validation: ValidationResult<V2QuoteResponse>;
+}
+
+export class V2QuoteResponse implements V2QuoteResponseData {
+  public createdAt: string;
+
+  constructor(private data: V2QuoteResponseData, public type: TradeType, public createdAtMs = currentTimestampInMs()) {
+    this.createdAt = timestampInMstoSeconds(parseInt(this.createdAtMs));
+  }
+
+  public static fromRequest(request: V2QuoteRequestData, amountQuoted: BigNumber, filler?: string): V2QuoteResponse {
+    return new V2QuoteResponse(
+      {
+        tokenInChainId: request.tokenInChainId,
+        tokenOutChainId: request.tokenOutChainId,
+        requestId: request.requestId,
+        swapper: request.swapper,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        amountIn: request.type === TradeType.EXACT_INPUT ? request.amount : amountQuoted,
+        amountOut: request.type === TradeType.EXACT_OUTPUT ? request.amount : amountQuoted,
+        cosigner: request.cosigner,
+        filler: filler,
+        quoteId: request.quoteId ?? uuidv4(),
+      },
+      request.type
+    );
+  }
+
+  public static fromRFQ(request: V2QuoteRequestData, data: V2RfqResponse, type: TradeType): ValidatedV2Response {
+    const responseValidation = V2RfqResponseJoi.validate(data, {
+      allowUnknown: true,
+      stripUnknown: true,
+    });
+    return {
+      response: new V2QuoteResponse(
+        {
+          ...data,
+          tokenInChainId: data.chainId,
+          tokenOutChainId: data.chainId,
+          quoteId: data.quoteId ?? uuidv4(),
+          swapper: request.swapper,
+          cosigner: request.cosigner,
+          amountIn: BigNumber.from(data.amountIn ?? 0),
+          amountOut: BigNumber.from(data.amountOut ?? 0),
+        },
+        type
+      ),
+      validation: responseValidation,
+    };
+  }
+
+  public toResponseJSON(): IndicativeQuoteResponseBody {
+    return {
+      requestId: this.requestId,
+      quoteId: this.quoteId,
+      tokenInChainId: this.tokenInChainId,
+      tokenOutChainId: this.tokenOutChainId,
+      tokenIn: this.tokenIn,
+      amountIn: this.amountIn.toString(),
+      tokenOut: this.tokenOut,
+      amountOut: this.amountOut.toString(),
+      swapper: this.swapper,
+      cosigner: this.cosigner,
+      filler: this.filler,
+    };
+  }
+
+  public toLog() {
+    return {
+      ...this.toResponseJSON(),
+      createdAt: this.createdAt,
+      createdAtMs: this.createdAtMs,
+    };
+  }
+
+  public get quoteId(): string {
+    return this.data.quoteId;
+  }
+
+  public get requestId(): string {
+    return this.data.requestId;
+  }
+
+  public get tokenInChainId(): number {
+    return this.data.tokenInChainId;
+  }
+
+  public get tokenOutChainId(): number {
+    return this.data.tokenOutChainId;
+  }
+
+  public get swapper(): string {
+    return this.data.swapper;
+  }
+
+  public get tokenIn(): string {
+    return this.data.tokenIn;
+  }
+
+  public get amountIn(): BigNumber {
+    return this.data.amountIn;
+  }
+
+  public get tokenOut(): string {
+    return this.data.tokenOut;
+  }
+
+  public get amountOut(): BigNumber {
+    return this.data.amountOut;
+  }
+
+  public get cosigner(): string {
+    return this.data.cosigner;
+  }
+
+  public get filler(): string | undefined {
+    return this.data.filler;
+  }
+}
+
+interface V2ValidatedResponse {
+  response: V2QuoteResponse;
+  validation: ValidationResult<V2QuoteResponse>;
+}
+
+export class V2QuoteResponse implements V2QuoteResponseData {
+  public createdAt: string;
+
+  constructor(private data: V2QuoteResponseData, public type: TradeType, public createdAtMs = currentTimestampInMs()) {
+    this.createdAt = timestampInMstoSeconds(parseInt(this.createdAtMs));
+  }
+
+  public static fromRequest(request: V2QuoteRequestData, amountQuoted: BigNumber, filler?: string): V2QuoteResponse {
+    return new V2QuoteResponse(
+      {
+        tokenInChainId: request.tokenInChainId,
+        tokenOutChainId: request.tokenOutChainId,
+        requestId: request.requestId,
+        swapper: request.swapper,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        amountIn: request.type === TradeType.EXACT_INPUT ? request.amount : amountQuoted,
+        amountOut: request.type === TradeType.EXACT_OUTPUT ? request.amount : amountQuoted,
+        cosigner: request.cosigner,
+        filler: filler,
+        quoteId: request.quoteId ?? uuidv4(),
+      },
+      request.type
+    );
+  }
+
+  public static fromRFQ(request: QuoteRequestData, data: V2RfqResponse, type: TradeType): V2ValidatedResponse {
+    const responseValidation = V2RfqResponseJoi.validate(data, {
+      allowUnknown: true,
+      stripUnknown: true,
+    });
+    return {
+      response: new V2QuoteResponse(
+        {
+          ...data,
+          quoteId: data.quoteId ?? uuidv4(),
+          swapper: request.swapper,
+          amountIn: BigNumber.from(data.amountIn ?? 0),
+          amountOut: BigNumber.from(data.amountOut ?? 0),
+        },
+        type
+      ),
+      validation: responseValidation,
+    };
+  }
+
+  public toResponseJSON(): V2PostQuoteResponse {
+    return {
+      requestId: this.requestId,
+      quoteId: this.quoteId,
+      tokenInChainId: this.tokenInChainId,
+      tokenOutChainId: this.tokenOutChainId,
+      tokenIn: this.tokenIn,
+      amountIn: this.amountIn.toString(),
+      tokenOut: this.tokenOut,
+      amountOut: this.amountOut.toString(),
+      swapper: this.swapper,
+      cosigner: this.cosigner,
+      filler: this.filler,
+    };
+  }
+
+  public toLog() {
+    return {
+      ...this.toResponseJSON(),
+      createdAt: this.createdAt,
+      createdAtMs: this.createdAtMs,
+    };
+  }
+
+  public get quoteId(): string {
+    return this.data.quoteId;
+  }
+
+  public get requestId(): string {
+    return this.data.requestId;
+  }
+
+  public get tokenInChainId(): number {
+    return this.data.tokenInChainId;
+  }
+
+  public get tokenOutChainId(): number {
+    return this.data.tokenOutChainId;
+  }
+
+  public get swapper(): string {
+    return this.data.swapper;
+  }
+
+  public get tokenIn(): string {
+    return this.data.tokenIn;
+  }
+
+  public get amountIn(): BigNumber {
+    return this.data.amountIn;
+  }
+
+  public get tokenOut(): string {
+    return this.data.tokenOut;
+  }
+
+  public get amountOut(): BigNumber {
+    return this.data.amountOut;
+  }
+
+  public get cosigner(): string {
+    return this.data.cosigner;
+  }
+
+  public get filler(): string | undefined {
+    return this.data.filler;
+  }
 }
 
 // data class for QuoteRequest helpers and conversions

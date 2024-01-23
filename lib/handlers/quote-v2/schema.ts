@@ -3,7 +3,7 @@ import Joi from 'joi';
 import { FieldValidator } from '../../util/validator';
 
 /* request body to quote endpoint */
-export const IndicativePostQuoteRequestBodyJoi = Joi.object({
+export const V2PostQuoteRequestBodyJoi = Joi.object({
   requestId: FieldValidator.requestId.required(),
   tokenInChainId: FieldValidator.chainId.required(),
   tokenOutChainId: Joi.number().integer().valid(Joi.ref('tokenInChainId')).required(),
@@ -13,11 +13,10 @@ export const IndicativePostQuoteRequestBodyJoi = Joi.object({
   amount: FieldValidator.amount.required(),
   type: FieldValidator.tradeType.required(),
   cosigner: FieldValidator.address.required(),
-
   numOutputs: Joi.number().integer().min(1).required(),
 });
 
-export type IndicativePostQuoteRequestBody = {
+export type V2PostQuoteRequestBody = {
   requestId: string;
   tokenInChainId: number;
   tokenOutChainId: number;
@@ -30,8 +29,8 @@ export type IndicativePostQuoteRequestBody = {
   numOutputs: number;
 };
 
-/* indicative quote response from filler */
-export const IndicativePostQuoteResponseJoi = Joi.object({
+/* response back to URA */
+export const V2PostQuoteResponseJoi = Joi.object({
   tokenInChainId: FieldValidator.chainId.required(),
   tokenOutChainId: FieldValidator.chainId.required(),
   requestId: FieldValidator.uuid.required(),
@@ -41,10 +40,11 @@ export const IndicativePostQuoteResponseJoi = Joi.object({
   amountOut: FieldValidator.amount.required(),
   swapper: FieldValidator.address.optional(),
   cosigner: FieldValidator.address.required(),
+  filler: FieldValidator.address.optional(),
   quoteId: FieldValidator.uuid.required(),
 });
 
-export type IndicativePostQuoteResponse = {
+export type V2PostQuoteResponse = {
   tokenInChainId: number;
   tokenOutChainId: number;
   requestId: string;
@@ -54,19 +54,46 @@ export type IndicativePostQuoteResponse = {
   amountOut: string;
   swapper: string;
   cosigner: string;
+  filler?: string;
   quoteId: string;
 };
 
-/* response back to URA */
-export const IndicativeURAResponseJoi = Joi.object({
+//export const IndicativeURAResponseJoi = Joi.object({
+//  tokenInChainId: FieldValidator.chainId.required(),
+//  tokenOutChainId: FieldValidator.chainId.required(),
+//  requestId: FieldValidator.uuid.required(),
+//  tokenIn: Joi.string().required(),
+//  amountIn: FieldValidator.amount.required(),
+//  tokenOut: Joi.string().required(),
+//  amountOut: FieldValidator.amount.required(),
+//  swapper: FieldValidator.address.required(),
+//  cosigner: FieldValidator.address.required(),
+//  quoteId: FieldValidator.uuid.required(),
+//});
+
+/* v2 quote response from filler */
+export const V2RfqResponseJoi = Joi.object({
   tokenInChainId: FieldValidator.chainId.required(),
-  tokenOutChainId: FieldValidator.chainId.required(),
+  tokenOutCHainId: FieldValidator.chainId.required(),
   requestId: FieldValidator.uuid.required(),
   tokenIn: Joi.string().required(),
   amountIn: FieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
   amountOut: FieldValidator.amount.required(),
-  swapper: FieldValidator.address.required(),
   cosigner: FieldValidator.address.required(),
-  quoteId: FieldValidator.uuid.required(),
+  filler: FieldValidator.address.optional(),
+  quoteId: FieldValidator.uuid,
 });
+
+export type V2RfqResponse = {
+  tokenInChainId: number;
+  tokenOutChainId: number;
+  requestId: string;
+  tokenIn: string;
+  amountIn: string;
+  tokenOut: string;
+  amountOut: string;
+  cosigner: string;
+  quoteId: string;
+  filler?: string;
+};
