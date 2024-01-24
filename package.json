@@ -72,6 +72,7 @@
     "@uniswap/v3-sdk": "^3.9.0",
     "aws-cdk-lib": "2.85.0",
     "aws-embedded-metrics": "^4.1.0",
+    "aws-sdk": "^2.1542.0",
     "axios": "^1.2.1",
     "axios-retry": "^3.4.0",
     "bunyan": "^1.8.15",
