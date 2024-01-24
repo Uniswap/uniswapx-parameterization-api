@@ -4,6 +4,7 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
+import { Quoter, QuoterType } from '.';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
@@ -18,7 +19,6 @@ import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { timestampInMstoISOString } from '../util/time';
-import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -35,7 +35,7 @@ export class WebhookQuoter implements Quoter {
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
     private complianceProvider: FillerComplianceConfigurationProvider,
-    _allow_list: Set<string> = new Set<string>(['1ed189c4b20479e36acf74e2bc87e03bfdce765ecba6696970caee8299fc005f'])
+    _allow_list: Set<string> = new Set<string>(['531679099f2a17818ed35cad21443a303c5ee2426cdbda547cfe6aec3d3b0215'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
     this.ALLOW_LIST = _allow_list;
