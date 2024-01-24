@@ -188,6 +188,10 @@ export class APIPipeline extends Stack {
             value: '1',
             type: BuildEnvironmentVariableType.PLAINTEXT,
           },
+          NODE_OPTIONS: {
+            value: '--max-old-space-size=8192',
+            type: BuildEnvironmentVariableType.PLAINTEXT,
+          },
         },
       },
       commands: [
