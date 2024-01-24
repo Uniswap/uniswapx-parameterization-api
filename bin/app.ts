@@ -55,6 +55,7 @@ export class APIPipeline extends Stack {
       input: code,
       buildEnvironment: {
         buildImage: cdk.aws_codebuild.LinuxBuildImage.STANDARD_7_0,
+        computeType: cdk.aws_codebuild.ComputeType.MEDIUM,
         environmentVariables: {
           NPM_TOKEN: {
             value: 'npm-private-repo-access-token',
@@ -169,6 +170,7 @@ export class APIPipeline extends Stack {
       },
       buildEnvironment: {
         buildImage: cdk.aws_codebuild.LinuxBuildImage.STANDARD_7_0,
+        computeType: cdk.aws_codebuild.ComputeType.MEDIUM,
         environmentVariables: {
           NPM_TOKEN: {
             value: 'npm-private-repo-access-token',
