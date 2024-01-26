@@ -21,7 +21,7 @@ import { S3FillerComplianceConfigurationProvider } from '../../../providers/comp
 import { Quoter, WebhookQuoter } from '../../../quoters';
 import { STAGE } from '../../../util/stage';
 import { ApiInjector, ApiRInj } from '../../base/api-handler';
-import { V2HardQuoteRequestBody } from '../schema';
+import { HardQuoteRequestBody } from '../schema';
 
 export interface ContainerInjected {
   quoters: Quoter[];
@@ -32,7 +32,7 @@ export interface RequestInjected extends ApiRInj {
   metric: IMetric;
 }
 
-export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjected, V2HardQuoteRequestBody, void> {
+export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void> {
   public async buildContainerInjected(): Promise<ContainerInjected> {
     const log: Logger = bunyan.createLogger({
       name: this.injectorName,
@@ -70,7 +70,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
   public async getRequestInjected(
     _containerInjected: ContainerInjected,
-    requestBody: V2HardQuoteRequestBody,
+    requestBody: HardQuoteRequestBody,
     _requestQueryParams: void,
     _event: APIGatewayProxyEvent,
     context: Context,

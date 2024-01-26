@@ -1,9 +1,9 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber } from 'ethers';
-import { V2HardQuoteRequestBody, V2RfqRequest } from '../../handlers/quote-v2';
+import { HardQuoteRequestBody, V2RfqRequest } from '../../handlers/quote-v2';
 
 export class HardQuoteRequest {
-  public static fromRequestBody(body: V2HardQuoteRequestBody): HardQuoteRequest {
+  public static fromRequestBody(body: HardQuoteRequestBody): HardQuoteRequest {
     return new HardQuoteRequest({
       requestId: body.requestId,
       quoteId: body.quoteId,
@@ -14,7 +14,7 @@ export class HardQuoteRequest {
     });
   }
 
-  constructor(private data: V2HardQuoteRequestBody) {}
+  constructor(private data: HardQuoteRequestBody) {}
 
   public toCleanJSON(): Omit<V2RfqRequest, 'quoteId'> & { quoteId?: string } {
     throw new Error('Method not implemented.');

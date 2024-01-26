@@ -5,18 +5,18 @@ import { HardQuoteRequest, Metric } from '../../../entities';
 import { timestampInMstoSeconds } from '../../../util/time';
 import { APIGLambdaHandler } from '../../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../../base/api-handler';
-import { V2HardQuoteRequestBody, V2HardQuoteRequestBodyJoi } from '../schema';
+import { HardQuoteRequestBody, HardQuoteRequestBodyJoi } from '../schema';
 import { ContainerInjected, RequestInjected } from './injector';
 
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
   RequestInjected,
-  V2HardQuoteRequestBody,
+  HardQuoteRequestBody,
   void,
   null
 > {
   public async handleRequest(
-    params: APIHandleRequestParams<ContainerInjected, RequestInjected, V2HardQuoteRequestBody, void>
+    params: APIHandleRequestParams<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>
   ): Promise<ErrorResponse | Response<null>> {
     const {
       requestInjected: { log, metric },
@@ -49,7 +49,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected requestBodySchema(): Joi.ObjectSchema | null {
-    return V2HardQuoteRequestBodyJoi;
+    return HardQuoteRequestBodyJoi;
   }
 
   protected requestQueryParamsSchema(): Joi.ObjectSchema | null {

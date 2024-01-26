@@ -3,7 +3,7 @@ import Joi from 'joi';
 import { FieldValidator } from '../../../util/validator';
 
 /* Hard quote request from user */
-export const V2HardQuoteRequestBodyJoi = Joi.object({
+export const HardQuoteRequestBodyJoi = Joi.object({
   requestId: FieldValidator.requestId.required(),
   quoteId: FieldValidator.uuid.optional(),
   encodedInnerOrder: Joi.string().required(),
@@ -12,7 +12,7 @@ export const V2HardQuoteRequestBodyJoi = Joi.object({
   tokenOutChainId: FieldValidator.chainId.required(),
 });
 
-export type V2HardQuoteRequestBody = {
+export type HardQuoteRequestBody = {
   requestId: string;
   quoteId?: string;
   encodedInnerOrder: string;
