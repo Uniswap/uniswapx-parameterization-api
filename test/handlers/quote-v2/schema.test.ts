@@ -1,11 +1,6 @@
 import { constants, utils } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  IndicativeQuoteRequestBodyJoi,
-  IndicativeQuoteResponseJoi,
-  V2RfqRequestJoi,
-  V2RfqResponseJoi,
-} from '../../../lib/handlers/quote-v2';
+import { IndicativeQuoteRequestBodyJoi, IndicativeQuoteResponseJoi } from '../../../lib/handlers/quote-v2';
 
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
