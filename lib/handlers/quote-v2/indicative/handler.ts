@@ -3,30 +3,30 @@ import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
 import Joi from 'joi';
 
-import { Metric, V2QuoteRequest, V2QuoteResponse } from '../../../entities';
+import { IndicativeQuoteRequest, IndicativeQuoteResponse, Metric } from '../../../entities';
 import { Quoter } from '../../../quoters';
 import { NoQuotesAvailable } from '../../../util/errors';
 import { timestampInMstoSeconds } from '../../../util/time';
 import { APIGLambdaHandler } from '../../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../../base/api-handler';
 import {
-  V2PostQuoteRequestBody,
-  V2PostQuoteRequestBodyJoi,
-  V2PostQuoteResponse,
-  V2PostQuoteResponseJoi,
+  IndicativeQuoteRequestBody,
+  IndicativeQuoteRequestBodyJoi,
+  IndicativeQuoteResponseBody,
+  IndicativeQuoteResponseJoi,
 } from '../schema';
 import { ContainerInjected, RequestInjected } from './injector';
 
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
   RequestInjected,
-  V2PostQuoteRequestBody,
+  IndicativeQuoteRequestBody,
   void,
-  V2PostQuoteResponse
+  IndicativeQuoteResponseBody
 > {
   public async handleRequest(
-    params: APIHandleRequestParams<ContainerInjected, RequestInjected, V2PostQuoteRequestBody, void>
-  ): Promise<ErrorResponse | Response<V2PostQuoteResponse>> {
+    params: APIHandleRequestParams<ContainerInjected, RequestInjected, IndicativeQuoteRequestBody, void>
+  ): Promise<ErrorResponse | Response<IndicativeQuoteResponseBody>> {
     const {
       requestInjected: { log, metric },
       requestBody,
@@ -36,7 +36,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
-    const request = V2QuoteRequest.fromRequestBody(requestBody);
+    const request = IndicativeQuoteRequest.fromRequestBody(requestBody);
 
     // TODO: finalize on v2 metrics logging
     log.info({
@@ -74,7 +74,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected requestBodySchema(): Joi.ObjectSchema | null {
-    return V2PostQuoteRequestBodyJoi;
+    return IndicativeQuoteRequestBodyJoi;
   }
 
   protected requestQueryParamsSchema(): Joi.ObjectSchema | null {
@@ -82,18 +82,18 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected responseBodySchema(): Joi.ObjectSchema | null {
-    return V2PostQuoteResponseJoi;
+    return IndicativeQuoteResponseJoi;
   }
 }
 
 // fetch quotes from all quoters and return the best one
 async function getBestQuote(
   quoters: Quoter[],
-  quoteRequest: V2QuoteRequest,
+  quoteRequest: IndicativeQuoteRequest,
   log: Logger,
   metric: IMetric
-): Promise<V2QuoteResponse | null> {
-  const responses = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat() as V2QuoteResponse[];
+): Promise<IndicativeQuoteResponse | null> {
+  const responses = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat() as IndicativeQuoteResponse[];
   switch (responses.length) {
     case 0:
       metric.putMetric(Metric.RFQ_COUNT_0, 1, MetricLoggerUnit.Count);
@@ -113,7 +113,7 @@ async function getBestQuote(
   }
 
   // return the response with the highest amountOut value
-  return responses.reduce((bestQuote: V2QuoteResponse | null, quote: V2QuoteResponse) => {
+  return responses.reduce((bestQuote: IndicativeQuoteResponse | null, quote: IndicativeQuoteResponse) => {
     log.info({
       eventType: 'QuoteResponse',
       body: { ...quote.toLog(), offerer: quote.swapper },

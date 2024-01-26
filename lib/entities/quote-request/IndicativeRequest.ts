@@ -1,20 +1,16 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { BigNumber, constants, utils } from 'ethers';
-import { V2PostQuoteRequestBody } from '../../handlers/quote-v2';
+import { BigNumber, utils } from 'ethers';
+import { IndicativeQuoteRequestBody, V2RfqRequest } from '../../handlers/quote-v2';
 
-export interface V2QuoteRequestData extends Omit<V2PostQuoteRequestBody, 'amount' | 'type'> {
+export interface IndicativeQuoteRequestData extends Omit<IndicativeQuoteRequestBody, 'amount' | 'type'> {
   amount: BigNumber;
   type: TradeType;
   quoteId?: string;
 }
 
-export interface V2QuoteRequestJSON extends V2PostQuoteRequestBody {
-  quoteId?: string;
-}
-
-export class V2QuoteRequest {
-  public static fromRequestBody(body: V2PostQuoteRequestBody): V2QuoteRequest {
-    return new V2QuoteRequest({
+export class IndicativeQuoteRequest {
+  public static fromRequestBody(body: IndicativeQuoteRequestBody): IndicativeQuoteRequest {
+    return new IndicativeQuoteRequest({
       tokenInChainId: body.tokenInChainId,
       tokenOutChainId: body.tokenOutChainId,
       requestId: body.requestId,
@@ -28,14 +24,13 @@ export class V2QuoteRequest {
     });
   }
 
-  constructor(private data: V2QuoteRequestData) {}
+  constructor(private data: IndicativeQuoteRequestData) {}
 
-  public toJSON(): V2QuoteRequestJSON {
+  public toJSON(): Partial<V2RfqRequest> & { cosigner: string } {
     return {
       tokenInChainId: this.tokenInChainId,
       tokenOutChainId: this.tokenOutChainId,
       requestId: this.requestId,
-      swapper: utils.getAddress(this.swapper),
       tokenIn: utils.getAddress(this.tokenIn),
       tokenOut: utils.getAddress(this.tokenOut),
       amount: this.amount.toString(),
@@ -46,7 +41,7 @@ export class V2QuoteRequest {
     };
   }
 
-  public toCleanJSON(): V2QuoteRequestJSON {
+  public toCleanJSON(): Omit<V2RfqRequest, 'quoteId'> & { quoteId?: string } {
     return {
       tokenInChainId: this.tokenInChainId,
       tokenOutChainId: this.tokenOutChainId,
@@ -54,17 +49,15 @@ export class V2QuoteRequest {
       tokenIn: utils.getAddress(this.tokenIn),
       tokenOut: utils.getAddress(this.tokenOut),
       amount: this.amount.toString(),
-      swapper: constants.AddressZero,
       type: TradeType[this.type],
       numOutputs: this.numOutputs,
-      cosigner: utils.getAddress(this.cosigner),
       ...(this.quoteId && { quoteId: this.quoteId }),
     };
   }
 
   // return an opposing quote request,
   // i.e. quoting the other side of the trade
-  public toOpposingCleanJSON(): V2QuoteRequestJSON {
+  public toOpposingCleanJSON(): Omit<V2RfqRequest, 'quoteId'> & { quoteId?: string } {
     const type = this.type === TradeType.EXACT_INPUT ? TradeType.EXACT_OUTPUT : TradeType.EXACT_INPUT;
     return {
       tokenInChainId: this.tokenOutChainId,
@@ -74,21 +67,21 @@ export class V2QuoteRequest {
       tokenIn: utils.getAddress(this.tokenOut),
       tokenOut: utils.getAddress(this.tokenIn),
       amount: this.amount.toString(),
-      swapper: constants.AddressZero,
       // switch tradeType
       type: TradeType[type],
       numOutputs: this.numOutputs,
-      cosigner: utils.getAddress(this.cosigner),
       ...(this.quoteId && { quoteId: this.quoteId }),
     };
   }
 
-  public toOpposingRequest(): V2QuoteRequest {
+  public toOpposingRequest(): IndicativeQuoteRequest {
     const opposingJSON = this.toOpposingCleanJSON();
-    return new V2QuoteRequest({
+    return new IndicativeQuoteRequest({
       ...opposingJSON,
       amount: BigNumber.from(opposingJSON.amount),
       type: TradeType[opposingJSON.type as keyof typeof TradeType],
+      swapper: this.swapper,
+      cosigner: this.cosigner,
     });
   }
 

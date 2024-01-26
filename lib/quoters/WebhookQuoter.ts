@@ -8,12 +8,12 @@ import { Quoter, QuoterType } from '.';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
+  IndicativeQuoteResponse,
   Metric,
   metricContext,
   QuoteRequest,
   QuoteResponse,
   V2QuoteRequest,
-  V2QuoteResponse,
   WebhookResponseType,
 } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
@@ -43,7 +43,7 @@ export class WebhookQuoter implements Quoter {
     this.ALLOW_LIST = _allow_list;
   }
 
-  public async quote(request: QuoteRequest | V2QuoteRequest): Promise<QuoteResponse[] | V2QuoteResponse[]> {
+  public async quote(request: QuoteRequest | V2QuoteRequest): Promise<QuoteResponse[] | IndicativeQuoteResponse[]> {
     const endpoints = await this.getEligibleEndpoints();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     endpoints.filter((e) => {
@@ -96,7 +96,7 @@ export class WebhookQuoter implements Quoter {
   private async fetchQuote(
     config: WebhookConfiguration,
     request: QuoteRequest | V2QuoteRequest
-  ): Promise<QuoteResponse | V2QuoteResponse | null> {
+  ): Promise<QuoteResponse | IndicativeQuoteResponse | null> {
     const { name, endpoint, headers } = config;
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
       this.log.debug(
@@ -248,7 +248,7 @@ export class WebhookQuoter implements Quoter {
 
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
-      const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
+      const opposingResponse = QuoteResponse.fromRFQ(opposingRequest.swapper, opposite.data, opposingRequest.type);
       if (
         opposingResponse &&
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&

@@ -1,8 +1,10 @@
-import { V2HardQuoteRequestBody } from '../../handlers/quote-v2';
+import { TradeType } from '@uniswap/sdk-core';
+import { BigNumber } from 'ethers';
+import { V2HardQuoteRequestBody, V2RfqRequest } from '../../handlers/quote-v2';
 
-export class V2HardQuoteRequest {
-  public static fromRequestBody(body: V2HardQuoteRequestBody): V2HardQuoteRequest {
-    return new V2HardQuoteRequest({
+export class HardQuoteRequest {
+  public static fromRequestBody(body: V2HardQuoteRequestBody): HardQuoteRequest {
+    return new HardQuoteRequest({
       requestId: body.requestId,
       quoteId: body.quoteId,
       tokenInChainId: body.tokenInChainId,
@@ -13,6 +15,18 @@ export class V2HardQuoteRequest {
   }
 
   constructor(private data: V2HardQuoteRequestBody) {}
+
+  public toCleanJSON(): Omit<V2RfqRequest, 'quoteId'> & { quoteId?: string } {
+    throw new Error('Method not implemented.');
+  }
+
+  public toOpposingCleanJSON(): Omit<V2RfqRequest, 'quoteId'> & { quoteId?: string } {
+    throw new Error('Method not implemented.');
+  }
+
+  public toOpposingRequest(): HardQuoteRequest {
+    throw new Error('Method not implemented.');
+  }
 
   public get requestId(): string {
     return this.data.requestId;
@@ -40,5 +54,17 @@ export class V2HardQuoteRequest {
 
   public set quoteId(quoteId: string | undefined) {
     this.data.quoteId = quoteId;
+  }
+
+  public get amount(): BigNumber {
+    throw new Error('Method not implemented.');
+  }
+
+  public get swapper(): string {
+    throw new Error('Method not implemented.');
+  }
+
+  public get type(): TradeType {
+    throw new Error('Method not implemented.');
   }
 }

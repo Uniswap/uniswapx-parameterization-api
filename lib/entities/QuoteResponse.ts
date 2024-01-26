@@ -2,7 +2,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
-import { QuoteRequestData, V2QuoteRequestData } from '.';
+import { IndicativeQuoteRequestData, QuoteRequestData } from '.';
 import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote';
 import { V2RfqResponse, V2RfqResponseJoi } from '../handlers/quote-v2';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
@@ -16,7 +16,8 @@ export interface QuoteResponseData
   quoteId: string;
 }
 
-export interface V2QuoteResponseData extends Omit<V2QuoteRequestData, 'amount' | 'type' | 'numOutputs'> {
+export interface IndicativeQuoteResponseData
+  extends Omit<IndicativeQuoteRequestData, 'amount' | 'type' | 'numOutputs'> {
   amountIn: BigNumber;
   amountOut: BigNumber;
   filler?: string;
@@ -170,20 +171,28 @@ export class V2QuoteResponse implements V2QuoteResponseData {
   }
 }
 
-interface V2ValidatedResponse {
-  response: V2QuoteResponse;
-  validation: ValidationResult<V2QuoteResponse>;
+interface ValidatedIndicativeResponse {
+  response: IndicativeQuoteResponse;
+  validation: ValidationResult<IndicativeQuoteResponse>;
 }
 
-export class V2QuoteResponse implements V2QuoteResponseData {
+export class IndicativeQuoteResponse implements IndicativeQuoteResponseData {
   public createdAt: string;
 
-  constructor(private data: V2QuoteResponseData, public type: TradeType, public createdAtMs = currentTimestampInMs()) {
+  constructor(
+    private data: IndicativeQuoteResponseData,
+    public type: TradeType,
+    public createdAtMs = currentTimestampInMs()
+  ) {
     this.createdAt = timestampInMstoSeconds(parseInt(this.createdAtMs));
   }
 
-  public static fromRequest(request: V2QuoteRequestData, amountQuoted: BigNumber, filler?: string): V2QuoteResponse {
-    return new V2QuoteResponse(
+  public static fromRequest(
+    request: IndicativeQuoteRequestData,
+    amountQuoted: BigNumber,
+    filler?: string
+  ): IndicativeQuoteResponse {
+    return new IndicativeQuoteResponse(
       {
         tokenInChainId: request.tokenInChainId,
         tokenOutChainId: request.tokenOutChainId,
@@ -201,17 +210,17 @@ export class V2QuoteResponse implements V2QuoteResponseData {
     );
   }
 
-  public static fromRFQ(request: QuoteRequestData, data: V2RfqResponse, type: TradeType): V2ValidatedResponse {
+  public static fromRFQ(swapper: string, data: V2RfqResponse, type: TradeType): ValidatedIndicativeResponse {
     const responseValidation = V2RfqResponseJoi.validate(data, {
       allowUnknown: true,
       stripUnknown: true,
     });
     return {
-      response: new V2QuoteResponse(
+      response: new IndicativeQuoteResponse(
         {
           ...data,
           quoteId: data.quoteId ?? uuidv4(),
-          swapper: request.swapper,
+          swapper: swapper,
           amountIn: BigNumber.from(data.amountIn ?? 0),
           amountOut: BigNumber.from(data.amountOut ?? 0),
         },
@@ -221,7 +230,7 @@ export class V2QuoteResponse implements V2QuoteResponseData {
     };
   }
 
-  public toResponseJSON(): V2PostQuoteResponse {
+  public toResponseJSON(): IndicativeQuoteResponseBody {
     return {
       requestId: this.requestId,
       quoteId: this.quoteId,
@@ -311,9 +320,13 @@ export class QuoteResponse implements QuoteResponseData {
     );
   }
 
+<<<<<<< HEAD
   public static fromRFQ(request: QuoteRequestData, data: RfqResponse, type: TradeType): ValidatedResponse {
     let validationError: ValidationError | undefined;
 
+=======
+  public static fromRFQ(swapper: string, data: RfqResponse, type: TradeType): ValidatedResponse {
+>>>>>>> 33292cc (revamp types and add unit tests)
     const responseValidation = RfqResponseJoi.validate(data, {
       allowUnknown: true,
       stripUnknown: true,
@@ -341,7 +354,7 @@ export class QuoteResponse implements QuoteResponseData {
         {
           ...data,
           quoteId: data.quoteId ?? uuidv4(),
-          swapper: request.swapper,
+          swapper: swapper,
           amountIn: BigNumber.from(data.amountIn ?? 0),
           amountOut: BigNumber.from(data.amountOut ?? 0),
         },
