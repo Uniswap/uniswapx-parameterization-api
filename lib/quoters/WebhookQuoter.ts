@@ -4,7 +4,6 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Quoter, QuoterType } from '.';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
@@ -19,6 +18,7 @@ import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { timestampInMstoISOString } from '../util/time';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -152,7 +152,7 @@ export class WebhookQuoter implements Quoter {
         latencyMs: Date.now() - before,
       };
 
-      const { response, validation } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
+      const { response, validationError } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
@@ -176,12 +176,12 @@ export class WebhookQuoter implements Quoter {
       }
 
       // RFQ provider response failed validation
-      if (validation.error) {
+      if (validationError) {
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
         this.log.error(
           {
-            error: validation.error?.details,
+            error: validationError,
             response,
             webhookUrl: endpoint,
           },
@@ -192,7 +192,7 @@ export class WebhookQuoter implements Quoter {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.VALIDATION_ERROR,
-            validationError: validation.error?.details,
+            validationError: validationError,
           })
         );
         return null;
@@ -246,7 +246,7 @@ export class WebhookQuoter implements Quoter {
       if (
         opposingResponse &&
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&
-        !opposingResponse.validation.error
+        !opposingResponse.validationError
       ) {
         this.log.info({
           eventType: 'QuoteResponse',
