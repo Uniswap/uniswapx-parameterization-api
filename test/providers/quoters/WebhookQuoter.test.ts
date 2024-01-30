@@ -352,14 +352,10 @@ describe('WebhookQuoter tests', () => {
 
     expect(logger.error).toHaveBeenCalledWith(
       {
-        error: [
-          {
-            context: { key: 'amountIn', label: 'amountIn' },
-            message: '"amountIn" is required',
-            path: ['amountIn'],
-            type: 'any.required',
-          },
-        ],
+        error: {
+          message: '"amountIn" is required',
+          value: expect.any(Object),
+        },
         response: {
           createdAt: expect.any(String),
           createdAtMs: expect.any(String),
@@ -383,16 +379,12 @@ describe('WebhookQuoter tests', () => {
           status: 200,
           data: quote,
           responseType: WebhookResponseType.VALIDATION_ERROR,
-          validationError: [
-            {
-              context: { key: 'amountIn', label: 'amountIn' },
-              message: '"amountIn" is required',
-              path: ['amountIn'],
-              type: 'any.required',
-            },
-          ],
-        }
-      }),
+          validationError: {
+            message: '"amountIn" is required',
+            value: expect.any(Object),
+          },
+        },
+      })
     );
     expect(response).toEqual([]);
   });

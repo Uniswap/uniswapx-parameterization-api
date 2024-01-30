@@ -1,6 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber } from 'ethers';
-import { ValidationResult } from 'joi';
 import { v4 as uuidv4 } from 'uuid';
 
 import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
@@ -16,9 +15,14 @@ export interface QuoteResponseData
   quoteId: string;
 }
 
+type ValidationError = {
+  message: string | undefined;
+  value: { [key: string]: any };
+};
+
 interface ValidatedResponse {
   response: QuoteResponse;
-  validation: ValidationResult<QuoteResponse>;
+  validationError?: ValidationError;
 }
 
 // data class for QuoteRequest helpers and conversions
@@ -43,10 +47,27 @@ export class QuoteResponse implements QuoteResponseData {
   }
 
   public static fromRFQ(request: QuoteRequestData, data: RfqResponse, type: TradeType): ValidatedResponse {
+    let validationError: ValidationError | undefined;
+
     const responseValidation = RfqResponseJoi.validate(data, {
       allowUnknown: true,
       stripUnknown: true,
     });
+
+    if (responseValidation.error) {
+      validationError = {
+        message: responseValidation.error?.message,
+        value: data,
+      };
+    }
+
+    if (request.tokenIn !== data.tokenIn || request.tokenOut !== data.tokenOut) {
+      validationError = {
+        message: `RFQ response token mismatch: request tokenIn: ${request.tokenIn} tokenOut: ${request.tokenOut} response tokenIn: ${data.tokenIn} tokenOut: ${data.tokenOut}`,
+        value: data,
+      };
+    }
+
     return {
       response: new QuoteResponse(
         {
@@ -58,7 +79,7 @@ export class QuoteResponse implements QuoteResponseData {
         },
         type
       ),
-      validation: responseValidation,
+      ...(validationError && { validationError }),
     };
   }
 
