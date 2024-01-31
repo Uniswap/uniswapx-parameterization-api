@@ -2,9 +2,9 @@ import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
-import { QuoteRequestData } from '.';
 import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
+import { QuoteRequestData } from '.';
 
 export interface QuoteResponseData
   extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type' | 'numOutputs'> {
@@ -54,7 +54,7 @@ export class QuoteResponse implements QuoteResponseData {
       stripUnknown: true,
     });
 
-    if (responseValidation.error) {
+    if (responseValidation?.error) {
       validationError = {
         message: responseValidation.error?.message,
         value: data,
@@ -62,8 +62,8 @@ export class QuoteResponse implements QuoteResponseData {
     }
 
     if (
-      request.tokenIn.toLowerCase() !== data.tokenIn.toLowerCase() ||
-      request.tokenOut.toLowerCase() !== data.tokenOut.toLowerCase()
+      request?.tokenIn?.toLowerCase() !== data?.tokenIn?.toLowerCase() ||
+      request?.tokenOut?.toLowerCase() !== data?.tokenOut?.toLowerCase()
     ) {
       validationError = {
         message: `RFQ response token mismatch: request tokenIn: ${request.tokenIn} tokenOut: ${request.tokenOut} response tokenIn: ${data.tokenIn} tokenOut: ${data.tokenOut}`,
