@@ -54,14 +54,17 @@ export class QuoteResponse implements QuoteResponseData {
       stripUnknown: true,
     });
 
-    if (responseValidation.error) {
+    if (responseValidation?.error) {
       validationError = {
         message: responseValidation.error?.message,
         value: data,
       };
     }
 
-    if (request.tokenIn !== data.tokenIn || request.tokenOut !== data.tokenOut) {
+    if (
+      request?.tokenIn?.toLowerCase() !== data?.tokenIn?.toLowerCase() ||
+      request?.tokenOut?.toLowerCase() !== data?.tokenOut?.toLowerCase()
+    ) {
       validationError = {
         message: `RFQ response token mismatch: request tokenIn: ${request.tokenIn} tokenOut: ${request.tokenOut} response tokenIn: ${data.tokenIn} tokenOut: ${data.tokenOut}`,
         value: data,

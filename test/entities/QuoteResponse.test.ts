@@ -73,6 +73,23 @@ describe('QuoteRequest', () => {
       expect(response.validationError).toBe(undefined);
     });
 
+    it('fromRFQ with valid response - allow checksumed', async () => {
+      const response = QuoteResponse.fromRFQ(
+        quoteRequest,
+        {
+          chainId: CHAIN_ID,
+          requestId: REQUEST_ID,
+          tokenIn: TOKEN_IN.toLowerCase(),
+          amountIn: parseEther('1').toString(),
+          tokenOut: TOKEN_OUT.toLowerCase(),
+          amountOut: parseEther('1').toString(),
+          quoteId: QUOTE_ID,
+        },
+        TradeType.EXACT_INPUT
+      );
+      expect(response.validationError).toBe(undefined);
+    });
+
     it('fromRFQ with invalid response - wrong type amountIn', async () => {
       const invalidResponse = {
         chainId: CHAIN_ID,
