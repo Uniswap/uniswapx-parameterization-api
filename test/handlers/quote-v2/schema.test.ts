@@ -1,6 +1,10 @@
 import { constants, utils } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
-import { IndicativeQuoteRequestBodyJoi, IndicativeQuoteResponseJoi } from '../../../lib/handlers/quote-v2';
+import {
+  IndicativeQuoteRequestBodyJoi,
+  IndicativeQuoteResponseJoi,
+  V2RfqResponseJoi,
+} from '../../../lib/handlers/quote-v2';
 
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
@@ -37,6 +41,18 @@ const validIndicativeQuoteReponse = {
   amountIn: '1000',
   amountOut: '1000000000000000000',
   cosigner: constants.AddressZero,
+  quoteId: QUOTE_ID,
+  filler: constants.AddressZero,
+};
+
+const validRfqResponse = {
+  tokenInChainId: 1,
+  tokenOutChainId: 1,
+  requestId: REQUEST_ID,
+  tokenIn: USDC,
+  tokenOut: WETH,
+  amountIn: '1000',
+  amountOut: '1000000000000000000',
   quoteId: QUOTE_ID,
   filler: constants.AddressZero,
 };
@@ -212,13 +228,13 @@ describe('quote-v2 schemas', () => {
       });
       expect(validated.error?.message).toContain('"tokenOutChainId" must be [ref:tokenInChainId]');
     });
-  });
 
-  it('requires tokenInChainId to be supported', () => {
-    const validated = IndicativeQuoteRequestBodyJoi.validate(
-      Object.assign({}, validIndicativeRequestBodyCombos[0], { tokenInChainId: 999999 })
-    );
-    expect(validated.error?.message).toContain('"tokenInChainId" must be one of');
+    it('requires tokenInChainId to be supported', () => {
+      const validated = IndicativeQuoteRequestBodyJoi.validate(
+        Object.assign({}, validIndicativeRequestBodyCombos[0], { tokenInChainId: 999999 })
+      );
+      expect(validated.error?.message).toContain('"tokenInChainId" must be one of');
+    });
   });
 
   describe('IndicativeQuoteResponse', () => {
@@ -301,6 +317,31 @@ describe('quote-v2 schemas', () => {
         Object.assign({}, validIndicativeQuoteReponse, { cosigner: undefined })
       );
       expect(validated.error?.message).toEqual('"cosigner" is required');
+    });
+  });
+
+  describe('V2RfqResponse', () => {
+    it('validates valid rfq responses', () => {
+      const validated = V2RfqResponseJoi.validate(validRfqResponse);
+      expect(validated.error).toBeUndefined();
+      expect(validated.value).toStrictEqual({
+        tokenInChainId: 1,
+        tokenOutChainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000',
+        amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
+        filler: constants.AddressZero,
+      });
+    });
+
+    it('swapper is not allowed', () => {
+      const validated = V2RfqResponseJoi.validate(
+        Object.assign({}, validRfqResponse, { swapper: constants.AddressZero })
+      );
+      expect(validated.error?.message).toEqual('"swapper" is not allowed');
     });
   });
 });

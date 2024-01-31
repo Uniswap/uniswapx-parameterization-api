@@ -32,13 +32,12 @@ export type V2RfqRequest = {
 /* v2 rfq response from filler */
 export const V2RfqResponseJoi = Joi.object({
   tokenInChainId: FieldValidator.chainId.required(),
-  tokenOutCHainId: FieldValidator.chainId.required(),
+  tokenOutChainId: FieldValidator.chainId.required(),
   requestId: FieldValidator.uuid.required(),
   tokenIn: Joi.string().required(),
   amountIn: FieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
   amountOut: FieldValidator.amount.required(),
-  cosigner: FieldValidator.address.required(),
   filler: FieldValidator.address.required(),
   quoteId: FieldValidator.uuid.required(),
 });
@@ -51,7 +50,6 @@ export type V2RfqResponse = {
   amountIn: string;
   tokenOut: string;
   amountOut: string;
-  cosigner: string;
   quoteId: string;
   filler: string;
 };
