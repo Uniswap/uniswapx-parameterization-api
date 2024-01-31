@@ -3,7 +3,7 @@ import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
 import Joi from 'joi';
 
-import { IndicativeQuoteRequest, IndicativeQuoteResponse, Metric } from '../../../entities';
+import { Metric, V2QuoteRequest, V2QuoteResponse } from '../../../entities';
 import { Quoter } from '../../../quoters';
 import { NoQuotesAvailable } from '../../../util/errors';
 import { timestampInMstoSeconds } from '../../../util/time';
@@ -36,7 +36,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
-    const request = IndicativeQuoteRequest.fromRequestBody(requestBody);
+    const request = V2QuoteRequest.fromRequestBody(requestBody);
 
     // TODO: finalize on v2 metrics logging
     log.info({
@@ -89,11 +89,11 @@ export class QuoteHandler extends APIGLambdaHandler<
 // fetch quotes from all quoters and return the best one
 async function getBestQuote(
   quoters: Quoter[],
-  quoteRequest: IndicativeQuoteRequest,
+  quoteRequest: V2QuoteRequest,
   log: Logger,
   metric: IMetric
-): Promise<IndicativeQuoteResponse | null> {
-  const responses = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat() as IndicativeQuoteResponse[];
+): Promise<V2QuoteResponse | null> {
+  const responses = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat() as V2QuoteResponse[];
   switch (responses.length) {
     case 0:
       metric.putMetric(Metric.RFQ_COUNT_0, 1, MetricLoggerUnit.Count);
@@ -113,7 +113,7 @@ async function getBestQuote(
   }
 
   // return the response with the highest amountOut value
-  return responses.reduce((bestQuote: IndicativeQuoteResponse | null, quote: IndicativeQuoteResponse) => {
+  return responses.reduce((bestQuote: V2QuoteResponse | null, quote: V2QuoteResponse) => {
     log.info({
       eventType: 'QuoteResponse',
       body: { ...quote.toLog(), offerer: quote.swapper },
