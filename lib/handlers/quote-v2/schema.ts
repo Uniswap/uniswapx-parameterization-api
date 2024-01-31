@@ -31,8 +31,7 @@ export type V2RfqRequest = {
 
 /* v2 rfq response from filler */
 export const V2RfqResponseJoi = Joi.object({
-  tokenInChainId: FieldValidator.chainId.required(),
-  tokenOutChainId: FieldValidator.chainId.required(),
+  chainId: FieldValidator.chainId.required(), // keep the filler interface unchanged from v1
   requestId: FieldValidator.uuid.required(),
   tokenIn: Joi.string().required(),
   amountIn: FieldValidator.amount.required(),
@@ -43,8 +42,7 @@ export const V2RfqResponseJoi = Joi.object({
 });
 
 export type V2RfqResponse = {
-  tokenInChainId: number;
-  tokenOutChainId: number;
+  chainId: number;
   requestId: string;
   tokenIn: string;
   amountIn: string;

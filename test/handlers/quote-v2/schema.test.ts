@@ -46,8 +46,7 @@ const validIndicativeQuoteReponse = {
 };
 
 const validRfqResponse = {
-  tokenInChainId: 1,
-  tokenOutChainId: 1,
+  chainId: 1,
   requestId: REQUEST_ID,
   tokenIn: USDC,
   tokenOut: WETH,
@@ -325,8 +324,7 @@ describe('quote-v2 schemas', () => {
       const validated = V2RfqResponseJoi.validate(validRfqResponse);
       expect(validated.error).toBeUndefined();
       expect(validated.value).toStrictEqual({
-        tokenInChainId: 1,
-        tokenOutChainId: 1,
+        chainId: 1,
         requestId: REQUEST_ID,
         tokenIn: USDC,
         tokenOut: WETH,

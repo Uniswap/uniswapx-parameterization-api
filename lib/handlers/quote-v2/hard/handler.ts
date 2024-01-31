@@ -1,7 +1,8 @@
 import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Joi from 'joi';
 
-import { HardQuoteRequest, Metric } from '../../../entities';
+import { Metric } from '../../../entities';
+import { V2QuoteRequest } from '../../../entities/quote-request';
 import { timestampInMstoSeconds } from '../../../util/time';
 import { APIGLambdaHandler } from '../../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../../base/api-handler';
@@ -26,7 +27,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
-    const request = HardQuoteRequest.fromRequestBody(requestBody);
+    const request = V2QuoteRequest.fromHardRequestBody(requestBody);
 
     // TODO: finalize on v2 metrics logging
     log.info({
@@ -35,8 +36,8 @@ export class QuoteHandler extends APIGLambdaHandler<
         requestId: request.requestId,
         tokenInChainId: request.tokenInChainId,
         tokenOutChainId: request.tokenInChainId,
-        encodedInnerOrder: request.encodedInnerOrder,
-        innerSig: request.innerSig,
+        encoded: requestBody.encodedInnerOrder,
+        sig: requestBody.innerSig,
         createdAt: timestampInMstoSeconds(start),
         createdAtMs: start.toString(),
       },

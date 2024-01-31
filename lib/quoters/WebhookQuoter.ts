@@ -8,14 +8,20 @@ import { Quoter, QuoterType } from '.';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
-  IndicativeQuoteResponse,
   Metric,
   metricContext,
   QuoteRequest,
+  QuoteRequestData,
   QuoteResponse,
   V2QuoteRequest,
+  V2QuoteRequestData,
+  V2QuoteResponse,
+  ValidatedResponse,
+  ValidatedV2Response,
   WebhookResponseType,
 } from '../entities';
+import { RfqResponse } from '../handlers/quote';
+import { V2RfqResponse } from '../handlers/quote-v2';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
@@ -43,7 +49,7 @@ export class WebhookQuoter implements Quoter {
     this.ALLOW_LIST = _allow_list;
   }
 
-  public async quote(request: QuoteRequest | V2QuoteRequest): Promise<QuoteResponse[] | IndicativeQuoteResponse[]> {
+  public async quote(request: QuoteRequest | V2QuoteRequest): Promise<QuoteResponse[] | V2QuoteResponse[]> {
     const endpoints = await this.getEligibleEndpoints();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     endpoints.filter((e) => {
@@ -96,7 +102,7 @@ export class WebhookQuoter implements Quoter {
   private async fetchQuote(
     config: WebhookConfiguration,
     request: QuoteRequest | V2QuoteRequest
-  ): Promise<QuoteResponse | IndicativeQuoteResponse | null> {
+  ): Promise<QuoteResponse | V2QuoteResponse | null> {
     const { name, endpoint, headers } = config;
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
       this.log.debug(
@@ -158,7 +164,11 @@ export class WebhookQuoter implements Quoter {
         latencyMs: Date.now() - before,
       };
 
+<<<<<<< HEAD
       const { response, validationError } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
+=======
+      const { response, validation } = validateResponse(request, hookResponse.data, request.type);
+>>>>>>> 8eb2234 (remove HardQuoteRequest class)
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
@@ -248,7 +258,7 @@ export class WebhookQuoter implements Quoter {
 
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
-      const opposingResponse = QuoteResponse.fromRFQ(opposingRequest.swapper, opposite.data, opposingRequest.type);
+      const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
       if (
         opposingResponse &&
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&
@@ -309,7 +319,7 @@ export class WebhookQuoter implements Quoter {
 function isNonQuote(
   request: QuoteRequest | V2QuoteRequest,
   hookResponse: AxiosResponse,
-  parsedResponse: QuoteResponse
+  parsedResponse: QuoteResponse | V2QuoteResponse
 ): boolean {
   if (hookResponse.status === 404) {
     return true;
@@ -321,4 +331,16 @@ function isNonQuote(
   }
 
   return false;
+}
+
+// validates and builds an QuoteResponse object from rfq response
+function validateResponse(
+  request: QuoteRequest | V2QuoteRequest,
+  data: V2RfqResponse | RfqResponse,
+  type: TradeType
+): ValidatedV2Response | ValidatedResponse {
+  if (Object.prototype.hasOwnProperty.call(request, 'cosigner')) {
+    return V2QuoteResponse.fromRFQ(request as V2QuoteRequestData, data as V2RfqResponse, type);
+  }
+  return QuoteResponse.fromRFQ(request as QuoteRequestData, data as RfqResponse, type);
 }
