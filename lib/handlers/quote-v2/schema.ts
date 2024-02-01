@@ -18,8 +18,7 @@ export const V2RfqRequestJoi = Joi.object({
 });
 
 export type V2RfqRequest = {
-  tokenInChainId: number;
-  tokenOutChainId: number;
+  chainId: number;
   requestId: string;
   tokenIn: string;
   tokenOut: string;

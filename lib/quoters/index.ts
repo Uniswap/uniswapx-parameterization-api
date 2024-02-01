@@ -17,4 +17,5 @@ export interface Quoter {
 }
 
 export * from './MockQuoter';
+export * from './V2WebhookQuoter';
 export * from './WebhookQuoter';

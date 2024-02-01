@@ -31,25 +31,27 @@ export class V2QuoteRequest {
 
   constructor(private data: V2QuoteRequestData) {}
 
-  public toJSON(): Partial<V2RfqRequest> & { cosigner: string } {
-    return {
-      tokenInChainId: this.tokenInChainId,
-      tokenOutChainId: this.tokenOutChainId,
-      requestId: this.requestId,
-      tokenIn: utils.getAddress(this.tokenIn),
-      tokenOut: utils.getAddress(this.tokenOut),
-      amount: this.amount.toString(),
-      type: TradeType[this.type],
-      numOutputs: this.numOutputs,
-      cosigner: utils.getAddress(this.cosigner),
-      ...(this.quoteId && { quoteId: this.quoteId }),
-    };
-  }
+  //public toJSON(): Partial<V2RfqRequest> & { cosigner: string } {
+  //  return {
+  //    tokenInChainId: this.tokenInChainId,
+  //    tokenOutChainId: this.tokenOutChainId,
+  //    requestId: this.requestId,
+  //    tokenIn: utils.getAddress(this.tokenIn),
+  //    tokenOut: utils.getAddress(this.tokenOut),
+  //    amount: this.amount.toString(),
+  //    type: TradeType[this.type],
+  //    numOutputs: this.numOutputs,
+  //    cosigner: utils.getAddress(this.cosigner),
+  //    ...(this.quoteId && { quoteId: this.quoteId }),
+  //  };
+  //}
 
   public toCleanJSON(): Omit<V2RfqRequest, 'quoteId'> & { quoteId?: string } {
     return {
-      tokenInChainId: this.tokenInChainId,
-      tokenOutChainId: this.tokenOutChainId,
+      // TODO:  use tokenInChainId and tokenOutChainId
+      //tokenInChainId: this.tokenInChainId,
+      //tokenOutChainId: this.tokenOutChainId,
+      chainId: this.tokenInChainId,
       requestId: this.requestId,
       tokenIn: utils.getAddress(this.tokenIn),
       tokenOut: utils.getAddress(this.tokenOut),
@@ -65,8 +67,7 @@ export class V2QuoteRequest {
   public toOpposingCleanJSON(): Omit<V2RfqRequest, 'quoteId'> & { quoteId?: string } {
     const type = this.type === TradeType.EXACT_INPUT ? TradeType.EXACT_OUTPUT : TradeType.EXACT_INPUT;
     return {
-      tokenInChainId: this.tokenOutChainId,
-      tokenOutChainId: this.tokenInChainId,
+      chainId: this.tokenOutChainId,
       requestId: this.requestId,
       // switch tokenIn/tokenOut
       tokenIn: utils.getAddress(this.tokenOut),
@@ -83,6 +84,8 @@ export class V2QuoteRequest {
     const opposingJSON = this.toOpposingCleanJSON();
     return new V2QuoteRequest({
       ...opposingJSON,
+      tokenInChainId: opposingJSON.chainId,
+      tokenOutChainId: opposingJSON.chainId,
       amount: BigNumber.from(opposingJSON.amount),
       type: TradeType[opposingJSON.type as keyof typeof TradeType],
       swapper: this.swapper,
