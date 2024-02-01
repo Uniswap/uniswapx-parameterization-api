@@ -43,14 +43,13 @@ export interface V2QuoteResponseData extends Omit<V2QuoteRequestData, 'amount' |
 }
 
 export interface ValidatedResponse {
-export interface ValidatedResponse {
   response: QuoteResponse;
-  validation: ValidationResult<QuoteResponse>;
+  validationError?: ValidationError;
 }
 
-interface ValidatedIndicativeResponse {
-  response: IndicativeQuoteResponse;
-  validation: ValidationResult<IndicativeQuoteResponse>;
+interface ValidatedV2Response {
+  response: V2QuoteResponse;
+  validationError?: ValidationError;
 }
 
 export class V2QuoteResponse implements V2QuoteResponseData {
@@ -98,11 +97,11 @@ export class V2QuoteResponse implements V2QuoteResponseData {
         },
         type
       ),
-      validation: responseValidation,
+      validationError: responseValidation,
     };
   }
 
-  public toResponseJSON(): IndicativeQuoteResponseBody {
+  public toResponseJSON(): V2QuoteResponseBody {
     return {
       requestId: this.requestId,
       quoteId: this.quoteId,

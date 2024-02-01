@@ -4,7 +4,7 @@ import Logger from 'bunyan';
 import Joi from 'joi';
 
 import { Metric, V2QuoteRequest, V2QuoteResponse } from '../../../entities';
-import { Quoter } from '../../../quoters';
+import { V2Quoter } from '../../../quoters';
 import { NoQuotesAvailable } from '../../../util/errors';
 import { timestampInMstoSeconds } from '../../../util/time';
 import { APIGLambdaHandler } from '../../base';
@@ -40,7 +40,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     // TODO: finalize on v2 metrics logging
     log.info({
-      eventType: 'QuoteRequest',
+      eventType: 'V2QuoteRequest',
       body: {
         requestId: request.requestId,
         tokenInChainId: request.tokenInChainId,
@@ -88,7 +88,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
 // fetch quotes from all quoters and return the best one
 async function getBestQuote(
-  quoters: Quoter[],
+  quoters: V2Quoter[],
   quoteRequest: V2QuoteRequest,
   log: Logger,
   metric: IMetric

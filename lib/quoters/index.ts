@@ -6,8 +6,13 @@ export enum QuoterType {
   RFQ = 'RFQ',
 }
 
+export interface V2Quoter {
+  quote(request: V2QuoteRequest): Promise<V2QuoteResponse[]>;
+  type(): QuoterType;
+}
+
 export interface Quoter {
-  quote(request: QuoteRequest | V2QuoteRequest): Promise<QuoteResponse[] | V2QuoteResponse[]>;
+  quote(request: QuoteRequest): Promise<QuoteResponse[]>;
   type(): QuoterType;
 }
 

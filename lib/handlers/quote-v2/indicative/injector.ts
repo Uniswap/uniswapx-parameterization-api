@@ -18,13 +18,14 @@ import { S3WebhookConfigurationProvider } from '../../../providers';
 import { FirehoseLogger } from '../../../providers/analytics';
 import { S3CircuitBreakerConfigurationProvider } from '../../../providers/circuit-breaker/s3';
 import { S3FillerComplianceConfigurationProvider } from '../../../providers/compliance/s3';
-import { Quoter, WebhookQuoter } from '../../../quoters';
+import { V2Quoter } from '../../../quoters';
+import { V2WebhookQuoter } from '../../../quoters/V2WebhookQuoter';
 import { STAGE } from '../../../util/stage';
 import { ApiInjector, ApiRInj } from '../../base/api-handler';
 import { IndicativeQuoteRequestBody } from '../schema';
 
 export interface ContainerInjected {
-  quoters: Quoter[];
+  quoters: V2Quoter[];
   firehose: FirehoseLogger;
 }
 
@@ -59,8 +60,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
-    const quoters: Quoter[] = [
-      new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider),
+    const quoters: V2Quoter[] = [
+      new V2WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider),
     ];
     return {
       quoters: quoters,
