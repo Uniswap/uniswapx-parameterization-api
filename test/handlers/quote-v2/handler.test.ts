@@ -2,29 +2,31 @@ import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import axios from 'axios';
 import { default as Logger } from 'bunyan';
-import { ethers } from 'ethers';
+import { constants, ethers } from 'ethers';
 
 import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
-  ContainerInjected,
-  PostQuoteRequestBody,
-  PostQuoteResponse,
-  RequestInjected,
-} from '../../../lib/handlers/quote';
-import { QuoteHandler } from '../../../lib/handlers/quote/handler';
+  IndicativeCInj,
+  IndicativeQuoteHandler,
+  IndicativeQuoteRequestBody,
+  IndicativeQuoteResponseBody,
+  IndicativeRInj,
+  V2RfqResponse,
+} from '../../../lib/handlers/quote-v2';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
-import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { MOCK_FILLER_ADDRESS, V2MockQuoter, V2Quoter, V2WebhookQuoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const SWAPPER = '0x0000000000000000000000000000000000000000';
+const SWAPPER = constants.AddressZero;
+const COSIGNER = constants.AddressZero;
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const CHAIN_ID = 1;
@@ -44,18 +46,18 @@ const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/du
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
-  const requestInjectedMock: Promise<RequestInjected> = new Promise(
+  const requestInjectedMock: Promise<IndicativeRInj> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         requestId: 'test',
         metric: new AWSMetricsLogger(createMetricsLogger()),
-      }) as unknown as RequestInjected
+      }) as unknown as IndicativeRInj
   );
 
   const injectorPromiseMock = (
-    quoters: Quoter[]
-  ): Promise<ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>> =>
+    quoters: V2Quoter[]
+  ): Promise<ApiInjector<IndicativeCInj, IndicativeRInj, IndicativeQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
         getContainerInjected: () => {
@@ -64,17 +66,17 @@ describe('Quote handler', () => {
           };
         },
         getRequestInjected: () => requestInjectedMock,
-      } as unknown as ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>)
+      } as unknown as ApiInjector<IndicativeCInj, IndicativeRInj, IndicativeQuoteRequestBody, void>)
     );
 
-  const getQuoteHandler = (quoters: Quoter[]) => new QuoteHandler('quote', injectorPromiseMock(quoters));
+  const getQuoteHandler = (quoters: V2Quoter[]) => new IndicativeQuoteHandler('quote', injectorPromiseMock(quoters));
 
-  const getEvent = (request: PostQuoteRequestBody): APIGatewayProxyEvent =>
+  const getEvent = (request: IndicativeQuoteRequestBody): APIGatewayProxyEvent =>
     ({
       body: JSON.stringify(request),
     } as APIGatewayProxyEvent);
 
-  const getRequest = (amount: string, type = 'EXACT_INPUT'): PostQuoteRequestBody => ({
+  const getRequest = (amount: string, type = 'EXACT_INPUT'): IndicativeQuoteRequestBody => ({
     requestId: REQUEST_ID,
     tokenInChainId: CHAIN_ID,
     tokenOutChainId: CHAIN_ID,
@@ -83,6 +85,7 @@ describe('Quote handler', () => {
     amount,
     tokenOut: TOKEN_OUT,
     type,
+    cosigner: COSIGNER,
     numOutputs: 1,
   });
 
@@ -91,9 +94,32 @@ describe('Quote handler', () => {
   });
 
   const responseFromRequest = (
-    request: PostQuoteRequestBody,
-    overrides: Partial<PostQuoteResponse>
-  ): PostQuoteResponse => {
+    request: IndicativeQuoteRequestBody,
+    overrides: Partial<IndicativeQuoteResponseBody>
+  ): IndicativeQuoteResponseBody => {
+    return Object.assign(
+      {},
+      {
+        amountOut: request.amount,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        amountIn: request.amount,
+        swapper: request.swapper,
+        requestId: request.requestId,
+        tokenInChainId: request.tokenInChainId,
+        tokenOutChainId: request.tokenOutChainId,
+        cosigner: request.cosigner,
+        filler: MOCK_FILLER_ADDRESS,
+        quoteId: QUOTE_ID,
+      },
+      overrides
+    );
+  };
+
+  const rfqResponseFromRequest = (
+    request: IndicativeQuoteRequestBody,
+    overrides: Partial<IndicativeQuoteResponseBody>
+  ): V2RfqResponse => {
     return Object.assign(
       {},
       {
@@ -104,6 +130,7 @@ describe('Quote handler', () => {
         swapper: request.swapper,
         requestId: request.requestId,
         chainId: request.tokenInChainId,
+        cosigner: request.cosigner,
         filler: MOCK_FILLER_ADDRESS,
         quoteId: QUOTE_ID,
       },
@@ -112,7 +139,7 @@ describe('Quote handler', () => {
   };
 
   it('Simple request and response', async () => {
-    const quoters = [new MockQuoter(logger, 1, 1)];
+    const quoters = [new V2MockQuoter(logger, 1, 1)];
     const amountIn = ethers.utils.parseEther('1');
     const request = getRequest(amountIn.toString());
 
@@ -120,13 +147,13 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
     expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
 
   it('Handles hex amount', async () => {
-    const quoters = [new MockQuoter(logger, 1, 1)];
+    const quoters = [new V2MockQuoter(logger, 1, 1)];
     const amountIn = ethers.utils.parseEther('1');
     const request = getRequest(amountIn.toHexString());
 
@@ -134,7 +161,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
     expect(
       responseFromRequest(request, { amountIn: amountIn.toString(), amountOut: amountIn.toString() })
@@ -142,7 +169,7 @@ describe('Quote handler', () => {
   });
 
   it('Pick the greater of two quotes - EXACT_IN', async () => {
-    const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+    const quoters = [new V2MockQuoter(logger, 1, 1), new V2MockQuoter(logger, 2, 1)];
     const amountIn = ethers.utils.parseEther('1');
     const request = getRequest(amountIn.toString());
 
@@ -150,7 +177,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
     expect(
       responseFromRequest(request, { amountOut: amountIn.mul(2).toString(), amountIn: amountIn.mul(1).toString() })
@@ -161,7 +188,7 @@ describe('Quote handler', () => {
   });
 
   it('Pick the lesser of two quotes - EXACT_OUT', async () => {
-    const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+    const quoters = [new V2MockQuoter(logger, 1, 1), new V2MockQuoter(logger, 2, 1)];
     const amountOut = ethers.utils.parseEther('1');
     const request = getRequest(amountOut.toString(), 'EXACT_OUTPUT');
 
@@ -169,7 +196,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
     expect(
       responseFromRequest(request, { amountOut: amountOut.mul(1).toString(), amountIn: amountOut.mul(1).toString() })
@@ -180,7 +207,7 @@ describe('Quote handler', () => {
   });
 
   it('Two quoters returning the same result', async () => {
-    const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 1, 1)];
+    const quoters = [new V2MockQuoter(logger, 1, 1), new V2MockQuoter(logger, 1, 1)];
     const amountIn = ethers.utils.parseEther('1');
     const request = getRequest(amountIn.toString());
 
@@ -188,7 +215,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
     expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
@@ -196,7 +223,7 @@ describe('Quote handler', () => {
   it('Invalid amountIn', async () => {
     const invalidAmounts = ['-100', 'aszzz', 'zz'];
 
-    const quoters = [new MockQuoter(logger, 1, 1)];
+    const quoters = [new V2MockQuoter(logger, 1, 1)];
 
     for (const amount of invalidAmounts) {
       const request = getRequest(amount);
@@ -224,7 +251,7 @@ describe('Quote handler', () => {
         { fadeRate: 0.02, enabled: true, hash: '0xuni' },
       ]);
       const quoters = [
-        new WebhookQuoter(
+        new V2WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
@@ -246,6 +273,7 @@ describe('Quote handler', () => {
               amountIn: request.amount,
               swapper: request.swapper,
               chainId: request.tokenInChainId,
+              filler: MOCK_FILLER_ADDRESS,
               quoteId: QUOTE_ID,
             },
           });
@@ -260,6 +288,7 @@ describe('Quote handler', () => {
               amountIn: request.amount,
               swapper: request.swapper,
               chainId: request.tokenInChainId,
+              filler: MOCK_FILLER_ADDRESS,
               quoteId: QUOTE_ID,
             },
           });
@@ -269,7 +298,7 @@ describe('Quote handler', () => {
         getEvent(request),
         {} as unknown as Context
       );
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body);
       expect(response.statusCode).toEqual(200);
       expect(quoteResponse).toMatchObject({
         amountOut: amountIn.mul(2).toString(),
@@ -277,8 +306,10 @@ describe('Quote handler', () => {
         tokenOut: request.tokenOut,
         amountIn: request.amount,
         swapper: request.swapper,
-        chainId: request.tokenInChainId,
+        tokenInChainId: request.tokenInChainId,
+        tokenOutChainId: request.tokenOutChainId,
         requestId: request.requestId,
+        filler: MOCK_FILLER_ADDRESS,
         quoteId: expect.any(String),
       });
     });
@@ -298,7 +329,7 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(
+        new V2WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
@@ -314,13 +345,13 @@ describe('Quote handler', () => {
           expect(options.headers['X-Authentication']).toEqual('1234');
           return Promise.resolve({
             data: {
-              ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
+              ...rfqResponseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
             },
           });
         })
         .mockImplementationOnce((_endpoint, _req, options: any) => {
           expect(options.headers['X-Authentication']).toEqual('1234');
-          const res = responseFromRequest(request, { amountOut: amountIn.mul(3).toString() });
+          const res = rfqResponseFromRequest(request, { amountOut: amountIn.mul(3).toString() });
           return Promise.resolve({
             data: {
               ...res,
@@ -334,14 +365,15 @@ describe('Quote handler', () => {
         getEvent(request),
         {} as unknown as Context
       );
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body);
       expect(response.statusCode).toEqual(200);
       expect(quoteResponse).toMatchObject({
         amountOut: amountIn.mul(2).toString(),
         amountIn: request.amount,
         tokenIn: request.tokenIn,
         tokenOut: request.tokenOut,
-        chainId: request.tokenInChainId,
+        tokenInChainId: request.tokenInChainId,
+        tokenOutChainId: request.tokenOutChainId,
         swapper: request.swapper,
       });
     });
@@ -354,7 +386,7 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(
+        new V2WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
@@ -388,7 +420,7 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(
+        new V2WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
@@ -423,14 +455,14 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(
+        new V2WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
           emptyMockComplianceProvider
         ),
-        new MockQuoter(logger, 1, 1),
+        new V2MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -449,7 +481,7 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(200);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
+      const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body); // V2MockQuoter wins so returns a random quoteId
       expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
     });
 
@@ -461,14 +493,14 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(
+        new V2WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
           emptyMockComplianceProvider
         ),
-        new MockQuoter(logger, 1, 1),
+        new V2MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -484,6 +516,7 @@ describe('Quote handler', () => {
               swapper: request.swapper,
               chainId: request.tokenInChainId,
               requestId: request.requestId,
+              filler: MOCK_FILLER_ADDRESS,
               quoteId: QUOTE_ID,
             },
           });
@@ -498,6 +531,7 @@ describe('Quote handler', () => {
               swapper: request.swapper,
               chainId: request.tokenInChainId,
               requestId: request.requestId,
+              filler: MOCK_FILLER_ADDRESS,
               quoteId: QUOTE_ID,
             },
           });
@@ -508,7 +542,7 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(200);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body);
       expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject({
         ...quoteResponse,
         quoteId: QUOTE_ID,
@@ -523,14 +557,14 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(
+        new V2WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
           emptyMockComplianceProvider
         ),
-        new MockQuoter(logger, 1, 1),
+        new V2MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -555,7 +589,7 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(200);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
+      const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body); // V2MockQuoter wins so returns a random quoteId
       expect(responseFromRequest(request, { amountOut: amountIn.toString() })).toMatchObject({
         ...quoteResponse,
         quoteId: expect.any(String),
@@ -570,7 +604,13 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, mockComplianceProvider),
+        new V2WebhookQuoter(
+          logger,
+          mockFirehoseLogger,
+          webhookProvider,
+          circuitBreakerProvider,
+          mockComplianceProvider
+        ),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
@@ -580,7 +620,7 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(404);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      const quoteResponse: IndicativeQuoteResponseBody = JSON.parse(response.body);
       expect(quoteResponse).toMatchObject(
         expect.objectContaining({
           errorCode: 'QUOTE_ERROR',

@@ -1,4 +1,4 @@
-import { BaseInjector } from '../../lib/handlers/base';
+import { BaseInjector } from '../../lib/handlers/base/base';
 
 interface MockContainerInjected {
   foo: string;

@@ -4,7 +4,7 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Quoter, QuoterType } from '.';
+import { QuoterType, V2Quoter } from '.';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
@@ -12,6 +12,8 @@ import {
   metricContext,
   QuoteRequest,
   QuoteResponse,
+  V2QuoteRequest,
+  V2QuoteResponse,
   WebhookResponseType,
 } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
@@ -25,7 +27,7 @@ const WEBHOOK_TIMEOUT_MS = 500;
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
-export class WebhookQuoter implements Quoter {
+export class V2WebhookQuoter implements V2Quoter {
   private log: Logger;
   private readonly ALLOW_LIST: Set<string>;
 
@@ -35,13 +37,13 @@ export class WebhookQuoter implements Quoter {
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
     private complianceProvider: FillerComplianceConfigurationProvider,
-    _allow_list: Set<string> = new Set<string>(['531679099f2a17818ed35cad21443a303c5ee2426cdbda547cfe6aec3d3b0215'])
+    _allow_list: Set<string> = new Set<string>(['1ed189c4b20479e36acf74e2bc87e03bfdce765ecba6696970caee8299fc005f'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
     this.ALLOW_LIST = _allow_list;
   }
 
-  public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
+  public async quote(request: V2QuoteRequest): Promise<V2QuoteResponse[]> {
     const endpoints = await this.getEligibleEndpoints();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     endpoints.filter((e) => {
@@ -52,7 +54,7 @@ export class WebhookQuoter implements Quoter {
 
     this.log.info({ endpoints }, `Fetching quotes from ${endpoints.length} endpoints`);
     const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));
-    return quotes.filter((q) => q !== null) as QuoteResponse[];
+    return quotes.filter((q) => q !== null) as V2QuoteResponse[];
   }
 
   public type(): QuoterType {
@@ -91,7 +93,7 @@ export class WebhookQuoter implements Quoter {
   }
 
   // TODO(v2): make sure filler accepts or at least do not deny 'cosigner' field
-  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
+  private async fetchQuote(config: WebhookConfiguration, request: V2QuoteRequest): Promise<V2QuoteResponse | null> {
     const { name, endpoint, headers } = config;
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
       this.log.debug(
@@ -153,7 +155,7 @@ export class WebhookQuoter implements Quoter {
         latencyMs: Date.now() - before,
       };
 
-      const { response, validationError } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
+      const { response, validationError } = V2QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
@@ -193,7 +195,7 @@ export class WebhookQuoter implements Quoter {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.VALIDATION_ERROR,
-            validationError: validationError,
+            validationError,
           })
         );
         return null;
@@ -301,7 +303,11 @@ export class WebhookQuoter implements Quoter {
 // valid non-quote responses:
 // - 404
 // - 0 amount quote
-function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedResponse: QuoteResponse): boolean {
+function isNonQuote(
+  request: QuoteRequest | V2QuoteRequest,
+  hookResponse: AxiosResponse,
+  parsedResponse: QuoteResponse | V2QuoteResponse
+): boolean {
   if (hookResponse.status === 404) {
     return true;
   }
