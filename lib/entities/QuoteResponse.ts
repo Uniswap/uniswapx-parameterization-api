@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { QuoteRequestData, V2QuoteRequestData } from '.';
 import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote';
-import { V2RfqResponse, V2RfqResponseJoi } from '../handlers/quote-v2';
+import { IndicativeQuoteResponseBody, V2RfqResponse, V2RfqResponseJoi } from '../handlers/quote-v2';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
 
 export interface QuoteResponseData
@@ -79,10 +79,18 @@ export class V2QuoteResponse implements V2QuoteResponseData {
   }
 
   public static fromRFQ(request: V2QuoteRequestData, data: V2RfqResponse, type: TradeType): ValidatedV2Response {
+    let validationError: ValidationError | undefined;
+
     const responseValidation = V2RfqResponseJoi.validate(data, {
       allowUnknown: true,
       stripUnknown: true,
     });
+    if (responseValidation?.error) {
+      validationError = {
+        message: responseValidation.error?.message,
+        value: data,
+      };
+    }
     return {
       response: new V2QuoteResponse(
         {
@@ -97,11 +105,11 @@ export class V2QuoteResponse implements V2QuoteResponseData {
         },
         type
       ),
-      validationError: responseValidation,
+      validationError,
     };
   }
 
-  public toResponseJSON(): V2QuoteResponseBody {
+  public toResponseJSON(): IndicativeQuoteResponseBody {
     return {
       requestId: this.requestId,
       quoteId: this.quoteId,
@@ -192,6 +200,8 @@ export class QuoteResponse implements QuoteResponseData {
   }
 
   public static fromRFQ(request: QuoteRequestData, data: RfqResponse, type: TradeType): ValidatedResponse {
+    let validationError: ValidationError | undefined;
+
     const responseValidation = RfqResponseJoi.validate(data, {
       allowUnknown: true,
       stripUnknown: true,

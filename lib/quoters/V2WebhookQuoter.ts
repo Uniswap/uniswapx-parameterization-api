@@ -155,7 +155,7 @@ export class V2WebhookQuoter implements V2Quoter {
         latencyMs: Date.now() - before,
       };
 
-      const { response, validation } = V2QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
+      const { response, validationError } = V2QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
@@ -179,12 +179,12 @@ export class V2WebhookQuoter implements V2Quoter {
       }
 
       // RFQ provider response failed validation
-      if (validation.error) {
+      if (validationError) {
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
         this.log.error(
           {
-            error: validation.error?.details,
+            error: validationError,
             response,
             webhookUrl: endpoint,
           },
@@ -195,7 +195,7 @@ export class V2WebhookQuoter implements V2Quoter {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.VALIDATION_ERROR,
-            validationError: validation.error?.details,
+            validationError,
           })
         );
         return null;
@@ -249,7 +249,7 @@ export class V2WebhookQuoter implements V2Quoter {
       if (
         opposingResponse &&
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&
-        !opposingResponse.validation.error
+        !opposingResponse.validationError
       ) {
         this.log.info({
           eventType: 'QuoteResponse',
