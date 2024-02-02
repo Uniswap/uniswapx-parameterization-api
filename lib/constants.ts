@@ -12,6 +12,7 @@ export const BETA_COMPLIANCE_S3_KEY = 'beta.json';
 export const DYNAMO_TABLE_NAME = {
   FADES: 'Fades',
   SYNTHETIC_SWITCH_TABLE: 'SyntheticSwitchTable',
+  FILLER_CB_TIMESTAMPS: 'FillerCBTimestamps',
 };
 
 export const DYNAMO_TABLE_KEY = {
@@ -23,4 +24,7 @@ export const DYNAMO_TABLE_KEY = {
   TRADE_TYPE: 'type',
   LOWER: 'lower',
   ENABLED: 'enabled',
+  BLOCK_UNTIL_TIMESTAMP: 'blockUntilTimestamp',
+  LAST_POST_TIMESTAMP: 'lastPostTimestamp',
+  FADED: 'faded',
 };

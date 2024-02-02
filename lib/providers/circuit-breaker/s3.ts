@@ -12,9 +12,7 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
   private fillers: CircuitBreakerConfiguration[];
   private lastUpdatedTimestamp: number;
   private client: S3Client;
-
-  // try to refetch endpoints every 5 mins
-  private static UPDATE_PERIOD_MS = 5 * 60000;
+  private static UPDATE_PERIOD_MS = 1 * 60000;
   private static FILL_RATE_THRESHOLD = 0.75;
 
   constructor(_log: Logger, private bucket: string, private key: string) {
