@@ -1,9 +1,10 @@
-import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
+import { CircuitBreakerConfigurationProvider } from '.';
+import { FillerTimestampMap } from '../../repositories';
 
 export class MockCircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
-  constructor(private config: CircuitBreakerConfiguration[]) {}
+  constructor(public fillers: string[], private timestamps: FillerTimestampMap) {}
 
-  async getConfigurations(): Promise<CircuitBreakerConfiguration[]> {
-    return this.config;
+  async getConfigurations(): Promise<FillerTimestampMap> {
+    return this.timestamps;
   }
 }

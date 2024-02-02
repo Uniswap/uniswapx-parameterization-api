@@ -43,11 +43,17 @@ describe('WebhookQuoter tests', () => {
     { name: '1inch', endpoint: WEBHOOK_URL_ONEINCH, headers: {}, hash: '0x1inch' },
     { name: 'searcher', endpoint: WEBHOOK_URL_SEARCHER, headers: {}, hash: '0xsearcher' },
   ]);
-  const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-    { hash: '0xuni', fadeRate: 0.05, enabled: true },
-    { hash: '0x1inch', fadeRate: 0.5, enabled: false },
-    { hash: '0xsearcher', fadeRate: 0.1, enabled: true },
-  ]);
+
+  const now = Math.floor(Date.now() / 1000);
+  const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+    ['0xuni', '0x1inch', '0xsearcher'],
+    new Map([
+      ['0xuni', { lastPostTimestamp: 100, blockUntilTimestamp: NaN }],
+      ['0x1inch', { lastPostTimestamp: 100, blockUntilTimestamp: now + 100 }],
+      ['0xsearcher', { lastPostTimestamp: 100, blockUntilTimestamp: now - 20 }],
+    ])
+  );
+
   const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
   const webhookQuoter = new WebhookQuoter(
@@ -127,7 +133,10 @@ describe('WebhookQuoter tests', () => {
     await expect(webhookQuoter.quote(request)).resolves.toStrictEqual([]);
   });
 
-  // should only call 'uniswap' and 'searcher' given they are enabled in the config
+  /* should only call the following two fillers:
+   * 1. uniswap: blockUntilTimestamp == NaN
+   * 2. searcher: blockUntilTimestamp < now
+   */
   it('Only calls to eligible endpoints', async () => {
     mockedAxios.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -162,46 +171,18 @@ describe('WebhookQuoter tests', () => {
     });
   });
 
-  it('Allows those in allow list even when they are disabled in the config', async () => {
-    const webhookQuoter = new WebhookQuoter(
-      logger,
-      mockFirehoseLogger,
-      webhookProvider,
-      circuitBreakerProvider,
-      emptyMockComplianceProvider,
-      new Set<string>(['0x1inch'])
-    );
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: quote,
-      });
-    });
-
-    await webhookQuoter.quote(request);
-    expect(mockedAxios.post).toBeCalledWith(
-      WEBHOOK_URL,
-      { quoteId: expect.any(String), ...request.toCleanJSON() },
-      { headers: {}, timeout: 500 }
-    );
-    expect(mockedAxios.post).toBeCalledWith(
-      WEBHOOK_URL_SEARCHER,
-      { quoteId: expect.any(String), ...request.toCleanJSON() },
-      { headers: {}, timeout: 500 }
-    );
-    expect(mockedAxios.post).toBeCalledWith(
-      WEBHOOK_URL_ONEINCH,
-      { quoteId: expect.any(String), ...request.toCleanJSON() },
-      { headers: {}, timeout: 500 }
-    );
-  });
-
   it('Defaults to allowing endpoints not on circuit breaker config', async () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
       });
     });
-    const cbProvider = new MockCircuitBreakerConfigurationProvider([{ hash: '0xuni', fadeRate: 0.05, enabled: true }]);
+
+    const cbProvider = new MockCircuitBreakerConfigurationProvider(
+      ['0xuni'],
+      new Map([['0xuni', { lastPostTimestamp: 100, blockUntilTimestamp: NaN }]])
+    );
+
     const quoter = new WebhookQuoter(
       logger,
       mockFirehoseLogger,

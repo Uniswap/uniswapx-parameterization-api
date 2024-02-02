@@ -34,6 +34,8 @@ export type TimestampRepoRow = {
   blockUntilTimestamp: number;
 };
 
+export type FillerTimestampMap = Map<string, Omit<TimestampRepoRow, 'hash'>>;
+
 export type DynamoTimestampRepoRow = Exclude<TimestampRepoRow, 'lastPostTimestamp' | 'blockUntilTimestamp'> & {
   lastPostTimestamp: string;
   blockUntilTimestamp: string;

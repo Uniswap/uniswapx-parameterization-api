@@ -277,58 +277,6 @@ export class APIStack extends cdk.Stack {
       provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
     });
 
-    const mockQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'mockQuote', {
-      role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'mockQuoteHandler',
-      memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        VERSION: '2',
-        NODE_OPTIONS: '--enable-source-maps',
-        ...props.envVars,
-        stage,
-        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
-      },
-      timeout: Duration.seconds(15),
-    });
-
-    const mockQuoteAlias = new aws_lambda.Alias(this, `MockQuoteLiveAlias`, {
-      aliasName: 'live',
-      version: mockQuoteLambda.currentVersion,
-      provisionedConcurrentExecutions: 0,
-    });
-
-    const integrationRfqLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Rfq', {
-      role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'rfqHandler',
-      memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        VERSION: '3',
-        NODE_OPTIONS: '--enable-source-maps',
-        ...props.envVars,
-        stage,
-        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
-      },
-      timeout: Duration.seconds(5),
-    });
-
-    const rfqLambdaAlias = new aws_lambda.Alias(this, `RfqLiveAlias`, {
-      aliasName: 'live',
-      version: integrationRfqLambda.currentVersion,
-      provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
-    });
-
     if (provisionedConcurrency > 0) {
       const quoteTarget = new aws_asg.ScalableTarget(this, 'QuoteProvConcASG', {
         serviceNamespace: aws_asg.ServiceNamespace.LAMBDA,
@@ -378,19 +326,6 @@ export class APIStack extends cdk.Stack {
     });
 
     enabled.addMethod('GET', switchLambdaIntegration, { apiKeyRequired: true });
-
-    const integration = api.root.addResource('integration', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
-        allowMethods: aws_apigateway.Cors.ALL_METHODS,
-      },
-    });
-    const rfqLambdaIntegration = new aws_apigateway.LambdaIntegration(rfqLambdaAlias, {});
-    const mockQuoteIntegration = new aws_apigateway.LambdaIntegration(mockQuoteAlias, {});
-    const mockQuote = integration.addResource('quote');
-    const integrationRfq = integration.addResource('rfq');
-    integrationRfq.addMethod('POST', rfqLambdaIntegration);
-    mockQuote.addMethod('POST', mockQuoteIntegration);
 
     /*
      * Param Dashboard Stack Initialization
