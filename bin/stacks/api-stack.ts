@@ -251,6 +251,66 @@ export class APIStack extends cdk.Stack {
       provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
     });
 
+    const iQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'IndicativeQuote', {
+      role: lambdaRole,
+      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'indicativeQuoteHandler',
+      vpc,
+      vpcSubnets: {
+        subnets: [...vpc.privateSubnets],
+      },
+      memorySize: 1024,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+        ...props.envVars,
+        stage,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+      },
+      timeout: Duration.seconds(30),
+    });
+
+    const iQuoteLambdaAlias = new aws_lambda.Alias(this, `iQuoteAlias`, {
+      aliasName: 'live',
+      version: iQuoteLambda.currentVersion,
+      provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
+    });
+
+    const hQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'HardQuote', {
+      role: lambdaRole,
+      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'hardQuoteHandler',
+      vpc,
+      vpcSubnets: {
+        subnets: [...vpc.privateSubnets],
+      },
+      memorySize: 1024,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+        ...props.envVars,
+        stage,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+      },
+      timeout: Duration.seconds(30),
+    });
+
+    const hQuoteLambdaAlias = new aws_lambda.Alias(this, `hQuoteAlias`, {
+      aliasName: 'live',
+      version: hQuoteLambda.currentVersion,
+      provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
+    });
+
     const switchLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Switch', {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_18_X,
@@ -357,6 +417,25 @@ export class APIStack extends cdk.Stack {
       },
     });
     quote.addMethod('POST', quoteLambdaIntegration);
+
+    const iQuoteLambdaIntegration = new aws_apigateway.LambdaIntegration(iQuoteLambdaAlias, {});
+    const v2Path = api.root.addResource('quote-v2');
+    const iQuote = v2Path.addResource('indicative', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+        allowMethods: aws_apigateway.Cors.ALL_METHODS,
+      },
+    });
+    iQuote.addMethod('POST', iQuoteLambdaIntegration);
+
+    const hQuoteLambdaIntegration = new aws_apigateway.LambdaIntegration(hQuoteLambdaAlias, {});
+    const hQuote = v2Path.addResource('hard', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+        allowMethods: aws_apigateway.Cors.ALL_METHODS,
+      },
+    });
+    hQuote.addMethod('POST', hQuoteLambdaIntegration);
 
     const switchLambdaIntegration = new aws_apigateway.LambdaIntegration(switchLambdaAlias, {});
     const switchResource = api.root.addResource('synthetic-switch', {

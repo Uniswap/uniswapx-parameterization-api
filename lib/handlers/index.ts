@@ -6,6 +6,8 @@ import {
 } from './blueprints/cw-log-firehose-processor';
 import { RfqHandler, RfqInjector } from './integration/rfq';
 import { MockQuoteInjector, QuoteHandler, QuoteInjector } from './quote';
+import { HardQuoteHandler, HardQuoteInjector } from './quote-v2/hard';
+import { IndicativeQuoteHandler, IndicativeQuoteInjector } from './quote-v2/indicative';
 import { SwitchHandler, SwitchInjector } from './synth-switch';
 
 const quoteInjectorPromise = new QuoteInjector('quoteInjector').build();
@@ -20,6 +22,12 @@ const mockQuoteHandler = new QuoteHandler('mockQuoteHandler', mockQuoteInjectorP
 const rfqInjectorPromise = new RfqInjector('rfqInjector').build();
 const rfqHandler = new RfqHandler('rfqHandler', rfqInjectorPromise);
 
+const iQuoteInjectorPromise = new IndicativeQuoteInjector('iQuoteInjector').build();
+const iQuoteHandler = new IndicativeQuoteHandler('iQuoteHandler', iQuoteInjectorPromise);
+
+const hQuoteInjectorPromise = new HardQuoteInjector('hQuoteInjector').build();
+const hQuoteHandler = new HardQuoteHandler('hQuoteHandler', hQuoteInjectorPromise);
+
 module.exports = {
   fillEventProcessor: fillEventProcessor,
   postOrderProcessor: postOrderProcessor,
@@ -29,4 +37,6 @@ module.exports = {
   mockQuoteHandler: mockQuoteHandler.handler,
   rfqHandler: rfqHandler.handler,
   switchHandler: switchHandler.handler,
+  indicativeQuoteHandler: iQuoteHandler.handler,
+  hardQuoteHandler: hQuoteHandler.handler,
 };
