@@ -91,10 +91,13 @@ export class V2QuoteResponse implements V2QuoteResponseData {
         value: data,
       };
     }
+    // TODO: align rfq and lambda request interface
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { chainId, ...rest } = data;
     return {
       response: new V2QuoteResponse(
         {
-          ...data,
+          ...rest,
           tokenInChainId: data.chainId,
           tokenOutChainId: data.chainId,
           quoteId: data.quoteId ?? uuidv4(),

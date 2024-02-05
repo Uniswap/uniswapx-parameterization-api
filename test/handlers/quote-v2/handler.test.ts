@@ -19,6 +19,7 @@ import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { MOCK_FILLER_ADDRESS, V2MockQuoter, V2Quoter, V2WebhookQuoter } from '../../../lib/quoters';
+import { FillerTimestampMap } from '../../../lib/repositories';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -30,6 +31,12 @@ const COSIGNER = constants.AddressZero;
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const CHAIN_ID = 1;
+const NOW = Math.floor(Date.now() / 1000);
+const FILLER_TIMESTAMPS: FillerTimestampMap = new Map([
+  ['0xuni', { lastPostTimestamp: NOW - 100, blockUntilTimestamp: NaN }],
+  ['google', { lastPostTimestamp: NOW - 100, blockUntilTimestamp: NOW + 100 }],
+  ['0xsearcher', { lastPostTimestamp: NOW - 100, blockUntilTimestamp: NOW - 20 }],
+]);
 
 // silent logger in tests
 const logger = Logger.createLogger({ name: 'test' });
@@ -247,9 +254,10 @@ describe('Quote handler', () => {
         { endpoint: 'https://uniswap.org', headers: {}, name: 'uniswap', hash: '0xuni' },
       ]);
 
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { fadeRate: 0.02, enabled: true, hash: '0xuni' },
-      ]);
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+        ['0xuni', 'google'],
+        FILLER_TIMESTAMPS
+      );
       const quoters = [
         new V2WebhookQuoter(
           logger,
@@ -325,9 +333,10 @@ describe('Quote handler', () => {
           hash: '0xuni',
         },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+        ['0xuni', 'google'],
+        FILLER_TIMESTAMPS
+      );
       const quoters = [
         new V2WebhookQuoter(
           logger,
@@ -382,9 +391,10 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+        ['0xuni', 'google'],
+        FILLER_TIMESTAMPS
+      );
       const quoters = [
         new V2WebhookQuoter(
           logger,
@@ -416,9 +426,10 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+        ['0xuni', 'google'],
+        FILLER_TIMESTAMPS
+      );
       const quoters = [
         new V2WebhookQuoter(
           logger,
@@ -451,9 +462,10 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+        ['0xuni', 'google'],
+        FILLER_TIMESTAMPS
+      );
       const quoters = [
         new V2WebhookQuoter(
           logger,
@@ -489,9 +501,10 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+        ['0xuni', 'google'],
+        FILLER_TIMESTAMPS
+      );
       const quoters = [
         new V2WebhookQuoter(
           logger,
@@ -553,9 +566,10 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+        ['0xuni', 'google'],
+        FILLER_TIMESTAMPS
+      );
       const quoters = [
         new V2WebhookQuoter(
           logger,
@@ -600,9 +614,10 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+        ['0xuni', 'google'],
+        FILLER_TIMESTAMPS
+      );
       const quoters = [
         new V2WebhookQuoter(
           logger,

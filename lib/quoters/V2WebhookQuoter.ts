@@ -74,7 +74,6 @@ export class V2WebhookQuoter implements V2Quoter {
             enabledEndpoints.push(e);
           }
         });
-        this.log.info({ endpoints: enabledEndpoints }, `Endpoint enabled`);
         return enabledEndpoints;
       }
 
@@ -149,30 +148,31 @@ export class V2WebhookQuoter implements V2Quoter {
       };
 
       const { response, validationError } = V2QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
-
-      // RFQ provider explicitly elected not to quote
-      if (isNonQuote(request, hookResponse, response)) {
-        metric.putMetric(Metric.RFQ_NON_QUOTE, 1, MetricLoggerUnit.Count);
-        metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
-        this.log.info(
-          {
-            response: hookResponse.data,
-            responseStatus: hookResponse.status,
-          },
-          `Webhook elected not to quote: ${endpoint}`
-        );
-        this.firehose.sendAnalyticsEvent(
-          new AnalyticsEvent(AnalyticsEventType.WEBHOOK_RESPONSE, {
-            ...requestContext,
-            ...rawResponse,
-            responseType: WebhookResponseType.NON_QUOTE,
-          })
-        );
-        return null;
-      }
+      const nonQuote = isNonQuote(request, hookResponse, response);
 
       // RFQ provider response failed validation
-      if (validationError) {
+      if (validationError || nonQuote) {
+        // RFQ provider explicitly elected not to quote
+        if (isNonQuote(request, hookResponse, response)) {
+          metric.putMetric(Metric.RFQ_NON_QUOTE, 1, MetricLoggerUnit.Count);
+          metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
+          this.log.info(
+            {
+              response: hookResponse.data,
+              responseStatus: hookResponse.status,
+            },
+            `Webhook elected not to quote: ${endpoint}`
+          );
+          this.firehose.sendAnalyticsEvent(
+            new AnalyticsEvent(AnalyticsEventType.WEBHOOK_RESPONSE, {
+              ...requestContext,
+              ...rawResponse,
+              responseType: WebhookResponseType.NON_QUOTE,
+            })
+          );
+          return null;
+        }
+
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
         this.log.error(
