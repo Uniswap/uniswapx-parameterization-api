@@ -3,19 +3,12 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import {
-  BETA_COMPLIANCE_S3_KEY,
-  BETA_S3_KEY,
-  COMPLIANCE_CONFIG_BUCKET,
-  PRODUCTION_S3_KEY,
-  PROD_COMPLIANCE_S3_KEY,
-  WEBHOOK_CONFIG_BUCKET,
-} from '../../../constants';
+import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../../../constants';
 import { AWSMetricsLogger, UniswapXParamServiceMetricDimension } from '../../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../../providers';
 import { FirehoseLogger } from '../../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../../providers/circuit-breaker/dynamo';
-import { S3FillerComplianceConfigurationProvider } from '../../../providers/compliance/s3';
+import { MockFillerComplianceConfigurationProvider } from '../../../providers/compliance';
 import { V2Quoter } from '../../../quoters';
 import { V2WebhookQuoter } from '../../../quoters/V2WebhookQuoter';
 import { STAGE } from '../../../util/stage';
@@ -46,12 +39,14 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const circuitBreakerProvider = new DynamoCircuitBreakerConfigurationProvider(log, webhookProvider.fillers());
 
-    const complianceKey = stage === STAGE.BETA ? BETA_COMPLIANCE_S3_KEY : PROD_COMPLIANCE_S3_KEY;
-    const fillerComplianceProvider = new S3FillerComplianceConfigurationProvider(
-      log,
-      `${COMPLIANCE_CONFIG_BUCKET}-${stage}-1`,
-      complianceKey
-    );
+    // TODO: decide if we should handle filler compliance differently
+    //const complianceKey = stage === STAGE.BETA ? BETA_COMPLIANCE_S3_KEY : PROD_COMPLIANCE_S3_KEY;
+    //const fillerComplianceProvider = new S3FillerComplianceConfigurationProvider(
+    //  log,
+    //  `${COMPLIANCE_CONFIG_BUCKET}-${stage}-1`,
+    //  complianceKey
+    //);
+    const fillerComplianceProvider = new MockFillerComplianceConfigurationProvider([]);
 
     const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
