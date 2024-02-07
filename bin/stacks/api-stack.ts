@@ -366,9 +366,10 @@ export class APIStack extends cdk.Stack {
     });
     quote.addMethod('POST', quoteLambdaIntegration);
 
-    const v2Path = api.root.addResource('quote-v2', {});
+    const v2Path = api.root.addResource('v2', {});
+    const v2QuotePath = v2Path.addResource('quote', {});
     const indicativeQuoteLambdaIntegration = new aws_apigateway.LambdaIntegration(iQuoteLambdaAlias, {});
-    v2Path
+    v2QuotePath
       .addResource('indicative', {
         defaultCorsPreflightOptions: {
           allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
@@ -378,7 +379,7 @@ export class APIStack extends cdk.Stack {
       .addMethod('POST', indicativeQuoteLambdaIntegration);
 
     const hardQuoteLambdaIntegration = new aws_apigateway.LambdaIntegration(hQuoteLambdaAlias, {});
-    v2Path
+    v2QuotePath
       .addResource('hard', {
         defaultCorsPreflightOptions: {
           allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
