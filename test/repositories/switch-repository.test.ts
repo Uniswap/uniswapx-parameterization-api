@@ -62,7 +62,7 @@ describe('put switch tests', () => {
 
     const enabled = await switchRepository.syntheticQuoteForTradeEnabled(SWITCH);
     expect(enabled).toBe(false);
-  })
+  });
 
   it('should return false for non-existent switch', async () => {
     await expect(switchRepository.syntheticQuoteForTradeEnabled(NONEXISTENT_SWITCH)).resolves.toBe(false);
@@ -72,12 +72,12 @@ describe('put switch tests', () => {
 describe('static helper function tests', () => {
   it('correctly serializes key from trade', () => {
     expect(SwitchRepository.getKey(SWITCH)).toBe('usdc#1#uni#1#EXACT_INPUT');
-  })
+  });
 
   it('should throw error for invalid key on parse', () => {
     expect(() => {
       // missing type
       SwitchRepository.parseKey('token0#1#token1#1');
     }).toThrowError('Invalid key: token0#1#token1#1');
-  })
-})
+  });
+});

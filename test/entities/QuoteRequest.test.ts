@@ -53,7 +53,7 @@ describe('QuoteRequest', () => {
       numOutputs: 1,
     });
   });
-  
+
   it('toOpposingRequest', async () => {
     const opposingRequest = request.toOpposingRequest();
     expect(opposingRequest.toCleanJSON()).toEqual({

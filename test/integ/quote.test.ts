@@ -1,4 +1,4 @@
-import chai, {expect} from 'chai';
+import chai, { expect } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import chaiSubset from 'chai-subset';
 import { v4 as uuidv4 } from 'uuid';
@@ -32,13 +32,13 @@ describe('Quote endpoint integration test', function () {
       tokenOut: TOKEN_OUT,
       amount: '1',
       type: 'EXACT_INPUT',
-      numOutputs: 1
+      numOutputs: 1,
     };
 
-    const {data, status} = await AxiosUtils.callPassThroughFail('POST', API, quoteReq);
+    const { data, status } = await AxiosUtils.callPassThroughFail('POST', API, quoteReq);
     expect([404, 200]).to.include(status);
     if (status == 404) {
-      expect(data.detail).to.be.equal('No quotes available')
+      expect(data.detail).to.be.equal('No quotes available');
     } else {
       expect(data.requestId).to.be.equal(REQUEST_ID);
       expect(data.swapper).to.be.equal(SWAPPER);
