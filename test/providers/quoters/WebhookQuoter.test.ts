@@ -94,7 +94,7 @@ describe('WebhookQuoter tests', () => {
         data: {
           ...quote,
           tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
+          tokenOut: request.tokenIn,
         }
       });
     });
@@ -103,7 +103,7 @@ describe('WebhookQuoter tests', () => {
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
   });
-  
+
   it('Respects filler compliance requirements', async () => {
     const webhookQuoter = new WebhookQuoter(
       logger,
@@ -127,7 +127,7 @@ describe('WebhookQuoter tests', () => {
         data: {
           ...quote,
           tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
+          tokenOut: request.tokenIn,
         }
       });
     });
@@ -223,7 +223,7 @@ describe('WebhookQuoter tests', () => {
         data: {
           ...quote,
           tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
+          tokenOut: request.tokenIn,
         }
       });
     });
@@ -265,7 +265,7 @@ describe('WebhookQuoter tests', () => {
         data: {
           ...quote,
           tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
+          tokenOut: request.tokenIn,
         }
       });
     });
@@ -301,7 +301,7 @@ describe('WebhookQuoter tests', () => {
         data: {
           ...quote,
           tokenIn: request.tokenOut,
-          tokenOut: request.tokenIn,        
+          tokenOut: request.tokenIn,
         }
       });
     });
@@ -363,7 +363,7 @@ describe('WebhookQuoter tests', () => {
             ...quote,
             quoteId: expect.any(String),
             amountOut: BigNumber.from(quote.amountOut),
-            amountIn: BigNumber.from(0),
+            amountIn: BigNumber.from(request.amount),
           },
           type: 0,
         },
@@ -416,7 +416,7 @@ describe('WebhookQuoter tests', () => {
         responseRequestId: quote.requestId,
       },
       'Webhook ResponseId does not match request'
-    );    
+    );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,

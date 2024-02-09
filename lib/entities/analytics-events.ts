@@ -1,9 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
+
 import { timestampInMstoISOString } from '../util/time';
 
 export enum AnalyticsEventType {
   WEBHOOK_RESPONSE = 'WebhookQuoterResponse',
-};
+}
 
 export enum WebhookResponseType {
   OK = 'OK',
@@ -13,7 +14,7 @@ export enum WebhookResponseType {
   TIMEOUT = 'TIMEOUT',
   HTTP_ERROR = 'HTTP_ERROR',
   OTHER_ERROR = 'OTHER_ERROR',
-};
+}
 
 export class AnalyticsEvent {
   eventId: string; // gets set in constructor
@@ -27,4 +28,4 @@ export class AnalyticsEvent {
     this.eventTime = timestampInMstoISOString(Date.now());
     this.eventProperties = eventProperties;
   }
-};
+}
