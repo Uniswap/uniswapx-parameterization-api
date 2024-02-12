@@ -6,7 +6,7 @@ export class MockFillerComplianceConfigurationProvider implements FillerComplian
   async getConfigs(): Promise<FillerComplianceConfiguration[]> {
     return this.configs;
   }
-  
+
   async getEndpointToExcludedAddrsMap(): Promise<Map<string, Set<string>>> {
     const map = new Map<string, Set<string>>();
     this.configs.forEach((config) => {
@@ -18,8 +18,7 @@ export class MockFillerComplianceConfigurationProvider implements FillerComplian
           map.get(endpoint)?.add(address);
         });
       });
-    })
+    });
     return map;
   }
-
 }

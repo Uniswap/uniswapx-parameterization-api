@@ -13,8 +13,8 @@ import {
   RequestInjected,
 } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
-import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockWebhookConfigurationProvider } from '../../../lib/providers';
+import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
@@ -34,10 +34,13 @@ const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
 const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvider([]);
-const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([{
-  endpoints: ['https://uniswap.org', 'google.com'], addresses: [SWAPPER]
-}]);
-const mockFirehoseLogger = new FirehoseLogger(logger, "arn:aws:deliverystream/dummy");
+const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([
+  {
+    endpoints: ['https://uniswap.org', 'google.com'],
+    addresses: [SWAPPER],
+  },
+]);
+const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
@@ -220,37 +223,47 @@ describe('Quote handler', () => {
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
         { fadeRate: 0.02, enabled: true, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
+      const quoters = [
+        new WebhookQuoter(
+          logger,
+          mockFirehoseLogger,
+          webhookProvider,
+          circuitBreakerProvider,
+          emptyMockComplianceProvider
+        ),
+      ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-        return Promise.resolve({
-          data: {
-            amountOut: amountIn.mul(2).toString(),
-            requestId: request.requestId,
-            tokenIn: request.tokenIn,
-            tokenOut: request.tokenOut,
-            amountIn: request.amount,
-            swapper: request.swapper,
-            chainId: request.tokenInChainId,
-            quoteId: QUOTE_ID,
-          },
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              amountOut: amountIn.mul(2).toString(),
+              requestId: request.requestId,
+              tokenIn: request.tokenIn,
+              tokenOut: request.tokenOut,
+              amountIn: request.amount,
+              swapper: request.swapper,
+              chainId: request.tokenInChainId,
+              quoteId: QUOTE_ID,
+            },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              amountOut: amountIn.mul(3).toString(),
+              requestId: request.requestId,
+              tokenIn: request.tokenOut,
+              tokenOut: request.tokenIn,
+              amountIn: request.amount,
+              swapper: request.swapper,
+              chainId: request.tokenInChainId,
+              quoteId: QUOTE_ID,
+            },
+          });
         });
-      }).mockImplementationOnce((_endpoint, _req, _options) => {
-        return Promise.resolve({
-          data: {
-            amountOut: amountIn.mul(3).toString(),
-            requestId: request.requestId,
-            tokenIn: request.tokenOut,
-            tokenOut: request.tokenIn,
-            amountIn: request.amount,
-            swapper: request.swapper,
-            chainId: request.tokenInChainId,
-            quoteId: QUOTE_ID,
-          },
-        });
-      });
 
       const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
         getEvent(request),
@@ -284,28 +297,38 @@ describe('Quote handler', () => {
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
+      const quoters = [
+        new WebhookQuoter(
+          logger,
+          mockFirehoseLogger,
+          webhookProvider,
+          circuitBreakerProvider,
+          emptyMockComplianceProvider
+        ),
+      ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, options: any) => {
-        expect(options.headers['X-Authentication']).toEqual('1234');
-        return Promise.resolve({
-          data: {
-            ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
-          },
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, options: any) => {
+          expect(options.headers['X-Authentication']).toEqual('1234');
+          return Promise.resolve({
+            data: {
+              ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
+            },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, options: any) => {
+          expect(options.headers['X-Authentication']).toEqual('1234');
+          const res = responseFromRequest(request, { amountOut: amountIn.mul(3).toString() });
+          return Promise.resolve({
+            data: {
+              ...res,
+              tokenIn: res.tokenOut,
+              tokenOut: res.tokenIn,
+            },
+          });
         });
-      }).mockImplementationOnce((_endpoint, _req, options: any) => {
-        expect(options.headers['X-Authentication']).toEqual('1234');
-        const res = responseFromRequest(request, { amountOut: amountIn.mul(3).toString() });
-        return Promise.resolve({
-          data: {
-            ...res,
-            tokenIn: res.tokenOut,
-            tokenOut: res.tokenIn,
-          },
-        });
-      });
 
       const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
         getEvent(request),
@@ -330,7 +353,15 @@ describe('Quote handler', () => {
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
+      const quoters = [
+        new WebhookQuoter(
+          logger,
+          mockFirehoseLogger,
+          webhookProvider,
+          circuitBreakerProvider,
+          emptyMockComplianceProvider
+        ),
+      ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -356,7 +387,15 @@ describe('Quote handler', () => {
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider)];
+      const quoters = [
+        new WebhookQuoter(
+          logger,
+          mockFirehoseLogger,
+          webhookProvider,
+          circuitBreakerProvider,
+          emptyMockComplianceProvider
+        ),
+      ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -384,7 +423,13 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider),
+        new WebhookQuoter(
+          logger,
+          mockFirehoseLogger,
+          webhookProvider,
+          circuitBreakerProvider,
+          emptyMockComplianceProvider
+        ),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -416,39 +461,47 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider),
+        new WebhookQuoter(
+          logger,
+          mockFirehoseLogger,
+          webhookProvider,
+          circuitBreakerProvider,
+          emptyMockComplianceProvider
+        ),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-        return Promise.resolve({
-          data: {
-            amountOut: amountIn.mul(2).toString(),
-            tokenIn: request.tokenIn,
-            tokenOut: request.tokenOut,
-            amountIn: request.amount,
-            swapper: request.swapper,
-            chainId: request.tokenInChainId,
-            requestId: request.requestId,
-            quoteId: QUOTE_ID,
-          },
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              amountOut: amountIn.mul(2).toString(),
+              tokenIn: request.tokenIn,
+              tokenOut: request.tokenOut,
+              amountIn: request.amount,
+              swapper: request.swapper,
+              chainId: request.tokenInChainId,
+              requestId: request.requestId,
+              quoteId: QUOTE_ID,
+            },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              amountOut: amountIn.div(2).toString(),
+              tokenIn: request.tokenOut,
+              tokenOut: request.tokenIn,
+              amountIn: request.amount,
+              swapper: request.swapper,
+              chainId: request.tokenInChainId,
+              requestId: request.requestId,
+              quoteId: QUOTE_ID,
+            },
+          });
         });
-      }).mockImplementationOnce((_endpoint, _req, _options) => {
-        return Promise.resolve({
-          data: {
-            amountOut: amountIn.div(2).toString(),
-            tokenIn: request.tokenOut,
-            tokenOut: request.tokenIn,
-            amountIn: request.amount,
-            swapper: request.swapper,
-            chainId: request.tokenInChainId,
-            requestId: request.requestId,
-            quoteId: QUOTE_ID,
-          },
-        });
-      });
 
       const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
         getEvent(request),
@@ -470,7 +523,13 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, emptyMockComplianceProvider),
+        new WebhookQuoter(
+          logger,
+          mockFirehoseLogger,
+          webhookProvider,
+          circuitBreakerProvider,
+          emptyMockComplianceProvider
+        ),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -502,7 +561,7 @@ describe('Quote handler', () => {
         quoteId: expect.any(String),
       });
     });
-    
+
     it('respects filler compliance requirements', async () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
@@ -527,7 +586,7 @@ describe('Quote handler', () => {
           errorCode: 'QUOTE_ERROR',
           detail: 'No quotes available',
         })
-      )
-    })
+      );
+    });
   });
 });
