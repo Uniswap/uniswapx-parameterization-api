@@ -334,13 +334,13 @@ export class APIStack extends cdk.Stack {
     const switchLambdaAlias = new aws_lambda.Alias(this, `SwitchLiveAlias`, {
       aliasName: 'live',
       version: switchLambda.currentVersion,
-      provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
+      provisionedConcurrentExecutions: 0,
     });
 
     if (provisionedConcurrency > 0) {
       const quoteTarget = new aws_asg.ScalableTarget(this, 'QuoteProvConcASG', {
         serviceNamespace: aws_asg.ServiceNamespace.LAMBDA,
-        maxCapacity: provisionedConcurrency * 5,
+        maxCapacity: provisionedConcurrency * 10,
         minCapacity: provisionedConcurrency,
         resourceId: `function:${quoteLambdaAlias.lambda.functionName}:${quoteLambdaAlias.aliasName}`,
         scalableDimension: 'lambda:function:ProvisionedConcurrency',
@@ -349,7 +349,7 @@ export class APIStack extends cdk.Stack {
       quoteTarget.node.addDependency(quoteLambdaAlias);
 
       quoteTarget.scaleToTrackMetric('QuoteProvConcTracking', {
-        targetValue: 0.8,
+        targetValue: 0.7,
         predefinedMetric: aws_asg.PredefinedMetric.LAMBDA_PROVISIONED_CONCURRENCY_UTILIZATION,
       });
     }
