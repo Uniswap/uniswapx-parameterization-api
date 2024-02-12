@@ -7,8 +7,8 @@ import {
   BETA_COMPLIANCE_S3_KEY,
   BETA_S3_KEY,
   COMPLIANCE_CONFIG_BUCKET,
-  PRODUCTION_S3_KEY,
   PROD_COMPLIANCE_S3_KEY,
+  PRODUCTION_S3_KEY,
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
 import { AWSMetricsLogger, UniswapXParamServiceMetricDimension } from '../../entities/aws-metrics-logger';

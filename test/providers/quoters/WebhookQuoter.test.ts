@@ -177,12 +177,16 @@ describe('WebhookQuoter tests', () => {
         data: quote,
       });
     });
+<<<<<<< HEAD
 
     const cbProvider = new MockCircuitBreakerConfigurationProvider(
       ['0xuni'],
       new Map([['0xuni', { lastPostTimestamp: 100, blockUntilTimestamp: NaN }]])
     );
 
+=======
+    const cbProvider = new MockCircuitBreakerConfigurationProvider([{ hash: '0xuni', fadeRate: 0.05, enabled: true }]);
+>>>>>>> main
     const quoter = new WebhookQuoter(
       logger,
       mockFirehoseLogger,

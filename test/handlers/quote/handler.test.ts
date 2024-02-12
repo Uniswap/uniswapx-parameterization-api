@@ -302,10 +302,16 @@ describe('Quote handler', () => {
           hash: '0xuni',
         },
       ]);
+<<<<<<< HEAD
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
         ['0xuni', 'google'],
         FILLER_TIMESTAMPS
       );
+=======
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { hash: '0xuni', fadeRate: 0.02, enabled: true },
+      ]);
+>>>>>>> main
       const quoters = [
         new WebhookQuoter(
           logger,
@@ -359,10 +365,16 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
+<<<<<<< HEAD
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
         ['0xuni', 'google'],
         FILLER_TIMESTAMPS
       );
+=======
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { hash: '0xuni', fadeRate: 0.02, enabled: true },
+      ]);
+>>>>>>> main
       const quoters = [
         new WebhookQuoter(
           logger,
@@ -394,10 +406,16 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
+<<<<<<< HEAD
       const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
         ['0xuni', 'google'],
         FILLER_TIMESTAMPS
       );
+=======
+      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+        { hash: '0xuni', fadeRate: 0.02, enabled: true },
+      ]);
+>>>>>>> main
       const quoters = [
         new WebhookQuoter(
           logger,
@@ -603,6 +621,7 @@ describe('Quote handler', () => {
         })
       );
     });
+<<<<<<< HEAD
 
     it('only calls eligible fillers', async () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
@@ -640,5 +659,7 @@ describe('Quote handler', () => {
         expect.anything()
       );
     });
+=======
+>>>>>>> main
   });
 });
