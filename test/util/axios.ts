@@ -51,13 +51,13 @@ export default class AxiosUtils {
       return {
         data,
         status,
-      }
+      };
     } catch (err: any) {
       if (err.response) {
         return {
           data: err.response.data,
           status: err.response.status,
-        }
+        };
       }
       throw err;
     }

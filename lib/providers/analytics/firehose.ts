@@ -1,8 +1,8 @@
 import { FirehoseClient, PutRecordCommand } from '@aws-sdk/client-firehose';
 import { default as Logger } from 'bunyan';
 
-import { IAnalyticsLogger } from '.';
 import { AnalyticsEvent } from '../../entities/analytics-events';
+import { IAnalyticsLogger } from '.';
 
 export class FirehoseLogger implements IAnalyticsLogger {
   private log: Logger;

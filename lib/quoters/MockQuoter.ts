@@ -1,8 +1,8 @@
 import Logger from 'bunyan';
 import { BigNumber } from 'ethers';
 
-import { Quoter, QuoterType } from '.';
 import { QuoteRequest, QuoteResponse } from '../entities';
+import { Quoter, QuoterType } from '.';
 
 export const MOCK_FILLER_ADDRESS = '0x0000000000000000000000000000000000000001';
 
