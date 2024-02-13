@@ -61,6 +61,7 @@ export class QuoteResponse implements QuoteResponseData {
       };
     }
 
+    // ensure quoted tokens match
     if (
       request?.tokenIn?.toLowerCase() !== data?.tokenIn?.toLowerCase() ||
       request?.tokenOut?.toLowerCase() !== data?.tokenOut?.toLowerCase()
@@ -71,14 +72,20 @@ export class QuoteResponse implements QuoteResponseData {
       };
     }
 
+    // take quoted amount from RFQ response
+    // but specified amount from request to avoid any inaccuracies from incorrect echoed response
+    const [amountIn, amountOut] =
+      request.type === TradeType.EXACT_INPUT
+        ? [request.amount, BigNumber.from(data.amountOut ?? 0)]
+        : [BigNumber.from(data.amountIn ?? 0), request.amount];
     return {
       response: new QuoteResponse(
         {
           ...data,
           quoteId: data.quoteId ?? uuidv4(),
           swapper: request.swapper,
-          amountIn: BigNumber.from(data.amountIn ?? 0),
-          amountOut: BigNumber.from(data.amountOut ?? 0),
+          amountIn,
+          amountOut,
         },
         type
       ),

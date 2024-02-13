@@ -1,5 +1,4 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { BigNumber } from 'ethers';
 import { parseEther } from 'ethers/lib/utils';
 
 import { QuoteResponse } from '../../lib/entities';
@@ -101,7 +100,8 @@ describe('QuoteRequest', () => {
         quoteId: QUOTE_ID,
       };
       const response = QuoteResponse.fromRFQ(quoteRequest, invalidResponse, TradeType.EXACT_INPUT);
-      expect(response.response.amountIn).toEqual(BigNumber.from(100));
+      // ensure we overwrite amount with the request amount, dont just accept what the quoter returned
+      expect(response.response.amountIn).toEqual(quoteRequest.amount);
       expect(response.validationError?.message).toBe('"amountIn" must be a string');
       expect(response.validationError?.value).toBe(invalidResponse);
     });

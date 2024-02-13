@@ -398,7 +398,7 @@ describe('WebhookQuoter tests', () => {
             ...quote,
             quoteId: expect.any(String),
             amountOut: BigNumber.from(quote.amountOut),
-            amountIn: BigNumber.from(0),
+            amountIn: BigNumber.from(request.amount),
           },
           type: 0,
         },
