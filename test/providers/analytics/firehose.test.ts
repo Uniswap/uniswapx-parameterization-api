@@ -45,7 +45,7 @@ describe('FirehoseLogger', () => {
     const input = {
       DeliveryStreamName: 'stream-name',
       Record: {
-        Data: Buffer.from(JSON.stringify(analyticsEvent) + '\n', 'base64'),
+        Data: Buffer.from(JSON.stringify(analyticsEvent) + '\n'),
       },
     };
 

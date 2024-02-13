@@ -27,7 +27,7 @@ export class FirehoseLogger implements IAnalyticsLogger {
     const params = {
       DeliveryStreamName: this.streamName,
       Record: {
-        Data: Buffer.from(jsonString, 'base64'),
+        Data: Buffer.from(jsonString),
       },
     };
 
