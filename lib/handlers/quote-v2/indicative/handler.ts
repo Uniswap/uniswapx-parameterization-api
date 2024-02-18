@@ -3,24 +3,30 @@ import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
 import Joi from 'joi';
 
-import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
-import { Quoter } from '../../quoters';
-import { NoQuotesAvailable } from '../../util/errors';
-import { timestampInMstoSeconds } from '../../util/time';
-import { APIGLambdaHandler, APIHandleRequestParams, ErrorResponse, Response } from '../base';
+import { Metric, V2QuoteRequest, V2QuoteResponse } from '../../../entities';
+import { V2Quoter } from '../../../quoters';
+import { NoQuotesAvailable } from '../../../util/errors';
+import { timestampInMstoSeconds } from '../../../util/time';
+import { APIGLambdaHandler } from '../../base';
+import { APIHandleRequestParams, ErrorResponse, Response } from '../../base/api-handler';
+import {
+  IndicativeQuoteRequestBody,
+  IndicativeQuoteRequestBodyJoi,
+  IndicativeQuoteResponseBody,
+  IndicativeQuoteResponseJoi,
+} from '../schema';
 import { ContainerInjected, RequestInjected } from './injector';
-import { PostQuoteRequestBody, PostQuoteRequestBodyJoi, PostQuoteResponse, URAResponseJoi } from './schema';
 
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
   RequestInjected,
-  PostQuoteRequestBody,
+  IndicativeQuoteRequestBody,
   void,
-  PostQuoteResponse
+  IndicativeQuoteResponseBody
 > {
   public async handleRequest(
-    params: APIHandleRequestParams<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>
-  ): Promise<ErrorResponse | Response<PostQuoteResponse>> {
+    params: APIHandleRequestParams<ContainerInjected, RequestInjected, IndicativeQuoteRequestBody, void>
+  ): Promise<ErrorResponse | Response<IndicativeQuoteResponseBody>> {
     const {
       requestInjected: { log, metric },
       requestBody,
@@ -30,9 +36,11 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
-    const request = QuoteRequest.fromRequestBody(requestBody);
+    const request = V2QuoteRequest.fromRequestBody(requestBody);
+
+    // TODO: finalize on v2 metrics logging
     log.info({
-      eventType: 'QuoteRequest',
+      eventType: 'V2QuoteRequest',
       body: {
         requestId: request.requestId,
         tokenInChainId: request.tokenInChainId,
@@ -44,6 +52,7 @@ export class QuoteHandler extends APIGLambdaHandler<
         type: TradeType[request.type],
         createdAt: timestampInMstoSeconds(start),
         createdAtMs: start.toString(),
+        cosigner: request.cosigner,
         numOutputs: request.numOutputs,
       },
     });
@@ -65,7 +74,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected requestBodySchema(): Joi.ObjectSchema | null {
-    return PostQuoteRequestBodyJoi;
+    return IndicativeQuoteRequestBodyJoi;
   }
 
   protected requestQueryParamsSchema(): Joi.ObjectSchema | null {
@@ -73,18 +82,18 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected responseBodySchema(): Joi.ObjectSchema | null {
-    return URAResponseJoi;
+    return IndicativeQuoteResponseJoi;
   }
 }
 
 // fetch quotes from all quoters and return the best one
 async function getBestQuote(
-  quoters: Quoter[],
-  quoteRequest: QuoteRequest,
+  quoters: V2Quoter[],
+  quoteRequest: V2QuoteRequest,
   log: Logger,
   metric: IMetric
-): Promise<QuoteResponse | null> {
-  const responses = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat() as QuoteResponse[];
+): Promise<V2QuoteResponse | null> {
+  const responses = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat() as V2QuoteResponse[];
   switch (responses.length) {
     case 0:
       metric.putMetric(Metric.RFQ_COUNT_0, 1, MetricLoggerUnit.Count);
@@ -104,7 +113,7 @@ async function getBestQuote(
   }
 
   // return the response with the highest amountOut value
-  return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
+  return responses.reduce((bestQuote: V2QuoteResponse | null, quote: V2QuoteResponse) => {
     log.info({
       eventType: 'QuoteResponse',
       body: { ...quote.toLog(), offerer: quote.swapper },

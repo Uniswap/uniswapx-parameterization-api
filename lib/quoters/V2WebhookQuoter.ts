@@ -4,14 +4,14 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Quoter, QuoterType } from '.';
+import { QuoterType, V2Quoter } from '.';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
   Metric,
   metricContext,
-  QuoteRequest,
-  QuoteResponse,
+  V2QuoteRequest,
+  V2QuoteResponse,
   WebhookResponseType,
 } from '../entities';
 import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
@@ -25,7 +25,7 @@ const WEBHOOK_TIMEOUT_MS = 500;
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
-export class WebhookQuoter implements Quoter {
+export class V2WebhookQuoter implements V2Quoter {
   private log: Logger;
 
   constructor(
@@ -38,7 +38,7 @@ export class WebhookQuoter implements Quoter {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
 
-  public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
+  public async quote(request: V2QuoteRequest): Promise<V2QuoteResponse[]> {
     const endpoints = await this.getEligibleEndpoints();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     endpoints.filter((e) => {
@@ -49,7 +49,7 @@ export class WebhookQuoter implements Quoter {
 
     this.log.info({ endpoints }, `Fetching quotes from ${endpoints.length} endpoints`);
     const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));
-    return quotes.filter((q) => q !== null) as QuoteResponse[];
+    return quotes.filter((q) => q !== null) as V2QuoteResponse[];
   }
 
   public type(): QuoterType {
@@ -74,7 +74,6 @@ export class WebhookQuoter implements Quoter {
             enabledEndpoints.push(e);
           }
         });
-        this.log.info({ endpoints: enabledEndpoints }, `Endpoint enabled`);
         return enabledEndpoints;
       }
 
@@ -86,7 +85,7 @@ export class WebhookQuoter implements Quoter {
   }
 
   // TODO(v2): make sure filler accepts or at least do not deny 'cosigner' field
-  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
+  private async fetchQuote(config: WebhookConfiguration, request: V2QuoteRequest): Promise<V2QuoteResponse | null> {
     const { name, endpoint, headers } = config;
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
       this.log.debug(
@@ -148,13 +147,13 @@ export class WebhookQuoter implements Quoter {
         latencyMs: Date.now() - before,
       };
 
-      const { response, validationError } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
+      const { response, validationError } = V2QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
       const nonQuote = isNonQuote(request, hookResponse, response);
 
       // RFQ provider response failed validation
       if (validationError || nonQuote) {
         // RFQ provider explicitly elected not to quote
-        if (nonQuote) {
+        if (isNonQuote(request, hookResponse, response)) {
           metric.putMetric(Metric.RFQ_NON_QUOTE, 1, MetricLoggerUnit.Count);
           metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
           this.log.info(
@@ -173,6 +172,7 @@ export class WebhookQuoter implements Quoter {
           );
           return null;
         }
+
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
         this.log.error(
@@ -238,7 +238,7 @@ export class WebhookQuoter implements Quoter {
 
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
-      const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
+      const opposingResponse = V2QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
       if (
         opposingResponse &&
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&
@@ -296,7 +296,7 @@ export class WebhookQuoter implements Quoter {
 // valid non-quote responses:
 // - 404
 // - 0 amount quote
-function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedResponse: QuoteResponse): boolean {
+function isNonQuote(request: V2QuoteRequest, hookResponse: AxiosResponse, parsedResponse: V2QuoteResponse): boolean {
   if (hookResponse.status === 404) {
     return true;
   }

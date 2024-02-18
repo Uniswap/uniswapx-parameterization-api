@@ -64,5 +64,6 @@ typings/
 .env.test
 
 .cache
+.idea
 dist/
 cdk.out/

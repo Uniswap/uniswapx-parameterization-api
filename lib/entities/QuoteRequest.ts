@@ -2,7 +2,10 @@ import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber, ethers } from 'ethers';
 import { getAddress } from 'ethers/lib/utils';
 
-import { PostQuoteRequestBody } from '../handlers/quote/schema';
+import { PostQuoteRequestBody } from '../handlers/quote';
+
+//TODO: remove v1 definitions down below
+export * from './quote-request';
 
 export interface QuoteRequestData {
   tokenInChainId: number;
@@ -20,6 +23,7 @@ export interface QuoteRequestData {
 export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amount' | 'type'> {
   amount: string;
   type: string;
+  quoteId?: string;
 }
 
 // data class for QuoteRequest helpers and conversions

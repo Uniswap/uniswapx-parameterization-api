@@ -1,19 +1,11 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 
-import { DynamoDBClient, DynamoDBClientConfig } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { SynthSwitchQueryParams } from '../../lib/handlers/synth-switch';
 import { SwitchRepository } from '../../lib/repositories/switch-repository';
-
-const dynamoConfig: DynamoDBClientConfig = {
-  endpoint: 'http://localhost:8000',
-  region: 'local',
-  credentials: {
-    accessKeyId: 'fakeMyKeyId',
-    secretAccessKey: 'fakeSecretAccessKey',
-  },
-};
+import { DYNAMO_CONFIG } from './shared';
 
 const SWITCH: SynthSwitchQueryParams = {
   tokenIn: 'USDC',
@@ -33,7 +25,7 @@ const NONEXISTENT_SWITCH: SynthSwitchQueryParams = {
   type: 'EXACT_OUTPUT',
 };
 
-const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient(dynamoConfig), {
+const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient(DYNAMO_CONFIG), {
   marshallOptions: {
     convertEmptyValues: true,
   },
