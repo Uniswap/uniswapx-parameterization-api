@@ -227,6 +227,35 @@ const RFQFailRatesWidget = (region: string, rfqProviders: string[]): LambdaWidge
   },
 });
 
+const RFQResponseCountPercentageWidget = (region: string): LambdaWidget => ({
+  height: 11,
+  width: 12,
+  x: 11,
+  y: 11,
+  type: 'metric',
+  properties: {
+    metrics: [
+      ['Uniswap', 'RFQ_COUNT_0', 'Service', 'UniswapXParameterizationAPI', { region, id: 'm0', visible: false }],
+      ['.', 'RFQ_COUNT_1', '.', '.', { region, id: 'm1', visible: false }],
+      ['.', 'RFQ_COUNT_2', '.', '.', { region, id: 'm2', visible: false }],
+      ['.', 'RFQ_COUNT_3', '.', '.', { region, id: 'm3', visible: false }],
+      ['.', 'RFQ_COUNT_4_PLUS', '.', '.', { region, id: 'm4', visible: false }],
+      ['.', 'QUOTE_REQUESTED', '.', '.', { region, id: 'd0', visible: false }],
+      [{ expression: 'm0/d0', label: 'no quote', region }],
+      [{ expression: 'm1/d0', label: '1 quote', region }],
+      [{ expression: 'm2/d0', label: '2 quotes', region }],
+      [{ expression: 'm3/d0', label: '3 quotes', region }],
+      [{ expression: 'm4/d0', label: '4 or more quotes', region }],
+    ],
+    view: 'timeSeries',
+    stacked: true,
+    region,
+    period: 300,
+    stat: 'Sum',
+    title: 'RFQ Response Count Percentage',
+  },
+});
+
 export interface DashboardProps extends cdk.NestedStackProps {
   quoteLambda: aws_lambda_nodejs.NodejsFunction;
 }
@@ -251,6 +280,7 @@ export class ParamDashboardStack extends cdk.NestedStack {
           ErrorRatesWidget(region),
           RFQFailRatesWidget(region, RFQ_PROVIDERS),
           FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupArn),
+          RFQResponseCountPercentageWidget(region),
         ],
       }),
     });
