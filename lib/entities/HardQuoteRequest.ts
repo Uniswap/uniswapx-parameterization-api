@@ -1,11 +1,12 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { V2DutchOrder } from '@uniswap/uniswapx-sdk';
+import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, utils } from 'ethers';
-import { QuoteRequestDataJSON } from '.';
+
 import { HardQuoteRequestBody } from '../handlers/hard-quote';
+import { QuoteRequestDataJSON } from '.';
 
 export class HardQuoteRequest {
-  public order: V2DutchOrder;
+  public order: UnsignedV2DutchOrder;
 
   public static fromHardRequestBody(_body: HardQuoteRequestBody): HardQuoteRequest {
     // TODO: parse hard request into the same V2 request object format
@@ -13,7 +14,7 @@ export class HardQuoteRequest {
   }
 
   constructor(private data: HardQuoteRequestBody) {
-    this.order = V2DutchOrder.parse(data.encodedInnerOrder, data.tokenInChainId);
+    this.order = UnsignedV2DutchOrder.parse(data.encodedInnerOrder, data.tokenInChainId);
   }
 
   public toCleanJSON(): QuoteRequestDataJSON {
@@ -68,19 +69,19 @@ export class HardQuoteRequest {
   }
 
   public get tokenIn(): string {
-    return utils.getAddress(this.order.info.input.token)
+    return utils.getAddress(this.order.info.baseInput.token);
   }
 
   public get tokenOut(): string {
-    return utils.getAddress(this.order.info.outputs[0].token);
+    return utils.getAddress(this.order.info.baseOutputs[0].token);
   }
 
   public get amount(): BigNumber {
     if (this.type === TradeType.EXACT_INPUT) {
-      return this.order.info.input.startAmount;
+      return this.order.info.baseInput.startAmount;
     } else {
       const amount = BigNumber.from(0);
-      for (const output of this.order.info.outputs) {
+      for (const output of this.order.info.baseOutputs) {
         amount.add(output.startAmount);
       }
 
@@ -89,11 +90,13 @@ export class HardQuoteRequest {
   }
 
   public get type(): TradeType {
-    return this.order.info.input.startAmount === this.order.info.input.endAmount ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT;
+    return this.order.info.baseInput.startAmount.eq(this.order.info.baseInput.endAmount)
+      ? TradeType.EXACT_INPUT
+      : TradeType.EXACT_OUTPUT;
   }
 
   public get numOutputs(): number {
-    return this.order.info.outputs.length;
+    return this.order.info.baseOutputs.length;
   }
 
   public get cosigner(): string {

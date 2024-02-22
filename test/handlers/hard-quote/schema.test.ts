@@ -1,9 +1,8 @@
+import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, utils } from 'ethers';
-import { V2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  HardQuoteRequestBodyJoi,
-} from '../../../lib/handlers/hard-quote';
+
+import { HardQuoteRequestBodyJoi } from '../../../lib/handlers/hard-quote';
 import { getOrderInfo } from '../../entities/HardQuoteRequest.test';
 
 const SWAPPER = '0x0000000000000000000000000000000000000000';
@@ -18,28 +17,32 @@ const validAmountIn = ['1', '1000', '1234234', utils.parseEther('1').toString(),
 const validHardRequestBodyCombos = validTokenIn.flatMap((tokenIn) =>
   validTokenOut.flatMap((tokenOut) =>
     validAmountIn.flatMap((amount) => {
-      const order = new V2DutchOrder(getOrderInfo({
-        input: {
-          token: tokenIn,
-          startAmount: BigNumber.from(amount),
-          endAmount: BigNumber.from(amount),
-        },
-        outputs: [
-          {
-            token: tokenOut,
+      const order = new UnsignedV2DutchOrder(
+        getOrderInfo({
+          baseInput: {
+            token: tokenIn,
             startAmount: BigNumber.from(amount),
             endAmount: BigNumber.from(amount),
-            recipient: SWAPPER,
           },
-        ],
-      }), 1);
+          baseOutputs: [
+            {
+              token: tokenOut,
+              startAmount: BigNumber.from(amount),
+              endAmount: BigNumber.from(amount),
+              recipient: SWAPPER,
+            },
+          ],
+        }),
+        1
+      );
       return {
         requestId: REQUEST_ID,
         quoteId: QUOTE_ID,
         tokenInChainId: 1,
         tokenOutChainId: 1,
         encodedInnerOrder: order.serialize(),
-        innerSig: '0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+        innerSig:
+          '0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
       };
     })
   )
@@ -79,19 +82,21 @@ describe('hard-quote schemas', () => {
 
       validated = HardQuoteRequestBodyJoi.validate(
         Object.assign({}, validHardRequestBodyCombos[0], {
-          innerSig: '0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+          innerSig:
+            '0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
         })
       );
       expect(validated.error).toBeUndefined();
     });
-
 
     it('requires tokenInChainId to be defined', () => {
       const { tokenOutChainId, requestId, quoteId, encodedInnerOrder, innerSig } = validHardRequestBodyCombos[0];
       const validated = HardQuoteRequestBodyJoi.validate({
         tokenOutChainId,
         requestId,
-        quoteId, encodedInnerOrder, innerSig
+        quoteId,
+        encodedInnerOrder,
+        innerSig,
       });
       expect(validated.error?.message).toEqual('"tokenInChainId" is required');
     });
@@ -101,11 +106,12 @@ describe('hard-quote schemas', () => {
       const validated = HardQuoteRequestBodyJoi.validate({
         tokenInChainId,
         requestId,
-        quoteId, encodedInnerOrder, innerSig
+        quoteId,
+        encodedInnerOrder,
+        innerSig,
       });
       expect(validated.error?.message).toEqual('"tokenOutChainId" is required');
     });
-
 
     it('requires tokenOutChainId and tokenInChainId to be the same value', () => {
       const { tokenInChainId, requestId, quoteId, encodedInnerOrder, innerSig } = validHardRequestBodyCombos[0];
@@ -113,7 +119,9 @@ describe('hard-quote schemas', () => {
         tokenInChainId,
         tokenOutChainId: 5,
         requestId,
-        quoteId, encodedInnerOrder, innerSig
+        quoteId,
+        encodedInnerOrder,
+        innerSig,
       });
       expect(validated.error?.message).toContain('"tokenOutChainId" must be [ref:tokenInChainId]');
     });

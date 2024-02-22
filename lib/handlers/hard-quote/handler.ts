@@ -1,13 +1,12 @@
 import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Joi from 'joi';
 
-import { Metric } from '../../entities';
-import { HardQuoteRequest } from '../../entities';
+import { HardQuoteRequest, Metric } from '../../entities';
 import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
-import { HardQuoteRequestBody, HardQuoteRequestBodyJoi } from './schema';
 import { ContainerInjected, RequestInjected } from './injector';
+import { HardQuoteRequestBody, HardQuoteRequestBodyJoi } from './schema';
 
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,

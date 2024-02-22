@@ -4,13 +4,16 @@ import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import {
+  BETA_S3_KEY,
   FADE_RATE_BUCKET,
   FADE_RATE_S3_KEY,
-  BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
+  PRODUCTION_S3_KEY,
+  WEBHOOK_CONFIG_BUCKET,
+} from '../../constants';
 import { AWSMetricsLogger, UniswapXParamServiceMetricDimension } from '../../entities/aws-metrics-logger';
-import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
+import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { MockFillerComplianceConfigurationProvider } from '../../providers/compliance';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { STAGE } from '../../util/stage';
