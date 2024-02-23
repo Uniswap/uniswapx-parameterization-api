@@ -33,4 +33,13 @@ export class FieldValidator {
   public static readonly tradeType = Joi.string().valid('EXACT_INPUT', 'EXACT_OUTPUT');
 
   public static readonly uuid = Joi.string().guid({ version: 'uuidv4' });
+
+  // A Raw Signature is a common Signature format where the r, s and v
+  //   are concatenated into a 65 byte(130 nibble) DataHexString
+  public static readonly rawSignature = Joi.string().custom((value: string, helpers: CustomHelpers<string>) => {
+    if (!ethers.utils.isHexString(value, 65) && !ethers.utils.isHexString(value, 64)) {
+      return helpers.message({ custom: 'Signature in wrong format' });
+    }
+    return value;
+  });
 }
