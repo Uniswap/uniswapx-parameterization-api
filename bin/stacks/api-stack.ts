@@ -251,6 +251,36 @@ export class APIStack extends cdk.Stack {
       provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
     });
 
+    const hardQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'HardQuote', {
+      role: lambdaRole,
+      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'hardQuoteHandler',
+      vpc,
+      vpcSubnets: {
+        subnets: [...vpc.privateSubnets],
+      },
+      memorySize: 1024,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+        ...props.envVars,
+        stage,
+        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+      },
+      timeout: Duration.seconds(30),
+    });
+
+    const hardQuoteLambdaAlias = new aws_lambda.Alias(this, `HardQuoteLiveAlias`, {
+      aliasName: 'live',
+      version: hardQuoteLambda.currentVersion,
+      provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
+    });
+
     const switchLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Switch', {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_18_X,
@@ -357,6 +387,15 @@ export class APIStack extends cdk.Stack {
       },
     });
     quote.addMethod('POST', quoteLambdaIntegration);
+
+    const hardQuoteLambdaIntegration = new aws_apigateway.LambdaIntegration(hardQuoteLambdaAlias, {});
+    const hardQuote = api.root.addResource('hard-quote', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+        allowMethods: aws_apigateway.Cors.ALL_METHODS,
+      },
+    });
+    hardQuote.addMethod('POST', hardQuoteLambdaIntegration);
 
     const switchLambdaIntegration = new aws_apigateway.LambdaIntegration(switchLambdaAlias, {});
     const switchResource = api.root.addResource('synthetic-switch', {
