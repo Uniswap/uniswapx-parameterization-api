@@ -2,29 +2,29 @@ import { CosignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
-import { HardQuoteRequest } from '.';
 import { HardQuoteResponseData } from '../handlers/hard-quote/schema';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
+import { HardQuoteRequest } from '.';
 
 // data class for hard quote response helpers and conversions
 export class HardQuoteResponse {
   public createdAt: string;
 
-  constructor(public request: HardQuoteRequest, public order: CosignedV2DutchOrder, public createdAtMs = currentTimestampInMs()) {
+  constructor(
+    public request: HardQuoteRequest,
+    public order: CosignedV2DutchOrder,
+    public createdAtMs = currentTimestampInMs()
+  ) {
     this.createdAt = timestampInMstoSeconds(parseInt(this.createdAtMs));
   }
 
   public toResponseJSON(): HardQuoteResponseData {
     return {
-      quoteId: this.quoteId,
-      chainId: this.chainId,
-      requestId: this.requestId,
-      tokenIn: this.tokenIn,
-      amountIn: this.amountIn.toString(),
-      tokenOut: this.tokenOut,
-      amountOut: this.amountOut.toString(),
-      swapper: this.swapper,
-      filler: this.filler,
+      requestId: this.request.requestId,
+      quoteId: this.request.quoteId,
+      chainId: this.request.tokenInChainId,
+      filler: this.order.info.cosignerData.exclusiveFiller,
+      encodedOrder: this.order.serialize(),
       orderHash: this.order.hash(),
     };
   }
@@ -68,16 +68,22 @@ export class HardQuoteResponse {
   }
 
   public get amountOut(): BigNumber {
-      const amount = BigNumber.from(0);
-      for (const output of this.order.info.baseOutputs) {
-        amount.add(output.startAmount);
-      }
+    const resolved = this.order.resolve({
+      timestamp: this.order.info.cosignerData.decayStartTime,
+    });
+    let amount = BigNumber.from(0);
+    for (const output of resolved.outputs) {
+      amount = amount.add(output.amount);
+    }
 
-      return amount;
+    return amount;
   }
 
   public get amountIn(): BigNumber {
-      return this.order.info.baseInput.startAmount;
+    const resolved = this.order.resolve({
+      timestamp: this.order.info.cosignerData.decayStartTime,
+    });
+    return resolved.input.amount;
   }
 
   public get tokenOut(): string {

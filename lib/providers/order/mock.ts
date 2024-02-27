@@ -1,4 +1,5 @@
 import { Order } from '@uniswap/uniswapx-sdk';
+
 import { OrderServiceProvider } from '.';
 
 export class MockOrderServiceProvider implements OrderServiceProvider {

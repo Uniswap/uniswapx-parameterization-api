@@ -1,6 +1,7 @@
 import { Order } from '@uniswap/uniswapx-sdk';
-import Logger from 'bunyan';
 import axios from 'axios';
+import Logger from 'bunyan';
+
 import { OrderServiceProvider } from '.';
 
 const ORDER_SERVICE_TIMEOUT_MS = 500;
@@ -8,10 +9,7 @@ const ORDER_SERVICE_TIMEOUT_MS = 500;
 export class UniswapXServiceProvider implements OrderServiceProvider {
   private log: Logger;
 
-  constructor(
-    _log: Logger,
-    private uniswapxServiceUrl: string,
-  ) {
+  constructor(_log: Logger, private uniswapxServiceUrl: string) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
 
@@ -23,13 +21,16 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
     };
 
     try {
-      await axios.post(this.uniswapxServiceUrl, {
-        encodedOrder: order.serialize(),
-        signature: signature,
-        chainId: order.chainId,
-        quoteId: quoteId,
-
-      }, axiosConfig);
+      await axios.post(
+        this.uniswapxServiceUrl,
+        {
+          encodedOrder: order.serialize(),
+          signature: signature,
+          chainId: order.chainId,
+          quoteId: quoteId,
+        },
+        axiosConfig
+      );
       this.log.info({ orderHash: order.hash() }, 'Order posted to UniswapX Service');
     } catch (e) {
       this.log.error({ error: e }, 'Error posting order to UniswapX Service');

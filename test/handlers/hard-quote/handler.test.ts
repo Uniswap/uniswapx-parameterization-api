@@ -1,48 +1,76 @@
+import { TradeType } from '@uniswap/sdk-core';
+import { CosignedV2DutchOrder, UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
 import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
-import axios from 'axios';
+// import axios from 'axios';
 import { default as Logger } from 'bunyan';
-import { ethers } from 'ethers';
+import { BigNumber, ethers, Wallet } from 'ethers';
 
+import { HardQuoteRequest, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
 import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
-  PostQuoteRequestBody,
-  PostQuoteResponse,
+  HardQuoteHandler,
+  HardQuoteRequestBody,
+  HardQuoteResponseData,
   RequestInjected,
-} from '../../../lib/handlers/quote';
-import { QuoteHandler } from '../../../lib/handlers/quote/handler';
-import { MockWebhookConfigurationProvider } from '../../../lib/providers';
-import { FirehoseLogger } from '../../../lib/providers/analytics';
-import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
-import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
-import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
+} from '../../../lib/handlers/hard-quote';
+import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
+import { MockOrderServiceProvider } from '../../../lib/providers';
+import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
 
 jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const RAW_AMOUNT = BigNumber.from('1000000000000000000');
 const CHAIN_ID = 1;
 
 // silent logger in tests
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
-const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvider([]);
-const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([
-  {
-    endpoints: ['https://uniswap.org', 'google.com'],
-    addresses: [SWAPPER],
-  },
-]);
-const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
+export const getOrder = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV2DutchOrder => {
+  const now = Math.floor(new Date().getTime() / 1000);
+  return new UnsignedV2DutchOrder(
+    Object.assign(
+      {
+        deadline: now + 1000,
+        reactor: ethers.constants.AddressZero,
+        swapper: ethers.constants.AddressZero,
+        nonce: BigNumber.from(10),
+        additionalValidationContract: ethers.constants.AddressZero,
+        additionalValidationData: '0x',
+        cosigner: ethers.constants.AddressZero,
+        cosignerData: undefined,
+        baseInput: {
+          token: TOKEN_IN,
+          startAmount: RAW_AMOUNT,
+          endAmount: RAW_AMOUNT,
+        },
+        baseOutputs: [
+          {
+            token: TOKEN_OUT,
+            startAmount: RAW_AMOUNT,
+            endAmount: RAW_AMOUNT.mul(90).div(100),
+            recipient: ethers.constants.AddressZero,
+          },
+        ],
+        cosignature: undefined,
+      },
+      data
+    ),
+    CHAIN_ID
+  );
+};
 
 describe('Quote handler', () => {
+  const swapperWallet = Wallet.createRandom();
+  const cosignerWallet = Wallet.createRandom();
+
   // Creating mocks for all the handler dependencies.
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
@@ -55,538 +83,264 @@ describe('Quote handler', () => {
 
   const injectorPromiseMock = (
     quoters: Quoter[]
-  ): Promise<ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>> =>
+  ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
         getContainerInjected: () => {
           return {
             quoters,
+            cosignerWallet,
+            orderServiceProvider: new MockOrderServiceProvider(),
           };
         },
         getRequestInjected: () => requestInjectedMock,
-      } as unknown as ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>)
+      } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
     );
 
-  const getQuoteHandler = (quoters: Quoter[]) => new QuoteHandler('quote', injectorPromiseMock(quoters));
+  const getQuoteHandler = (quoters: Quoter[]) => new HardQuoteHandler('quote', injectorPromiseMock(quoters));
 
-  const getEvent = (request: PostQuoteRequestBody): APIGatewayProxyEvent =>
+  const getEvent = (request: HardQuoteRequestBody): APIGatewayProxyEvent =>
     ({
       body: JSON.stringify(request),
     } as APIGatewayProxyEvent);
 
-  const getRequest = (amount: string, type = 'EXACT_INPUT'): PostQuoteRequestBody => ({
-    requestId: REQUEST_ID,
-    tokenInChainId: CHAIN_ID,
-    tokenOutChainId: CHAIN_ID,
-    swapper: SWAPPER,
-    tokenIn: TOKEN_IN,
-    amount,
-    tokenOut: TOKEN_OUT,
-    type,
-    numOutputs: 1,
-  });
+  const getRequest = async (order: UnsignedV2DutchOrder): Promise<HardQuoteRequestBody> => {
+    const { types, domain, values } = order.permitData();
+    const sig = await swapperWallet._signTypedData(domain, types, values);
+    return {
+      requestId: REQUEST_ID,
+      tokenInChainId: CHAIN_ID,
+      tokenOutChainId: CHAIN_ID,
+      encodedInnerOrder: order.serialize(),
+      innerSig: sig,
+    };
+  };
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  const responseFromRequest = (
-    request: PostQuoteRequestBody,
-    overrides: Partial<PostQuoteResponse>
-  ): PostQuoteResponse => {
-    return Object.assign(
-      {},
-      {
-        amountOut: request.amount,
-        tokenIn: request.tokenIn,
-        tokenOut: request.tokenOut,
-        amountIn: request.amount,
-        swapper: request.swapper,
-        requestId: request.requestId,
-        chainId: request.tokenInChainId,
-        filler: MOCK_FILLER_ADDRESS,
-        quoteId: QUOTE_ID,
-      },
-      overrides
-    );
-  };
-
   it('Simple request and response', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
-    const amountIn = ethers.utils.parseEther('1');
-    const request = getRequest(amountIn.toString());
+    const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
 
     const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: HardQuoteResponseData = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
-    expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
-  });
+    expect(quoteResponse.requestId).toEqual(request.requestId);
+    expect(quoteResponse.quoteId).toEqual(request.quoteId);
+    expect(quoteResponse.chainId).toEqual(request.tokenInChainId);
+    expect(quoteResponse.filler).toEqual(ethers.constants.AddressZero);
+    const cosignedOrder = CosignedV2DutchOrder.parse(quoteResponse.encodedOrder, CHAIN_ID);
 
-  it('Handles hex amount', async () => {
-    const quoters = [new MockQuoter(logger, 1, 1)];
-    const amountIn = ethers.utils.parseEther('1');
-    const request = getRequest(amountIn.toHexString());
-
-    const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-      getEvent(request),
-      {} as unknown as Context
-    );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
-    expect(response.statusCode).toEqual(200);
-    expect(
-      responseFromRequest(request, { amountIn: amountIn.toString(), amountOut: amountIn.toString() })
-    ).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
+    // no overrides since quote was same as request
+    expect(cosignedOrder.info.cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
+    expect(cosignedOrder.info.cosignerData.inputAmount).toEqual(BigNumber.from(0));
+    expect(cosignedOrder.info.cosignerData.outputAmounts.length).toEqual(1);
+    expect(cosignedOrder.info.cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
   });
 
   it('Pick the greater of two quotes - EXACT_IN', async () => {
     const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
-    const amountIn = ethers.utils.parseEther('1');
-    const request = getRequest(amountIn.toString());
+    const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
 
     const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: HardQuoteResponseData = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
-    expect(
-      responseFromRequest(request, { amountOut: amountIn.mul(2).toString(), amountIn: amountIn.mul(1).toString() })
-    ).toMatchObject({
-      ...quoteResponse,
-      quoteId: expect.any(String),
-    });
+    expect(quoteResponse.requestId).toEqual(request.requestId);
+    expect(quoteResponse.quoteId).toEqual(request.quoteId);
+    expect(quoteResponse.chainId).toEqual(request.tokenInChainId);
+    expect(quoteResponse.filler).toEqual(MOCK_FILLER_ADDRESS);
+    const cosignedOrder = CosignedV2DutchOrder.parse(quoteResponse.encodedOrder, CHAIN_ID);
+    expect(cosignedOrder.info.cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
+
+    // overridden output amount to 2x
+    expect(cosignedOrder.info.cosignerData.inputAmount).toEqual(BigNumber.from(0));
+    expect(cosignedOrder.info.cosignerData.outputAmounts.length).toEqual(1);
+    expect(cosignedOrder.info.cosignerData.outputAmounts[0]).toEqual(RAW_AMOUNT.mul(2));
   });
 
   it('Pick the lesser of two quotes - EXACT_OUT', async () => {
-    const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
-    const amountOut = ethers.utils.parseEther('1');
-    const request = getRequest(amountOut.toString(), 'EXACT_OUTPUT');
+    const quoters = [new MockQuoter(logger, 9, 10), new MockQuoter(logger, 8, 10)];
+    const order = getOrder({
+      cosigner: cosignerWallet.address,
+      baseInput: {
+        token: TOKEN_IN,
+        startAmount: RAW_AMOUNT,
+        endAmount: RAW_AMOUNT.mul(110).div(100),
+      },
+      baseOutputs: [
+        {
+          token: TOKEN_OUT,
+          startAmount: RAW_AMOUNT,
+          endAmount: RAW_AMOUNT,
+          recipient: ethers.constants.AddressZero,
+        },
+      ],
+    });
+    const request = await getRequest(order);
 
     const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: HardQuoteResponseData = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
-    expect(
-      responseFromRequest(request, { amountOut: amountOut.mul(1).toString(), amountIn: amountOut.mul(1).toString() })
-    ).toMatchObject({
-      ...quoteResponse,
-      quoteId: expect.any(String),
-    });
+    expect(quoteResponse.requestId).toEqual(request.requestId);
+    expect(quoteResponse.quoteId).toEqual(request.quoteId);
+    expect(quoteResponse.chainId).toEqual(request.tokenInChainId);
+    expect(quoteResponse.filler).toEqual(MOCK_FILLER_ADDRESS);
+    const cosignedOrder = CosignedV2DutchOrder.parse(quoteResponse.encodedOrder, CHAIN_ID);
+    expect(cosignedOrder.info.cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
+
+    // overridden output amount to 2x
+    expect(cosignedOrder.info.cosignerData.inputAmount).toEqual(RAW_AMOUNT.mul(8).div(10));
+    expect(cosignedOrder.info.cosignerData.outputAmounts.length).toEqual(1);
+    expect(cosignedOrder.info.cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
   });
 
   it('Two quoters returning the same result', async () => {
     const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 1, 1)];
-    const amountIn = ethers.utils.parseEther('1');
-    const request = getRequest(amountIn.toString());
+    const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
 
     const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const quoteResponse: HardQuoteResponseData = JSON.parse(response.body); // random quoteId
     expect(response.statusCode).toEqual(200);
-    expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
+    expect(quoteResponse.requestId).toEqual(request.requestId);
+    expect(quoteResponse.quoteId).toEqual(request.quoteId);
+    expect(quoteResponse.chainId).toEqual(request.tokenInChainId);
+    expect(quoteResponse.filler).toEqual(ethers.constants.AddressZero);
+    const cosignedOrder = CosignedV2DutchOrder.parse(quoteResponse.encodedOrder, CHAIN_ID);
+    expect(cosignedOrder.info.cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
+
+    // overridden output amount to 2x
+    expect(cosignedOrder.info.cosignerData.inputAmount).toEqual(BigNumber.from(0));
+    expect(cosignedOrder.info.cosignerData.outputAmounts.length).toEqual(1);
+    expect(cosignedOrder.info.cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
   });
 
-  it('Invalid amountIn', async () => {
-    const invalidAmounts = ['-100', 'aszzz', 'zz'];
-
+  it('Unknown cosigner', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
+    const request = await getRequest(getOrder({ cosigner: '0x1111111111111111111111111111111111111111' }));
 
-    for (const amount of invalidAmounts) {
-      const request = getRequest(amount);
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
-      );
-      const error = JSON.parse(response.body);
-      expect(response.statusCode).toEqual(400);
-      expect(error).toMatchObject({
-        detail: 'Invalid amount',
-        errorCode: 'VALIDATION_ERROR',
-      });
-    }
+    const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+      getEvent(request),
+      {} as unknown as Context
+    );
+    expect(response.statusCode).toEqual(400);
+    const error = JSON.parse(response.body);
+    expect(error).toMatchObject({
+      detail: 'Unknown cosigner',
+      errorCode: 'QUOTE_ERROR',
+    });
   });
 
-  describe('Webhook Quoter', () => {
-    it('Simple request and response', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
-        { endpoint: 'https://uniswap.org', headers: {}, name: 'uniswap', hash: '0xuni' },
-      ]);
+  it.only('No quotes', async () => {
+    const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
 
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { fadeRate: 0.02, enabled: true, hash: '0xuni' },
-      ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          circuitBreakerProvider,
-          emptyMockComplianceProvider
-        ),
-      ];
-      const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
-
-      mockedAxios.post
-        .mockImplementationOnce((_endpoint, _req, _options) => {
-          return Promise.resolve({
-            data: {
-              amountOut: amountIn.mul(2).toString(),
-              requestId: request.requestId,
-              tokenIn: request.tokenIn,
-              tokenOut: request.tokenOut,
-              amountIn: request.amount,
-              swapper: request.swapper,
-              chainId: request.tokenInChainId,
-              quoteId: QUOTE_ID,
-            },
-          });
-        })
-        .mockImplementationOnce((_endpoint, _req, _options) => {
-          return Promise.resolve({
-            data: {
-              amountOut: amountIn.mul(3).toString(),
-              requestId: request.requestId,
-              tokenIn: request.tokenOut,
-              tokenOut: request.tokenIn,
-              amountIn: request.amount,
-              swapper: request.swapper,
-              chainId: request.tokenInChainId,
-              quoteId: QUOTE_ID,
-            },
-          });
-        });
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
-      );
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(response.statusCode).toEqual(200);
-      expect(quoteResponse).toMatchObject({
-        amountOut: amountIn.mul(2).toString(),
-        tokenIn: request.tokenIn,
-        tokenOut: request.tokenOut,
-        amountIn: request.amount,
-        swapper: request.swapper,
-        chainId: request.tokenInChainId,
-        requestId: request.requestId,
-        quoteId: expect.any(String),
-      });
+    const response: APIGatewayProxyResult = await getQuoteHandler([]).handler(
+      getEvent(request),
+      {} as unknown as Context
+    );
+    expect(response.statusCode).toEqual(404);
+    const error = JSON.parse(response.body);
+    expect(error).toMatchObject({
+      detail: 'No quotes available',
+      errorCode: 'QUOTE_ERROR',
     });
+  });
 
-    it('Passes headers', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
-        {
-          name: 'uniswap',
-          endpoint: 'https://uniswap.org',
-          headers: {
-            'X-Authentication': '1234',
-          },
-          hash: '0xuni',
-        },
-      ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          circuitBreakerProvider,
-          emptyMockComplianceProvider
-        ),
-      ];
-      const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
-
-      mockedAxios.post
-        .mockImplementationOnce((_endpoint, _req, options: any) => {
-          expect(options.headers['X-Authentication']).toEqual('1234');
-          return Promise.resolve({
-            data: {
-              ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
-            },
-          });
-        })
-        .mockImplementationOnce((_endpoint, _req, options: any) => {
-          expect(options.headers['X-Authentication']).toEqual('1234');
-          const res = responseFromRequest(request, { amountOut: amountIn.mul(3).toString() });
-          return Promise.resolve({
-            data: {
-              ...res,
-              tokenIn: res.tokenOut,
-              tokenOut: res.tokenIn,
-            },
-          });
-        });
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
-      );
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(response.statusCode).toEqual(200);
-      expect(quoteResponse).toMatchObject({
-        amountOut: amountIn.mul(2).toString(),
-        amountIn: request.amount,
-        tokenIn: request.tokenIn,
-        tokenOut: request.tokenOut,
-        chainId: request.tokenInChainId,
-        swapper: request.swapper,
-      });
-    });
-
-    it('handles invalid responses', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
-        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
-      ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          circuitBreakerProvider,
-          emptyMockComplianceProvider
-        ),
-      ];
-      const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
-
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-        return Promise.resolve({
-          data: {
-            ...request,
-          },
-        });
-      });
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
-      );
-      expect(response.statusCode).toEqual(404);
-    });
-
-    it('returns error if requestId is invalid', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
-        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
-      ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          circuitBreakerProvider,
-          emptyMockComplianceProvider
-        ),
-      ];
-      const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
-
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-        return Promise.resolve({
-          data: {
-            requestId: '1234',
-            amountOut: amountIn.toString(),
-          },
-        });
-      });
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
-      );
-      expect(response.statusCode).toEqual(404);
-    });
-
-    it('uses backup on failure', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
-        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
-      ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          circuitBreakerProvider,
-          emptyMockComplianceProvider
-        ),
-        new MockQuoter(logger, 1, 1),
-      ];
-      const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
-
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-        return Promise.resolve({
-          data: {
-            ...request,
+  describe('getCosignerData', () => {
+    const getQuoteResponse = (
+      data: Partial<QuoteResponseData>,
+      type: TradeType = TradeType.EXACT_INPUT
+    ): QuoteResponse => {
+      return new QuoteResponse(
+        Object.assign(
+          {
+            chainId: CHAIN_ID,
+            amountOut: ethers.utils.parseEther('1'),
+            amountIn: ethers.utils.parseEther('1'),
             quoteId: QUOTE_ID,
+            requestId: REQUEST_ID,
+            filler: MOCK_FILLER_ADDRESS,
+            swapper: swapperWallet.address,
+            tokenIn: TOKEN_IN,
+            tokenOut: TOKEN_OUT,
           },
-        });
-      });
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
-      );
-      expect(response.statusCode).toEqual(200);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
-      expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
-    });
-
-    it('uses if better than backup', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
-        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
-      ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          circuitBreakerProvider,
-          emptyMockComplianceProvider
+          data
         ),
-        new MockQuoter(logger, 1, 1),
-      ];
-      const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
-
-      mockedAxios.post
-        .mockImplementationOnce((_endpoint, _req, _options) => {
-          return Promise.resolve({
-            data: {
-              amountOut: amountIn.mul(2).toString(),
-              tokenIn: request.tokenIn,
-              tokenOut: request.tokenOut,
-              amountIn: request.amount,
-              swapper: request.swapper,
-              chainId: request.tokenInChainId,
-              requestId: request.requestId,
-              quoteId: QUOTE_ID,
-            },
-          });
-        })
-        .mockImplementationOnce((_endpoint, _req, _options) => {
-          return Promise.resolve({
-            data: {
-              amountOut: amountIn.div(2).toString(),
-              tokenIn: request.tokenOut,
-              tokenOut: request.tokenIn,
-              amountIn: request.amount,
-              swapper: request.swapper,
-              chainId: request.tokenInChainId,
-              requestId: request.requestId,
-              quoteId: QUOTE_ID,
-            },
-          });
-        });
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
+        type
       );
-      expect(response.statusCode).toEqual(200);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject({
-        ...quoteResponse,
-        quoteId: QUOTE_ID,
-      });
+    };
+
+    it('updates decay times reasonably', async () => {
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+      const now = Math.floor(Date.now() / 1000);
+      const cosignerData = getCosignerData(new HardQuoteRequest(request), getQuoteResponse({}));
+      expect(cosignerData.decayStartTime).toBeGreaterThan(now);
+      expect(cosignerData.decayStartTime).toBeLessThan(now + 1000);
+      expect(cosignerData.decayEndTime).toBeGreaterThan(cosignerData.decayStartTime);
+      expect(cosignerData.decayEndTime).toBeLessThan(cosignerData.decayStartTime + 1000);
     });
 
-    it('uses backup if better', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
-        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
-      ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          circuitBreakerProvider,
-          emptyMockComplianceProvider
-        ),
-        new MockQuoter(logger, 1, 1),
-      ];
-      const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
-
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-        return Promise.resolve({
-          data: {
-            amountOut: amountIn.div(2).toString(),
-            tokenIn: request.tokenIn,
-            tokenOut: request.tokenOut,
-            amountIn: request.amount,
-            swapper: request.swapper,
-            chainId: request.tokenInChainId,
-            requestId: request.requestId,
-            quoteId: QUOTE_ID,
-          },
-        });
-      });
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
+    it('exact input quote worse, no exclusivity', async () => {
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+      const cosignerData = getCosignerData(
+        new HardQuoteRequest(request),
+        getQuoteResponse({ amountOut: ethers.utils.parseEther('0.8') })
       );
-      expect(response.statusCode).toEqual(200);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
-      expect(responseFromRequest(request, { amountOut: amountIn.toString() })).toMatchObject({
-        ...quoteResponse,
-        quoteId: expect.any(String),
-      });
+      expect(cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
+      expect(cosignerData.inputAmount).toEqual(BigNumber.from(0));
+      expect(cosignerData.outputAmounts.length).toEqual(1);
+      expect(cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
     });
 
-    it('respects filler compliance requirements', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
-        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
-      ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
-      const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, mockComplianceProvider),
-      ];
-      const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
+    it('exact input quote better, sets exclusivity and updates amounts', async () => {
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+      const outputAmount = ethers.utils.parseEther('2');
+      const cosignerData = getCosignerData(
+        new HardQuoteRequest(request),
+        getQuoteResponse({ amountOut: outputAmount })
+      );
+      expect(cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
+      expect(cosignerData.inputAmount).toEqual(BigNumber.from(0));
+      expect(cosignerData.outputAmounts.length).toEqual(1);
+      expect(cosignerData.outputAmounts[0]).toEqual(outputAmount);
+    });
 
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
+    it('exact output quote worse, no exclusivity', async () => {
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+      const cosignerData = getCosignerData(
+        new HardQuoteRequest(request),
+        getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT)
       );
-      expect(response.statusCode).toEqual(404);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
-      expect(quoteResponse).toMatchObject(
-        expect.objectContaining({
-          errorCode: 'QUOTE_ERROR',
-          detail: 'No quotes available',
-        })
+      expect(cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
+      expect(cosignerData.inputAmount).toEqual(BigNumber.from(0));
+      expect(cosignerData.outputAmounts.length).toEqual(1);
+      expect(cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
+    });
+
+    it('exact input quote better, sets exclusivity and updates amounts', async () => {
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+      const inputAmount = ethers.utils.parseEther('0.8');
+      const cosignerData = getCosignerData(
+        new HardQuoteRequest(request),
+        getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT)
       );
+      expect(cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
+      expect(cosignerData.inputAmount).toEqual(inputAmount);
+      expect(cosignerData.outputAmounts.length).toEqual(1);
+      expect(cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
     });
   });
 });

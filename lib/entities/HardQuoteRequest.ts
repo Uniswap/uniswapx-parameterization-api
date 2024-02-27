@@ -8,9 +8,8 @@ import { QuoteRequest, QuoteRequestDataJSON } from '.';
 export class HardQuoteRequest {
   public order: UnsignedV2DutchOrder;
 
-  public static fromHardRequestBody(_body: HardQuoteRequestBody): HardQuoteRequest {
-    // TODO: parse hard request into the same V2 request object format
-    throw new Error('Method not implemented.');
+  public static fromHardRequestBody(body: HardQuoteRequestBody): HardQuoteRequest {
+    return new HardQuoteRequest(body);
   }
 
   constructor(private data: HardQuoteRequestBody) {
@@ -82,16 +81,16 @@ export class HardQuoteRequest {
   }
 
   public get totalOutputAmountStart(): BigNumber {
-      const amount = BigNumber.from(0);
-      for (const output of this.order.info.baseOutputs) {
-        amount.add(output.startAmount);
-      }
+    let amount = BigNumber.from(0);
+    for (const output of this.order.info.baseOutputs) {
+      amount = amount.add(output.startAmount);
+    }
 
-      return amount;
+    return amount;
   }
 
   public get totalInputAmountStart(): BigNumber {
-      return this.order.info.baseInput.startAmount;
+    return this.order.info.baseInput.startAmount;
   }
 
   public get amount(): BigNumber {

@@ -1,21 +1,23 @@
-import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { TradeType } from '@uniswap/sdk-core';
+import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { CosignedV2DutchOrder, CosignerData } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
-import { HardQuoteRequest, Metric, QuoteResponse } from '../../entities';
+import { HardQuoteRequest, HardQuoteResponse, Metric, QuoteResponse } from '../../entities';
 import { NoQuotesAvailable, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
 import { getBestQuote } from '../quote/handler';
 import { ContainerInjected, RequestInjected } from './injector';
-import { HardQuoteRequestBody, HardQuoteRequestBodyJoi } from './schema';
+import {
+  HardQuoteRequestBody,
+  HardQuoteRequestBodyJoi,
+  HardQuoteResponseData,
+  HardQuoteResponseDataJoi,
+} from './schema';
 
-// TODO: use server key instead of hardcoded one
-const TEST_TODO_REMOVE_COSIGNER_PRIVATE_KEY = '0x21ce7f156da33cae063f8fa0043795f418e49e80a97c9edfc0b95c3d5596efe0';
-const COSIGNER_ADDRESS = '0x75B0561f3d3D38DEB090Cb19c162af538d922889';
 const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = 100; // non-exclusive fillers must override price by this much
 
 export class QuoteHandler extends APIGLambdaHandler<
@@ -23,14 +25,14 @@ export class QuoteHandler extends APIGLambdaHandler<
   RequestInjected,
   HardQuoteRequestBody,
   void,
-  null
+  HardQuoteResponseData
 > {
   public async handleRequest(
     params: APIHandleRequestParams<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>
-  ): Promise<ErrorResponse | Response<null>> {
+  ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
       requestInjected: { log, metric },
-      containerInjected: { quoters, orderServiceProvider },
+      containerInjected: { quoters, orderServiceProvider, cosignerWallet },
       requestBody,
     } = params;
     const start = Date.now();
@@ -40,7 +42,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     const request = HardQuoteRequest.fromHardRequestBody(requestBody);
 
     // we dont have access to the cosigner key, throw
-    if (request.order.info.cosigner !== COSIGNER_ADDRESS) {
+    if (request.order.info.cosigner !== cosignerWallet.address) {
       log.error({ cosigner: request.order.info.cosigner }, 'Unknown cosigner');
       throw new UnknownOrderCosignerError();
     }
@@ -67,12 +69,14 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     log.info({ bestQuote: bestQuote }, 'bestQuote');
 
-    // TODO: use server key to cosign
+    // TODO: use server key to cosign instead of local wallet
     const cosignerData = getCosignerData(request, bestQuote);
-    const cosignature = new ethers.Wallet(TEST_TODO_REMOVE_COSIGNER_PRIVATE_KEY)
-      ._signingKey()
-      .signDigest(request.order.cosignatureHash(cosignerData));
-    const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(request.order, cosignerData, ethers.utils.joinSignature(cosignature));
+    const cosignature = cosignerWallet._signingKey().signDigest(request.order.cosignatureHash(cosignerData));
+    const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(
+      request.order,
+      cosignerData,
+      ethers.utils.joinSignature(cosignature)
+    );
 
     try {
       await orderServiceProvider.postOrder(cosignedOrder, request.innerSig, request.quoteId);
@@ -83,10 +87,11 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.HARD_QUOTE_200, 1, MetricLoggerUnit.Count);
     metric.putMetric(Metric.HARD_QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+    const response = new HardQuoteResponse(request, cosignedOrder);
 
     return {
       statusCode: 200,
-      body: null,
+      body: response.toResponseJSON(),
     };
   }
 
@@ -99,7 +104,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected responseBodySchema(): Joi.ObjectSchema | null {
-    return null;
+    return HardQuoteResponseDataJoi;
   }
 }
 
@@ -108,23 +113,23 @@ export function getCosignerData(request: HardQuoteRequest, quote: QuoteResponse)
   // default to open order with the original prices
   let filler = ethers.constants.AddressZero;
   let inputAmount = BigNumber.from(0);
-  let outputAmounts = request.order.info.baseOutputs.map(() => BigNumber.from(0));
+  const outputAmounts = request.order.info.baseOutputs.map(() => BigNumber.from(0));
 
   // if the quote is better, then increase amounts by the difference
   if (request.type === TradeType.EXACT_INPUT) {
     if (quote.amountOut.gt(request.totalOutputAmountStart)) {
       const increase = quote.amountOut.sub(request.totalOutputAmountStart);
       // give all the increase to the first (swapper) output
-      outputAmounts[0] = outputAmounts[0].add(increase);
+      outputAmounts[0] = request.order.info.baseOutputs[0].startAmount.add(increase);
       if (quote.filler) {
-        filler = quote.filler
+        filler = quote.filler;
       }
     }
   } else {
-    if (quote.amountIn.gt(request.totalInputAmountStart)) {
+    if (quote.amountIn.lt(request.totalInputAmountStart)) {
       inputAmount = quote.amountIn;
       if (quote.filler) {
-        filler = quote.filler
+        filler = quote.filler;
       }
     }
   }
@@ -146,7 +151,7 @@ function getDecayStartTime(chainId: number): number {
       return nowTimestamp + 24; // 2 blocks
     default:
       return nowTimestamp + 10; // 10 seconds
-  };
+  }
 }
 
 function getDecayEndTime(chainId: number, startTime: number): number {
@@ -155,5 +160,5 @@ function getDecayEndTime(chainId: number, startTime: number): number {
       return startTime + 60; // 5 blocks
     default:
       return startTime + 30; // 30 seconds
-  };
+  }
 }

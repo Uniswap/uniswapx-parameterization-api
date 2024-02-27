@@ -11,7 +11,7 @@ export class FieldValidator {
     return ethers.utils.getAddress(value);
   });
 
-  public static readonly orderHash = Joi.string().regex(this.getHexadecimalRegex(64))
+  public static readonly orderHash = Joi.string().regex(this.getHexadecimalRegex(64));
 
   public static readonly amount = Joi.string().custom((value: string, helpers: CustomHelpers<string>) => {
     try {
@@ -46,10 +46,10 @@ export class FieldValidator {
   });
 
   private static getHexadecimalRegex(length?: number, maxLength = false): RegExp {
-    let lengthModifier = '*'
+    let lengthModifier = '*';
     if (length) {
-      lengthModifier = maxLength ? `{0,${length}}` : `{${length}}`
+      lengthModifier = maxLength ? `{0,${length}}` : `{${length}}`;
     }
-    return new RegExp(`^0x[0-9,a-z,A-Z]${lengthModifier}$`)
+    return new RegExp(`^0x[0-9,a-z,A-Z]${lengthModifier}$`);
   }
 }

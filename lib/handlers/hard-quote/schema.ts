@@ -22,27 +22,19 @@ export type HardQuoteRequestBody = {
 };
 
 export const HardQuoteResponseDataJoi = Joi.object({
-  chainId: FieldValidator.chainId.required(),
   requestId: FieldValidator.uuid.required(),
-  tokenIn: Joi.string().required(),
-  amountIn: FieldValidator.amount.required(),
-  tokenOut: Joi.string().required(),
-  amountOut: FieldValidator.amount.required(),
-  orderHash: FieldValidator.orderHash.required(),
-  swapper: FieldValidator.address.optional(),
-  filler: FieldValidator.address,
   quoteId: FieldValidator.uuid,
+  chainId: FieldValidator.chainId.required(),
+  encodedOrder: Joi.string().required(),
+  orderHash: FieldValidator.orderHash.required(),
+  filler: FieldValidator.address,
 });
 
 export type HardQuoteResponseData = {
-  chainId: number;
   requestId: string;
-  tokenIn: string;
-  amountIn: string;
-  tokenOut: string;
-  amountOut: string;
-  swapper: string;
-  orderHash: string,
-  filler?: string;
   quoteId?: string;
+  chainId: number;
+  encodedOrder: string;
+  orderHash: string;
+  filler?: string;
 };
