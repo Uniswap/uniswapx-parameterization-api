@@ -20,3 +20,29 @@ export type HardQuoteRequestBody = {
   tokenInChainId: number;
   tokenOutChainId: number;
 };
+
+export const HardQuoteResponseDataJoi = Joi.object({
+  chainId: FieldValidator.chainId.required(),
+  requestId: FieldValidator.uuid.required(),
+  tokenIn: Joi.string().required(),
+  amountIn: FieldValidator.amount.required(),
+  tokenOut: Joi.string().required(),
+  amountOut: FieldValidator.amount.required(),
+  orderHash: FieldValidator.orderHash.required(),
+  swapper: FieldValidator.address.optional(),
+  filler: FieldValidator.address,
+  quoteId: FieldValidator.uuid,
+});
+
+export type HardQuoteResponseData = {
+  chainId: number;
+  requestId: string;
+  tokenIn: string;
+  amountIn: string;
+  tokenOut: string;
+  amountOut: string;
+  swapper: string;
+  orderHash: string,
+  filler?: string;
+  quoteId?: string;
+};

@@ -30,3 +30,45 @@ export class NoQuotesAvailable extends CustomError {
     };
   }
 }
+
+export class OrderPostError extends CustomError {
+  private static MESSAGE = 'Error posting order';
+
+  constructor() {
+    super(OrderPostError.MESSAGE);
+    // Set the prototype explicitly.
+    Object.setPrototypeOf(this, OrderPostError.prototype);
+  }
+
+  toJSON(id?: string): APIGatewayProxyResult {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({
+        errorCode: ErrorCode.QuoteError,
+        detail: this.message,
+        id,
+      }),
+    };
+  }
+}
+
+export class UnknownOrderCosignerError extends CustomError {
+  private static MESSAGE = 'Unknown cosigner';
+
+  constructor() {
+    super(UnknownOrderCosignerError.MESSAGE);
+    // Set the prototype explicitly.
+    Object.setPrototypeOf(this, UnknownOrderCosignerError.prototype);
+  }
+
+  toJSON(id?: string): APIGatewayProxyResult {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({
+        errorCode: ErrorCode.QuoteError,
+        detail: this.message,
+        id,
+      }),
+    };
+  }
+}

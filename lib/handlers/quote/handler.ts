@@ -79,7 +79,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 }
 
 // fetch quotes from all quoters and return the best one
-async function getBestQuote(
+export async function getBestQuote(
   quoters: Quoter[],
   quoteRequest: QuoteRequest,
   log: Logger,
