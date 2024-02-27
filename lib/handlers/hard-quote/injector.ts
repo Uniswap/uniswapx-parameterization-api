@@ -1,3 +1,5 @@
+import { KMSClient } from '@aws-sdk/client-kms';
+import { KmsSigner } from '@uniswap/signer';
 import { IMetric, setGlobalLogger, setGlobalMetric } from '@uniswap/smart-order-router';
 import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
@@ -11,6 +13,7 @@ import {
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
 import { AWSMetricsLogger, UniswapXParamServiceMetricDimension } from '../../entities/aws-metrics-logger';
+import { checkDefined } from '../../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
@@ -23,6 +26,7 @@ import { HardQuoteRequestBody } from './schema';
 export interface ContainerInjected {
   quoters: Quoter[];
   firehose: FirehoseLogger;
+  cosigner: KmsSigner;
 }
 
 export interface RequestInjected extends ApiRInj {
@@ -46,6 +50,10 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       FADE_RATE_S3_KEY
     );
 
+    const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
+    const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
+    const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);
+
     const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
     await webhookProvider.fetchEndpoints();
 
@@ -66,6 +74,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     return {
       quoters: quoters,
       firehose: firehose,
+      cosigner,
     };
   }
 
