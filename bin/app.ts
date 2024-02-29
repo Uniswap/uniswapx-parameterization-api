@@ -99,6 +99,10 @@ export class APIPipeline extends Stack {
       synth: synthStep,
     });
 
+    const urlSecrets = sm.Secret.fromSecretAttributes(this, 'urlSecrets', {
+      secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-service-api-xCINOs',
+    });
+
     const rfqWebhookConfig = sm.Secret.fromSecretAttributes(this, 'RfqConfig', {
       secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:rfq-webhook-config-sy04bH',
     });
@@ -117,6 +121,7 @@ export class APIPipeline extends Stack {
       stage: STAGE.BETA,
       envVars: {
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
+        ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_BETA').toString(),
         FILL_LOG_SENDER_ACCOUNT: '321377678687',
         ORDER_LOG_SENDER_ACCOUNT: '321377678687',
         URA_ACCOUNT: '665191769009',
@@ -136,6 +141,7 @@ export class APIPipeline extends Stack {
       chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
       envVars: {
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
+        ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_PROD').toString(),
         FILL_LOG_SENDER_ACCOUNT: '316116520258',
         ORDER_LOG_SENDER_ACCOUNT: '316116520258',
         URA_ACCOUNT: '652077092967',

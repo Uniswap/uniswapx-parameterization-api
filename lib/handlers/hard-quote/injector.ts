@@ -2,6 +2,7 @@ import { IMetric, setGlobalLogger, setGlobalMetric } from '@uniswap/smart-order-
 import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
+import { Wallet } from 'ethers';
 
 import {
   BETA_S3_KEY,
@@ -11,7 +12,8 @@ import {
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
 import { AWSMetricsLogger, UniswapXParamServiceMetricDimension } from '../../entities/aws-metrics-logger';
-import { S3WebhookConfigurationProvider } from '../../providers';
+import { checkDefined } from '../../preconditions/preconditions';
+import { OrderServiceProvider, S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { MockFillerComplianceConfigurationProvider } from '../../providers/compliance';
@@ -23,6 +25,8 @@ import { HardQuoteRequestBody } from './schema';
 export interface ContainerInjected {
   quoters: Quoter[];
   firehose: FirehoseLogger;
+  orderServiceProvider: OrderServiceProvider;
+  cosignerWallet: Wallet;
 }
 
 export interface RequestInjected extends ApiRInj {
@@ -40,6 +44,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const stage = process.env['stage'];
     const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
 
+    const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
+
     const circuitBreakerProvider = new S3CircuitBreakerConfigurationProvider(
       log,
       `${FADE_RATE_BUCKET}-${stage}-1`,
@@ -48,6 +54,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
     await webhookProvider.fetchEndpoints();
+
+    const orderServiceProvider = new UniswapXServiceProvider(log, orderServiceUrl);
 
     // TODO: decide if we should handle filler compliance differently
     //const complianceKey = stage === STAGE.BETA ? BETA_COMPLIANCE_S3_KEY : PROD_COMPLIANCE_S3_KEY;
@@ -66,6 +74,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     return {
       quoters: quoters,
       firehose: firehose,
+      orderServiceProvider,
+      cosignerWallet: Wallet.createRandom(),
     };
   }
 
