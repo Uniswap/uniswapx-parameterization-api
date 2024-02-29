@@ -72,11 +72,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     // TODO: use server key to cosign instead of local wallet
     const cosignerData = getCosignerData(request, bestQuote);
     const cosignature = await cosigner.signDigest(request.order.cosignatureHash(cosignerData));
-    const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(
-      request.order,
-      cosignerData,
-      cosignature
-    );
+    const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(request.order, cosignerData, cosignature);
 
     try {
       await orderServiceProvider.postOrder(cosignedOrder, request.innerSig, request.quoteId);
