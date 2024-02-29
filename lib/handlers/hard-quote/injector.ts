@@ -14,7 +14,7 @@ import {
 } from '../../constants';
 import { AWSMetricsLogger, UniswapXParamServiceMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
-import { S3WebhookConfigurationProvider } from '../../providers';
+import { OrderServiceProvider, S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { MockFillerComplianceConfigurationProvider } from '../../providers/compliance';
@@ -27,6 +27,8 @@ export interface ContainerInjected {
   quoters: Quoter[];
   firehose: FirehoseLogger;
   cosigner: KmsSigner;
+  cosignerAddress: string;
+  orderServiceProvider: OrderServiceProvider;
 }
 
 export interface RequestInjected extends ApiRInj {
@@ -44,6 +46,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const stage = process.env['stage'];
     const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
 
+    const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
+
     const circuitBreakerProvider = new S3CircuitBreakerConfigurationProvider(
       log,
       `${FADE_RATE_BUCKET}-${stage}-1`,
@@ -53,9 +57,12 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
     const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
     const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);
+    const cosignerAddress = await cosigner.getAddress();
 
     const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
     await webhookProvider.fetchEndpoints();
+
+    const orderServiceProvider = new UniswapXServiceProvider(log, orderServiceUrl);
 
     // TODO: decide if we should handle filler compliance differently
     //const complianceKey = stage === STAGE.BETA ? BETA_COMPLIANCE_S3_KEY : PROD_COMPLIANCE_S3_KEY;
@@ -75,6 +82,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       quoters: quoters,
       firehose: firehose,
       cosigner,
+      cosignerAddress,
+      orderServiceProvider,
     };
   }
 

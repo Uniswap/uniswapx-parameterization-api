@@ -1,16 +1,15 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { BigNumber, utils } from 'ethers';
+import { BigNumber, ethers, utils } from 'ethers';
 
 import { HardQuoteRequestBody } from '../handlers/hard-quote';
-import { QuoteRequestDataJSON } from '.';
+import { QuoteRequest, QuoteRequestDataJSON } from '.';
 
 export class HardQuoteRequest {
   public order: UnsignedV2DutchOrder;
 
-  public static fromHardRequestBody(_body: HardQuoteRequestBody): HardQuoteRequest {
-    // TODO: parse hard request into the same V2 request object format
-    throw new Error('Method not implemented.');
+  public static fromHardRequestBody(body: HardQuoteRequestBody): HardQuoteRequest {
+    return new HardQuoteRequest(body);
   }
 
   constructor(private data: HardQuoteRequestBody) {
@@ -21,7 +20,7 @@ export class HardQuoteRequest {
     return {
       tokenInChainId: this.tokenInChainId,
       tokenOutChainId: this.tokenOutChainId,
-      swapper: utils.getAddress(this.swapper),
+      swapper: ethers.constants.AddressZero,
       requestId: this.requestId,
       tokenIn: this.tokenIn,
       tokenOut: this.tokenOut,
@@ -37,19 +36,24 @@ export class HardQuoteRequest {
   public toOpposingCleanJSON(): QuoteRequestDataJSON {
     const type = this.type === TradeType.EXACT_INPUT ? TradeType.EXACT_OUTPUT : TradeType.EXACT_INPUT;
     return {
-      tokenInChainId: this.tokenInChainId,
-      tokenOutChainId: this.tokenOutChainId,
-      requestId: this.requestId,
-      swapper: utils.getAddress(this.swapper),
+      ...this.toCleanJSON(),
       // switch tokenIn/tokenOut
       tokenIn: utils.getAddress(this.tokenOut),
       tokenOut: utils.getAddress(this.tokenIn),
       amount: this.amount.toString(),
       // switch tradeType
       type: TradeType[type],
-      numOutputs: this.numOutputs,
-      ...(this.quoteId && { quoteId: this.quoteId }),
     };
+  }
+
+  // transforms into a quote request that can be used to query quoters
+  public toQuoteRequest(): QuoteRequest {
+    return new QuoteRequest({
+      ...this.toCleanJSON(),
+      swapper: this.swapper,
+      amount: this.amount,
+      type: this.type,
+    });
   }
 
   public get requestId(): string {
@@ -76,16 +80,24 @@ export class HardQuoteRequest {
     return utils.getAddress(this.order.info.baseOutputs[0].token);
   }
 
+  public get totalOutputAmountStart(): BigNumber {
+    let amount = BigNumber.from(0);
+    for (const output of this.order.info.baseOutputs) {
+      amount = amount.add(output.startAmount);
+    }
+
+    return amount;
+  }
+
+  public get totalInputAmountStart(): BigNumber {
+    return this.order.info.baseInput.startAmount;
+  }
+
   public get amount(): BigNumber {
     if (this.type === TradeType.EXACT_INPUT) {
-      return this.order.info.baseInput.startAmount;
+      return this.totalInputAmountStart;
     } else {
-      const amount = BigNumber.from(0);
-      for (const output of this.order.info.baseOutputs) {
-        amount.add(output.startAmount);
-      }
-
-      return amount;
+      return this.totalOutputAmountStart;
     }
   }
 
@@ -101,6 +113,10 @@ export class HardQuoteRequest {
 
   public get cosigner(): string {
     return this.order.info.cosigner;
+  }
+
+  public get innerSig(): string {
+    return this.data.innerSig;
   }
 
   public get quoteId(): string | undefined {

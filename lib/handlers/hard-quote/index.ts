@@ -1,3 +1,3 @@
 export { QuoteHandler as HardQuoteHandler } from './handler';
-export { QuoteInjector as HardQuoteInjector } from './injector';
+export { ContainerInjected, QuoteInjector as HardQuoteInjector, RequestInjected } from './injector';
 export * from './schema';
