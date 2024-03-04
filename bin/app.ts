@@ -232,6 +232,7 @@ envVars['FILL_LOG_SENDER_ACCOUNT'] = process.env['FILL_LOG_SENDER_ACCOUNT'] || '
 envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
+envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {

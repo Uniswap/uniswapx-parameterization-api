@@ -3,9 +3,9 @@ import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { MetricsLogger, Unit } from 'aws-embedded-metrics';
 import Logger from 'bunyan';
 
+import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 import { Metric } from '../../entities';
 import { checkDefined } from '../../preconditions/preconditions';
-import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 
 export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
   private log: Logger;
@@ -40,15 +40,22 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
   }
 
   async fetchConfigurations(): Promise<void> {
-    const s3Res = await this.client.send(
-      new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: this.key,
-      })
-    );
-    const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
-    this.fillers = JSON.parse(await s3Body.transformToString()) as CircuitBreakerConfiguration[];
-    this.log.info({ config: this.fillers }, 'fetched circuit breaker config from S3');
+    try {
+      const s3Res = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: this.key,
+        })
+      );
+      const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
+      this.fillers = JSON.parse(await s3Body.transformToString()) as CircuitBreakerConfiguration[];
+      this.log.info({ config: this.fillers }, 'fetched circuit breaker config from S3');
+    } catch (e: any) {
+      this.log.error(
+        { name: e.name, message: e.message },
+        'error fetching circuit breaker config from S3; default to allowing all'
+      );
+    }
   }
 
   async putConfigurations(fillRates: Map<string, number>, metrics: MetricsLogger): Promise<void> {

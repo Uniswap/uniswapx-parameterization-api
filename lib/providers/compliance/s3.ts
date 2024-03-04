@@ -1,8 +1,8 @@
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { default as Logger } from 'bunyan';
 
-import { checkDefined } from '../../preconditions/preconditions';
 import { FillerComplianceConfiguration, FillerComplianceConfigurationProvider } from '.';
+import { checkDefined } from '../../preconditions/preconditions';
 
 export class S3FillerComplianceConfigurationProvider implements FillerComplianceConfigurationProvider {
   private log: Logger;
@@ -43,14 +43,21 @@ export class S3FillerComplianceConfigurationProvider implements FillerCompliance
 
   async fetchConfigs(): Promise<void> {
     const s3Client = new S3Client({});
-    const s3Res = await s3Client.send(
-      new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: this.key,
-      })
-    );
-    const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
-    this.configs = JSON.parse(await s3Body.transformToString()) as FillerComplianceConfiguration[];
-    this.log.info({ configsLength: this.configs.map((c) => c.addresses.length) }, `Fetched configs`);
+    try {
+      const s3Res = await s3Client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: this.key,
+        })
+      );
+      const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
+      this.configs = JSON.parse(await s3Body.transformToString()) as FillerComplianceConfiguration[];
+      this.log.info({ configsLength: this.configs.map((c) => c.addresses.length) }, `Fetched configs`);
+    } catch (e: any) {
+      this.log.info(
+        { name: e.name, message: e.message },
+        'Error fetching compliance s3 config. Default to allowing all'
+      );
+    }
   }
 }
