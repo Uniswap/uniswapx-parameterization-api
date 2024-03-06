@@ -38,7 +38,10 @@ export class FirehoseStack extends cdk.NestedStack {
         roleArn: firehoseRole.roleArn,
         compressionFormat: 'GZIP',
         prefix: 'events/',
-      } 
+        cloudWatchLoggingOptions: {
+          enabled: true,
+        },
+      },
     });
     this.analyticsStreamArn = analyticsEventsStream.attrArn;
   }
