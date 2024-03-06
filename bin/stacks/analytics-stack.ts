@@ -393,6 +393,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ANALYTICS_STREAM_ARN: analyticsStreamArn,
+        ...props.envVars,
       },
     });
 
@@ -410,6 +411,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ANALYTICS_STREAM_ARN: analyticsStreamArn,
+        ...props.envVars,
       },
     });
 
@@ -427,6 +429,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ANALYTICS_STREAM_ARN: analyticsStreamArn,
+        ...props.envVars,
       },
     });
 
@@ -444,6 +447,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
         ANALYTICS_STREAM_ARN: analyticsStreamArn,
+        ...props.envVars,
       },
     });
 
