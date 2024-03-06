@@ -475,9 +475,6 @@ export class AnalyticsStack extends cdk.NestedStack {
           roleArn: firehoseRole.roleArn,
           compressionFormat: 'UNCOMPRESSED',
         },
-        cloudWatchLoggingOptions: {
-          enabled: true,
-        },
         roleArn: firehoseRole.roleArn,
         copyCommand: {
           copyOptions: "JSON 'auto ignorecase'",
@@ -503,9 +500,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const rfqRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RfqRequestStream', {
       redshiftDestinationConfiguration: {
-        cloudWatchLoggingOptions: {
-          enabled: true,
-        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
@@ -539,9 +533,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const uraResponseStream = new aws_firehose.CfnDeliveryStream(this, 'UnifiedRoutingResponseStream', {
       redshiftDestinationConfiguration: {
-        cloudWatchLoggingOptions: {
-          enabled: true,
-        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
@@ -575,9 +566,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const rfqResponseFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RfqResponseStream', {
       redshiftDestinationConfiguration: {
-        cloudWatchLoggingOptions: {
-          enabled: true,
-        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
@@ -611,9 +599,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const fillStream = new aws_firehose.CfnDeliveryStream(this, 'FillRedshiftStream', {
       redshiftDestinationConfiguration: {
-        cloudWatchLoggingOptions: {
-          enabled: true,
-        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
@@ -647,9 +632,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const orderStream = new aws_firehose.CfnDeliveryStream(this, 'OrderStream', {
       redshiftDestinationConfiguration: {
-        cloudWatchLoggingOptions: {
-          enabled: true,
-        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
@@ -683,9 +665,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const botOrderLoaderStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderLoaderStream', {
       redshiftDestinationConfiguration: {
-        cloudWatchLoggingOptions: {
-          enabled: true,
-        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
@@ -719,9 +698,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const botOrderRouterStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderRouterStream', {
       redshiftDestinationConfiguration: {
-        cloudWatchLoggingOptions: {
-          enabled: true,
-        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
@@ -755,9 +731,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     const botOrderBroadcasterStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderBroadcasterStream', {
       redshiftDestinationConfiguration: {
-        cloudWatchLoggingOptions: {
-          enabled: true,
-        },
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
