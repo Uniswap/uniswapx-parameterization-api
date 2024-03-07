@@ -39,6 +39,7 @@ export interface AnalyticsStackProps extends cdk.NestedStackProps {
   quoteLambda: aws_lambda_nodejs.NodejsFunction;
   envVars: Record<string, string>;
   analyticsStreamArn: string;
+  stage: string;
 }
 
 /**
@@ -57,7 +58,7 @@ export class AnalyticsStack extends cdk.NestedStack {
 
   constructor(scope: Construct, id: string, props: AnalyticsStackProps) {
     super(scope, id, props);
-    const { quoteLambda, analyticsStreamArn } = props;
+    const { quoteLambda, analyticsStreamArn, stage } = props;
 
     /* S3 Initialization */
     const rfqRequestBucket = new aws_s3.Bucket(this, 'RfqRequestBucket');
@@ -394,6 +395,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         NODE_OPTIONS: '--enable-source-maps',
         ANALYTICS_STREAM_ARN: analyticsStreamArn,
         ...props.envVars,
+        stage,
       },
     });
 
@@ -412,6 +414,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         NODE_OPTIONS: '--enable-source-maps',
         ANALYTICS_STREAM_ARN: analyticsStreamArn,
         ...props.envVars,
+        stage,
       },
     });
 
@@ -430,6 +433,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         NODE_OPTIONS: '--enable-source-maps',
         ANALYTICS_STREAM_ARN: analyticsStreamArn,
         ...props.envVars,
+        stage,
       },
     });
 
@@ -448,6 +452,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         NODE_OPTIONS: '--enable-source-maps',
         ANALYTICS_STREAM_ARN: analyticsStreamArn,
         ...props.envVars,
+        stage,
       },
     });
 

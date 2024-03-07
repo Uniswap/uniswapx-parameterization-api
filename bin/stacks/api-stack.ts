@@ -445,6 +445,7 @@ export class APIStack extends cdk.Stack {
       quoteLambda,
       envVars: props.envVars,
       analyticsStreamArn: firehoseStack.analyticsStreamArn,
+      stage,
     });
 
     const cronStack = new CronStack(this, 'CronStack', {
