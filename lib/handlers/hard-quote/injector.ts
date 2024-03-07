@@ -23,10 +23,14 @@ import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { HardQuoteRequestBody } from './schema';
 
+interface Cosigner {
+  signDigest(digest: Buffer | string): Promise<string>;
+}
+
 export interface ContainerInjected {
   quoters: Quoter[];
   firehose: FirehoseLogger;
-  cosigner: KmsSigner;
+  cosigner: Cosigner;
   cosignerAddress: string;
   orderServiceProvider: OrderServiceProvider;
 }
