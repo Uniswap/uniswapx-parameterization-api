@@ -33,6 +33,7 @@ enum RS_DATA_TYPES {
   SLIPPAGE = 'float4',
   UnitInETH = 'float8',
   BOT_EVENT_TYPE = 'text', // 'fetch' || 'filter' || 'execution' || 'quote'
+  ORDER_TYPE = 'text', // 'Limit' || 'Dutch'
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
@@ -280,6 +281,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'outputEndAmount', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'orderType', dataType: RS_DATA_TYPES.ORDER_TYPE },
       ],
     });
 
