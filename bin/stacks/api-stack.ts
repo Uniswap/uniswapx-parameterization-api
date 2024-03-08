@@ -267,7 +267,7 @@ export class APIStack extends cdk.Stack {
     const hardQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'HardQuote', {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      entry: path.join(__dirname, '../../lib/handlers/hard-quote/exports.ts'),
       handler: 'hardQuoteHandler',
       vpc,
       vpcSubnets: {
