@@ -32,7 +32,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
       requestInjected: { log, metric },
-      containerInjected: { quoters, orderServiceProvider, cosignerWallet },
+      containerInjected: { quoters, orderServiceProvider, cosigner, cosignerAddress },
       requestBody,
     } = params;
     const start = Date.now();
@@ -42,7 +42,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     const request = HardQuoteRequest.fromHardRequestBody(requestBody);
 
     // we dont have access to the cosigner key, throw
-    if (request.order.info.cosigner !== cosignerWallet.address) {
+    if (request.order.info.cosigner !== cosignerAddress) {
       log.error({ cosigner: request.order.info.cosigner }, 'Unknown cosigner');
       throw new UnknownOrderCosignerError();
     }
@@ -71,12 +71,8 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     // TODO: use server key to cosign instead of local wallet
     const cosignerData = getCosignerData(request, bestQuote);
-    const cosignature = cosignerWallet._signingKey().signDigest(request.order.cosignatureHash(cosignerData));
-    const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(
-      request.order,
-      cosignerData,
-      ethers.utils.joinSignature(cosignature)
-    );
+    const cosignature = await cosigner.signDigest(request.order.cosignatureHash(cosignerData));
+    const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(request.order, cosignerData, cosignature);
 
     try {
       await orderServiceProvider.postOrder(cosignedOrder, request.innerSig, request.quoteId);

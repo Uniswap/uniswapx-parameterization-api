@@ -10,6 +10,7 @@ import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as aws_logs from 'aws-cdk-lib/aws-logs';
 import * as aws_waf from 'aws-cdk-lib/aws-wafv2';
+import { KmsStack } from './kms-stack'
 import { Construct } from 'constructs';
 import * as path from 'path';
 
@@ -43,6 +44,7 @@ export class APIStack extends cdk.Stack {
     }
   ) {
     super(parent, name, props);
+    const region = cdk.Stack.of(this).region;
     const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
 
     /*
@@ -146,13 +148,15 @@ export class APIStack extends cdk.Stack {
       ],
     });
 
-    const region = cdk.Stack.of(this).region;
     const apiArn = `arn:aws:apigateway:${region}::/restapis/${api.restApiId}/stages/${api.deploymentStage.stageName}`;
 
     new aws_waf.CfnWebACLAssociation(this, `${SERVICE_NAME}IPThrottlingAssociation`, {
       resourceArn: apiArn,
       webAclArn: ipThrottlingACL.getAtt('Arn').toString(),
     });
+
+    // KMS initialization
+    const kmsStack = new KmsStack(this, `${SERVICE_NAME}HardQuoteCosignerKey-1`)
 
     /*
      * Firehose Initialization
@@ -172,6 +176,15 @@ export class APIStack extends cdk.Stack {
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonRedshiftDataFullAccess'),
       ],
     });
+
+    // allow lambdas to access the cosigner key
+    lambdaRole.addToPolicy(
+      new aws_iam.PolicyStatement({
+        resources: [kmsStack.key.keyArn],
+        actions: ['kms:GetPublicKey', 'kms:Sign'],
+        effect: aws_iam.Effect.ALLOW,
+      })
+    )
 
     lambdaRole.addToPolicy(
       new aws_iam.PolicyStatement({
@@ -268,6 +281,8 @@ export class APIStack extends cdk.Stack {
       environment: {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
+        REGION: region,
+        KMS_KEY_ID: kmsStack.key.keyId,
         ...props.envVars,
         stage,
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,

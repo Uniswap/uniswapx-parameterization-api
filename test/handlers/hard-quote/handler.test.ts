@@ -89,7 +89,8 @@ describe('Quote handler', () => {
         getContainerInjected: () => {
           return {
             quoters,
-            cosignerWallet,
+            cosigner: cosignerWallet._signingKey(),
+            cosignerAddress: cosignerWallet.address,
             orderServiceProvider: new MockOrderServiceProvider(),
           };
         },

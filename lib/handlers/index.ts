@@ -4,9 +4,9 @@ import {
   postOrderProcessor,
   quoteProcessor,
 } from './blueprints/cw-log-firehose-processor';
+import { HardQuoteHandler, HardQuoteInjector } from './hard-quote';
 import { RfqHandler, RfqInjector } from './integration/rfq';
 import { MockQuoteInjector, QuoteHandler, QuoteInjector } from './quote';
-import { HardQuoteHandler, HardQuoteInjector } from './hard-quote';
 import { SwitchHandler, SwitchInjector } from './synth-switch';
 
 const quoteInjectorPromise = new QuoteInjector('quoteInjector').build();
