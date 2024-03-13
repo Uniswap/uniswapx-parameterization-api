@@ -41,6 +41,7 @@ export interface AnalyticsStackProps extends cdk.NestedStackProps {
   envVars: Record<string, string>;
   analyticsStreamArn: string;
   stage: string;
+  chatbotSNSArn?: string;
 }
 
 /**
@@ -59,7 +60,7 @@ export class AnalyticsStack extends cdk.NestedStack {
 
   constructor(scope: Construct, id: string, props: AnalyticsStackProps) {
     super(scope, id, props);
-    const { quoteLambda, analyticsStreamArn, stage } = props;
+    const { quoteLambda, analyticsStreamArn, stage, chatbotSNSArn } = props;
 
     /* S3 Initialization */
     const rfqRequestBucket = new aws_s3.Bucket(this, 'RfqRequestBucket');
@@ -470,6 +471,61 @@ export class AnalyticsStack extends cdk.NestedStack {
         ],
       })
     );
+    let chatBotTopic: cdk.aws_sns.ITopic;
+    if (chatbotSNSArn) {
+      chatBotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
+    }
+
+    /* log processor alarms */
+    [quoteProcessorLambda, fillEventProcessorLambda, postOrderProcessorLambda, botOrderEventsProcessorLambda].forEach(
+      (lambda) => {
+        const successRateSev2Name = `${lambda.node.id}-SEV2-SuccessRate`;
+        const successRateSev3Name = `${lambda.node.id}-SEV3-SuccessRate`;
+
+        const errors = lambda.metricErrors({
+          period: cdk.Duration.minutes(5),
+          statistic: cdk.aws_cloudwatch.Stats.SUM,
+          label: `${lambda.node.id} Errors`,
+        });
+
+        const invocations = lambda.metricInvocations({
+          period: cdk.Duration.minutes(5),
+          statistic: cdk.aws_cloudwatch.Stats.SUM,
+          label: `${lambda.node.id} Invocations`,
+        });
+
+        const successRate = new cdk.aws_cloudwatch.MathExpression({
+          expression: '100 - 100 * errors / MAX([errors, invocations])',
+          usingMetrics: {
+            errors,
+            invocations,
+          },
+          label: `${lambda.node.id} Success Rate`,
+        });
+
+        const successRateSev2 = new cdk.aws_cloudwatch.Alarm(this, successRateSev2Name, {
+          metric: successRate,
+          threshold: 60,
+          evaluationPeriods: 1,
+          comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_OR_EQUAL_TO_THRESHOLD,
+          actionsEnabled: true,
+        });
+
+        const successRateSev3 = new cdk.aws_cloudwatch.Alarm(this, successRateSev3Name, {
+          metric: successRate,
+          threshold: 90,
+          evaluationPeriods: 1,
+          comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_OR_EQUAL_TO_THRESHOLD,
+          actionsEnabled: true,
+        });
+
+        if (chatBotTopic) {
+          successRateSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+          successRateSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+        }
+      }
+    );
+
     // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-kinesisfirehose-deliverystream.html
     const uraRequestStream = new aws_firehose.CfnDeliveryStream(this, 'uraRequestStream', {

@@ -10,9 +10,9 @@ import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as aws_logs from 'aws-cdk-lib/aws-logs';
 import * as aws_waf from 'aws-cdk-lib/aws-wafv2';
-import { KmsStack } from './kms-stack'
 import { Construct } from 'constructs';
 import * as path from 'path';
+import { KmsStack } from './kms-stack';
 
 import { Metric } from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
@@ -156,7 +156,7 @@ export class APIStack extends cdk.Stack {
     });
 
     // KMS initialization
-    const kmsStack = new KmsStack(this, `${SERVICE_NAME}HardQuoteCosignerKey-1`)
+    const kmsStack = new KmsStack(this, `${SERVICE_NAME}HardQuoteCosignerKey-1`);
 
     /*
      * Firehose Initialization
@@ -184,7 +184,7 @@ export class APIStack extends cdk.Stack {
         actions: ['kms:GetPublicKey', 'kms:Sign'],
         effect: aws_iam.Effect.ALLOW,
       })
-    )
+    );
 
     lambdaRole.addToPolicy(
       new aws_iam.PolicyStatement({
@@ -461,6 +461,7 @@ export class APIStack extends cdk.Stack {
       envVars: props.envVars,
       analyticsStreamArn: firehoseStack.analyticsStreamArn,
       stage,
+      chatbotSNSArn,
     });
 
     const cronStack = new CronStack(this, 'CronStack', {
