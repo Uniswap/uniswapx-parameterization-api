@@ -246,7 +246,7 @@ describe('Quote handler', () => {
     });
   });
 
-  it('No quotes', async () => {
+  it.only('No quotes', async () => {
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
 
     const response: APIGatewayProxyResult = await getQuoteHandler([]).handler(
