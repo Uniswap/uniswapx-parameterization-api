@@ -22,9 +22,6 @@ import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 
-const swapperWallet = Wallet.createRandom();
-const cosignerWallet = Wallet.createRandom();
-
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
@@ -47,7 +44,7 @@ export const getOrder = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV2Dut
         nonce: BigNumber.from(10),
         additionalValidationContract: ethers.constants.AddressZero,
         additionalValidationData: '0x',
-        cosigner: cosignerWallet.address,
+        cosigner: ethers.constants.AddressZero,
         cosignerData: undefined,
         baseInput: {
           token: TOKEN_IN,
@@ -71,6 +68,9 @@ export const getOrder = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV2Dut
 };
 
 describe('Quote handler', () => {
+  const swapperWallet = Wallet.createRandom();
+  const cosignerWallet = Wallet.createRandom();
+
   // Creating mocks for all the handler dependencies.
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
@@ -114,7 +114,6 @@ describe('Quote handler', () => {
       tokenOutChainId: CHAIN_ID,
       encodedInnerOrder: order.serialize(),
       innerSig: sig,
-      cosigner: cosignerWallet.address,
     };
   };
 
@@ -247,8 +246,7 @@ describe('Quote handler', () => {
     });
   });
 
-  // TODO: remove only after posting order is unblocked
-  it.only('No quotes', async () => {
+  it('No quotes', async () => {
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
 
     const response: APIGatewayProxyResult = await getQuoteHandler([]).handler(
