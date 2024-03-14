@@ -124,7 +124,6 @@ describe('Quote handler', () => {
   it('Simple request and response', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
-    console.log(request);
 
     const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
       getEvent(request),
