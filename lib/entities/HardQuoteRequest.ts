@@ -2,8 +2,8 @@ import { TradeType } from '@uniswap/sdk-core';
 import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers, utils } from 'ethers';
 
-import { HardQuoteRequestBody } from '../handlers/hard-quote';
 import { QuoteRequest, QuoteRequestDataJSON } from '.';
+import { HardQuoteRequestBody } from '../handlers/hard-quote';
 
 export class HardQuoteRequest {
   public order: UnsignedV2DutchOrder;

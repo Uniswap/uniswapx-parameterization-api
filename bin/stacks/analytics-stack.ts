@@ -38,6 +38,7 @@ enum RS_DATA_TYPES {
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
   quoteLambda: aws_lambda_nodejs.NodejsFunction;
+  hardQuoteLambda: aws_lambda_nodejs.NodejsFunction;
   envVars: Record<string, string>;
   analyticsStreamArn: string;
   stage: string;
@@ -60,12 +61,14 @@ export class AnalyticsStack extends cdk.NestedStack {
 
   constructor(scope: Construct, id: string, props: AnalyticsStackProps) {
     super(scope, id, props);
-    const { quoteLambda, analyticsStreamArn, stage, chatbotSNSArn } = props;
+    const { quoteLambda, hardQuoteLambda, analyticsStreamArn, stage, chatbotSNSArn } = props;
 
     /* S3 Initialization */
     const rfqRequestBucket = new aws_s3.Bucket(this, 'RfqRequestBucket');
+    const hardRequestBucket = new aws_s3.Bucket(this, 'HardRequestBucket');
     const unifiedRoutingRequestBucket = new aws_s3.Bucket(this, 'UnifiedRoutingRequestBucket');
     const rfqResponseBucket = new aws_s3.Bucket(this, 'RfqResponseBucket');
+    const hardResponseBucket = new aws_s3.Bucket(this, 'HardResponseBucket');
     const unifiedRoutingResponseBucket = new aws_s3.Bucket(this, 'UnifiedRoutingResponseBucket');
     const fillBucket = new aws_s3.Bucket(this, 'FillBucket');
     const ordersBucket = new aws_s3.Bucket(this, 'OrdersBucket');
@@ -76,6 +79,8 @@ export class AnalyticsStack extends cdk.NestedStack {
     const dsRole = aws_iam.Role.fromRoleArn(this, 'DsRole', 'arn:aws:iam::867401673276:user/bq-load-sa');
     rfqRequestBucket.grantRead(dsRole);
     rfqResponseBucket.grantRead(dsRole);
+    hardRequestBucket.grantRead(dsRole);
+    hardResponseBucket.grantRead(dsRole);
     unifiedRoutingRequestBucket.grantRead(dsRole);
     unifiedRoutingResponseBucket.grantRead(dsRole);
     fillBucket.grantRead(dsRole);
@@ -184,6 +189,18 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
+    const hardRequestTable = new aws_rs.Table(this, 'HardRequestTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'HardRequests',
+      tableColumns: [
+        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
+      ],
+    });
+
     const uraResponseTable = new aws_rs.Table(this, 'UnifiedRoutingResponseTable', {
       cluster: rsCluster,
       adminUser: creds,
@@ -218,6 +235,27 @@ export class AnalyticsStack extends cdk.NestedStack {
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
       tableName: 'RfqResponses',
+      tableColumns: [
+        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
+        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
+        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
+        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
+        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
+      ],
+    });
+
+    const hardResponseTable = new aws_rs.Table(this, 'HardResponseTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'HardResponses',
       tableColumns: [
         { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
         { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
@@ -576,6 +614,72 @@ export class AnalyticsStack extends cdk.NestedStack {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: rfqRequestTable.tableName,
           dataTableColumns: rfqRequestTable.tableColumns.map((column) => column.name).toString(),
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: quoteProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const hardRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'HardRequestStream', {
+      redshiftDestinationConfiguration: {
+        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
+        username: 'admin',
+        password: creds.secretValueFromJson('password').toString(),
+        s3Configuration: {
+          bucketArn: rfqRequestBucket.bucketArn,
+          roleArn: firehoseRole.roleArn,
+          compressionFormat: 'UNCOMPRESSED',
+        },
+        roleArn: firehoseRole.roleArn,
+        copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
+          dataTableName: hardRequestTable.tableName,
+          dataTableColumns: hardRequestTable.tableColumns.map((column) => column.name).toString(),
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: quoteProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const hardResponseFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'HardResponseStream', {
+      redshiftDestinationConfiguration: {
+        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
+        username: 'admin',
+        password: creds.secretValueFromJson('password').toString(),
+        s3Configuration: {
+          bucketArn: rfqRequestBucket.bucketArn,
+          roleArn: firehoseRole.roleArn,
+          compressionFormat: 'UNCOMPRESSED',
+        },
+        roleArn: firehoseRole.roleArn,
+        copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
+          dataTableName: hardResponseTable.tableName,
+          dataTableColumns: hardResponseTable.tableColumns.map((column) => column.name).toString(),
         },
         processingConfiguration: {
           enabled: true,
@@ -1009,6 +1113,20 @@ export class AnalyticsStack extends cdk.NestedStack {
       destinationArn: rfqResponseFirehoseStream.attrArn,
       filterPattern: '{ $.eventType = "QuoteResponse" }',
       logGroupName: quoteLambda.logGroup.logGroupName,
+      roleArn: subscriptionRole.roleArn,
+    });
+
+    new aws_logs.CfnSubscriptionFilter(this, 'HardRequestSub', {
+      destinationArn: hardRequestFirehoseStream.attrArn,
+      filterPattern: '{ $.eventType = "HardRequest" }',
+      logGroupName: hardQuoteLambda.logGroup.logGroupName,
+      roleArn: subscriptionRole.roleArn,
+    });
+
+    new aws_logs.CfnSubscriptionFilter(this, 'HardResponseSub', {
+      destinationArn: hardResponseFirehoseStream.attrArn,
+      filterPattern: '{ $.eventType = "HardResponse" }',
+      logGroupName: hardQuoteLambda.logGroup.logGroupName,
       roleArn: subscriptionRole.roleArn,
     });
 

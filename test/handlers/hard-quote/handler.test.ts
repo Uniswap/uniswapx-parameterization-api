@@ -18,7 +18,7 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { MockOrderServiceProvider } from '../../../lib/providers';
-import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 
@@ -124,6 +124,7 @@ describe('Quote handler', () => {
   it('Simple request and response', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+    console.log(request);
 
     const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
       getEvent(request),
@@ -245,7 +246,7 @@ describe('Quote handler', () => {
     });
   });
 
-  it.only('No quotes', async () => {
+  it('No quotes', async () => {
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
 
     const response: APIGatewayProxyResult = await getQuoteHandler([]).handler(
