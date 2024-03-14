@@ -7,6 +7,7 @@ export const HardQuoteRequestBodyJoi = Joi.object({
   requestId: FieldValidator.requestId.required(),
   quoteId: FieldValidator.uuid.optional(),
   encodedInnerOrder: Joi.string().required(),
+  cosigner: FieldValidator.address.required(),
   innerSig: FieldValidator.rawSignature.required(),
   tokenInChainId: FieldValidator.chainId.required(),
   tokenOutChainId: Joi.number().integer().valid(Joi.ref('tokenInChainId')).required(),
@@ -17,6 +18,7 @@ export type HardQuoteRequestBody = {
   quoteId?: string;
   encodedInnerOrder: string;
   innerSig: string;
+  cosigner: string;
   tokenInChainId: number;
   tokenOutChainId: number;
 };

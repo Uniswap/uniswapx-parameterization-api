@@ -10,6 +10,7 @@ const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const REQUEST_ID = uuidv4();
 const QUOTE_ID = uuidv4();
+const COSIGNER = '0x0000000000000000000000000000000000000000';
 
 const validTokenIn = [USDC, WETH].reduce(lowerUpper, []);
 const validTokenOut = [USDC, WETH].reduce(lowerUpper, []);
@@ -41,6 +42,7 @@ const validHardRequestBodyCombos = validTokenIn.flatMap((tokenIn) =>
         tokenInChainId: 1,
         tokenOutChainId: 1,
         encodedInnerOrder: order.serialize(),
+        cosigner: COSIGNER,
         innerSig:
           '0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
       };
@@ -61,6 +63,7 @@ describe('hard-quote schemas', () => {
           quoteId: QUOTE_ID,
           encodedInnerOrder: body.encodedInnerOrder,
           innerSig: body.innerSig,
+          cosigner: COSIGNER,
         });
       }
     });
@@ -90,31 +93,36 @@ describe('hard-quote schemas', () => {
     });
 
     it('requires tokenInChainId to be defined', () => {
-      const { tokenOutChainId, requestId, quoteId, encodedInnerOrder, innerSig } = validHardRequestBodyCombos[0];
+      const { tokenOutChainId, requestId, quoteId, encodedInnerOrder, innerSig, cosigner } =
+        validHardRequestBodyCombos[0];
       const validated = HardQuoteRequestBodyJoi.validate({
         tokenOutChainId,
         requestId,
         quoteId,
         encodedInnerOrder,
         innerSig,
+        cosigner,
       });
       expect(validated.error?.message).toEqual('"tokenInChainId" is required');
     });
 
     it('requires tokenOutChainId to be defined', () => {
-      const { tokenInChainId, requestId, quoteId, encodedInnerOrder, innerSig } = validHardRequestBodyCombos[0];
+      const { tokenInChainId, requestId, quoteId, encodedInnerOrder, innerSig, cosigner } =
+        validHardRequestBodyCombos[0];
       const validated = HardQuoteRequestBodyJoi.validate({
         tokenInChainId,
         requestId,
         quoteId,
         encodedInnerOrder,
         innerSig,
+        cosigner,
       });
       expect(validated.error?.message).toEqual('"tokenOutChainId" is required');
     });
 
     it('requires tokenOutChainId and tokenInChainId to be the same value', () => {
-      const { tokenInChainId, requestId, quoteId, encodedInnerOrder, innerSig } = validHardRequestBodyCombos[0];
+      const { tokenInChainId, requestId, quoteId, encodedInnerOrder, innerSig, cosigner } =
+        validHardRequestBodyCombos[0];
       const validated = HardQuoteRequestBodyJoi.validate({
         tokenInChainId,
         tokenOutChainId: 5,
@@ -122,6 +130,7 @@ describe('hard-quote schemas', () => {
         quoteId,
         encodedInnerOrder,
         innerSig,
+        cosigner,
       });
       expect(validated.error?.message).toContain('"tokenOutChainId" must be [ref:tokenInChainId]');
     });
