@@ -4,7 +4,6 @@ import { CosignedV2DutchOrder, CosignerData } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
-import { EventType } from 'aws-cdk-lib/aws-s3';
 import { HardQuoteRequest, HardQuoteResponse, Metric, QuoteResponse } from '../../entities';
 import { NoQuotesAvailable, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
