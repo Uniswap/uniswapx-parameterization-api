@@ -237,7 +237,7 @@ export class APIStack extends cdk.Stack {
     const quoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Quote', {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      entry: path.join(__dirname, '../../lib/handlers/quote/exports.ts'),
       handler: 'quoteHandler',
       vpc,
       vpcSubnets: {
@@ -299,7 +299,7 @@ export class APIStack extends cdk.Stack {
     const switchLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Switch', {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      entry: path.join(__dirname, '../../lib/handlers/synth-switch/exports.ts'),
       handler: 'switchHandler',
       memorySize: 512,
       bundling: {
@@ -325,7 +325,7 @@ export class APIStack extends cdk.Stack {
     const mockQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'mockQuote', {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      entry: path.join(__dirname, '../../lib/handlers/quote/exports.ts'),
       handler: 'mockQuoteHandler',
       memorySize: 512,
       bundling: {
@@ -351,7 +351,7 @@ export class APIStack extends cdk.Stack {
     const integrationRfqLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Rfq', {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      entry: path.join(__dirname, '../../lib/handlers/integration/rfq/exports.ts'),
       handler: 'rfqHandler',
       memorySize: 512,
       bundling: {
