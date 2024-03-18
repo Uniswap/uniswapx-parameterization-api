@@ -47,21 +47,28 @@ export class QuoteHandler extends APIGLambdaHandler<
       throw new UnknownOrderCosignerError();
     }
 
-    // TODO: finalize on v2 metrics logging
+    // Instead of decoding the order, we rely on frontend passing in the requestId
+    //   from indicative quote
     log.info({
-      eventType: 'HardQuoteRequest',
+      eventType: 'HardRequest',
       body: {
         requestId: request.requestId,
+        quoteId: request.quoteId,
         tokenInChainId: request.tokenInChainId,
-        tokenOutChainId: request.tokenInChainId,
-        encoded: requestBody.encodedInnerOrder,
-        sig: requestBody.innerSig,
+        tokenOutChainId: request.tokenOutChainId,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        offerer: request.swapper,
+        amount: request.amount.toString(),
+        type: TradeType[request.type],
+        numOutputs: request.numOutputs,
+        cosigner: request.order.info.cosigner,
         createdAt: timestampInMstoSeconds(start),
         createdAtMs: start.toString(),
       },
     });
 
-    const bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric);
+    const bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, 'HardResponse');
     if (!bestQuote) {
       metric.putMetric(Metric.HARD_QUOTE_404, 1, MetricLoggerUnit.Count);
       throw new NoQuotesAvailable();
@@ -75,7 +82,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(request.order, cosignerData, cosignature);
 
     try {
-      await orderServiceProvider.postOrder(cosignedOrder, request.innerSig, request.quoteId);
+      await orderServiceProvider.postOrder(cosignedOrder, request.innerSig, bestQuote.quoteId);
     } catch (e) {
       metric.putMetric(Metric.HARD_QUOTE_400, 1, MetricLoggerUnit.Count);
       throw new OrderPostError();

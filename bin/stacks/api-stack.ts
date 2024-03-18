@@ -307,7 +307,7 @@ export class APIStack extends cdk.Stack {
         sourceMap: true,
       },
       environment: {
-        VERSION: '2',
+        VERSION: '3',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
@@ -458,6 +458,7 @@ export class APIStack extends cdk.Stack {
      */
     const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
       quoteLambda,
+      hardQuoteLambda,
       envVars: props.envVars,
       analyticsStreamArn: firehoseStack.analyticsStreamArn,
       stage,

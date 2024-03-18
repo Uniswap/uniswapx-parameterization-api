@@ -12,6 +12,8 @@ import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-han
 import { ContainerInjected, RequestInjected } from './injector';
 import { PostQuoteRequestBody, PostQuoteRequestBodyJoi, PostQuoteResponse, URAResponseJoi } from './schema';
 
+export type EventType = 'QuoteResponse' | 'HardResponse';
+
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
   RequestInjected,
@@ -83,7 +85,8 @@ export async function getBestQuote(
   quoters: Quoter[],
   quoteRequest: QuoteRequest,
   log: Logger,
-  metric: IMetric
+  metric: IMetric,
+  eventType: EventType = 'QuoteResponse'
 ): Promise<QuoteResponse | null> {
   const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat();
   switch (responses.length) {
@@ -107,7 +110,7 @@ export async function getBestQuote(
   // return the response with the highest amountOut value
   return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
     log.info({
-      eventType: 'QuoteResponse',
+      eventType: eventType,
       body: { ...quote.toLog(), offerer: quote.swapper },
     });
 
