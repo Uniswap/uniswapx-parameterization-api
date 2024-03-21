@@ -26,7 +26,7 @@ enum RS_DATA_TYPES {
   TIMESTAMP_MS = 'char(13)', // unix timestamp in milliseconds
   BIGINT = 'bigint',
   INTEGER = 'integer',
-  TERMINAL_STATUS = 'varchar(18)', // 'filled' || 'expired' || 'cancelled || 'new' || 'open' || 'insufficient-funds'
+  TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled || 'new' || 'open'
   TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
   ROUTING = 'text',
   CALL_DATA = 'varchar(5000)',
