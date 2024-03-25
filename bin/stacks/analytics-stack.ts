@@ -939,6 +939,90 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    /* Firehose Alarms */
+    const allStreams = [
+      uraRequestStream,
+      rfqRequestFirehoseStream,
+      hardRequestFirehoseStream,
+      hardResponseFirehoseStream,
+      uraResponseStream,
+      rfqResponseFirehoseStream,
+      fillStream,
+      orderStream,
+      botOrderLoaderStream,
+      botOrderRouterStream,
+      botOrderBroadcasterStream,
+    ];
+
+    allStreams.forEach((stream) => {
+      const s3DeliverySuccessSev3Name = `${stream.node.id}-SEV3-S3Delivery`;
+      const s3DeliverySuccessSev2Name = `${stream.node.id}-SEV2-S3Delivery`;
+
+      const redshiftDeliverySuccessSev3Name = `${stream.node.id}-SEV3-RedshiftDelivery`;
+      const redshiftDeliverySuccessSev2Name = `${stream.node.id}-SEV2-RedshiftDelivery`;
+
+      const deliveryToS3 = new cdk.aws_cloudwatch.Metric({
+        namespace: 'AWS/Firehose',
+        metricName: 'DeliveryToS3.Success',
+        dimensionsMap: {
+          DeliveryStreamName: stream.ref,
+        },
+        statistic: 'Average',
+        period: cdk.Duration.minutes(5),
+      });
+
+      const deliveryToRedshift = new cdk.aws_cloudwatch.Metric({
+        namespace: 'AWS/Firehose',
+        metricName: 'DeliveryToRedshift.Success',
+        dimensionsMap: {
+          DeliveryStreamName: stream.ref,
+        },
+        statistic: 'Average',
+        period: cdk.Duration.minutes(5),
+      });
+
+      const s3DeliverySev3 = new cdk.aws_cloudwatch.Alarm(this, s3DeliverySuccessSev3Name, {
+        metric: deliveryToS3,
+        threshold: 0.95,
+        evaluationPeriods: 3,
+        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        actionsEnabled: true,
+      });
+
+      const s3DeliverySev2 = new cdk.aws_cloudwatch.Alarm(this, s3DeliverySuccessSev2Name, {
+        metric: deliveryToS3,
+        threshold: 0.85,
+        evaluationPeriods: 3,
+        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        actionsEnabled: true,
+      });
+
+      const redshiftDeliverySev3 = new cdk.aws_cloudwatch.Alarm(this, redshiftDeliverySuccessSev3Name, {
+        metric: deliveryToRedshift,
+        threshold: 0.95,
+        evaluationPeriods: 3,
+        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
+        actionsEnabled: true,
+      });
+
+      const redshiftDeliverySev2 = new cdk.aws_cloudwatch.Alarm(this, redshiftDeliverySuccessSev2Name, {
+        metric: deliveryToRedshift,
+        threshold: 0.85,
+        evaluationPeriods: 3,
+        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
+        actionsEnabled: true,
+      });
+
+      if (chatBotTopic) {
+        s3DeliverySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+        s3DeliverySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+        redshiftDeliverySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+        redshiftDeliverySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+      }
+    });
+
     /* Subscription Filter Initialization */
     const subscriptionRole = new aws_iam.Role(this, 'SubscriptionRole', {
       assumedBy: new aws_iam.ServicePrincipal('logs.amazonaws.com'),
