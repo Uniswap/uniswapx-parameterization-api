@@ -313,27 +313,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const activeOrdersTable = new aws_rs.Table(this, 'activeOrdersTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'ActiveOrders',
-      tableColumns: [
-        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'orderStatus', dataType: RS_DATA_TYPES.ALL_STATUS },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'logTime', dataType: RS_DATA_TYPES.TIMESTAMP },
-      ],
-    });
-
     const postedOrdersTable = new aws_rs.Table(this, 'postedOrdersTable', {
       cluster: rsCluster,
       adminUser: creds,
@@ -855,36 +834,13 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    // cannot setup log processor for s3 destination via cfnDeliveryStream even though
+    //    it's supported through the console :(
     const activeOrderStream = new aws_firehose.CfnDeliveryStream(this, 'activeOrderRedshiftStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: activeOrdersBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
+      s3DestinationConfiguration: {
+        bucketArn: activeOrdersBucket.bucketArn,
         roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: activeOrdersTable.tableName,
-          dataTableColumns: activeOrdersTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: activeOrderProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
+        compressionFormat: 'UNCOMPRESSED',
       },
     });
 
@@ -1030,6 +986,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       rfqResponseFirehoseStream,
       fillStream,
       orderStream,
+      activeOrderStream,
       botOrderLoaderStream,
       botOrderRouterStream,
       botOrderBroadcasterStream,
@@ -1127,7 +1084,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       destinationName: 'fillEventDestination',
     });
 
-    const activeDestination = new aws_logs.CfnDestination(this, 'activeOrderEventDestination', {
+    const activeOrderDestination = new aws_logs.CfnDestination(this, 'activeOrderEventDestination', {
       roleArn: subscriptionRole.roleArn,
       targetArn: activeOrderStream.attrArn,
       destinationName: 'activeOrderEventDestination',
@@ -1186,7 +1143,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           },
         ],
       });
-      activeDestination.destinationPolicy = JSON.stringify({
+      activeOrderDestination.destinationPolicy = JSON.stringify({
         Version: '2012-10-17',
         Statement: [
           {
