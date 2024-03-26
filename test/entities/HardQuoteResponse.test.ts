@@ -21,6 +21,8 @@ const CHAIN_ID = 1;
 const fixedTime = 4206969;
 jest.spyOn(Date, 'now').mockImplementation(() => fixedTime);
 
+const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = ethers.BigNumber.from(100);
+
 describe('HardQuoteResponse', () => {
   const swapperWallet = Wallet.createRandom();
   const cosignerWallet = Wallet.createRandom();
@@ -60,9 +62,9 @@ describe('HardQuoteResponse', () => {
         decayStartTime: now + 100,
         decayEndTime: now + 200,
         exclusiveFiller: FILLER,
-        exclusivityOverrideBps: 100,
-        inputAmount: parseEther('1'),
-        outputAmounts: [parseEther('1')],
+        exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+        inputOverride: parseEther('1'),
+        outputOverrides: [parseEther('1')],
       }
     );
     expect(quoteResponse.toResponseJSON()).toEqual({
@@ -83,9 +85,9 @@ describe('HardQuoteResponse', () => {
         decayStartTime: now + 100,
         decayEndTime: now + 200,
         exclusiveFiller: FILLER,
-        exclusivityOverrideBps: 100,
-        inputAmount: ethers.utils.parseEther('1'),
-        outputAmounts: [ethers.utils.parseEther('1')],
+        exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+        inputOverride: ethers.utils.parseEther('1'),
+        outputOverrides: [ethers.utils.parseEther('1')],
       }
     );
     expect(quoteResponse.toLog()).toEqual({
@@ -111,9 +113,9 @@ describe('HardQuoteResponse', () => {
           decayStartTime: now + 100,
           decayEndTime: now + 200,
           exclusiveFiller: FILLER,
-          exclusivityOverrideBps: 100,
-          inputAmount: parseEther('1'),
-          outputAmounts: [parseEther('2')],
+          exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+          inputOverride: parseEther('1'),
+          outputOverrides: [parseEther('2')],
         }
       );
       expect(quoteResponse.amountOut).toEqual(parseEther('2'));
@@ -124,12 +126,12 @@ describe('HardQuoteResponse', () => {
       const quoteResponse = await getResponse(
         {
           cosigner: cosignerWallet.address,
-          baseInput: {
+          input: {
             token: TOKEN_IN,
             startAmount: parseEther('1'),
             endAmount: parseEther('1.1'),
           },
-          baseOutputs: [
+          outputs: [
             {
               token: TOKEN_OUT,
               startAmount: parseEther('1'),
@@ -142,9 +144,9 @@ describe('HardQuoteResponse', () => {
           decayStartTime: now + 100,
           decayEndTime: now + 200,
           exclusiveFiller: FILLER,
-          exclusivityOverrideBps: 100,
-          inputAmount: parseEther('0.8'),
-          outputAmounts: [parseEther('1')],
+          exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+          inputOverride: parseEther('0.8'),
+          outputOverrides: [parseEther('1')],
         }
       );
       expect(quoteResponse.amountIn).toEqual(parseEther('0.8'));
