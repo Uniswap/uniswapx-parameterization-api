@@ -18,7 +18,7 @@ import {
   HardQuoteResponseDataJoi,
 } from './schema';
 
-const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = 100; // non-exclusive fillers must override price by this much
+const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(100); // non-exclusive fillers must override price by this much
 
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
@@ -115,22 +115,22 @@ export function getCosignerData(request: HardQuoteRequest, quote: QuoteResponse)
   const decayStartTime = getDecayStartTime(request.tokenInChainId);
   // default to open order with the original prices
   let filler = ethers.constants.AddressZero;
-  let inputAmount = BigNumber.from(0);
-  const outputAmounts = request.order.info.baseOutputs.map(() => BigNumber.from(0));
+  let inputOverride = BigNumber.from(0);
+  const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
 
   // if the quote is better, then increase amounts by the difference
   if (request.type === TradeType.EXACT_INPUT) {
     if (quote.amountOut.gt(request.totalOutputAmountStart)) {
       const increase = quote.amountOut.sub(request.totalOutputAmountStart);
       // give all the increase to the first (swapper) output
-      outputAmounts[0] = request.order.info.baseOutputs[0].startAmount.add(increase);
+      outputOverrides[0] = request.order.info.outputs[0].startAmount.add(increase);
       if (quote.filler) {
         filler = quote.filler;
       }
     }
   } else {
     if (quote.amountIn.lt(request.totalInputAmountStart)) {
-      inputAmount = quote.amountIn;
+      inputOverride = quote.amountIn;
       if (quote.filler) {
         filler = quote.filler;
       }
@@ -142,8 +142,8 @@ export function getCosignerData(request: HardQuoteRequest, quote: QuoteResponse)
     decayEndTime: getDecayEndTime(request.tokenInChainId, decayStartTime),
     exclusiveFiller: filler,
     exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
-    inputAmount: inputAmount,
-    outputAmounts: outputAmounts,
+    inputOverride: inputOverride,
+    outputOverrides: outputOverrides,
   };
 }
 

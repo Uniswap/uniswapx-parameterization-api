@@ -73,16 +73,16 @@ export class HardQuoteRequest {
   }
 
   public get tokenIn(): string {
-    return utils.getAddress(this.order.info.baseInput.token);
+    return utils.getAddress(this.order.info.input.token);
   }
 
   public get tokenOut(): string {
-    return utils.getAddress(this.order.info.baseOutputs[0].token);
+    return utils.getAddress(this.order.info.outputs[0].token);
   }
 
   public get totalOutputAmountStart(): BigNumber {
     let amount = BigNumber.from(0);
-    for (const output of this.order.info.baseOutputs) {
+    for (const output of this.order.info.outputs) {
       amount = amount.add(output.startAmount);
     }
 
@@ -90,7 +90,7 @@ export class HardQuoteRequest {
   }
 
   public get totalInputAmountStart(): BigNumber {
-    return this.order.info.baseInput.startAmount;
+    return this.order.info.input.startAmount;
   }
 
   public get amount(): BigNumber {
@@ -102,13 +102,13 @@ export class HardQuoteRequest {
   }
 
   public get type(): TradeType {
-    return this.order.info.baseInput.startAmount.eq(this.order.info.baseInput.endAmount)
+    return this.order.info.input.startAmount.eq(this.order.info.input.endAmount)
       ? TradeType.EXACT_INPUT
       : TradeType.EXACT_OUTPUT;
   }
 
   public get numOutputs(): number {
-    return this.order.info.baseOutputs.length;
+    return this.order.info.outputs.length;
   }
 
   public get cosigner(): string {

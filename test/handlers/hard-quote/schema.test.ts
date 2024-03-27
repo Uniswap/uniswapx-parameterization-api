@@ -19,12 +19,12 @@ const validHardRequestBodyCombos = validTokenIn.flatMap((tokenIn) =>
     validAmountIn.flatMap((amount) => {
       const order = new UnsignedV2DutchOrder(
         getOrderInfo({
-          baseInput: {
+          input: {
             token: tokenIn,
             startAmount: BigNumber.from(amount),
             endAmount: BigNumber.from(amount),
           },
-          baseOutputs: [
+          outputs: [
             {
               token: tokenOut,
               startAmount: BigNumber.from(amount),

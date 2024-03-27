@@ -46,12 +46,12 @@ export const getOrder = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV2Dut
         additionalValidationData: '0x',
         cosigner: ethers.constants.AddressZero,
         cosignerData: undefined,
-        baseInput: {
+        input: {
           token: TOKEN_IN,
           startAmount: RAW_AMOUNT,
           endAmount: RAW_AMOUNT,
         },
-        baseOutputs: [
+        outputs: [
           {
             token: TOKEN_OUT,
             startAmount: RAW_AMOUNT,
@@ -139,9 +139,9 @@ describe('Quote handler', () => {
 
     // no overrides since quote was same as request
     expect(cosignedOrder.info.cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
-    expect(cosignedOrder.info.cosignerData.inputAmount).toEqual(BigNumber.from(0));
-    expect(cosignedOrder.info.cosignerData.outputAmounts.length).toEqual(1);
-    expect(cosignedOrder.info.cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
+    expect(cosignedOrder.info.cosignerData.inputOverride).toEqual(BigNumber.from(0));
+    expect(cosignedOrder.info.cosignerData.outputOverrides.length).toEqual(1);
+    expect(cosignedOrder.info.cosignerData.outputOverrides[0]).toEqual(BigNumber.from(0));
   });
 
   it('Pick the greater of two quotes - EXACT_IN', async () => {
@@ -162,21 +162,21 @@ describe('Quote handler', () => {
     expect(cosignedOrder.info.cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
 
     // overridden output amount to 2x
-    expect(cosignedOrder.info.cosignerData.inputAmount).toEqual(BigNumber.from(0));
-    expect(cosignedOrder.info.cosignerData.outputAmounts.length).toEqual(1);
-    expect(cosignedOrder.info.cosignerData.outputAmounts[0]).toEqual(RAW_AMOUNT.mul(2));
+    expect(cosignedOrder.info.cosignerData.inputOverride).toEqual(BigNumber.from(0));
+    expect(cosignedOrder.info.cosignerData.outputOverrides.length).toEqual(1);
+    expect(cosignedOrder.info.cosignerData.outputOverrides[0]).toEqual(RAW_AMOUNT.mul(2));
   });
 
   it('Pick the lesser of two quotes - EXACT_OUT', async () => {
     const quoters = [new MockQuoter(logger, 9, 10), new MockQuoter(logger, 8, 10)];
     const order = getOrder({
       cosigner: cosignerWallet.address,
-      baseInput: {
+      input: {
         token: TOKEN_IN,
         startAmount: RAW_AMOUNT,
         endAmount: RAW_AMOUNT.mul(110).div(100),
       },
-      baseOutputs: [
+      outputs: [
         {
           token: TOKEN_OUT,
           startAmount: RAW_AMOUNT,
@@ -201,9 +201,9 @@ describe('Quote handler', () => {
     expect(cosignedOrder.info.cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
 
     // overridden output amount to 2x
-    expect(cosignedOrder.info.cosignerData.inputAmount).toEqual(RAW_AMOUNT.mul(8).div(10));
-    expect(cosignedOrder.info.cosignerData.outputAmounts.length).toEqual(1);
-    expect(cosignedOrder.info.cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
+    expect(cosignedOrder.info.cosignerData.inputOverride).toEqual(RAW_AMOUNT.mul(8).div(10));
+    expect(cosignedOrder.info.cosignerData.outputOverrides.length).toEqual(1);
+    expect(cosignedOrder.info.cosignerData.outputOverrides[0]).toEqual(BigNumber.from(0));
   });
 
   it('Two quoters returning the same result', async () => {
@@ -224,9 +224,9 @@ describe('Quote handler', () => {
     expect(cosignedOrder.info.cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
 
     // overridden output amount to 2x
-    expect(cosignedOrder.info.cosignerData.inputAmount).toEqual(BigNumber.from(0));
-    expect(cosignedOrder.info.cosignerData.outputAmounts.length).toEqual(1);
-    expect(cosignedOrder.info.cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
+    expect(cosignedOrder.info.cosignerData.inputOverride).toEqual(BigNumber.from(0));
+    expect(cosignedOrder.info.cosignerData.outputOverrides.length).toEqual(1);
+    expect(cosignedOrder.info.cosignerData.outputOverrides[0]).toEqual(BigNumber.from(0));
   });
 
   it('Unknown cosigner', async () => {
@@ -301,9 +301,9 @@ describe('Quote handler', () => {
         getQuoteResponse({ amountOut: ethers.utils.parseEther('0.8') })
       );
       expect(cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
-      expect(cosignerData.inputAmount).toEqual(BigNumber.from(0));
-      expect(cosignerData.outputAmounts.length).toEqual(1);
-      expect(cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
+      expect(cosignerData.inputOverride).toEqual(BigNumber.from(0));
+      expect(cosignerData.outputOverrides.length).toEqual(1);
+      expect(cosignerData.outputOverrides[0]).toEqual(BigNumber.from(0));
     });
 
     it('exact input quote better, sets exclusivity and updates amounts', async () => {
@@ -314,9 +314,9 @@ describe('Quote handler', () => {
         getQuoteResponse({ amountOut: outputAmount })
       );
       expect(cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
-      expect(cosignerData.inputAmount).toEqual(BigNumber.from(0));
-      expect(cosignerData.outputAmounts.length).toEqual(1);
-      expect(cosignerData.outputAmounts[0]).toEqual(outputAmount);
+      expect(cosignerData.inputOverride).toEqual(BigNumber.from(0));
+      expect(cosignerData.outputOverrides.length).toEqual(1);
+      expect(cosignerData.outputOverrides[0]).toEqual(outputAmount);
     });
 
     it('exact output quote worse, no exclusivity', async () => {
@@ -326,22 +326,22 @@ describe('Quote handler', () => {
         getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT)
       );
       expect(cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
-      expect(cosignerData.inputAmount).toEqual(BigNumber.from(0));
-      expect(cosignerData.outputAmounts.length).toEqual(1);
-      expect(cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
+      expect(cosignerData.inputOverride).toEqual(BigNumber.from(0));
+      expect(cosignerData.outputOverrides.length).toEqual(1);
+      expect(cosignerData.outputOverrides[0]).toEqual(BigNumber.from(0));
     });
 
     it('exact input quote better, sets exclusivity and updates amounts', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
-      const inputAmount = ethers.utils.parseEther('0.8');
+      const inputOverride = ethers.utils.parseEther('0.8');
       const cosignerData = getCosignerData(
         new HardQuoteRequest(request),
         getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT)
       );
       expect(cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
-      expect(cosignerData.inputAmount).toEqual(inputAmount);
-      expect(cosignerData.outputAmounts.length).toEqual(1);
-      expect(cosignerData.outputAmounts[0]).toEqual(BigNumber.from(0));
+      expect(cosignerData.inputOverride).toEqual(inputOverride);
+      expect(cosignerData.outputOverrides.length).toEqual(1);
+      expect(cosignerData.outputOverrides[0]).toEqual(BigNumber.from(0));
     });
   });
 });

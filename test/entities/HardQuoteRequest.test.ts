@@ -24,12 +24,12 @@ export const getOrderInfo = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV
       additionalValidationContract: ethers.constants.AddressZero,
       additionalValidationData: '0x',
       cosigner: ethers.constants.AddressZero,
-      baseInput: {
+      input: {
         token: TOKEN_IN,
         startAmount: RAW_AMOUNT,
         endAmount: RAW_AMOUNT,
       },
-      baseOutputs: [
+      outputs: [
         {
           token: TOKEN_OUT,
           startAmount: RAW_AMOUNT.mul(2),
