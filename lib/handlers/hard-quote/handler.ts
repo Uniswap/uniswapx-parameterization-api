@@ -43,7 +43,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     // we dont have access to the cosigner key, throw
     if (request.order.info.cosigner !== cosignerAddress) {
-      log.error({ cosigner: request.order.info.cosigner }, 'Unknown cosigner');
+      log.error({ cosignerInReq: request.order.info.cosigner, expected: cosignerAddress }, 'Unknown cosigner');
       throw new UnknownOrderCosignerError();
     }
 
