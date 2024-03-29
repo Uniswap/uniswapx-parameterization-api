@@ -19,12 +19,13 @@ if (!process.env.ORDER_SERVICE_URL) {
   throw new Error('Must set ORDER_SERVICE_URL env variable for integ tests. See README');
 }
 
+const SEPOLIA = 11155111;
 const PARAM_API = `${process.env.UNISWAP_API!}hard-quote`;
 const ORDER_SERVICE_API = `${process.env.ORDER_SERVICE_URL}dutch-auction/order`;
 const COSIGNER_ADDR = process.env.COSIGNER_ADDR;
 
 const REQUEST_ID = uuidv4();
-const builder = new V2DutchOrderBuilder(1, ethers.constants.AddressZero);
+const builder = new V2DutchOrderBuilder(SEPOLIA, ethers.constants.AddressZero);
 const now = Math.floor(Date.now() / 1000);
 const swapper = ethers.Wallet.createRandom();
 const SWAPPER_ADDRESS = swapper.address;
@@ -47,8 +48,8 @@ describe('Hard Quote endpoint integration test', function () {
       const quoteReq = {
         requestId: REQUEST_ID,
         encodedInnerOrder: v2Order.serialize(),
-        tokenInChainId: 1,
-        tokenOutChainId: 1,
+        tokenInChainId: SEPOLIA,
+        tokenOutChainId: SEPOLIA,
       };
 
       const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
@@ -60,8 +61,8 @@ describe('Hard Quote endpoint integration test', function () {
       const quoteReq = {
         requestId: REQUEST_ID,
         innerSig: '0x',
-        tokenInChainId: 1,
-        tokenOutChainId: 1,
+        tokenInChainId: SEPOLIA,
+        tokenOutChainId: SEPOLIA,
       };
 
       const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
@@ -84,8 +85,8 @@ describe('Hard Quote endpoint integration test', function () {
       const quoteReq = {
         encodedInnerOrder: v2Order.serialize(),
         innerSig: signature,
-        tokenInChainId: 1,
-        tokenOutChainId: 1,
+        tokenInChainId: SEPOLIA,
+        tokenOutChainId: SEPOLIA,
       };
 
       const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
@@ -109,8 +110,8 @@ describe('Hard Quote endpoint integration test', function () {
         requestId: REQUEST_ID,
         encodedInnerOrder: v2Order.serialize(),
         innerSig: signature,
-        tokenInChainId: 1,
-        tokenOutChainId: 1,
+        tokenInChainId: SEPOLIA,
+        tokenOutChainId: SEPOLIA,
       };
 
       const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
@@ -154,7 +155,7 @@ describe('Hard Quote endpoint integration test', function () {
       const postOrderReq = {
         encodedOrder: v2Order.serialize(),
         signature,
-        chainId: 5, // use GOERLI so that we don't pollute non-testnet DB
+        chainId: SEPOLIA,
         orderType: OrderType.Dutch_V2,
       };
 
