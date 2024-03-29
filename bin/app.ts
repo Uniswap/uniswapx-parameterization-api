@@ -131,7 +131,7 @@ export class APIPipeline extends Stack {
 
     const betaUsEast2AppStage = pipeline.addStage(betaUsEast2Stage);
 
-    this.addIntegTests(code, betaUsEast2Stage, betaUsEast2AppStage);
+    this.addIntegTests(code, betaUsEast2Stage, betaUsEast2AppStage, STAGE.BETA);
 
     // Prod us-east-2
     const prodUsEast2Stage = new APIStage(this, 'prod-us-east-2', {
@@ -152,7 +152,7 @@ export class APIPipeline extends Stack {
 
     const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);
 
-    this.addIntegTests(code, prodUsEast2Stage, prodUsEast2AppStage);
+    this.addIntegTests(code, prodUsEast2Stage, prodUsEast2AppStage, STAGE.PROD);
 
     pipeline.buildPipeline();
 
@@ -170,8 +170,10 @@ export class APIPipeline extends Stack {
   private addIntegTests(
     sourceArtifact: cdk.pipelines.CodePipelineSource,
     apiStage: APIStage,
-    applicationStage: cdk.pipelines.StageDeployment
+    applicationStage: cdk.pipelines.StageDeployment,
+    stage: STAGE
   ) {
+    const cosignerSecret = `param-api/${stage}/cosignerAddress`;
     const testAction = new CodeBuildStep(`${SERVICE_NAME}-IntegTests-${apiStage.stageName}`, {
       projectName: `${SERVICE_NAME}-IntegTests-${apiStage.stageName}`,
       input: sourceArtifact,
@@ -200,6 +202,10 @@ export class APIPipeline extends Stack {
           },
           INTEG_TEST_PK: {
             value: 'param-api/integ-test-pk',
+            type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+          },
+          COSIGNER_ADDR: {
+            value: cosignerSecret,
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
           },
         },

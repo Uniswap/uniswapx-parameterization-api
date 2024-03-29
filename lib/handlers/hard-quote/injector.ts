@@ -82,6 +82,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const quoters: Quoter[] = [
       new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider),
     ];
+    log.info({ cosignerAddress }, 'Cosigner address from KMS Signer');
     return {
       quoters: quoters,
       firehose: firehose,
