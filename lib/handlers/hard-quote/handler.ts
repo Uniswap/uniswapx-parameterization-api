@@ -3,6 +3,7 @@ import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { CosignedV2DutchOrder, CosignerData } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
+import { v4 as uuidv4 } from 'uuid';
 
 import { HardQuoteRequest, HardQuoteResponse, Metric, QuoteResponse } from '../../entities';
 import { NoQuotesAvailable, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
@@ -69,20 +70,29 @@ export class QuoteHandler extends APIGLambdaHandler<
     });
 
     const bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, 'HardResponse');
-    if (!bestQuote) {
+    if (!bestQuote && !requestBody.allowNoQuote) {
       metric.putMetric(Metric.HARD_QUOTE_404, 1, MetricLoggerUnit.Count);
-      throw new NoQuotesAvailable();
+      if (!requestBody.allowNoQuote) {
+        throw new NoQuotesAvailable();
+      }
     }
 
-    log.info({ bestQuote: bestQuote }, 'bestQuote');
+    let cosignerData: CosignerData;
+    if (bestQuote) {
+      cosignerData = getCosignerData(request, bestQuote);
+      log.info({ bestQuote: bestQuote }, 'bestQuote');
+    } else {
+      cosignerData = getDefaultCosignerData(request);
+      log.info({ cosignerData: cosignerData }, 'open order with default cosignerData');
+    }
 
     // TODO: use server key to cosign instead of local wallet
-    const cosignerData = getCosignerData(request, bestQuote);
     const cosignature = await cosigner.signDigest(request.order.cosignatureHash(cosignerData));
     const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(request.order, cosignerData, cosignature);
 
     try {
-      await orderServiceProvider.postOrder(cosignedOrder, request.innerSig, bestQuote.quoteId);
+      // if no quote and creating open order, create random new quoteId
+      await orderServiceProvider.postOrder(cosignedOrder, request.innerSig, bestQuote?.quoteId ?? uuidv4());
     } catch (e) {
       metric.putMetric(Metric.HARD_QUOTE_400, 1, MetricLoggerUnit.Count);
       throw new OrderPostError();
@@ -135,6 +145,27 @@ export function getCosignerData(request: HardQuoteRequest, quote: QuoteResponse)
         filler = quote.filler;
       }
     }
+  }
+
+  return {
+    decayStartTime: decayStartTime,
+    decayEndTime: getDecayEndTime(request.tokenInChainId, decayStartTime),
+    exclusiveFiller: filler,
+    exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+    inputOverride: inputOverride,
+    outputOverrides: outputOverrides,
+  };
+}
+
+export function getDefaultCosignerData(request: HardQuoteRequest): CosignerData {
+  const decayStartTime = getDecayStartTime(request.tokenInChainId);
+  const filler = ethers.constants.AddressZero;
+  let inputOverride = BigNumber.from(0);
+  const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
+  if (request.type === TradeType.EXACT_INPUT) {
+    outputOverrides[0] = request.totalOutputAmountStart;
+  } else {
+    inputOverride = request.totalInputAmountStart;
   }
 
   return {
