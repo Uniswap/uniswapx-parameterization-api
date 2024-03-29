@@ -198,6 +198,10 @@ export class APIPipeline extends Stack {
             value: '--max-old-space-size=8192',
             type: BuildEnvironmentVariableType.PLAINTEXT,
           },
+          INTEG_TEST_PK: {
+            value: 'param-api/integ-test-pk',
+            type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+          },
         },
       },
       commands: [
