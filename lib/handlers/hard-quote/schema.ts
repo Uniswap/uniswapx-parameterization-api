@@ -10,6 +10,7 @@ export const HardQuoteRequestBodyJoi = Joi.object({
   innerSig: FieldValidator.rawSignature.required(),
   tokenInChainId: FieldValidator.chainId.required(),
   tokenOutChainId: Joi.number().integer().valid(Joi.ref('tokenInChainId')).required(),
+  allowNoQuote: Joi.boolean().optional(),
 });
 
 export type HardQuoteRequestBody = {
@@ -19,6 +20,7 @@ export type HardQuoteRequestBody = {
   innerSig: string;
   tokenInChainId: number;
   tokenOutChainId: number;
+  allowNoQuote?: boolean;
 };
 
 export const HardQuoteResponseDataJoi = Joi.object({
