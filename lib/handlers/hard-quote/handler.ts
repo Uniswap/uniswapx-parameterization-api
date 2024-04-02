@@ -39,6 +39,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.HARD_QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
+    log.info({ cosignerAddress: cosignerAddress }, 'cosignerAddress');
     const request = HardQuoteRequest.fromHardRequestBody(requestBody);
 
     // we dont have access to the cosigner key, throw
