@@ -576,36 +576,12 @@ export class APIStack extends cdk.Stack {
           success: new aws_cloudwatch.Metric({
             namespace: 'Uniswap',
             metricName: `${Metric.RFQ_SUCCESS}`,
-            dimensionsMap: { Service: SERVICE_NAME },
+            dimensionsMap: dimension,
             unit: aws_cloudwatch.Unit.COUNT,
             statistic: 'sum',
           }),
         },
       });
-
-      const rfqOverallSuccessRateAlarmSev2 = new aws_cloudwatch.Alarm(
-        this,
-        `${dimension.Service}-SEV2-RFQ-SuccessRate`,
-        {
-          alarmName: `${dimension.Service}-SEV2-RFQ-SuccessRate`,
-          metric: rfqOverallSuccessMetric,
-          threshold: 80,
-          comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-          evaluationPeriods: 3,
-        }
-      );
-
-      const rfqOverallSuccessRateAlarmSev3 = new aws_cloudwatch.Alarm(
-        this,
-        `${dimension.Service}-SEV3-RFQ-SuccessRate`,
-        {
-          alarmName: `${dimension.Service}-SEV3-RFQ-SuccessRate`,
-          metric: rfqOverallSuccessMetric,
-          threshold: 90,
-          comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-          evaluationPeriods: 3,
-        }
-      );
 
       const rfqOverallNonQuoteMetric = new aws_cloudwatch.MathExpression({
         expression: '100*(nonQuote/invocations)',
@@ -634,7 +610,7 @@ export class APIStack extends cdk.Stack {
         {
           alarmName: `${dimension.Service}-SEV2-RFQ-NonQuoteRate`,
           metric: rfqOverallNonQuoteMetric,
-          threshold: 30,
+          threshold: 85,
           comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
           evaluationPeriods: 3,
         }
@@ -699,8 +675,6 @@ export class APIStack extends cdk.Stack {
       }
 
       if (chatBotTopic) {
-        rfqOverallSuccessRateAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-        rfqOverallSuccessRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
         rfqOverallNonQuoteRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
         quoteLatencyAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       }
