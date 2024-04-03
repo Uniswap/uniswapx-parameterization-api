@@ -562,27 +562,6 @@ export class APIStack extends cdk.Stack {
     /* custom metric alarms */
     // Alarm on calls to RFQ providers
     for (const dimension of [SoftQuoteMetricDimension, HardQuoteMetricDimension]) {
-      const rfqOverallSuccessMetric = new aws_cloudwatch.MathExpression({
-        expression: '100*(success/invocations)',
-        period: Duration.minutes(5),
-        usingMetrics: {
-          invocations: new aws_cloudwatch.Metric({
-            namespace: 'Uniswap',
-            metricName: `${Metric.RFQ_REQUESTED}`,
-            dimensionsMap: dimension,
-            unit: aws_cloudwatch.Unit.COUNT,
-            statistic: 'sum',
-          }),
-          success: new aws_cloudwatch.Metric({
-            namespace: 'Uniswap',
-            metricName: `${Metric.RFQ_SUCCESS}`,
-            dimensionsMap: dimension,
-            unit: aws_cloudwatch.Unit.COUNT,
-            statistic: 'sum',
-          }),
-        },
-      });
-
       const rfqOverallNonQuoteMetric = new aws_cloudwatch.MathExpression({
         expression: '100*(nonQuote/invocations)',
         period: Duration.minutes(5),
