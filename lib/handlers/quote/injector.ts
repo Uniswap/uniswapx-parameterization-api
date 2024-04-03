@@ -10,14 +10,14 @@ import {
   FADE_RATE_BUCKET,
   FADE_RATE_S3_KEY,
   INTEGRATION_S3_KEY,
-  PROD_COMPLIANCE_S3_KEY,
   PRODUCTION_S3_KEY,
+  PROD_COMPLIANCE_S3_KEY,
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
 import {
   AWSMetricsLogger,
+  SoftQuoteMetricDimension,
   UniswapXParamServiceIntegrationMetricDimension,
-  UniswapXParamServiceMetricDimension,
 } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
@@ -92,7 +92,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     setGlobalLogger(log);
 
     metricsLogger.setNamespace('Uniswap');
-    metricsLogger.setDimensions(UniswapXParamServiceMetricDimension);
+    metricsLogger.setDimensions(SoftQuoteMetricDimension);
     const metric = new AWSMetricsLogger(metricsLogger);
     setGlobalMetric(metric);
 
