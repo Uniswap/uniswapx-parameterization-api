@@ -38,7 +38,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     } = params;
     const start = Date.now();
 
-    metric.putMetric(Metric.HARD_QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
+    metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
     log.info({ cosignerAddress: cosignerAddress }, 'cosignerAddress');
     const request = HardQuoteRequest.fromHardRequestBody(requestBody);
@@ -72,7 +72,6 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     const bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, 'HardResponse');
     if (!bestQuote && !requestBody.allowNoQuote) {
-      metric.putMetric(Metric.HARD_QUOTE_404, 1, MetricLoggerUnit.Count);
       if (!requestBody.allowNoQuote) {
         throw new NoQuotesAvailable();
       }
@@ -92,15 +91,17 @@ export class QuoteHandler extends APIGLambdaHandler<
     const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(request.order, cosignerData, cosignature);
 
     try {
+      metric.putMetric(Metric.QUOTE_POST_ATTEMPT, 1, MetricLoggerUnit.Count);
       // if no quote and creating open order, create random new quoteId
       await orderServiceProvider.postOrder(cosignedOrder, request.innerSig, bestQuote?.quoteId ?? uuidv4());
     } catch (e) {
-      metric.putMetric(Metric.HARD_QUOTE_400, 1, MetricLoggerUnit.Count);
+      metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
+      metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
       throw new OrderPostError();
     }
 
-    metric.putMetric(Metric.HARD_QUOTE_200, 1, MetricLoggerUnit.Count);
-    metric.putMetric(Metric.HARD_QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+    metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+    metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
     const response = new HardQuoteResponse(request, cosignedOrder);
 
     return {

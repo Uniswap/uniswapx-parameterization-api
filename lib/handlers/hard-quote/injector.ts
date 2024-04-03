@@ -12,7 +12,7 @@ import {
   PRODUCTION_S3_KEY,
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
-import { AWSMetricsLogger, UniswapXParamServiceMetricDimension } from '../../entities/aws-metrics-logger';
+import { AWSMetricsLogger, HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
 import { OrderServiceProvider, S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
@@ -111,7 +111,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     setGlobalLogger(log);
 
     metricsLogger.setNamespace('Uniswap');
-    metricsLogger.setDimensions(UniswapXParamServiceMetricDimension);
+    metricsLogger.setDimensions(HardQuoteMetricDimension);
     const metric = new AWSMetricsLogger(metricsLogger);
     setGlobalMetric(metric);
 

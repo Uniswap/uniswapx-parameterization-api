@@ -17,6 +17,14 @@ export const CircuitBreakerMetricDimension = {
   Service: 'CircuitBreaker',
 };
 
+export const SoftQuoteMetricDimension = {
+  Service: 'SoftQuote',
+};
+
+export const HardQuoteMetricDimension = {
+  Service: 'HardQuote',
+};
+
 export class AWSMetricsLogger implements IMetric {
   constructor(private awsMetricLogger: AWSEmbeddedMetricsLogger) {}
 
@@ -35,18 +43,12 @@ export enum Metric {
   QUOTE_404 = 'QUOTE_404',
   QUOTE_500 = 'QUOTE_500',
 
-  HARD_QUOTE_200 = 'HARD_QUOTE_200',
-  HARD_QUOTE_400 = 'HARD_QUOTE_400',
-  HARD_QUOTE_404 = 'HARD_QUOTE_404',
-  HARD_QUOTE_500 = 'HARD_QUOTE_500',
-
   QUOTE_REQUESTED = 'QUOTE_REQUESTED',
   QUOTE_LATENCY = 'QUOTE_LATENCY',
   QUOTE_RESPONSE_COUNT = 'QUOTE_RESPONSE_COUNT',
 
-  HARD_QUOTE_REQUESTED = 'HARD_QUOTE_REQUESTED',
-  HARD_QUOTE_LATENCY = 'HARD_QUOTE_LATENCY',
-  HARD_QUOTE_RESPONSE_COUNT = 'HARD_QUOTE_RESPONSE_COUNT',
+  QUOTE_POST_ERROR = 'QUOTE_POST_ERROR',
+  QUOTE_POST_ATTEMPT = 'QUOTE_POST_ATTEMPT',
 
   RFQ_REQUESTED = 'RFQ_REQUESTED',
   RFQ_SUCCESS = 'RFQ_SUCCESS',
