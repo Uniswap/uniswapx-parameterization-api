@@ -14,7 +14,7 @@ import {
   QuoteResponse,
   WebhookResponseType,
 } from '../entities';
-import { WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
+import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
@@ -41,12 +41,14 @@ export class WebhookQuoter implements Quoter {
     this.ALLOW_LIST = _allow_list;
   }
 
-  public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
+  public async quote(request: QuoteRequest, version: ProtocolVersion = ProtocolVersion.V1): Promise<QuoteResponse[]> {
     const endpoints = await this.getEligibleEndpoints();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     endpoints.filter((e) => {
       return (
-        endpointToAddrsMap.get(e.endpoint) === undefined || !endpointToAddrsMap.get(e.endpoint)?.has(request.swapper)
+        endpointToAddrsMap.get(e.endpoint) === undefined ||
+        !endpointToAddrsMap.get(e.endpoint)?.has(request.swapper) ||
+        getEndpointSupportedProtocols(e).includes(version)
       );
     });
 
@@ -311,4 +313,11 @@ function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedRe
   }
 
   return false;
+}
+
+export function getEndpointSupportedProtocols(e: WebhookConfiguration) {
+  if (!e.supportedVersions || e.supportedVersions.length == 0) {
+    return ['V1'];
+  }
+  return e.supportedVersions;
 }
