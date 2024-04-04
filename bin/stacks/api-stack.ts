@@ -590,11 +590,11 @@ export class APIStack extends cdk.Stack {
 
       const rfqOverallNonQuoteRateAlarmSev3 = new aws_cloudwatch.Alarm(
         this,
-        `${dimension.Service}-SEV2-RFQ-NonQuoteRate`,
+        `${dimension.Service}-SEV3-RFQ-NonQuoteRate`,
         {
-          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-RFQ-NonQuoteRate-${dimension.Service}`,
+          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV3-RFQ-NonQuoteRate-${dimension.Service}`,
           metric: rfqOverallNonQuoteMetric,
-          threshold: 85,
+          threshold: 90,
           comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
           evaluationPeriods: 3,
         }
