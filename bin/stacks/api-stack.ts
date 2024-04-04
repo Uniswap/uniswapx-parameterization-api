@@ -14,7 +14,12 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 import { KmsStack } from './kms-stack';
 
-import { HardQuoteMetricDimension, Metric, SoftQuoteMetricDimension } from '../../lib/entities';
+import {
+  HardQuoteMetricDimension,
+  Metric,
+  SoftQuoteMetricDimension,
+  UniswapXParamServiceMetricDimension,
+} from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
@@ -587,7 +592,7 @@ export class APIStack extends cdk.Stack {
         this,
         `${dimension.Service}-SEV2-RFQ-NonQuoteRate`,
         {
-          alarmName: `${dimension.Service}-SEV2-RFQ-NonQuoteRate`,
+          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-RFQ-NonQuoteRate-${dimension.Service}`,
           metric: rfqOverallNonQuoteMetric,
           threshold: 85,
           comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
@@ -596,7 +601,7 @@ export class APIStack extends cdk.Stack {
       );
 
       const quoteLatencyAlarmSev3 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV3-QuoteLatency`, {
-        alarmName: `${dimension.Service}-SEV3-QuoteLatency`,
+        alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV3-QuoteLatency-${dimension.Service}`,
         metric: new aws_cloudwatch.Metric({
           namespace: 'Uniswap',
           metricName: `${Metric.QUOTE_LATENCY}`,
@@ -632,7 +637,7 @@ export class APIStack extends cdk.Stack {
         });
 
         const quotePostErrorAlarmSev3 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV3-PostErrorRate`, {
-          alarmName: `${dimension.Service}-SEV3-PostErrorRate`,
+          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV3-PostErrorRate-${dimension.Service}`,
           metric: quotePostErrorMetric,
           evaluationPeriods: 3,
           threshold: 10,
@@ -640,7 +645,7 @@ export class APIStack extends cdk.Stack {
         });
 
         const quotePostErrorAlarmSev2 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV2-PostErrorRate`, {
-          alarmName: `${dimension.Service}-SEV2-PostErrorRate`,
+          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-PostErrorRate-${dimension.Service}`,
           metric: quotePostErrorMetric,
           evaluationPeriods: 3,
           threshold: 20,
