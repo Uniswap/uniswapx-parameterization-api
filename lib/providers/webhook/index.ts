@@ -5,6 +5,11 @@ type WebhookOverrides = {
   timeout: number;
 };
 
+export enum ProtocolVersion {
+  V1 = 'v1',
+  V2 = 'v2',
+}
+
 export interface WebhookConfiguration {
   name: string;
   hash: string;
@@ -15,6 +20,7 @@ export interface WebhookConfiguration {
   // if null, send for all chains
   chainIds?: number[];
   addresses?: string[];
+  supportedVersions?: ProtocolVersion[];
 }
 
 export interface WebhookConfigurationProvider {

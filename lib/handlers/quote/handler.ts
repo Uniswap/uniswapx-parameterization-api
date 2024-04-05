@@ -4,6 +4,7 @@ import Logger from 'bunyan';
 import Joi from 'joi';
 
 import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
+import { ProtocolVersion } from '../../providers';
 import { Quoter } from '../../quoters';
 import { NoQuotesAvailable } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
@@ -86,9 +87,12 @@ export async function getBestQuote(
   quoteRequest: QuoteRequest,
   log: Logger,
   metric: IMetric,
+  protocolVersion: ProtocolVersion = ProtocolVersion.V1,
   eventType: EventType = 'QuoteResponse'
 ): Promise<QuoteResponse | null> {
-  const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat();
+  const responses: QuoteResponse[] = (
+    await Promise.all(quoters.map((q) => q.quote(quoteRequest, protocolVersion)))
+  ).flat();
   switch (responses.length) {
     case 0:
       metric.putMetric(Metric.RFQ_COUNT_0, 1, MetricLoggerUnit.Count);

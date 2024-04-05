@@ -3,7 +3,7 @@ import axios from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
 import { AnalyticsEventType, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
-import { MockWebhookConfigurationProvider } from '../../../lib/providers';
+import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
@@ -156,9 +156,117 @@ describe('WebhookQuoter tests', () => {
       { quoteId: expect.any(String), ...request.toCleanJSON() },
       { headers: {}, timeout: 500 }
     );
-    expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL_ONEINCH, request.toCleanJSON(), {
-      headers: {},
-      timeout: 500,
+    expect(mockedAxios.post).not.toBeCalledWith(
+      WEBHOOK_URL_ONEINCH,
+      {
+        quoteId: expect.any(String),
+        ...request.toCleanJSON(),
+      },
+      {
+        headers: {},
+        timeout: 500,
+      }
+    );
+  });
+
+  describe('Supported protocols tests', () => {
+    const webhookProvider = new MockWebhookConfigurationProvider([
+      { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, hash: '0xuni', supportedVersions: [ProtocolVersion.V2] },
+      { name: '1inch', endpoint: WEBHOOK_URL_ONEINCH, headers: {}, hash: '0x1inch' },
+      {
+        name: 'searcher',
+        endpoint: WEBHOOK_URL_SEARCHER,
+        headers: {},
+        hash: '0xsearcher',
+        supportedVersions: [ProtocolVersion.V1, ProtocolVersion.V2],
+      },
+    ]);
+    const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
+      { hash: '0xuni', fadeRate: 0.1, enabled: true },
+      { hash: '0x1inch', fadeRate: 0.1, enabled: true },
+      { hash: '0xsearcher', fadeRate: 0.1, enabled: true },
+    ]);
+    const webhookQuoter = new WebhookQuoter(
+      logger,
+      mockFirehoseLogger,
+      webhookProvider,
+      circuitBreakerProvider,
+      emptyMockComplianceProvider
+    );
+    it('v1 quote request only sent to fillers supporting v1', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: quote,
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: request.tokenOut,
+              tokenOut: request.tokenIn,
+            },
+          });
+        });
+
+      await webhookQuoter.quote(request, ProtocolVersion.V1);
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_ONEINCH,
+        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_SEARCHER,
+        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), {
+        headers: {},
+        timeout: 500,
+      });
+    });
+
+    it('v2 quote request only sent to fillers supporting v2', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: quote,
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: request.tokenOut,
+              tokenOut: request.tokenIn,
+            },
+          });
+        });
+
+      await webhookQuoter.quote(request, ProtocolVersion.V2);
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL,
+        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_SEARCHER,
+        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          headers: {},
+          timeout: 500,
+        }
+      );
+      // empty config defaults to v1 only
+      expect(mockedAxios.post).not.toBeCalledWith(
+        WEBHOOK_URL_ONEINCH,
+        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          headers: {},
+          timeout: 500,
+        }
+      );
     });
   });
 

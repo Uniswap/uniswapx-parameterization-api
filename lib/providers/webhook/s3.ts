@@ -1,8 +1,8 @@
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { default as Logger } from 'bunyan';
 
+import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '.';
 import { checkDefined } from '../../preconditions/preconditions';
-import { WebhookConfiguration, WebhookConfigurationProvider } from '.';
 
 export type FillerAddressesMap = Map<string, Set<string>>;
 
@@ -61,5 +61,23 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
     this.endpoints = JSON.parse(await s3Body.transformToString()) as WebhookConfiguration[];
     this.log.info({ endpoints: this.endpoints }, `Fetched ${this.endpoints.length} endpoints from S3`);
+  }
+
+  /*
+   * Returns the supported protocol versions for the filler at the given endpoint.
+   * @param endpoint - The endpoint to check the supported protocol versions for.
+   * @returns List of endpoint's supported protocols; defaults to v1 only
+   *
+   */
+  async getFillerSupportedProtocols(endpoint: string): Promise<ProtocolVersion[]> {
+    if (
+      this.endpoints.length === 0 ||
+      Date.now() - this.lastUpdatedEndpointsTimestamp > S3WebhookConfigurationProvider.UPDATE_ENDPOINTS_PERIOD_MS
+    ) {
+      await this.fetchEndpoints();
+      this.lastUpdatedEndpointsTimestamp = Date.now();
+    }
+    const config = this.endpoints.find((e) => e.endpoint === endpoint);
+    return config?.supportedVersions ?? [ProtocolVersion.V1];
   }
 }

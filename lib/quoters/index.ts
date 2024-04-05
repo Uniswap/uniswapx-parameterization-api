@@ -1,4 +1,5 @@
 import { QuoteRequest, QuoteResponse } from '../entities';
+import { ProtocolVersion } from '../providers';
 
 export enum QuoterType {
   TEST = 'TEST',
@@ -7,7 +8,7 @@ export enum QuoterType {
 }
 
 export interface Quoter {
-  quote(request: QuoteRequest): Promise<QuoteResponse[]>;
+  quote(request: QuoteRequest, version: ProtocolVersion): Promise<QuoteResponse[]>;
   type(): QuoterType;
 }
 
