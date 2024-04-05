@@ -42,15 +42,13 @@ export class WebhookQuoter implements Quoter {
   }
 
   public async quote(request: QuoteRequest, version: ProtocolVersion = ProtocolVersion.V1): Promise<QuoteResponse[]> {
-    const endpoints = await this.getEligibleEndpoints();
+    let endpoints = await this.getEligibleEndpoints();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
-    endpoints.filter((e) => {
-      return (
-        endpointToAddrsMap.get(e.endpoint) === undefined ||
-        !endpointToAddrsMap.get(e.endpoint)?.has(request.swapper) ||
+    endpoints = endpoints.filter(
+      (e) =>
+        passFillerCompliance(e, endpointToAddrsMap, request.swapper) &&
         getEndpointSupportedProtocols(e).includes(version)
-      );
-    });
+    );
 
     this.log.info({ endpoints }, `Fetching quotes from ${endpoints.length} endpoints`);
     const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));
@@ -317,7 +315,15 @@ function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedRe
 
 export function getEndpointSupportedProtocols(e: WebhookConfiguration) {
   if (!e.supportedVersions || e.supportedVersions.length == 0) {
-    return ['V1'];
+    return [ProtocolVersion.V1];
   }
   return e.supportedVersions;
+}
+
+export function passFillerCompliance(
+  e: WebhookConfiguration,
+  endpointToAddrsMap: Map<string, Set<string>>,
+  swapper: string
+) {
+  return endpointToAddrsMap.get(e.endpoint) === undefined || !endpointToAddrsMap.get(e.endpoint)?.has(swapper);
 }
