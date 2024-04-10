@@ -66,7 +66,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
     await webhookProvider.fetchEndpoints();
 
-    const orderServiceProvider = new UniswapXServiceProvider(log, orderServiceUrl);
+    const orderServiceProvider = new UniswapXServiceProvider(log, `${orderServiceUrl}hard-quote`);
 
     // TODO: decide if we should handle filler compliance differently
     //const complianceKey = stage === STAGE.BETA ? BETA_COMPLIANCE_S3_KEY : PROD_COMPLIANCE_S3_KEY;
