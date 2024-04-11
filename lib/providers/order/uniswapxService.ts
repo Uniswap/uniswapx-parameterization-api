@@ -5,12 +5,13 @@ import Logger from 'bunyan';
 import { OrderServiceProvider } from '.';
 
 const ORDER_SERVICE_TIMEOUT_MS = 500;
+const V2_ORDER_TYPE = 'Dutch_V2';
 
 export class UniswapXServiceProvider implements OrderServiceProvider {
   private log: Logger;
 
   constructor(_log: Logger, private uniswapxServiceUrl: string) {
-    this.log = _log.child({ quoter: 'WebhookQuoter' });
+    this.log = _log.child({ quoter: 'UniswapXOrderService' });
   }
 
   async postOrder(order: Order, signature: string, quoteId?: string): Promise<void> {
@@ -20,12 +21,13 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
       timeout: ORDER_SERVICE_TIMEOUT_MS,
     };
     await axios.post(
-      this.uniswapxServiceUrl,
+      `${this.uniswapxServiceUrl}dutch-auction/order`,
       {
         encodedOrder: order.serialize(),
         signature: signature,
         chainId: order.chainId,
         quoteId: quoteId,
+        orderType: V2_ORDER_TYPE,
       },
       axiosConfig
     );
