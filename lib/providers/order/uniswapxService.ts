@@ -19,21 +19,16 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
     const axiosConfig = {
       timeout: ORDER_SERVICE_TIMEOUT_MS,
     };
-
-    try {
-      await axios.post(
-        this.uniswapxServiceUrl,
-        {
-          encodedOrder: order.serialize(),
-          signature: signature,
-          chainId: order.chainId,
-          quoteId: quoteId,
-        },
-        axiosConfig
-      );
-      this.log.info({ orderHash: order.hash() }, 'Order posted to UniswapX Service');
-    } catch (e) {
-      this.log.error({ error: e }, 'Error posting order to UniswapX Service');
-    }
+    await axios.post(
+      this.uniswapxServiceUrl,
+      {
+        encodedOrder: order.serialize(),
+        signature: signature,
+        chainId: order.chainId,
+        quoteId: quoteId,
+      },
+      axiosConfig
+    );
+    this.log.info({ orderHash: order.hash() }, 'Order posted to UniswapX Service');
   }
 }
