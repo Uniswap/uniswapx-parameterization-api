@@ -11,7 +11,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
   private log: Logger;
 
   constructor(_log: Logger, private uniswapxServiceUrl: string) {
-    this.log = _log.child({ quoter: 'WebhookQuoter' });
+    this.log = _log.child({ quoter: 'UniswapXOrderService' });
   }
 
   async postOrder(order: Order, signature: string, quoteId?: string): Promise<void> {
@@ -23,7 +23,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
 
     try {
       await axios.post(
-        this.uniswapxServiceUrl,
+        `${this.uniswapxServiceUrl}dutch-auction/order`,
         {
           encodedOrder: order.serialize(),
           signature: signature,
