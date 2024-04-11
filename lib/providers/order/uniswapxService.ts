@@ -20,22 +20,17 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
     const axiosConfig = {
       timeout: ORDER_SERVICE_TIMEOUT_MS,
     };
-
-    try {
-      await axios.post(
-        `${this.uniswapxServiceUrl}dutch-auction/order`,
-        {
-          encodedOrder: order.serialize(),
-          signature: signature,
-          chainId: order.chainId,
-          quoteId: quoteId,
-          orderType: V2_ORDER_TYPE,
-        },
-        axiosConfig
-      );
-      this.log.info({ orderHash: order.hash() }, 'Order posted to UniswapX Service');
-    } catch (e) {
-      this.log.error({ error: e }, 'Error posting order to UniswapX Service');
-    }
+    await axios.post(
+      `${this.uniswapxServiceUrl}dutch-auction/order`,
+      {
+        encodedOrder: order.serialize(),
+        signature: signature,
+        chainId: order.chainId,
+        quoteId: quoteId,
+        orderType: V2_ORDER_TYPE,
+      },
+      axiosConfig
+    );
+    this.log.info({ orderHash: order.hash() }, 'Order posted to UniswapX Service');
   }
 }

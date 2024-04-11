@@ -102,20 +102,20 @@ export class QuoteHandler extends APIGLambdaHandler<
       metric.putMetric(Metric.QUOTE_POST_ATTEMPT, 1, MetricLoggerUnit.Count);
       // if no quote and creating open order, create random new quoteId
       await orderServiceProvider.postOrder(cosignedOrder, request.innerSig, bestQuote?.quoteId ?? uuidv4());
+      metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+      metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+      const response = new HardQuoteResponse(request, cosignedOrder);
+
+      return {
+        statusCode: 200,
+        body: response.toResponseJSON(),
+      };
     } catch (e) {
+      log.error({ error: e }, 'Error posting order');
       metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
       metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
       throw new OrderPostError();
     }
-
-    metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
-    metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
-    const response = new HardQuoteResponse(request, cosignedOrder);
-
-    return {
-      statusCode: 200,
-      body: response.toResponseJSON(),
-    };
   }
 
   protected requestBodySchema(): Joi.ObjectSchema | null {
