@@ -5,6 +5,7 @@ import Logger from 'bunyan';
 import { OrderServiceProvider } from '.';
 
 const ORDER_SERVICE_TIMEOUT_MS = 500;
+const V2_ORDER_TYPE = 'Dutch_V2';
 
 export class UniswapXServiceProvider implements OrderServiceProvider {
   private log: Logger;
@@ -28,6 +29,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
           signature: signature,
           chainId: order.chainId,
           quoteId: quoteId,
+          orderType: V2_ORDER_TYPE,
         },
         axiosConfig
       );
