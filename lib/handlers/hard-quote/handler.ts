@@ -111,6 +111,7 @@ export class QuoteHandler extends APIGLambdaHandler<
         body: response.toResponseJSON(),
       };
     } catch (e) {
+      log.error({ error: e }, 'Error posting order');
       metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
       metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
       throw new OrderPostError();
