@@ -18,8 +18,9 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
     this.log.info({ orderHash: order.hash() }, 'Posting order to UniswapX Service');
 
     const axiosConfig = {
-      timeout: ORDER_SERVICE_TIMEOUT_MS,
+      timeout: process.env.IS_TEST ? 5000 : ORDER_SERVICE_TIMEOUT_MS,
     };
+
     await axios.post(
       `${this.uniswapxServiceUrl}dutch-auction/order`,
       {
