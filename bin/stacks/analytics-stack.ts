@@ -675,7 +675,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
         s3Configuration: {
-          bucketArn: rfqRequestBucket.bucketArn,
+          bucketArn: hardRequestBucket.bucketArn,
           roleArn: firehoseRole.roleArn,
           compressionFormat: 'UNCOMPRESSED',
         },
@@ -708,7 +708,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         username: 'admin',
         password: creds.secretValueFromJson('password').toString(),
         s3Configuration: {
-          bucketArn: rfqRequestBucket.bucketArn,
+          bucketArn: hardResponseBucket.bucketArn,
           roleArn: firehoseRole.roleArn,
           compressionFormat: 'UNCOMPRESSED',
         },
