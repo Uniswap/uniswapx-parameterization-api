@@ -34,8 +34,8 @@ export class NoQuotesAvailable extends CustomError {
 export class OrderPostError extends CustomError {
   private static MESSAGE = 'Error posting order';
 
-  constructor(message?: string) {
-    super(message ?? OrderPostError.MESSAGE);
+  constructor() {
+    super(OrderPostError.MESSAGE);
     // Set the prototype explicitly.
     Object.setPrototypeOf(this, OrderPostError.prototype);
   }
