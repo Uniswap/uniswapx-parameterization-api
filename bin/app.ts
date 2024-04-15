@@ -247,7 +247,7 @@ envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
-envVars['IS_TEST'] = 'true';
+envVars['IS_TEST'] = process.env['IS_TEST'] || '';
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {
