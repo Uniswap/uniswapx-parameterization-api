@@ -208,10 +208,6 @@ export class APIPipeline extends Stack {
             value: cosignerSecret,
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
           },
-          IS_TEST: {
-            value: true,
-            type: BuildEnvironmentVariableType.PLAINTEXT,
-          },
         },
       },
       commands: [
@@ -247,7 +243,6 @@ envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
-envVars['IS_TEST'] = 'true';
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {
