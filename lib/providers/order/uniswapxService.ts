@@ -17,6 +17,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
   async postOrder(order: Order, signature: string, quoteId?: string): Promise<void> {
     this.log.info({ orderHash: order.hash() }, 'Posting order to UniswapX Service');
 
+    // need to wait for lambda cold starts when CodePipeline runs integration tests after new deployment
     const axiosConfig = {
       timeout: process.env.IS_TEST ? 5000 : ORDER_SERVICE_TIMEOUT_MS,
     };
