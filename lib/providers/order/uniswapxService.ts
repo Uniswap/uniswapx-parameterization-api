@@ -4,7 +4,7 @@ import Logger from 'bunyan';
 
 import { OrderServiceProvider } from '.';
 
-const ORDER_SERVICE_TIMEOUT_MS = 500;
+const ORDER_SERVICE_TIMEOUT_MS = 2000;
 const V2_ORDER_TYPE = 'Dutch_V2';
 
 export class UniswapXServiceProvider implements OrderServiceProvider {
