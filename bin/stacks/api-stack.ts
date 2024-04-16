@@ -640,7 +640,7 @@ export class APIStack extends cdk.Stack {
           alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV3-PostErrorRate-${dimension.Service}`,
           metric: quotePostErrorMetric,
           evaluationPeriods: 3,
-          threshold: 40,
+          threshold: 70,
           comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         });
 
