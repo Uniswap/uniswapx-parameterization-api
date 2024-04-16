@@ -640,21 +640,22 @@ export class APIStack extends cdk.Stack {
           alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV3-PostErrorRate-${dimension.Service}`,
           metric: quotePostErrorMetric,
           evaluationPeriods: 3,
-          threshold: 10,
+          threshold: 70,
           comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         });
 
-        const quotePostErrorAlarmSev2 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV2-PostErrorRate`, {
-          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-PostErrorRate-${dimension.Service}`,
-          metric: quotePostErrorMetric,
-          evaluationPeriods: 3,
-          threshold: 20,
-          comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        });
+        // TODO: enable before going live
+        //const quotePostErrorAlarmSev2 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV2-PostErrorRate`, {
+        //  alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-PostErrorRate-${dimension.Service}`,
+        //  metric: quotePostErrorMetric,
+        //  evaluationPeriods: 3,
+        //  threshold: 20,
+        //  comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        //});
 
         if (chatBotTopic) {
           quotePostErrorAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-          quotePostErrorAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+          //quotePostErrorAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
         }
       }
 
