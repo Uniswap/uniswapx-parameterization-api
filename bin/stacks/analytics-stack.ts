@@ -426,7 +426,9 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
     rfqRequestBucket.grantReadWrite(firehoseRole);
     unifiedRoutingRequestBucket.grantReadWrite(firehoseRole);
+    hardRequestBucket.grantReadWrite(firehoseRole);
     rfqResponseBucket.grantReadWrite(firehoseRole);
+    hardResponseBucket.grantReadWrite(firehoseRole);
     unifiedRoutingResponseBucket.grantReadWrite(firehoseRole);
     fillBucket.grantReadWrite(firehoseRole);
     ordersBucket.grantReadWrite(firehoseRole);
