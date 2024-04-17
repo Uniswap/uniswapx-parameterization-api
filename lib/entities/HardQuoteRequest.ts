@@ -1,13 +1,14 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
+import { UnsignedV2DutchOrder, V2DutchOrderBuilder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers, utils } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
-import { QuoteRequest, QuoteRequestDataJSON } from '.';
 import { HardQuoteRequestBody } from '../handlers/hard-quote';
 import { ProtocolVersion } from '../providers';
+import { ExternalRFQDataJSON, IQuoteRequest } from '.';
 
-export class HardQuoteRequest {
+export class HardQuoteRequest implements IQuoteRequest {
+  public protocol = ProtocolVersion.V2;
   public order: UnsignedV2DutchOrder;
   private data: HardQuoteRequestBody;
 
@@ -23,12 +24,12 @@ export class HardQuoteRequest {
     this.order = UnsignedV2DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
   }
 
-  public toCleanJSON(): QuoteRequestDataJSON {
+  public toJSON(): ExternalRFQDataJSON {
     return {
       tokenInChainId: this.tokenInChainId,
       tokenOutChainId: this.tokenOutChainId,
-      swapper: ethers.constants.AddressZero,
       requestId: this.requestId,
+      swapper: this.swapper,
       tokenIn: this.tokenIn,
       tokenOut: this.tokenOut,
       amount: this.amount.toString(),
@@ -39,9 +40,16 @@ export class HardQuoteRequest {
     };
   }
 
+  public toCleanJSON(): ExternalRFQDataJSON {
+    return {
+      ...this.toJSON(),
+      swapper: ethers.constants.AddressZero,
+    };
+  }
+
   // return an opposing quote request,
   // i.e. quoting the other side of the trade
-  public toOpposingCleanJSON(): QuoteRequestDataJSON {
+  public toOpposingCleanJSON(): ExternalRFQDataJSON {
     const type = this.type === TradeType.EXACT_INPUT ? TradeType.EXACT_OUTPUT : TradeType.EXACT_INPUT;
     return {
       ...this.toCleanJSON(),
@@ -54,13 +62,24 @@ export class HardQuoteRequest {
     };
   }
 
-  // transforms into a quote request that can be used to query quoters
-  public toQuoteRequest(): QuoteRequest {
-    return new QuoteRequest({
-      ...this.toCleanJSON(),
-      swapper: this.swapper,
-      amount: this.amount,
-      type: this.type,
+  public toOpposingRequest(): IQuoteRequest {
+    const oppositeOrder = V2DutchOrderBuilder.fromOrder(this.order)
+      .input({
+        startAmount: this.totalOutputAmountStart,
+        endAmount: this.totalOutputAmountEnd,
+        token: this.tokenOut,
+      })
+      .output({
+        startAmount: this.totalInputAmountStart,
+        endAmount: this.totalInputAmountEnd,
+        token: this.tokenIn,
+        recipient: this.swapper,
+      })
+      .buildPartial();
+
+    return new HardQuoteRequest({
+      ...this.data,
+      encodedInnerOrder: oppositeOrder.serialize(),
     });
   }
 
@@ -97,8 +116,21 @@ export class HardQuoteRequest {
     return amount;
   }
 
+  public get totalOutputAmountEnd(): BigNumber {
+    let amount = BigNumber.from(0);
+    for (const output of this.order.info.outputs) {
+      amount = amount.add(output.endAmount);
+    }
+
+    return amount;
+  }
+
   public get totalInputAmountStart(): BigNumber {
     return this.order.info.input.startAmount;
+  }
+
+  public get totalInputAmountEnd(): BigNumber {
+    return this.order.info.input.endAmount;
   }
 
   public get amount(): BigNumber {

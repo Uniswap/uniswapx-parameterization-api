@@ -4,13 +4,12 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Quoter, QuoterType } from '.';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
+  IQuoteRequest,
   Metric,
   metricContext,
-  QuoteRequest,
   QuoteResponse,
   WebhookResponseType,
 } from '../entities';
@@ -20,6 +19,7 @@ import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breake
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { timestampInMstoISOString } from '../util/time';
+import { Quoter, QuoterType } from '.';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
@@ -43,7 +43,7 @@ export class WebhookQuoter implements Quoter {
     this.ALLOW_LIST = _allow_list;
   }
 
-  public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
+  public async quote(request: IQuoteRequest): Promise<QuoteResponse[]> {
     let endpoints = await this.getEligibleEndpoints();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     endpoints = endpoints.filter(
@@ -92,7 +92,7 @@ export class WebhookQuoter implements Quoter {
     }
   }
 
-  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
+  private async fetchQuote(config: WebhookConfiguration, request: IQuoteRequest): Promise<QuoteResponse | null> {
     const { name, endpoint, headers } = config;
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
       this.log.debug(
@@ -313,7 +313,7 @@ export class WebhookQuoter implements Quoter {
 // valid non-quote responses:
 // - 404
 // - 0 amount quote
-function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedResponse: QuoteResponse): boolean {
+function isNonQuote(request: IQuoteRequest, hookResponse: AxiosResponse, parsedResponse: QuoteResponse): boolean {
   if (hookResponse.status === 404) {
     return true;
   }

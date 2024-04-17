@@ -18,7 +18,7 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { MockOrderServiceProvider } from '../../../lib/providers';
-import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter } from '../../../lib/quoters';
+import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
 
 jest.mock('axios');
 

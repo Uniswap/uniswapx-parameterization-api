@@ -19,13 +19,21 @@ export interface QuoteRequestData {
   quoteId?: string;
 }
 
-export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amount' | 'type'> {
+// the data sent to external RFQ providers
+export interface ExternalRFQDataJSON extends Omit<QuoteRequestData, 'amount' | 'type'> {
   amount: string;
   type: string;
 }
 
+export interface IQuoteRequest extends QuoteRequestData {
+  toJSON(): ExternalRFQDataJSON;
+  toCleanJSON(): ExternalRFQDataJSON;
+  toOpposingCleanJSON(): ExternalRFQDataJSON;
+  toOpposingRequest(): IQuoteRequest;
+}
+
 // data class for QuoteRequest helpers and conversions
-export class QuoteRequest {
+export class QuoteRequest implements IQuoteRequest {
   public static fromRequestBody(body: PostQuoteRequestBody): QuoteRequest {
     return new QuoteRequest({
       tokenInChainId: body.tokenInChainId,
@@ -43,7 +51,7 @@ export class QuoteRequest {
 
   constructor(private data: QuoteRequestData) {}
 
-  public toJSON(): QuoteRequestDataJSON {
+  public toJSON(): ExternalRFQDataJSON {
     return {
       tokenInChainId: this.tokenInChainId,
       tokenOutChainId: this.tokenOutChainId,
@@ -59,7 +67,7 @@ export class QuoteRequest {
     };
   }
 
-  public toCleanJSON(): QuoteRequestDataJSON {
+  public toCleanJSON(): ExternalRFQDataJSON {
     return {
       tokenInChainId: this.tokenInChainId,
       tokenOutChainId: this.tokenOutChainId,
@@ -77,7 +85,7 @@ export class QuoteRequest {
 
   // return an opposing quote request,
   // i.e. quoting the other side of the trade
-  public toOpposingCleanJSON(): QuoteRequestDataJSON {
+  public toOpposingCleanJSON(): ExternalRFQDataJSON {
     const type = this.type === TradeType.EXACT_INPUT ? TradeType.EXACT_OUTPUT : TradeType.EXACT_INPUT;
     return {
       tokenInChainId: this.tokenOutChainId,
@@ -96,7 +104,7 @@ export class QuoteRequest {
     };
   }
 
-  public toOpposingRequest(): QuoteRequest {
+  public toOpposingRequest(): IQuoteRequest {
     const opposingJSON = this.toOpposingCleanJSON();
     return new QuoteRequest({
       ...opposingJSON,

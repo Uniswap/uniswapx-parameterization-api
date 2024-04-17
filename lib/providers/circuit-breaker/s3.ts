@@ -3,9 +3,9 @@ import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { MetricsLogger, Unit } from 'aws-embedded-metrics';
 import Logger from 'bunyan';
 
-import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 import { Metric } from '../../entities';
 import { checkDefined } from '../../preconditions/preconditions';
+import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 
 export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
   private log: Logger;

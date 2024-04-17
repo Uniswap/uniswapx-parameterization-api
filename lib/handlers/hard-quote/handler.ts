@@ -70,7 +70,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       },
     });
 
-    const bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, 'HardResponse');
+    const bestQuote = await getBestQuote(quoters, request, log, metric, 'HardResponse');
     if (!bestQuote && !requestBody.allowNoQuote) {
       if (!requestBody.allowNoQuote) {
         throw new NoQuotesAvailable();
