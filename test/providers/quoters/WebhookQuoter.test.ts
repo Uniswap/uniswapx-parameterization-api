@@ -8,6 +8,7 @@ import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { WebhookQuoter } from '../../../lib/quoters';
+import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 
 jest.mock('axios');
 jest.mock('../../../lib/providers/analytics');
@@ -32,6 +33,7 @@ const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([
     addresses: [SWAPPER],
   },
 ]);
+const repository = new MockFillerAddressRepository();
 
 describe('WebhookQuoter tests', () => {
   afterEach(() => {
@@ -55,7 +57,8 @@ describe('WebhookQuoter tests', () => {
     mockFirehoseLogger,
     webhookProvider,
     circuitBreakerProvider,
-    emptyMockComplianceProvider
+    emptyMockComplianceProvider,
+    repository
   );
 
   const request = new QuoteRequest({
@@ -115,13 +118,34 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
   });
 
+  it('updates filler addresses', async () => {
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: quote,
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
+      });
+    await webhookQuoter.quote(request);
+    expect(repository.getFillerAddresses(WEBHOOK_URL)).resolves.toEqual([FILLER]);
+  });
+
   it('Respects filler compliance requirements', async () => {
     const webhookQuoter = new WebhookQuoter(
       logger,
       mockFirehoseLogger,
       webhookProvider,
       circuitBreakerProvider,
-      mockComplianceProvider
+      mockComplianceProvider,
+      repository
     );
 
     await expect(webhookQuoter.quote(request)).resolves.toStrictEqual([]);
@@ -191,7 +215,8 @@ describe('WebhookQuoter tests', () => {
       mockFirehoseLogger,
       webhookProvider,
       circuitBreakerProvider,
-      emptyMockComplianceProvider
+      emptyMockComplianceProvider,
+      repository
     );
     it('v1 quote request only sent to fillers supporting v1', async () => {
       mockedAxios.post
@@ -277,6 +302,7 @@ describe('WebhookQuoter tests', () => {
       webhookProvider,
       circuitBreakerProvider,
       emptyMockComplianceProvider,
+      repository,
       new Set<string>(['0x1inch'])
     );
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
@@ -315,7 +341,8 @@ describe('WebhookQuoter tests', () => {
       mockFirehoseLogger,
       webhookProvider,
       cbProvider,
-      emptyMockComplianceProvider
+      emptyMockComplianceProvider,
+      repository
     );
     await quoter.quote(request);
     expect(mockedAxios.post).toBeCalledWith(
@@ -413,7 +440,8 @@ describe('WebhookQuoter tests', () => {
       mockFirehoseLogger,
       provider,
       circuitBreakerProvider,
-      emptyMockComplianceProvider
+      emptyMockComplianceProvider,
+      repository
     );
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
@@ -457,7 +485,8 @@ describe('WebhookQuoter tests', () => {
       mockFirehoseLogger,
       provider,
       circuitBreakerProvider,
-      emptyMockComplianceProvider
+      emptyMockComplianceProvider,
+      repository
     );
 
     const response = await quoter.quote(request);

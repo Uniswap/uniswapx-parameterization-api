@@ -5,6 +5,8 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   BETA_S3_KEY,
   FADE_RATE_BUCKET,
@@ -19,6 +21,7 @@ import { FirehoseLogger } from '../../providers/analytics';
 import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { MockFillerComplianceConfigurationProvider } from '../../providers/compliance';
 import { Quoter, WebhookQuoter } from '../../quoters';
+import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { HardQuoteRequestBody } from './schema';
@@ -79,8 +82,18 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
+    const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+      marshallOptions: {
+        convertEmptyValues: true,
+      },
+      unmarshallOptions: {
+        wrapNumbers: true,
+      },
+    });
+    const repository = DynamoFillerAddressRepository.create(documentClient);
+
     const quoters: Quoter[] = [
-      new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider),
+      new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
     log.info({ cosignerAddress }, 'Cosigner address from KMS Signer');
     return {

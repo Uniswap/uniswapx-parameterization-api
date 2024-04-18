@@ -12,6 +12,7 @@ export const BETA_COMPLIANCE_S3_KEY = 'beta.json';
 export const DYNAMO_TABLE_NAME = {
   FADES: 'Fades',
   SYNTHETIC_SWITCH_TABLE: 'SyntheticSwitchTable',
+  FILLER_ADDRESS: 'FillerAddress',
 };
 
 export const DYNAMO_TABLE_KEY = {

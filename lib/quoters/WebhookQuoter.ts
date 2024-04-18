@@ -18,6 +18,7 @@ import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } f
 import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
+import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { timestampInMstoISOString } from '../util/time';
 
 // TODO: shorten, maybe take from env config
@@ -35,6 +36,7 @@ export class WebhookQuoter implements Quoter {
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
     private complianceProvider: FillerComplianceConfigurationProvider,
+    private repository: FillerAddressRepository,
     _allow_list: Set<string> = new Set<string>(['7872a1ece724cefa93da6f95fa6b7360a7f3d2c5b21a6b9cfceca362a76843f4'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
@@ -241,6 +243,10 @@ export class WebhookQuoter implements Quoter {
       );
 
       //if valid quote, log the opposing side as well
+      // do not await
+      if (response.filler) {
+        this.repository.addNewAddressToFiller(response.filler, endpoint);
+      }
       const opposingRequest = request.toOpposingRequest();
       const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
       if (
