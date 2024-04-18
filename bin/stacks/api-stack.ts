@@ -4,6 +4,7 @@ import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
 import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
 import { CfnEIP, NatProvider, Vpc } from 'aws-cdk-lib/aws-ec2';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
@@ -14,6 +15,7 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 import { KmsStack } from './kms-stack';
 
+import { DYNAMO_TABLE_NAME } from '../../lib/constants';
 import {
   HardQuoteMetricDimension,
   Metric,
@@ -21,6 +23,7 @@ import {
   UniswapXParamServiceMetricDimension,
 } from '../../lib/entities';
 import { STAGE } from '../../lib/util/stage';
+import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 import { CronDashboardStack } from './cron-dashboard-stack';
@@ -482,6 +485,19 @@ export class APIStack extends cdk.Stack {
     new CronDashboardStack(this, 'CronDashboardStack', {
       synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
       quoteLambdaName: quoteLambda.functionName,
+    });
+
+    /* filler addr table */
+    new aws_dynamo.Table(this, `FillerAddrTable`, {
+      tableName: DYNAMO_TABLE_NAME.FILLER_ADDRESS,
+      partitionKey: {
+        name: 'pk',
+        type: aws_dynamo.AttributeType.STRING,
+      },
+      deletionProtection: true,
+      pointInTimeRecovery: true,
+      contributorInsightsEnabled: true,
+      ...PROD_TABLE_CAPACITY.fadeRate,
     });
 
     /* Alarms */
