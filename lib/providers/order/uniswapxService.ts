@@ -4,6 +4,7 @@ import Logger from 'bunyan';
 
 import { OrderServiceProvider } from '.';
 import { ErrorResponse } from '../../handlers/base';
+import { ErrorCode } from '../../util/errors';
 
 const ORDER_SERVICE_TIMEOUT_MS = 2000;
 const V2_ORDER_TYPE = 'Dutch_V2';
@@ -41,6 +42,13 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
           statusCode: e.response?.data.statusCode,
           errorCode: e.response?.data.errorCode,
           detail: e.response?.data.detail,
+        };
+      } else {
+        this.log.error({ error: e }, 'Unknown error posting order to UniswapX Service');
+        return {
+          statusCode: 500,
+          errorCode: ErrorCode.InternalError,
+          detail: 'Unknown Error posting to UniswapX Service',
         };
       }
     }
