@@ -2,7 +2,7 @@ import { Order } from '@uniswap/uniswapx-sdk';
 import axios, { AxiosError } from 'axios';
 import Logger from 'bunyan';
 
-import { OrderServiceProvider } from '.';
+import { OrderServiceProvider, UniswapXServiceResponse } from '.';
 import { ErrorResponse } from '../../handlers/base';
 import { ErrorCode } from '../../util/errors';
 
@@ -16,14 +16,14 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
     this.log = _log.child({ quoter: 'UniswapXOrderService' });
   }
 
-  async postOrder(order: Order, signature: string, quoteId?: string): Promise<ErrorResponse | void> {
+  async postOrder(order: Order, signature: string, quoteId?: string): Promise<ErrorResponse | UniswapXServiceResponse> {
     this.log.info({ orderHash: order.hash() }, 'Posting order to UniswapX Service');
 
     const axiosConfig = {
       timeout: ORDER_SERVICE_TIMEOUT_MS,
     };
     try {
-      await axios.post(
+      const response = await axios.post(
         `${this.uniswapxServiceUrl}dutch-auction/order`,
         {
           encodedOrder: order.serialize(),
@@ -34,7 +34,11 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
         },
         axiosConfig
       );
-      this.log.info({ orderHash: order.hash() }, 'Order posted to UniswapX Service');
+      this.log.info({ response: response, orderHash: order.hash() }, 'Order posted to UniswapX Service');
+      return {
+        statusCode: response.status,
+        data: response.data,
+      };
     } catch (e) {
       if (e instanceof AxiosError) {
         this.log.error({ error: e.response?.data }, 'Error posting order to UniswapX Service');

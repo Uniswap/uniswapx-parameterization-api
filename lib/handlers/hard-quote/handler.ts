@@ -106,7 +106,15 @@ export class QuoteHandler extends APIGLambdaHandler<
         request.innerSig,
         bestQuote?.quoteId ?? uuidv4()
       );
-      if (response) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+        metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+        const hardResponse = new HardQuoteResponse(request, cosignedOrder);
+        return {
+          statusCode: 200,
+          body: hardResponse.toResponseJSON(),
+        };
+      } else {
         log.error({ error: response }, 'Error posting order');
         metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
         metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
@@ -115,13 +123,6 @@ export class QuoteHandler extends APIGLambdaHandler<
           statusCode: 400,
         };
       }
-      metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
-      metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
-      const hardResponse = new HardQuoteResponse(request, cosignedOrder);
-      return {
-        statusCode: 200,
-        body: hardResponse.toResponseJSON(),
-      };
     } catch (e) {
       throw new OrderPostError((e as Error).message);
     }
