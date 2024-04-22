@@ -242,11 +242,11 @@ export class WebhookQuoter implements Quoter {
         })
       );
 
-      //if valid quote, log the opposing side as well
-      // do not await
+      // do not await to minimize latency
       if (response.filler) {
         this.repository.addNewAddressToFiller(response.filler, endpoint);
       }
+      //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
       const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
       if (
