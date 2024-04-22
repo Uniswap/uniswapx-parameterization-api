@@ -10,6 +10,16 @@ module.exports = {
       ],
       ProvisionedThroughput: { ReadCapacityUnits: 10, WriteCapacityUnits: 10 },
     },
+    {
+      TableName: `FillerAddress`,
+      KeySchema: [
+        { AttributeName: 'pk', KeyType: 'HASH' },
+      ],
+      AttributeDefinitions: [
+        { AttributeName: 'pk', AttributeType: 'S' },
+      ],
+      ProvisionedThroughput: { ReadCapacityUnits: 10, WriteCapacityUnits: 10 },
+    },
   ],
   port: 8000,
 };

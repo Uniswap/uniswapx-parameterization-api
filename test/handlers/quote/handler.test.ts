@@ -17,7 +17,8 @@ import { MockWebhookConfigurationProvider } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
-import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -41,6 +42,7 @@ const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([
   },
 ]);
 const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
+const repository = new MockFillerAddressRepository();
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
@@ -229,7 +231,8 @@ describe('Quote handler', () => {
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
-          emptyMockComplianceProvider
+          emptyMockComplianceProvider,
+          repository
         ),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -303,7 +306,8 @@ describe('Quote handler', () => {
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
-          emptyMockComplianceProvider
+          emptyMockComplianceProvider,
+          repository
         ),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -359,7 +363,8 @@ describe('Quote handler', () => {
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
-          emptyMockComplianceProvider
+          emptyMockComplianceProvider,
+          repository
         ),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -393,7 +398,8 @@ describe('Quote handler', () => {
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
-          emptyMockComplianceProvider
+          emptyMockComplianceProvider,
+          repository
         ),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -428,7 +434,8 @@ describe('Quote handler', () => {
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
-          emptyMockComplianceProvider
+          emptyMockComplianceProvider,
+          repository
         ),
         new MockQuoter(logger, 1, 1),
       ];
@@ -466,7 +473,8 @@ describe('Quote handler', () => {
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
-          emptyMockComplianceProvider
+          emptyMockComplianceProvider,
+          repository
         ),
         new MockQuoter(logger, 1, 1),
       ];
@@ -528,7 +536,8 @@ describe('Quote handler', () => {
           mockFirehoseLogger,
           webhookProvider,
           circuitBreakerProvider,
-          emptyMockComplianceProvider
+          emptyMockComplianceProvider,
+          repository
         ),
         new MockQuoter(logger, 1, 1),
       ];
@@ -570,7 +579,14 @@ describe('Quote handler', () => {
         { hash: '0xuni', fadeRate: 0.02, enabled: true },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, circuitBreakerProvider, mockComplianceProvider),
+        new WebhookQuoter(
+          logger,
+          mockFirehoseLogger,
+          webhookProvider,
+          circuitBreakerProvider,
+          mockComplianceProvider,
+          repository
+        ),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());

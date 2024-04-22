@@ -3,6 +3,8 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   BETA_COMPLIANCE_S3_KEY,
   BETA_S3_KEY,
@@ -24,6 +26,10 @@ import { FirehoseLogger } from '../../providers/analytics';
 import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { S3FillerComplianceConfigurationProvider } from '../../providers/compliance/s3';
 import { Quoter, WebhookQuoter } from '../../quoters';
+import {
+  DynamoFillerAddressRepository,
+  MockFillerAddressRepository,
+} from '../../repositories/filler-address-repository';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
@@ -64,8 +70,18 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
+    const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+      marshallOptions: {
+        convertEmptyValues: true,
+      },
+      unmarshallOptions: {
+        wrapNumbers: true,
+      },
+    });
+    const repository = DynamoFillerAddressRepository.create(documentClient);
+
     const quoters: Quoter[] = [
-      new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider),
+      new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
     return {
       quoters: quoters,
@@ -128,9 +144,10 @@ export class MockQuoteInjector extends ApiInjector<ContainerInjected, RequestInj
       `${COMPLIANCE_CONFIG_BUCKET}-${stage}-1`,
       PROD_COMPLIANCE_S3_KEY
     );
+    const repository = new MockFillerAddressRepository();
     const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
     const quoters: Quoter[] = [
-      new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider),
+      new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
 
     return {
