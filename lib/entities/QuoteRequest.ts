@@ -35,7 +35,6 @@ export class QuoteRequest {
       amount: BigNumber.from(body.amount),
       type: TradeType[body.type as keyof typeof TradeType],
       numOutputs: body.numOutputs,
-      quoteId: body.quoteId,
     });
   }
 
