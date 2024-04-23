@@ -29,6 +29,7 @@ type TableCapacityOptions = {
 } & CapacityOptions;
 
 export type TableCapacityConfig = {
+  fillerAddress: TableCapacityOptions;
   fadeRate: TableCapacityOptions;
   synthSwitch: TableCapacityOptions;
 };
