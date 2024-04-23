@@ -106,9 +106,13 @@ export class WebhookQuoter implements Quoter {
     metric.putMetric(metricContext(Metric.RFQ_REQUESTED, name), 1, MetricLoggerUnit.Count);
 
     const cleanRequest = request.toCleanJSON();
-    cleanRequest.quoteId = uuidv4();
+    if (!cleanRequest.quoteId) {
+      cleanRequest.quoteId = uuidv4();
+    }
     const opposingCleanRequest = request.toOpposingCleanJSON();
-    opposingCleanRequest.quoteId = uuidv4();
+    if (!opposingCleanRequest.quoteId) {
+      opposingCleanRequest.quoteId = uuidv4();
+    }
 
     this.log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
     this.log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
