@@ -497,7 +497,7 @@ export class APIStack extends cdk.Stack {
       deletionProtection: true,
       pointInTimeRecovery: true,
       contributorInsightsEnabled: true,
-      ...PROD_TABLE_CAPACITY.fadeRate,
+      ...PROD_TABLE_CAPACITY.fillerAddress,
     });
 
     /* Alarms */
