@@ -1,19 +1,25 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers, utils } from 'ethers';
+import { v4 as uuidv4 } from 'uuid';
 
 import { QuoteRequest, QuoteRequestDataJSON } from '.';
 import { HardQuoteRequestBody } from '../handlers/hard-quote';
 
 export class HardQuoteRequest {
   public order: UnsignedV2DutchOrder;
+  private data: HardQuoteRequestBody;
 
   public static fromHardRequestBody(body: HardQuoteRequestBody): HardQuoteRequest {
     return new HardQuoteRequest(body);
   }
 
-  constructor(private data: HardQuoteRequestBody) {
-    this.order = UnsignedV2DutchOrder.parse(data.encodedInnerOrder, data.tokenInChainId);
+  constructor(_data: HardQuoteRequestBody) {
+    this.data = {
+      ..._data,
+      requestId: _data.quoteId ?? uuidv4(),
+    };
+    this.order = UnsignedV2DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
   }
 
   public toCleanJSON(): QuoteRequestDataJSON {
