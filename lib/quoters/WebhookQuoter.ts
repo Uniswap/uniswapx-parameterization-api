@@ -43,13 +43,13 @@ export class WebhookQuoter implements Quoter {
     this.ALLOW_LIST = _allow_list;
   }
 
-  public async quote(request: QuoteRequest, version: ProtocolVersion = ProtocolVersion.V1): Promise<QuoteResponse[]> {
+  public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
     let endpoints = await this.getEligibleEndpoints();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     endpoints = endpoints.filter(
       (e) =>
         passFillerCompliance(e, endpointToAddrsMap, request.swapper) &&
-        getEndpointSupportedProtocols(e).includes(version)
+        getEndpointSupportedProtocols(e).includes(request.protocol)
     );
 
     this.log.info({ endpoints }, `Fetching quotes from ${endpoints.length} endpoints`);

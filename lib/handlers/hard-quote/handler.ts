@@ -6,7 +6,6 @@ import Joi from 'joi';
 import { v4 as uuidv4 } from 'uuid';
 
 import { HardQuoteRequest, HardQuoteResponse, Metric, QuoteResponse } from '../../entities';
-import { ProtocolVersion } from '../../providers';
 import { NoQuotesAvailable, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
@@ -71,14 +70,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       },
     });
 
-    const bestQuote = await getBestQuote(
-      quoters,
-      request.toQuoteRequest(),
-      log,
-      metric,
-      ProtocolVersion.V2,
-      'HardResponse'
-    );
+    const bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, 'HardResponse');
     if (!bestQuote && !requestBody.allowNoQuote) {
       if (!requestBody.allowNoQuote) {
         throw new NoQuotesAvailable();

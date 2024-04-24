@@ -241,7 +241,7 @@ describe('WebhookQuoter tests', () => {
           });
         });
 
-      await webhookQuoter.quote(request, ProtocolVersion.V1);
+      await webhookQuoter.quote(request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { quoteId: expect.any(String), ...request.toCleanJSON() },
@@ -276,7 +276,7 @@ describe('WebhookQuoter tests', () => {
         });
 
       const request = makeQuoteRequest({ protocol: ProtocolVersion.V2 });
-      await webhookQuoter.quote(request, ProtocolVersion.V2);
+      await webhookQuoter.quote(request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...request.toCleanJSON() },
