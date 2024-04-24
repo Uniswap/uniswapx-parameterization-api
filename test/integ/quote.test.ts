@@ -4,6 +4,7 @@ import chaiSubset from 'chai-subset';
 import { v4 as uuidv4 } from 'uuid';
 
 import { PostQuoteRequestBody } from '../../lib/handlers/quote';
+import { ProtocolVersion } from '../../lib/providers';
 import AxiosUtils from '../util/axios';
 
 chai.use(chaiAsPromised);
@@ -33,6 +34,7 @@ describe('Quote endpoint integration test', function () {
       amount: '1',
       type: 'EXACT_INPUT',
       numOutputs: 1,
+      protocol: ProtocolVersion.V1,
     };
 
     const { data, status } = await AxiosUtils.callPassThroughFail('POST', API, quoteReq);
@@ -68,7 +70,7 @@ describe('Quote endpoint integration test', function () {
   // });
 
   it(`fails request validation, bad request id`, async () => {
-    const quoteReq: PostQuoteRequestBody = {
+    const quoteReq = {
       requestId: 'bad_request_id',
       tokenInChainId: 1,
       tokenOutChainId: 1,

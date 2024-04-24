@@ -1,5 +1,6 @@
 import Joi from 'joi';
 
+import { ProtocolVersion } from '../../providers';
 import { FieldValidator } from '../../util/validator';
 
 export const PostQuoteRequestBodyJoi = Joi.object({
@@ -12,6 +13,7 @@ export const PostQuoteRequestBodyJoi = Joi.object({
   amount: FieldValidator.amount.required(),
   type: FieldValidator.tradeType.required(),
   numOutputs: Joi.number().integer().min(1).required(),
+  protocol: FieldValidator.protocol.default(ProtocolVersion.V1),
 });
 
 export type PostQuoteRequestBody = {
@@ -24,6 +26,7 @@ export type PostQuoteRequestBody = {
   amount: string;
   type: string;
   numOutputs: number;
+  protocol: ProtocolVersion;
 };
 
 export const PostQuoteResponseJoi = Joi.object({

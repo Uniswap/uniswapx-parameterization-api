@@ -4,6 +4,7 @@ import { BigNumber, ethers } from 'ethers';
 
 import { HardQuoteRequest } from '../../lib/entities';
 import { HardQuoteRequestBody } from '../../lib/handlers/hard-quote';
+import { ProtocolVersion } from '../../lib/providers';
 
 const NOW = Math.floor(new Date().getTime() / 1000);
 const RAW_AMOUNT = BigNumber.from('1000000');
@@ -98,6 +99,7 @@ describe('QuoteRequest', () => {
       swapper: ethers.constants.AddressZero,
       type: 'EXACT_INPUT',
       numOutputs: 1,
+      protocol: ProtocolVersion.V2,
     });
   });
 
@@ -120,6 +122,7 @@ describe('QuoteRequest', () => {
       swapper: ethers.constants.AddressZero,
       type: 'EXACT_OUTPUT',
       numOutputs: 1,
+      protocol: ProtocolVersion.V2,
     });
   });
 });

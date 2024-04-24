@@ -3,6 +3,7 @@ import { BigNumber, ethers } from 'ethers';
 import { getAddress } from 'ethers/lib/utils';
 
 import { PostQuoteRequestBody } from '../handlers/quote/schema';
+import { ProtocolVersion } from '../providers';
 
 export interface QuoteRequestData {
   tokenInChainId: number;
@@ -14,6 +15,7 @@ export interface QuoteRequestData {
   tokenOut: string;
   type: TradeType;
   numOutputs: number;
+  protocol: ProtocolVersion;
   quoteId?: string;
 }
 
@@ -35,6 +37,7 @@ export class QuoteRequest {
       amount: BigNumber.from(body.amount),
       type: TradeType[body.type as keyof typeof TradeType],
       numOutputs: body.numOutputs,
+      protocol: body.protocol,
     });
   }
 
@@ -51,6 +54,7 @@ export class QuoteRequest {
       amount: this.amount.toString(),
       type: TradeType[this.type],
       numOutputs: this.numOutputs,
+      protocol: this.protocol,
       ...(this.quoteId && { quoteId: this.quoteId }),
     };
   }
@@ -66,6 +70,7 @@ export class QuoteRequest {
       swapper: ethers.constants.AddressZero,
       type: TradeType[this.type],
       numOutputs: this.numOutputs,
+      protocol: this.protocol,
       ...(this.quoteId && { quoteId: this.quoteId }),
     };
   }
@@ -86,6 +91,7 @@ export class QuoteRequest {
       // switch tradeType
       type: TradeType[type],
       numOutputs: this.numOutputs,
+      protocol: this.protocol,
       ...(this.quoteId && { quoteId: this.quoteId }),
     };
   }
@@ -133,6 +139,10 @@ export class QuoteRequest {
 
   public get numOutputs(): number {
     return this.data.numOutputs;
+  }
+
+  public get protocol(): ProtocolVersion {
+    return this.data.protocol;
   }
 
   public get quoteId(): string | undefined {

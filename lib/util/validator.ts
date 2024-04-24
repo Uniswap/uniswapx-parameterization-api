@@ -2,6 +2,7 @@ import { BigNumber, ethers } from 'ethers';
 import Joi, { CustomHelpers } from 'joi';
 
 import { SUPPORTED_CHAINS } from '../config/chains';
+import { ProtocolVersion } from '../providers';
 
 export class FieldValidator {
   public static readonly address = Joi.string().custom((value: string, helpers: CustomHelpers<string>) => {
@@ -35,6 +36,8 @@ export class FieldValidator {
   public static readonly tradeType = Joi.string().valid('EXACT_INPUT', 'EXACT_OUTPUT');
 
   public static readonly uuid = Joi.string().guid({ version: 'uuidv4' });
+
+  public static readonly protocol = Joi.string().valid(...Object.values(ProtocolVersion));
 
   // A Raw Signature is a common Signature format where the r, s and v
   //   are concatenated into a 65 byte(130 nibble) DataHexString

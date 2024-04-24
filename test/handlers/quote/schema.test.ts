@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
 import { PostQuoteRequestBodyJoi, PostQuoteResponseJoi, RfqResponseJoi } from '../../../lib/handlers/quote/schema';
+import { ProtocolVersion } from '../../../lib/providers';
 
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
@@ -50,6 +51,7 @@ describe('Schema tests', () => {
           swapper: SWAPPER,
           type: 'EXACT_INPUT',
           numOutputs: 1,
+          protocol: ProtocolVersion.V1,
         });
       }
     });

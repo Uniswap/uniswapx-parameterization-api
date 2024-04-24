@@ -13,7 +13,7 @@ import {
   RequestInjected,
 } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
-import { MockWebhookConfigurationProvider } from '../../../lib/providers';
+import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
@@ -76,7 +76,7 @@ describe('Quote handler', () => {
       body: JSON.stringify(request),
     } as APIGatewayProxyEvent);
 
-  const getRequest = (amount: string, type = 'EXACT_INPUT'): PostQuoteRequestBody => ({
+  const getRequest = (amount: string, type = 'EXACT_INPUT', protocol = ProtocolVersion.V1): PostQuoteRequestBody => ({
     requestId: REQUEST_ID,
     tokenInChainId: CHAIN_ID,
     tokenOutChainId: CHAIN_ID,
@@ -86,6 +86,7 @@ describe('Quote handler', () => {
     tokenOut: TOKEN_OUT,
     type,
     numOutputs: 1,
+    protocol,
   });
 
   afterEach(() => {
