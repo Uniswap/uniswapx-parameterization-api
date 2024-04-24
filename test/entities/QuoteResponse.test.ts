@@ -2,6 +2,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import { parseEther } from 'ethers/lib/utils';
 
 import { QuoteResponse } from '../../lib/entities';
+import { ProtocolVersion } from '../../lib/providers';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f7';
@@ -40,6 +41,7 @@ describe('QuoteRequest', () => {
     amount: parseEther('1'),
     type: TradeType.EXACT_INPUT,
     numOutputs: 1,
+    protocol: ProtocolVersion.V1,
   };
 
   it('fromRequest', async () => {

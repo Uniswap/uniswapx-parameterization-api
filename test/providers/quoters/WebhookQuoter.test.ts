@@ -61,17 +61,23 @@ describe('WebhookQuoter tests', () => {
     repository
   );
 
-  const request = new QuoteRequest({
-    tokenInChainId: CHAIN_ID,
-    tokenOutChainId: CHAIN_ID,
-    requestId: REQUEST_ID,
-    swapper: SWAPPER,
-    tokenIn: TOKEN_IN,
-    tokenOut: TOKEN_OUT,
-    amount: ethers.utils.parseEther('1'),
-    type: TradeType.EXACT_INPUT,
-    numOutputs: 1,
-  });
+  const makeQuoteRequest = (overrides: Partial<QuoteRequest>): QuoteRequest => {
+    return new QuoteRequest({
+      tokenInChainId: CHAIN_ID,
+      tokenOutChainId: CHAIN_ID,
+      requestId: REQUEST_ID,
+      swapper: SWAPPER,
+      tokenIn: TOKEN_IN,
+      tokenOut: TOKEN_OUT,
+      amount: ethers.utils.parseEther('1'),
+      type: TradeType.EXACT_INPUT,
+      numOutputs: 1,
+      protocol: ProtocolVersion.V1,
+      ...overrides,
+    });
+  };
+
+  const request = makeQuoteRequest({});
 
   const quote = {
     amountOut: ethers.utils.parseEther('2').toString(),
@@ -269,6 +275,7 @@ describe('WebhookQuoter tests', () => {
           });
         });
 
+      const request = makeQuoteRequest({ protocol: ProtocolVersion.V2 });
       await webhookQuoter.quote(request, ProtocolVersion.V2);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
@@ -705,6 +712,7 @@ describe('WebhookQuoter tests', () => {
         amount: ethers.utils.parseEther('1'),
         type: TradeType.EXACT_OUTPUT,
         numOutputs: 1,
+        protocol: ProtocolVersion.V1,
       })
     );
 

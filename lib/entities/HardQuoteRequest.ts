@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { QuoteRequest, QuoteRequestDataJSON } from '.';
 import { HardQuoteRequestBody } from '../handlers/hard-quote';
+import { ProtocolVersion } from '../providers';
 
 export class HardQuoteRequest {
   public order: UnsignedV2DutchOrder;
@@ -34,6 +35,7 @@ export class HardQuoteRequest {
       type: TradeType[this.type],
       numOutputs: this.numOutputs,
       ...(this.quoteId && { quoteId: this.quoteId }),
+      protocol: ProtocolVersion.V2,
     };
   }
 

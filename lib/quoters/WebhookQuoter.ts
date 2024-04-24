@@ -101,6 +101,13 @@ export class WebhookQuoter implements Quoter {
       );
       return null;
     }
+    if (!getEndpointSupportedProtocols(config).includes(request.protocol)) {
+      this.log.debug(
+        { config: config, requestdProtocol: request.protocol },
+        `endpoint doesn't support the requested protocol`
+      );
+      return null;
+    }
 
     metric.putMetric(Metric.RFQ_REQUESTED, 1, MetricLoggerUnit.Count);
     metric.putMetric(metricContext(Metric.RFQ_REQUESTED, name), 1, MetricLoggerUnit.Count);

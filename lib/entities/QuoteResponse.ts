@@ -2,12 +2,12 @@ import { TradeType } from '@uniswap/sdk-core';
 import { BigNumber } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
+import { QuoteRequestData } from '.';
 import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
-import { QuoteRequestData } from '.';
 
 export interface QuoteResponseData
-  extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type' | 'numOutputs'> {
+  extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type' | 'numOutputs' | 'protocol'> {
   chainId: number;
   amountOut: BigNumber;
   amountIn: BigNumber;

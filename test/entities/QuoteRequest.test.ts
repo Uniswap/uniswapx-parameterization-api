@@ -2,6 +2,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import { ethers } from 'ethers';
 
 import { QuoteRequest } from '../../lib/entities';
+import { ProtocolVersion } from '../../lib/providers';
 
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const SWAPPER = '0x0000000000000000000000000000000000000000';
@@ -24,6 +25,7 @@ describe('QuoteRequest', () => {
     amount: ethers.utils.parseEther('1'),
     type: TradeType.EXACT_INPUT,
     numOutputs: 1,
+    protocol: ProtocolVersion.V1,
   });
 
   it('toCleanJSON', async () => {
@@ -37,6 +39,7 @@ describe('QuoteRequest', () => {
       swapper: ethers.constants.AddressZero,
       type: 'EXACT_INPUT',
       numOutputs: 1,
+      protocol: ProtocolVersion.V1,
     });
   });
 
@@ -51,6 +54,7 @@ describe('QuoteRequest', () => {
       swapper: ethers.constants.AddressZero,
       type: 'EXACT_OUTPUT',
       numOutputs: 1,
+      protocol: ProtocolVersion.V1,
     });
   });
 
@@ -66,6 +70,7 @@ describe('QuoteRequest', () => {
       swapper: SWAPPER,
       type: 'EXACT_OUTPUT',
       numOutputs: 1,
+      protocol: ProtocolVersion.V1,
     });
   });
 });
