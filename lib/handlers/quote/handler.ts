@@ -3,7 +3,7 @@ import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
 import Joi from 'joi';
 
-import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
+import { Metric, IQuoteRequest, QuoteRequest, QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';
 import { NoQuotesAvailable } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
@@ -83,7 +83,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 // fetch quotes from all quoters and return the best one
 export async function getBestQuote(
   quoters: Quoter[],
-  quoteRequest: QuoteRequest,
+  quoteRequest: IQuoteRequest,
   log: Logger,
   metric: IMetric,
   eventType: EventType = 'QuoteResponse'

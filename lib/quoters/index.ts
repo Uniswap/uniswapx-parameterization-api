@@ -1,4 +1,4 @@
-import { QuoteRequest, QuoteResponse } from '../entities';
+import { IQuoteRequest, QuoteResponse } from '../entities';
 
 export enum QuoterType {
   TEST = 'TEST',
@@ -7,7 +7,7 @@ export enum QuoterType {
 }
 
 export interface Quoter {
-  quote(request: QuoteRequest): Promise<QuoteResponse[]>;
+  quote(request: IQuoteRequest): Promise<QuoteResponse[]>;
   type(): QuoterType;
 }
 
