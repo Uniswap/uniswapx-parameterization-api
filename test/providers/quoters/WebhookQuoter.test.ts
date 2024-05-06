@@ -303,14 +303,21 @@ describe('WebhookQuoter tests', () => {
   });
 
   it('Allows those in allow list even when they are disabled in the config', async () => {
+    const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider(
+      [
+        { hash: '0xuni', fadeRate: 0.05, enabled: true },
+        { hash: '0x1inch', fadeRate: 0.5, enabled: false },
+        { hash: '0xsearcher', fadeRate: 0.1, enabled: true },
+      ],
+      new Set<string>(['0x1inch'])
+    );
     const webhookQuoter = new WebhookQuoter(
       logger,
       mockFirehoseLogger,
       webhookProvider,
       circuitBreakerProvider,
       emptyMockComplianceProvider,
-      repository,
-      new Set<string>(['0x1inch'])
+      repository
     );
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({

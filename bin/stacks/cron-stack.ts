@@ -32,6 +32,7 @@ export type TableCapacityConfig = {
   fillerAddress: TableCapacityOptions;
   fadeRate: TableCapacityOptions;
   synthSwitch: TableCapacityOptions;
+  timestamps: TableCapacityOptions;
 };
 
 export interface CronStackProps extends cdk.NestedStackProps {
@@ -178,6 +179,19 @@ export class CronStack extends cdk.NestedStack {
       ...PROD_TABLE_CAPACITY.synthSwitch,
     });
     this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE, chatbotTopic);
+
+    const fillerCBTimestampsTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FillerCBTimestampsTable`, {
+      tableName: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS,
+      partitionKey: {
+        name: 'hash',
+        type: aws_dynamo.AttributeType.STRING,
+      },
+      deletionProtection: true,
+      pointInTimeRecovery: true,
+      contributorInsightsEnabled: true,
+      ...PROD_TABLE_CAPACITY.timestamps,
+    });
+    this.alarmsPerTable(fillerCBTimestampsTable, DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS, chatbotTopic);
   }
 
   private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSTopic?: ITopic): void {
