@@ -8,7 +8,7 @@ import { WebhookConfiguration } from '../webhook';
 
 export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
   private log: Logger;
-  private fillers: string[];
+  private fillerHashes: string[];
   private lastUpdatedTimestamp: number;
   private timestampDB: BaseTimestampRepository;
   private timestamps: FillerTimestampMap = new Map();
@@ -17,9 +17,9 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
   // try to refetch endpoints every 30 seconds
   private static UPDATE_PERIOD_MS = 1 * 30000;
 
-  constructor(_log: Logger, fillers: string[] = []) {
+  constructor(_log: Logger, _fillerHashes: string[] = []) {
     this.log = _log.child({ quoter: 'CircuitBreakerConfigurationProvider' });
-    this.fillers = fillers;
+    this.fillerHashes = _fillerHashes;
     this.lastUpdatedTimestamp = Date.now();
     const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
       marshallOptions: {
@@ -34,7 +34,7 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
 
   async getConfigurations(): Promise<FillerTimestampMap> {
     if (
-      this.fillers.length === 0 ||
+      this.fillerHashes.length === 0 ||
       Date.now() - this.lastUpdatedTimestamp > DynamoCircuitBreakerConfigurationProvider.UPDATE_PERIOD_MS
     ) {
       await this.fetchConfigurations();
@@ -45,9 +45,10 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
   }
 
   async fetchConfigurations(): Promise<void> {
-    this.timestamps = await this.timestampDB.getFillerTimestampsMap(this.fillers);
+    this.timestamps = await this.timestampDB.getFillerTimestampsMap(this.fillerHashes);
   }
 
+  /* add filler if it's not blocked until a future timestamp */
   async getEligibleEndpoints(endpoints: WebhookConfiguration[]): Promise<WebhookConfiguration[]> {
     try {
       const now = Math.floor(Date.now() / 1000);

@@ -11,6 +11,22 @@ export class MockV2CircuitBreakerConfigurationProvider implements CircuitBreaker
   }
 
   async getEligibleEndpoints(endpoints: WebhookConfiguration[]): Promise<WebhookConfiguration[]> {
+    const now = Math.floor(Date.now() / 1000);
+    const fillerTimestamps = await this.getConfigurations();
+    if (fillerTimestamps.size) {
+      const enabledEndpoints: WebhookConfiguration[] = [];
+      endpoints.forEach((e) => {
+        if (
+          !fillerTimestamps.has(e.hash) ||
+          (fillerTimestamps.has(e.hash) &&
+            (fillerTimestamps.get(e.hash)!.blockUntilTimestamp < now ||
+              isNaN(fillerTimestamps.get(e.hash)!.blockUntilTimestamp)))
+        ) {
+          enabledEndpoints.push(e);
+        }
+      });
+      return enabledEndpoints;
+    }
     return endpoints;
   }
 }

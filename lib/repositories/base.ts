@@ -38,6 +38,10 @@ export type DynamoTimestampRepoRow = Exclude<TimestampRepoRow, 'lastPostTimestam
   lastPostTimestamp: string;
   blockUntilTimestamp: string;
 };
+
+/*
+  fillerHash -> { lastPostTimestamp, blockUntilTimestamp }
+*/
 export type FillerTimestampMap = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
 export abstract class BaseRedshiftRepository {
