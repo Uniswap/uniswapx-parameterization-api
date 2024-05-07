@@ -156,27 +156,27 @@ WHERE totalQuotes >= 10;
 `;
 
 const V2_CREATE_VIEW_SQL = `
-CREATE OR REPLACE VIEW latestRfqs 
+CREATE OR REPLACE VIEW latestRfqsV2 
 AS (
-WITH latestOrders AS (
+WITH latestOrdersV2 AS (
   SELECT * FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype = 'Dutch_V2'
   )
   WHERE row_num <= 20
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
   LIMIT 1000
 )
 SELECT
-    latestOrders.chainid as chainId, latestOrders.filler as rfqFiller, latestOrders.startTime as decayStartTime, latestOrders.quoteid, archivedorders.filler as actualFiller, latestOrders.createdat as postTimestamp, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp,
+    latestOrdersV2.chainid as chainId, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp,
     CASE
-      WHEN latestOrders.inputstartamount = latestOrders.inputendamount THEN 'EXACT_INPUT'
+      WHEN latestOrdersV2.inputstartamount = latestOrdersV2.inputendamount THEN 'EXACT_INPUT'
       ELSE 'EXACT_OUTPUT'
     END as tradeType
 FROM
-    latestOrders LEFT OUTER JOIN archivedorders ON latestOrders.quoteid = archivedorders.quoteid
+    latestOrdersV2 LEFT OUTER JOIN archivedorders ON latestOrdersV2.quoteid = archivedorders.quoteid
 where
 rfqFiller IS NOT NULL
-AND latestOrders.quoteId IS NOT NULL
+AND latestOrdersV2.quoteId IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND chainId NOT IN (5,8001,420,421613) -- exclude mainnet goerli, polygon goerli, optimism goerli and arbitrum goerli testnets 
 AND
@@ -191,7 +191,7 @@ SELECT
     rfqFiller,
     postTimestamp,
     CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END AS faded
-FROM latestRfqs
+FROM latestRfqsV2
 ORDER BY rfqFiller, postTimestamp DESC
 LIMIT 1000
 `;
