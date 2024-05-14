@@ -93,11 +93,12 @@ export class QuoteHandler extends APIGLambdaHandler<
     try {
       metric.putMetric(Metric.QUOTE_POST_ATTEMPT, 1, MetricLoggerUnit.Count);
       // if no quote and creating open order, create random new quoteId
-      const response = await orderServiceProvider.postOrder(
-        cosignedOrder,
-        request.innerSig,
-        bestQuote?.quoteId ?? uuidv4()
-      );
+      const response = await orderServiceProvider.postOrder({
+        order: cosignedOrder,
+        signature: request.innerSig,
+        quoteId: bestQuote?.quoteId ?? uuidv4(),
+        requestId: request.requestId,
+      });
       if (response.statusCode == 200 || response.statusCode == 201) {
         metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
         metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
