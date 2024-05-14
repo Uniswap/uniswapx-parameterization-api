@@ -35,7 +35,8 @@ export class WebhookQuoter implements Quoter {
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
     private complianceProvider: FillerComplianceConfigurationProvider,
-    private repository: FillerAddressRepository
+    private repository: FillerAddressRepository,
+    _allow_list: Set<string> = new Set<string>(['22a23abb38e0612e58ebdd15756b18110e6aac078645210afe0c60f8220307b0'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }

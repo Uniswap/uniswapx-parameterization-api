@@ -114,7 +114,7 @@ CREATE OR REPLACE VIEW rfqOrdersTimestamp
 AS (
 WITH latestOrders AS (
   SELECT * FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype = 'Dutch'
   )
   WHERE row_num <= 30
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
