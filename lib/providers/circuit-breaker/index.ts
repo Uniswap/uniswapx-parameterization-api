@@ -8,7 +8,7 @@ export interface CircuitBreakerConfiguration {
 }
 
 export interface CircuitBreakerConfigurationProvider {
-  allow_list: Set<string>;
+  allow_list?: Set<string>;
   getConfigurations(): Promise<CircuitBreakerConfiguration[] | FillerTimestampMap>;
   getEligibleEndpoints(endpoints: WebhookConfiguration[]): Promise<WebhookConfiguration[]>;
 }

@@ -3,7 +3,6 @@ import { FillerTimestampMap } from '../../repositories';
 import { WebhookConfiguration } from '../webhook';
 
 export class MockV2CircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
-  allow_list: Set<string> = new Set<string>();
   constructor(public fillers: string[], private timestamps: FillerTimestampMap) {}
 
   async getConfigurations(): Promise<FillerTimestampMap> {
@@ -14,16 +13,8 @@ export class MockV2CircuitBreakerConfigurationProvider implements CircuitBreaker
     const now = Math.floor(Date.now() / 1000);
     const fillerTimestamps = await this.getConfigurations();
     if (fillerTimestamps.size) {
-      const enabledEndpoints: WebhookConfiguration[] = [];
-      endpoints.forEach((e) => {
-        if (
-          !fillerTimestamps.has(e.hash) ||
-          (fillerTimestamps.has(e.hash) &&
-            (fillerTimestamps.get(e.hash)!.blockUntilTimestamp < now ||
-              isNaN(fillerTimestamps.get(e.hash)!.blockUntilTimestamp)))
-        ) {
-          enabledEndpoints.push(e);
-        }
+      const enabledEndpoints = endpoints.filter((e) => {
+        return !(fillerTimestamps.has(e.hash) && fillerTimestamps.get(e.hash)!.blockUntilTimestamp > now);
       });
       return enabledEndpoints;
     }

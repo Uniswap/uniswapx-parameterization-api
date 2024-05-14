@@ -49,12 +49,6 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
 
-    //const circuitBreakerProvider = new S3CircuitBreakerConfigurationProvider(
-    //  log,
-    //  `${FADE_RATE_BUCKET}-${stage}-1`,
-    //  FADE_RATE_S3_KEY
-    //);
-
     const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
     const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
     const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);

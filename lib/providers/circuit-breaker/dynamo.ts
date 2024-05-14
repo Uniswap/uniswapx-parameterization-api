@@ -12,7 +12,6 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
   private lastUpdatedTimestamp: number;
   private timestampDB: BaseTimestampRepository;
   private timestamps: FillerTimestampMap = new Map();
-  allow_list: Set<string> = new Set<string>();
 
   // try to refetch endpoints every 30 seconds
   private static UPDATE_PERIOD_MS = 1 * 30000;
@@ -55,16 +54,8 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
       const fillerTimestamps = await this.getConfigurations();
       if (fillerTimestamps.size) {
         this.log.info({ fillerTimestamps: [...fillerTimestamps.entries()] }, `Circuit breaker config used`);
-        const enabledEndpoints: WebhookConfiguration[] = [];
-        endpoints.forEach((e) => {
-          if (
-            !fillerTimestamps.has(e.hash) ||
-            (fillerTimestamps.has(e.hash) &&
-              (fillerTimestamps.get(e.hash)!.blockUntilTimestamp < now ||
-                isNaN(fillerTimestamps.get(e.hash)!.blockUntilTimestamp)))
-          ) {
-            enabledEndpoints.push(e);
-          }
+        const enabledEndpoints = endpoints.filter((e) => {
+          return !(fillerTimestamps.has(e.hash) && fillerTimestamps.get(e.hash)!.blockUntilTimestamp > now);
         });
         this.log.info({ endpoints: enabledEndpoints }, `Endpoint enabled`);
         return enabledEndpoints;
