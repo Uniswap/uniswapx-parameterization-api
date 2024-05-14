@@ -1,3 +1,6 @@
+import { FillerTimestampMap } from '../../repositories';
+import { WebhookConfiguration } from '../webhook';
+
 export interface CircuitBreakerConfiguration {
   hash: string;
   fadeRate: number;
@@ -5,5 +8,7 @@ export interface CircuitBreakerConfiguration {
 }
 
 export interface CircuitBreakerConfigurationProvider {
-  getConfigurations(): Promise<CircuitBreakerConfiguration[]>;
+  allow_list?: Set<string>;
+  getConfigurations(): Promise<CircuitBreakerConfiguration[] | FillerTimestampMap>;
+  getEligibleEndpoints(endpoints: WebhookConfiguration[]): Promise<WebhookConfiguration[]>;
 }

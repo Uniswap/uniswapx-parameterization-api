@@ -6,18 +6,25 @@ import Logger from 'bunyan';
 import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
 import { Metric } from '../../entities';
 import { checkDefined } from '../../preconditions/preconditions';
+import { WebhookConfiguration } from '../webhook';
 
 export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
   private log: Logger;
   private fillers: CircuitBreakerConfiguration[];
   private lastUpdatedTimestamp: number;
   private client: S3Client;
+  allow_list: Set<string>;
 
   // try to refetch endpoints every 5 mins
   private static UPDATE_PERIOD_MS = 5 * 60000;
   private static FILL_RATE_THRESHOLD = 0.75;
 
-  constructor(_log: Logger, private bucket: string, private key: string) {
+  constructor(
+    _log: Logger,
+    private bucket: string,
+    private key: string,
+    _allow_list: Set<string> = new Set<string>([])
+  ) {
     this.log = _log.child({ quoter: 'S3CircuitBreakerConfigurationProvider' });
     this.fillers = [];
     this.lastUpdatedTimestamp = Date.now();
@@ -26,6 +33,37 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
         requestTimeout: 500,
       }),
     });
+    this.allow_list = _allow_list;
+  }
+
+  async getEligibleEndpoints(endpoints: WebhookConfiguration[]): Promise<WebhookConfiguration[]> {
+    try {
+      const config = await this.getConfigurations();
+      const fillerToConfigMap = new Map(config.map((c) => [c.hash, c]));
+      if (config) {
+        this.log.info(
+          { fillerToCMap: [...fillerToConfigMap.entries()], config: config },
+          `Circuit breaker config used`
+        );
+        const enabledEndpoints: WebhookConfiguration[] = [];
+        endpoints.forEach((e) => {
+          if (
+            this.allow_list.has(e.hash) ||
+            (fillerToConfigMap.has(e.hash) && fillerToConfigMap.get(e.hash)?.enabled) ||
+            !fillerToConfigMap.has(e.hash) // default to allowing fillers not in the config
+          ) {
+            this.log.info({ endpoint: e }, `Endpoint enabled`);
+            enabledEndpoints.push(e);
+          }
+        });
+        return enabledEndpoints;
+      }
+
+      return endpoints;
+    } catch (e) {
+      this.log.error({ error: e }, `Error getting eligible endpoints, default to returning all`);
+      return endpoints;
+    }
   }
 
   async getConfigurations(): Promise<CircuitBreakerConfiguration[]> {

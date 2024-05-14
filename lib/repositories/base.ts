@@ -28,6 +28,22 @@ export enum TimestampThreshold {
   TWO_MONTHS = "'2 MONTHS'",
 }
 
+export type TimestampRepoRow = {
+  hash: string;
+  lastPostTimestamp: number;
+  blockUntilTimestamp: number;
+};
+
+export type DynamoTimestampRepoRow = Exclude<TimestampRepoRow, 'lastPostTimestamp' | 'blockUntilTimestamp'> & {
+  lastPostTimestamp: string;
+  blockUntilTimestamp: string;
+};
+
+/*
+  fillerHash -> { lastPostTimestamp, blockUntilTimestamp }
+*/
+export type FillerTimestampMap = Map<string, Omit<TimestampRepoRow, 'hash'>>;
+
 export abstract class BaseRedshiftRepository {
   constructor(readonly client: RedshiftDataClient, private readonly configs: SharedConfigs) {}
 
@@ -64,4 +80,11 @@ export abstract class BaseRedshiftRepository {
 export interface BaseSwitchRepository {
   putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void>;
   syntheticQuoteForTradeEnabled(trade: SynthSwitchQueryParams): Promise<boolean>;
+}
+
+export interface BaseTimestampRepository {
+  updateTimestampsBatch(toUpdate: [string, number, number?][]): Promise<void>;
+  getFillerTimestamps(hash: string): Promise<TimestampRepoRow>;
+  getFillerTimestampsMap(hashes: string[]): Promise<Map<string, Omit<TimestampRepoRow, 'hash'>>>;
+  getTimestampsBatch(hashes: string[]): Promise<TimestampRepoRow[]>;
 }

@@ -7,18 +7,12 @@ import { default as bunyan, default as Logger } from 'bunyan';
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import {
-  BETA_S3_KEY,
-  FADE_RATE_BUCKET,
-  FADE_RATE_S3_KEY,
-  PRODUCTION_S3_KEY,
-  WEBHOOK_CONFIG_BUCKET,
-} from '../../constants';
+import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
 import { AWSMetricsLogger, HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
 import { OrderServiceProvider, S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
-import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
+import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
 import { MockFillerComplianceConfigurationProvider } from '../../providers/compliance';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
@@ -55,12 +49,6 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
 
-    const circuitBreakerProvider = new S3CircuitBreakerConfigurationProvider(
-      log,
-      `${FADE_RATE_BUCKET}-${stage}-1`,
-      FADE_RATE_S3_KEY
-    );
-
     const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
     const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
     const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);
@@ -68,6 +56,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
     await webhookProvider.fetchEndpoints();
+    const circuitBreakerProvider = new DynamoCircuitBreakerConfigurationProvider(log, webhookProvider.fillers());
 
     const orderServiceProvider = new UniswapXServiceProvider(log, orderServiceUrl);
 

@@ -28,7 +28,6 @@ const WEBHOOK_TIMEOUT_MS = 500;
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
   private log: Logger;
-  private readonly ALLOW_LIST: Set<string>;
 
   constructor(
     _log: Logger,
@@ -40,7 +39,6 @@ export class WebhookQuoter implements Quoter {
     _allow_list: Set<string> = new Set<string>(['22a23abb38e0612e58ebdd15756b18110e6aac078645210afe0c60f8220307b0'])
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
-    this.ALLOW_LIST = _allow_list;
   }
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
@@ -63,33 +61,7 @@ export class WebhookQuoter implements Quoter {
 
   private async getEligibleEndpoints(): Promise<WebhookConfiguration[]> {
     const endpoints = await this.webhookProvider.getEndpoints();
-    try {
-      const config = await this.circuitBreakerProvider.getConfigurations();
-      const fillerToConfigMap = new Map(config.map((c) => [c.hash, c]));
-      if (config) {
-        this.log.info(
-          { fillerToCMap: [...fillerToConfigMap.entries()], config: config },
-          `Circuit breaker config used`
-        );
-        const enabledEndpoints: WebhookConfiguration[] = [];
-        endpoints.forEach((e) => {
-          if (
-            this.ALLOW_LIST.has(e.hash) ||
-            (fillerToConfigMap.has(e.hash) && fillerToConfigMap.get(e.hash)?.enabled) ||
-            !fillerToConfigMap.has(e.hash) // default to allowing fillers not in the config
-          ) {
-            this.log.info({ endpoint: e }, `Endpoint enabled`);
-            enabledEndpoints.push(e);
-          }
-        });
-        return enabledEndpoints;
-      }
-
-      return endpoints;
-    } catch (e) {
-      this.log.error({ error: e }, `Error getting eligible endpoints, default to returning all`);
-      return endpoints;
-    }
+    return this.circuitBreakerProvider.getEligibleEndpoints(endpoints);
   }
 
   private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
