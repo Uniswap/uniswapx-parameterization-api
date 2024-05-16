@@ -6,8 +6,15 @@ export interface UniswapXServiceResponse {
   data: string;
 }
 
+export interface PostOrderArgs {
+  order: Order;
+  signature: string;
+  quoteId?: string;
+  requestId?: string;
+}
+
 export interface OrderServiceProvider {
-  postOrder(order: Order, signature: string, quoteId?: string): Promise<ErrorResponse | UniswapXServiceResponse>;
+  postOrder(args: PostOrderArgs): Promise<ErrorResponse | UniswapXServiceResponse>;
 }
 
 export * from './mock';

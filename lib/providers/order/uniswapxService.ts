@@ -1,8 +1,7 @@
-import { Order } from '@uniswap/uniswapx-sdk';
 import axios, { AxiosError } from 'axios';
 import Logger from 'bunyan';
 
-import { OrderServiceProvider, UniswapXServiceResponse } from '.';
+import { OrderServiceProvider, PostOrderArgs, UniswapXServiceResponse } from '.';
 import { ErrorResponse } from '../../handlers/base';
 import { ErrorCode } from '../../util/errors';
 
@@ -16,7 +15,8 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
     this.log = _log.child({ quoter: 'UniswapXOrderService' });
   }
 
-  async postOrder(order: Order, signature: string, quoteId?: string): Promise<ErrorResponse | UniswapXServiceResponse> {
+  async postOrder(args: PostOrderArgs): Promise<ErrorResponse | UniswapXServiceResponse> {
+    const { order, signature, quoteId, requestId } = args;
     this.log.info({ orderHash: order.hash() }, 'Posting order to UniswapX Service');
 
     const axiosConfig = {
@@ -30,6 +30,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
           signature: signature,
           chainId: order.chainId,
           quoteId: quoteId,
+          requestId: requestId,
           orderType: V2_ORDER_TYPE,
         },
         axiosConfig
