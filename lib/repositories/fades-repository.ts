@@ -93,7 +93,7 @@ export class V2FadesRepository extends BaseRedshiftRepository {
       */
     const result = response.Records;
     if (!result) {
-      FadesRepository.log.error('no fade rate calculation result');
+      V2FadesRepository.log.error('no fade rate calculation result');
       throw new Error('No fade rate result');
     }
     const formattedResult = result.map((row) => {
@@ -104,7 +104,7 @@ export class V2FadesRepository extends BaseRedshiftRepository {
       };
       return formattedRow;
     });
-    FadesRepository.log.info({ result: formattedResult }, 'formatted redshift query result');
+    V2FadesRepository.log.info({ result: formattedResult }, 'formatted redshift query result');
     return formattedResult;
   }
 }
