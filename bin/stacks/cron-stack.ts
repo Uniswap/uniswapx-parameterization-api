@@ -47,6 +47,7 @@ export interface CronStackProps extends cdk.NestedStackProps {
 
 export class CronStack extends cdk.NestedStack {
   public readonly fadeRateCronLambda?: aws_lambda_nodejs.NodejsFunction;
+  public readonly fadeRateV2CronLambda?: aws_lambda_nodejs.NodejsFunction;
   public readonly synthSwitchCronLambda: aws_lambda_nodejs.NodejsFunction;
   public readonly redshiftReaperCronLambda: aws_lambda_nodejs.NodejsFunction;
 
@@ -96,6 +97,30 @@ export class CronStack extends cdk.NestedStack {
         }),
         threshold: 1,
         evaluationPeriods: 1,
+      });
+
+      this.fadeRateCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `FadeRateV2Cron`, {
+        role: lambdaRole,
+        runtime: aws_lambda.Runtime.NODEJS_18_X,
+        entry: path.join(__dirname, '../../lib/cron/fade-rate-v2.ts'),
+        handler: 'handler',
+        timeout: Duration.seconds(240),
+        memorySize: 512,
+        bundling: {
+          minify: true,
+          sourceMap: true,
+        },
+        environment: {
+          REDSHIFT_DATABASE: RsDatabase,
+          REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
+          REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
+          stage: stage,
+          ...envVars,
+        },
+      });
+      new aws_events.Rule(this, `FadeRateV2CronSchedule`, {
+        schedule: aws_events.Schedule.rate(Duration.minutes(10)),
+        targets: [new aws_events_targets.LambdaFunction(this.fadeRateCronLambda)],
       });
 
       if (chatbotSNSArn) {
