@@ -120,7 +120,7 @@ export class CronStack extends cdk.NestedStack {
       });
       new aws_events.Rule(this, `FadeRateV2CronSchedule`, {
         schedule: aws_events.Schedule.rate(Duration.minutes(10)),
-        targets: [new aws_events_targets.LambdaFunction(this.fadeRateCronLambda)],
+        targets: [new aws_events_targets.LambdaFunction(this.fadeRateV2CronLambda)],
       });
 
       if (chatbotSNSArn) {
