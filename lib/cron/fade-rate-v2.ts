@@ -73,7 +73,7 @@ async function main(metrics: MetricsLogger) {
     //  | hash    |     faded  |   postTimestamp  |
     //  |---- foo ------|---- 3 ----|---- 12345678 ----|
     //  |---- bar ------|---- 1 ----|---- 12222222 ----|
-    const fillersNewFades = getFillersNewFades(result, fillerTimestamps, addressToFillerMap);
+    const fillersNewFades = getFillersNewFades(result, addressToFillerMap, fillerTimestamps, log);
 
     //  | hash        |lastPostTimestamp|blockUntilTimestamp|
     //  |---- foo ----|---- 1300000 ----|---- now + fades * block_per_fade ----|
@@ -97,8 +97,8 @@ async function main(metrics: MetricsLogger) {
 */
 export function getFillersNewFades(
   rows: V2FadesRowType[],
-  fillerTimestamps: FillerTimestamps,
   addressToFillerMap: Map<string, string>,
+  fillerTimestamps: FillerTimestamps,
   log?: Logger
 ): FillerFades {
   const newFadesMap: FillerFades = {}; // filler hash -> # of new fades
