@@ -159,5 +159,35 @@ describe('Hard Quote endpoint integration test', function () {
       expect(data.chainId).to.equal(SEPOLIA);
       expect(data.orderHash).to.match(/0x[0-9a-fA-F]{64}/);
     });
+
+    it('successfully skips quotes with forceOpenOrder', async () => {
+      const prebuildOrder = builder
+        .input({ token: TOKEN_IN, startAmount: AMOUNT, endAmount: AMOUNT })
+        .output({ token: TOKEN_OUT, startAmount: AMOUNT, endAmount: AMOUNT, recipient: SWAPPER_ADDRESS })
+        .nonce(BigNumber.from(100))
+        .cosigner(COSIGNER_ADDR)
+        .deadline(now + 1000)
+        .swapper(SWAPPER_ADDRESS);
+
+      const v2Order = prebuildOrder.buildPartial();
+      const { domain, types, values } = v2Order.permitData();
+      const signature = await swapper._signTypedData(domain, types, values);
+
+      const quoteReq: HardQuoteRequestBody = {
+        requestId: REQUEST_ID,
+        encodedInnerOrder: v2Order.serialize(),
+        innerSig: signature,
+        tokenInChainId: SEPOLIA,
+        tokenOutChainId: SEPOLIA,
+        forceOpenOrder: true,
+      };
+
+      const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
+      console.log(data);
+      expect(status).to.equal(200);
+      expect(data.chainId).to.equal(SEPOLIA);
+      expect(data.orderHash).to.match(/0x[0-9a-fA-F]{64}/);
+      expect(data.filler).to.equal(ethers.constants.AddressZero);
+    });
   });
 });
