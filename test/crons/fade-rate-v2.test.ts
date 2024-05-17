@@ -55,7 +55,7 @@ logger.level(Logger.FATAL);
 describe('FadeRateCron test', () => {
   let newFades: FillerFades;
   beforeAll(() => {
-    newFades = getFillersNewFades(FADES_ROWS, ADDRESS_TO_FILLER, FILLER_TIMESTAMPS, logger);
+    newFades = getFillersNewFades(FADES_ROWS, FILLER_TIMESTAMPS, ADDRESS_TO_FILLER, logger);
   });
 
   describe('getFillersNewFades', () => {

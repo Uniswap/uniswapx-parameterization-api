@@ -14,6 +14,7 @@ export interface FillerAddressRepository {
   getFillerByAddress(address: string): Promise<string | undefined>;
   addNewAddressToFiller(address: string, filler?: string): Promise<void>;
   getFillerAddressesBatch(fillers: string[]): Promise<Map<string, Set<string>>>;
+  getAddressToFillerMap(fillers: string[]): Promise<Map<string, string>>;
 }
 /*
  * Dynamo repository for managing filler addresses
@@ -105,6 +106,15 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
     });
     return resMap;
   }
+
+  async getAddressToFillerMap(fillers: string[]): Promise<Map<string, string>> {
+    const fillerAddresses = await this.getFillerAddressesBatch(fillers);
+    const addrToFillerMap = new Map<string, string>();
+    fillerAddresses.forEach((addresses, hash) => {
+      addresses.forEach((addr) => addrToFillerMap.set(addr, hash));
+    });
+    return addrToFillerMap;
+  }
 }
 
 export class MockFillerAddressRepository implements FillerAddressRepository {
@@ -150,5 +160,14 @@ export class MockFillerAddressRepository implements FillerAddressRepository {
       }
     }
     return res;
+  }
+
+  async getAddressToFillerMap(fillers: string[]): Promise<Map<string, string>> {
+    const fillerAddresses = await this.getFillerAddressesBatch(fillers);
+    const addrToFillerMap = new Map<string, string>();
+    fillerAddresses.forEach((addresses, hash) => {
+      addresses.forEach((addr) => addrToFillerMap.set(addr, hash));
+    });
+    return addrToFillerMap;
   }
 }
