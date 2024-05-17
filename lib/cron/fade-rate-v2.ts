@@ -89,6 +89,32 @@ async function main(metrics: MetricsLogger) {
   }
 }
 
+/* compute blockUntil timestamp for each filler
+  blockedUntilTimestamp > current timestamp: skip
+  lastPostTimestamp < blockedUntilTimestamp < current timestamp: block for # * unit block time from now
+*/
+export function calculateNewTimestamps(
+  fillerTimestamps: FillerTimestamps,
+  fillersNewFades: FillerFades,
+  newPostTimestamp: number,
+  log?: Logger
+): [string, number, number][] {
+  const updatedTimestamps: [string, number, number][] = [];
+  Object.entries(fillersNewFades).forEach((row) => {
+    const hash = row[0];
+    const fades = row[1];
+    if (fillerTimestamps.has(hash) && fillerTimestamps.get(hash)!.blockUntilTimestamp > newPostTimestamp) {
+      return;
+    }
+    if (fades) {
+      const blockUntilTimestamp = newPostTimestamp + fades * BLOCK_PER_FADE_SECS;
+      updatedTimestamps.push([hash, newPostTimestamp, blockUntilTimestamp]);
+    }
+  });
+  log?.info({ updatedTimestamps }, 'updated timestamps');
+  return updatedTimestamps;
+}
+
 /* find the number of new fades, for each filler entity, from 
    the last time this cron is run
    @param rows: info about individual orders: filler address, faded or not, post timestamp
@@ -120,30 +146,4 @@ export function getFillersNewFades(
   });
   log?.info({ newFadesMap }, '# of new fades by filler');
   return newFadesMap;
-}
-
-/* compute blockUntil timestamp for each filler
-  blockedUntilTimestamp > current timestamp: skip
-  lastPostTimestamp < blockedUntilTimestamp < current timestamp: block for # * unit block time from now
-*/
-export function calculateNewTimestamps(
-  fillerTimestamps: FillerTimestamps,
-  fillersNewFades: FillerFades,
-  newPostTimestamp: number,
-  log?: Logger
-): [string, number, number][] {
-  const updatedTimestamps: [string, number, number][] = [];
-  Object.entries(fillersNewFades).forEach((row) => {
-    const hash = row[0];
-    const fades = row[1];
-    if (fillerTimestamps.has(hash) && fillerTimestamps.get(hash)!.blockUntilTimestamp > newPostTimestamp) {
-      return;
-    }
-    if (fades) {
-      const blockUntilTimestamp = newPostTimestamp + fades * BLOCK_PER_FADE_SECS;
-      updatedTimestamps.push([hash, newPostTimestamp, blockUntilTimestamp]);
-    }
-  });
-  log?.info({ updatedTimestamps }, 'updated timestamps');
-  return updatedTimestamps;
 }
