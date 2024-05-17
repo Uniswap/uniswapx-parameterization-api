@@ -13,7 +13,7 @@ export interface FillerAddressRepository {
   getFillerAddresses(filler: string): Promise<string[] | undefined>;
   getFillerByAddress(address: string): Promise<string | undefined>;
   addNewAddressToFiller(address: string, filler?: string): Promise<void>;
-  getFillerAddressesBatch(fillers: string[]): Promise<Map<string, string[]>>;
+  getFillerAddressesBatch(fillers: string[]): Promise<Map<string, Set<string>>>;
 }
 /*
  * Dynamo repository for managing filler addresses
@@ -93,15 +93,15 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
   /*
     @returns a map of filler -> [addresses]
   */
-  async getFillerAddressesBatch(fillers: string[]): Promise<Map<string, string[]>> {
+  async getFillerAddressesBatch(fillers: string[]): Promise<Map<string, Set<string>>> {
     const { Responses: items } = await this._addressTable.batchGet(
       fillers.map((fillerHash) => this._fillerToAddressEntity.getBatch({ pk: fillerHash })),
       { execute: true, parse: true }
     );
 
-    const resMap = new Map<string, string[]>();
+    const resMap = new Map<string, Set<string>>();
     items.FillerAddress.forEach((row: DynamoFillerToAddressRow) => {
-      resMap.set(row.pk, row.addresses);
+      resMap.set(row.pk, new Set<string>(row.addresses));
     });
     return resMap;
   }
@@ -141,11 +141,14 @@ export class MockFillerAddressRepository implements FillerAddressRepository {
     }
   }
 
-  async getFillerAddressesBatch(fillers: string[]): Promise<Map<string, string[]>> {
-    const resMap = new Map<string, string[]>();
+  async getFillerAddressesBatch(fillers: string[]): Promise<Map<string, Set<string>>> {
+    const res = new Map<string, Set<string>>();
     for (const filler of fillers) {
-      resMap.set(filler, (await this.getFillerAddresses(filler)) ?? []);
+      const addrs = await this.getFillerAddresses(filler);
+      if (addrs) {
+        res.set(filler, new Set(addrs));
+      }
     }
-    return resMap;
+    return res;
   }
 }
