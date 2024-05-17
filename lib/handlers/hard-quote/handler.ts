@@ -89,6 +89,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     // TODO: use server key to cosign instead of local wallet
     const cosignature = await cosigner.signDigest(request.order.cosignatureHash(cosignerData));
     const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(request.order, cosignerData, cosignature);
+    log.info({ cosignedOrder: cosignedOrder }, 'cosignedOrder');
 
     try {
       metric.putMetric(Metric.QUOTE_POST_ATTEMPT, 1, MetricLoggerUnit.Count);
