@@ -4,10 +4,16 @@ import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMO_TABLE_NAME } from '../constants';
 
+export type DynamoFillerToAddressRow = {
+  pk: string;
+  addresses: string[];
+};
+
 export interface FillerAddressRepository {
   getFillerAddresses(filler: string): Promise<string[] | undefined>;
   getFillerByAddress(address: string): Promise<string | undefined>;
   addNewAddressToFiller(address: string, filler?: string): Promise<void>;
+  getFillerAddressesBatch(fillers: string[]): Promise<Map<string, string[]>>;
 }
 /*
  * Dynamo repository for managing filler addresses
@@ -48,9 +54,10 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
       autoExecute: true,
     } as const);
 
-    return new DynamoFillerAddressRepository(fillerToAddressEntity, addressToFillerEntity);
+    return new DynamoFillerAddressRepository(addressTable, fillerToAddressEntity, addressToFillerEntity);
   }
   private constructor(
+    private readonly _addressTable: Table<'FillerAddress', 'pk', null>,
     private readonly _fillerToAddressEntity: Entity,
     private readonly _addressToFillerEntity: Entity
   ) {}
@@ -81,6 +88,22 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
       }
       await this._fillerToAddressEntity.update({ pk: existingFiller, addresses: { $add: [address] } });
     }
+  }
+
+  /*
+    @returns a map of filler -> [addresses]
+  */
+  async getFillerAddressesBatch(fillers: string[]): Promise<Map<string, string[]>> {
+    const { Responses: items } = await this._addressTable.batchGet(
+      fillers.map((fillerHash) => this._fillerToAddressEntity.getBatch({ pk: fillerHash })),
+      { execute: true, parse: true }
+    );
+
+    const resMap = new Map<string, string[]>();
+    items.FillerAddress.forEach((row: DynamoFillerToAddressRow) => {
+      resMap.set(row.pk, row.addresses);
+    });
+    return resMap;
   }
 }
 
@@ -116,5 +139,13 @@ export class MockFillerAddressRepository implements FillerAddressRepository {
       fillerAddresses.add(address);
       this._fillerToAddress.set(existingFiller, fillerAddresses);
     }
+  }
+
+  async getFillerAddressesBatch(fillers: string[]): Promise<Map<string, string[]>> {
+    const resMap = new Map<string, string[]>();
+    for (const filler of fillers) {
+      resMap.set(filler, (await this.getFillerAddresses(filler)) ?? []);
+    }
+    return resMap;
   }
 }
