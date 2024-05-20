@@ -98,9 +98,10 @@ export class V2FadesRepository extends BaseRedshiftRepository {
     }
     const formattedResult = result.map((row) => {
       const formattedRow: V2FadesRowType = {
+        // the ordering of the fields has to match that in the sql query
         fillerAddress: row[0].stringValue as string,
-        faded: Number(row[1].longValue as number),
-        postTimestamp: Number(row[2].longValue as number),
+        postTimestamp: Number(row[1].longValue as number),
+        faded: Number(row[2].longValue as number),
       };
       return formattedRow;
     });

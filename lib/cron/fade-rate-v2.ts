@@ -10,6 +10,7 @@ import { CircuitBreakerMetricDimension } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
 import { SharedConfigs, TimestampRepoRow, V2FadesRepository, V2FadesRowType } from '../repositories';
+import { DynamoFillerAddressRepository } from '../repositories/filler-address-repository';
 import { TimestampRepository } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
 
@@ -17,6 +18,26 @@ export type FillerFades = Record<string, number>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
 export const BLOCK_PER_FADE_SECS = 60 * 5; // 5 minutes
+
+const log = Logger.createLogger({
+  name: 'FadeRate',
+  serializers: Logger.stdSerializers,
+});
+
+/* set up aws clients */
+const stage = process.env['stage'];
+const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
+const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
+const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: {
+    convertEmptyValues: true,
+  },
+  unmarshallOptions: {
+    wrapNumbers: true,
+  },
+});
+const fillerAddressRepo = DynamoFillerAddressRepository.create(documentClient);
+const timestampDB = TimestampRepository.create(documentClient);
 
 export const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
   await main(metrics);
@@ -26,24 +47,6 @@ async function main(metrics: MetricsLogger) {
   metrics.setNamespace('Uniswap');
   metrics.setDimensions(CircuitBreakerMetricDimension);
 
-  const log = Logger.createLogger({
-    name: 'FadeRate',
-    serializers: Logger.stdSerializers,
-  });
-  const stage = process.env['stage'];
-  const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
-  const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
-  await webhookProvider.fetchEndpoints();
-  const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-    marshallOptions: {
-      convertEmptyValues: true,
-    },
-    unmarshallOptions: {
-      wrapNumbers: true,
-    },
-  });
-  const timestampDB = TimestampRepository.create(documentClient);
-
   const sharedConfig: SharedConfigs = {
     Database: checkDefined(process.env.REDSHIFT_DATABASE),
     ClusterIdentifier: checkDefined(process.env.REDSHIFT_CLUSTER_IDENTIFIER),
@@ -51,6 +54,7 @@ async function main(metrics: MetricsLogger) {
   };
   const fadesRepository = V2FadesRepository.create(sharedConfig);
   await fadesRepository.createFadesView();
+  await webhookProvider.fetchEndpoints();
   /*
    query redshift for recent orders
         | fillerAddress |    faded  |   postTimestamp |
@@ -62,14 +66,14 @@ async function main(metrics: MetricsLogger) {
 
   if (result) {
     const fillerHashes = webhookProvider.fillers();
+    const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerHashes);
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerHashes);
-    const addressToFillerHash = await webhookProvider.addressToFillerHash();
 
     // get fillers new fades from last checked timestamp:
     //  | hash    |     faded  |   postTimestamp  |
     //  |---- foo ------|---- 3 ----|---- 12345678 ----|
     //  |---- bar ------|---- 1 ----|---- 12222222 ----|
-    const fillersNewFades = getFillersNewFades(result, addressToFillerHash, fillerTimestamps, log);
+    const fillersNewFades = getFillersNewFades(result, addressToFillerMap, fillerTimestamps, log);
 
     //  | hash        |lastPostTimestamp|blockUntilTimestamp|
     //  |---- foo ----|---- 1300000 ----|---- now + fades * block_per_fade ----|
@@ -113,17 +117,20 @@ export function calculateNewTimestamps(
 
 /* find the number of new fades, for each filler entity, from 
    the last time this cron is run
+   @param rows: info about individual orders: filler address, faded or not, post timestamp
+   @param fillerTimestamps: last post timestamp and block until timestamp for each filler
+   @param addressToFillerMap: map of address to filler hash
 */
 export function getFillersNewFades(
   rows: V2FadesRowType[],
-  addressToFillerHash: Map<string, string>,
+  addressToFillerMap: Map<string, string>,
   fillerTimestamps: FillerTimestamps,
   log?: Logger
 ): FillerFades {
   const newFadesMap: FillerFades = {}; // filler hash -> # of new fades
   rows.forEach((row) => {
     const fillerAddr = row.fillerAddress.toLowerCase();
-    const fillerHash = addressToFillerHash.get(fillerAddr);
+    const fillerHash = addressToFillerMap.get(fillerAddr);
     if (!fillerHash) {
       log?.info({ fillerAddr }, 'filler address not found in webhook config');
     } else if (
