@@ -19,19 +19,22 @@ const validAmountIn = [
   ethers.utils.parseEther('1').toString(),
   ethers.utils.parseEther('100000').toString(),
 ];
+const validChainIds = [1, 5, 137, 11155111, 42161];
 const validCombinations = validTokenIn.flatMap((tokenIn) =>
-  validTokenOut.flatMap((tokenOut) =>
-    validAmountIn.flatMap((amount) => ({
-      requestId: REQUEST_ID,
-      tokenInChainId: 1,
-      tokenOutChainId: 1,
-      swapper: SWAPPER,
-      tokenIn,
-      tokenOut,
-      amount: amount,
-      type: 'EXACT_INPUT',
-      numOutputs: 1,
-    }))
+  validChainIds.flatMap((chainId) =>
+    validTokenOut.flatMap((tokenOut) =>
+      validAmountIn.flatMap((amount) => ({
+        requestId: REQUEST_ID,
+        tokenInChainId: chainId,
+        tokenOutChainId: chainId,
+        swapper: SWAPPER,
+        tokenIn,
+        tokenOut,
+        amount: amount,
+        type: 'EXACT_INPUT',
+        numOutputs: 1,
+      }))
+    )
   )
 );
 
@@ -43,8 +46,8 @@ describe('Schema tests', () => {
         expect(validated.error).toBeUndefined();
         expect(validated.value).toStrictEqual({
           requestId: REQUEST_ID,
-          tokenInChainId: 1,
-          tokenOutChainId: 1,
+          tokenInChainId: body.tokenInChainId,
+          tokenOutChainId: body.tokenOutChainId,
           tokenIn: ethers.utils.getAddress(body.tokenIn),
           tokenOut: ethers.utils.getAddress(body.tokenOut),
           amount: body.amount,
