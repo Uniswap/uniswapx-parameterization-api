@@ -100,6 +100,10 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
       { execute: true, parse: true }
     );
 
+    DynamoFillerAddressRepository.log.info(
+      { fillersAddresses: items, fillers: fillers },
+      'filler addresses from dynamo'
+    );
     const resMap = new Map<string, Set<string>>();
     items.FillerAddress.forEach((row: DynamoFillerToAddressRow) => {
       resMap.set(row.pk, new Set<string>(row.addresses));
