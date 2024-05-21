@@ -66,6 +66,24 @@ describe('filler address repository test', () => {
     expect(filler5).toEqual('filler3');
   });
 
+  it('should batch get filler to addresses map', async () => {
+    const resMap = await repository.getFillerAddressesBatch(['filler1', 'filler2', 'filler3']);
+    expect(resMap.size).toBe(3);
+    expect(resMap.get('filler1')).toEqual(new Set(['addr1', 'addr2']));
+    expect(resMap.get('filler2')).toEqual(new Set(['addr3']));
+    expect(resMap.get('filler3')).toEqual(new Set(['addr4', 'addr5']));
+  });
+
+  it('should get address to filler mapping', async () => {
+    const res = await repository.getAddressToFillerMap(['filler1', 'filler2', 'filler3']);
+    expect(res.size).toBe(5);
+    expect(res.get('addr1')).toEqual('filler1');
+    expect(res.get('addr2')).toEqual('filler1');
+    expect(res.get('addr3')).toEqual('filler2');
+    expect(res.get('addr4')).toEqual('filler3');
+    expect(res.get('addr5')).toEqual('filler3');
+  });
+
   it("if address already exists, doesn't modify state", async () => {
     await repository.addNewAddressToFiller('addr1', 'filler1');
     const addresses = await repository.getFillerAddresses('filler1');

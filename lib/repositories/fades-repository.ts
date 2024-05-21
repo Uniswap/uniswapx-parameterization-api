@@ -93,18 +93,19 @@ export class V2FadesRepository extends BaseRedshiftRepository {
       */
     const result = response.Records;
     if (!result) {
-      FadesRepository.log.error('no fade rate calculation result');
+      V2FadesRepository.log.error('no fade rate calculation result');
       throw new Error('No fade rate result');
     }
     const formattedResult = result.map((row) => {
       const formattedRow: V2FadesRowType = {
+        // the ordering of the fields has to match that in the sql query
         fillerAddress: row[0].stringValue as string,
-        faded: Number(row[1].longValue as number),
-        postTimestamp: Number(row[2].longValue as number),
+        postTimestamp: Number(row[1].longValue as number),
+        faded: Number(row[2].longValue as number),
       };
       return formattedRow;
     });
-    FadesRepository.log.info({ result: formattedResult }, 'formatted redshift query result');
+    V2FadesRepository.log.info({ result: formattedResult }, 'formatted redshift query result');
     return formattedResult;
   }
 }
@@ -180,7 +181,7 @@ AND latestOrdersV2.quoteId IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND chainId NOT IN (5,8001,420,421613) -- exclude mainnet goerli, polygon goerli, optimism goerli and arbitrum goerli testnets 
 AND
-    postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '168 HOURS')) -- 7 days rolling window
+    postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '48 HOURS')) -- 2 days rolling window
 )
 ORDER BY rfqFiller, postTimestamp DESC
 LIMIT 1000 
