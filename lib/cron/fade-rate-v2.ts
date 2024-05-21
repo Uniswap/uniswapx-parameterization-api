@@ -67,6 +67,7 @@ async function main(metrics: MetricsLogger) {
   if (result) {
     const fillerHashes = webhookProvider.fillers();
     const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerHashes);
+    log.info({ addressToFillerMap }, 'address to filler map from dynamo');
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerHashes);
 
     // get fillers new fades from last checked timestamp:
@@ -85,7 +86,11 @@ async function main(metrics: MetricsLogger) {
       log
     );
     log.info({ updatedTimestamps }, 'filler for which to update timestamp');
-    await timestampDB.updateTimestampsBatch(updatedTimestamps);
+    if (updatedTimestamps.length > 0) {
+      await timestampDB.updateTimestampsBatch(updatedTimestamps);
+    } else {
+      log.info('no timestamp to update');
+    }
   }
 }
 
@@ -132,7 +137,7 @@ export function getFillersNewFades(
     const fillerAddr = row.fillerAddress.toLowerCase();
     const fillerHash = addressToFillerMap.get(fillerAddr);
     if (!fillerHash) {
-      log?.info({ fillerAddr }, 'filler address not found in webhook config');
+      log?.info({ fillerAddr }, 'filler address not found dynamo mapping');
     } else if (
       (fillerTimestamps.has(fillerHash) && row.postTimestamp > fillerTimestamps.get(fillerHash)!.lastPostTimestamp) ||
       !fillerTimestamps.has(fillerHash)
