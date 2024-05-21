@@ -5200,6 +5200,14 @@
     ethers "^5.3.1"
     tiny-invariant "^1.3.1"
 
+"@uniswap/permit2-sdk@^1.2.1":
+  version "1.2.1"
+  resolved "https://registry.yarnpkg.com/@uniswap/permit2-sdk/-/permit2-sdk-1.2.1.tgz#7f562d96a26de0538508ba9ea2b2f02150572bf2"
+  integrity sha512-3eEVW6d1tepF9L4XLGhrGoVPKFBe/kQYRCvkzMmYu32amEeV2L8sg5TBJhrVZu+cu0srX7rh3nhOucNdMVOGzg==
+  dependencies:
+    ethers "^5.7.0"
+    tiny-invariant "^1.1.0"
+
 "@uniswap/router-sdk@^1.3.0", "@uniswap/router-sdk@^1.4.0":
   version "1.4.0"
   resolved "https://registry.yarnpkg.com/@uniswap/router-sdk/-/router-sdk-1.4.0.tgz#0e8d49f37b36e74b6a70ec257ec0561bf1f249c3"
@@ -5223,10 +5231,10 @@
     tiny-invariant "^1.1.0"
     toformat "^2.0.0"
 
-"@uniswap/sdk-core@^4.0.3":
-  version "4.1.2"
-  resolved "https://registry.yarnpkg.com/@uniswap/sdk-core/-/sdk-core-4.1.2.tgz#8bf64ef6881574f1c3a3c5800916aa2b2965d00a"
-  integrity sha512-bk/oHiNCofy48ix84Q8aK/HHDmMVmk+SaoTq6U/93MmJ/nE7hbsckmY1c3MG2Vz1+jnGMCX9AmdBbnSF7VR5Ow==
+"@uniswap/sdk-core@^5.0.0":
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/@uniswap/sdk-core/-/sdk-core-5.0.0.tgz#7accd8c7372b14811777cbd1d92133d4de57c683"
+  integrity sha512-m5KmkqvvEz5rurRHdG3zGJappi1Crxet3B2dpgDFgq5MKoKd6qCbeChRkoQjTTJpY1MLGCsXj8ZtZ0/arisvLQ==
   dependencies:
     "@ethersproject/address" "^5.0.2"
     big.js "^5.2.2"
@@ -5304,15 +5312,15 @@
   resolved "https://registry.yarnpkg.com/@uniswap/token-lists/-/token-lists-1.0.0-beta.33.tgz#966ba96c9ccc8f0e9e09809890b438203f2b1911"
   integrity sha512-JQkXcpRI3jFG8y3/CGC4TS8NkDgcxXaOQuYW8Qdvd6DcDiIyg2vVYCG9igFEzF0G6UvxgHkBKC7cWCgzZNYvQg==
 
-"@uniswap/uniswapx-sdk@2.0.1-alpha.7":
-  version "2.0.1-alpha.7"
-  resolved "https://registry.npmjs.org/@uniswap/uniswapx-sdk/-/uniswapx-sdk-2.0.1-alpha.7.tgz#64c3283f78c6a8814d44d8cbe6c1b3ac400f34eb"
-  integrity sha512-i4ie/NGK42AFDsoCbDYfvKKrJHy7UzWulCPj26USVbDq1goq9s0bIfxniMHEDL2nph47zSDLUzAYEtYbvqRKvw==
+"@uniswap/uniswapx-sdk@2.1.0-beta.4":
+  version "2.1.0-beta.4"
+  resolved "https://registry.yarnpkg.com/@uniswap/uniswapx-sdk/-/uniswapx-sdk-2.1.0-beta.4.tgz#052bd0d3601e4e14eb76e744f4ab164b952756c9"
+  integrity sha512-kIbWoGiMrrpq265/99+zOBOlHP/t22lLYKW5C7yKT0HiSM+t671Nl6hvUftRkdf2J7CribOBH1koJyWjkMikOA==
   dependencies:
     "@ethersproject/bytes" "^5.7.0"
     "@ethersproject/providers" "^5.7.0"
-    "@uniswap/permit2-sdk" "^1.2.0"
-    "@uniswap/sdk-core" "^4.0.3"
+    "@uniswap/permit2-sdk" "^1.2.1"
+    "@uniswap/sdk-core" "^5.0.0"
     ethers "^5.7.0"
 
 "@uniswap/universal-router-sdk@^1.3.0":

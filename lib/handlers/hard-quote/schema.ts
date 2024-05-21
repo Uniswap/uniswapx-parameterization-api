@@ -11,6 +11,7 @@ export const HardQuoteRequestBodyJoi = Joi.object({
   tokenInChainId: FieldValidator.chainId.required(),
   tokenOutChainId: Joi.number().integer().valid(Joi.ref('tokenInChainId')).required(),
   allowNoQuote: Joi.boolean().optional(),
+  forceOpenOrder: Joi.boolean().optional(),
 });
 
 export type HardQuoteRequestBody = {
@@ -21,6 +22,7 @@ export type HardQuoteRequestBody = {
   tokenInChainId: number;
   tokenOutChainId: number;
   allowNoQuote?: boolean;
+  forceOpenOrder?: boolean;
 };
 
 export const HardQuoteResponseDataJoi = Joi.object({
