@@ -11,6 +11,12 @@ const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const CHAIN_ID = 1;
 const fixedTime = 4206969;
+const WEBHOOK_URL = 'https://uniswap.org';
+const METADATA = {
+  endpoint: WEBHOOK_URL,
+  fillerName: 'uniswap',
+};
+
 jest.spyOn(Date, 'now').mockImplementation(() => fixedTime);
 
 describe('QuoteRequest', () => {
@@ -29,7 +35,8 @@ describe('QuoteRequest', () => {
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
     },
-    TradeType.EXACT_INPUT
+    TradeType.EXACT_INPUT,
+    METADATA
   );
   const quoteRequest = {
     tokenInChainId: CHAIN_ID,
@@ -45,7 +52,11 @@ describe('QuoteRequest', () => {
   };
 
   it('fromRequest', async () => {
-    const response = QuoteResponse.fromRequest(quoteRequest, parseEther('1'));
+    const response = QuoteResponse.fromRequest({
+      request: quoteRequest,
+      amountQuoted: parseEther('1'),
+      metadata: METADATA,
+    });
     expect(response.createdAt).toBe(quoteResponse.createdAt);
     expect(response.amountIn).toEqual(quoteResponse.amountIn);
     expect(response.amountOut).toEqual(quoteResponse.amountOut);
@@ -57,9 +68,9 @@ describe('QuoteRequest', () => {
 
   describe('fromRFQ', () => {
     it('fromRFQ with valid response', async () => {
-      const response = QuoteResponse.fromRFQ(
-        quoteRequest,
-        {
+      const response = QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
           chainId: CHAIN_ID,
           requestId: REQUEST_ID,
           tokenIn: TOKEN_IN,
@@ -68,16 +79,17 @@ describe('QuoteRequest', () => {
           amountOut: parseEther('1').toString(),
           quoteId: QUOTE_ID,
         },
-        TradeType.EXACT_INPUT
-      );
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      });
       expect(response.response).toEqual(quoteResponse);
       expect(response.validationError).toBe(undefined);
     });
 
     it('fromRFQ with valid response - allow checksumed', async () => {
-      const response = QuoteResponse.fromRFQ(
-        quoteRequest,
-        {
+      const response = QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
           chainId: CHAIN_ID,
           requestId: REQUEST_ID,
           tokenIn: TOKEN_IN.toLowerCase(),
@@ -86,8 +98,9 @@ describe('QuoteRequest', () => {
           amountOut: parseEther('1').toString(),
           quoteId: QUOTE_ID,
         },
-        TradeType.EXACT_INPUT
-      );
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      });
       expect(response.validationError).toBe(undefined);
     });
 
@@ -101,7 +114,12 @@ describe('QuoteRequest', () => {
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
       };
-      const response = QuoteResponse.fromRFQ(quoteRequest, invalidResponse, TradeType.EXACT_INPUT);
+      const response = QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: invalidResponse,
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      });
       // ensure we overwrite amount with the request amount, dont just accept what the quoter returned
       expect(response.response.amountIn).toEqual(quoteRequest.amount);
       expect(response.validationError?.message).toBe('"amountIn" must be a string');
@@ -118,7 +136,12 @@ describe('QuoteRequest', () => {
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
       };
-      const response = QuoteResponse.fromRFQ(quoteRequest, invalidResponse, TradeType.EXACT_INPUT);
+      const response = QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: invalidResponse,
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      });
       expect(response.response.tokenIn).toEqual('0x0000000000000000000000000000000000000000');
       expect(response.validationError?.message).toBe(
         'RFQ response token mismatch: request tokenIn: 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984 tokenOut: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 response tokenIn: 0x0000000000000000000000000000000000000000 tokenOut: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
@@ -136,7 +159,12 @@ describe('QuoteRequest', () => {
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
       };
-      const response = QuoteResponse.fromRFQ(quoteRequest, invalidResponse, TradeType.EXACT_INPUT);
+      const response = QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: invalidResponse,
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      });
       expect(response.response.tokenOut).toEqual('0x0000000000000000000000000000000000000000');
       expect(response.validationError?.message).toBe(
         'RFQ response token mismatch: request tokenIn: 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984 tokenOut: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 response tokenIn: 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984 tokenOut: 0x0000000000000000000000000000000000000000'

@@ -125,6 +125,47 @@ describe('WebhookQuoter tests', () => {
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
+    expect(response[0].fillerName).toEqual('uniswap');
+    expect(response[0].endpoint).toEqual(WEBHOOK_URL);
+  });
+
+  it('adds filler metadata to response', async () => {
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: quote,
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: quote,
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
+      });
+    const response = await webhookQuoter.quote(request);
+    expect(response.length).toEqual(2);
+    console.log(JSON.stringify(response));
+    expect(['uniswap', 'searcher']).toContain(response[0].fillerName);
+    expect(['uniswap', 'searcher']).toContain(response[1].fillerName);
+    expect([WEBHOOK_URL, WEBHOOK_URL_SEARCHER]).toContain(response[0].endpoint);
+    expect([WEBHOOK_URL, WEBHOOK_URL_SEARCHER]).toContain(response[1].endpoint);
   });
 
   it('updates filler addresses', async () => {
@@ -622,6 +663,10 @@ describe('WebhookQuoter tests', () => {
             quoteId: expect.any(String),
             amountOut: BigNumber.from(quote.amountOut),
             amountIn: BigNumber.from(request.amount),
+          },
+          metadata: {
+            endpoint: WEBHOOK_URL,
+            fillerName: 'uniswap',
           },
           type: 0,
         },

@@ -10,6 +10,7 @@ import {
   AnalyticsEventType,
   Metric,
   metricContext,
+  QuoteMetadata,
   QuoteRequest,
   QuoteResponse,
   WebhookResponseType,
@@ -133,7 +134,17 @@ export class WebhookQuoter implements Quoter {
         latencyMs: Date.now() - before,
       };
 
-      const { response, validationError } = QuoteResponse.fromRFQ(request, hookResponse.data, request.type);
+      const metadata: QuoteMetadata = {
+        endpoint: endpoint,
+        fillerName: config.name,
+      };
+
+      const { response, validationError } = QuoteResponse.fromRFQ({
+        request,
+        data: hookResponse.data,
+        type: request.type,
+        metadata,
+      });
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
@@ -227,7 +238,12 @@ export class WebhookQuoter implements Quoter {
       }
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
-      const opposingResponse = QuoteResponse.fromRFQ(opposingRequest, opposite.data, opposingRequest.type);
+      const opposingResponse = QuoteResponse.fromRFQ({
+        request: opposingRequest,
+        data: opposite.data,
+        type: opposingRequest.type,
+        metadata,
+      });
       if (
         opposingResponse &&
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&
@@ -235,7 +251,12 @@ export class WebhookQuoter implements Quoter {
       ) {
         this.log.info({
           eventType: 'QuoteResponse',
-          body: { ...opposingResponse.response.toLog(), offerer: opposingResponse.response.swapper },
+          body: {
+            ...opposingResponse.response.toLog(),
+            offerer: opposingResponse.response.swapper,
+            endpoint: endpoint,
+            fillerName: config.name,
+          },
         });
       }
 
