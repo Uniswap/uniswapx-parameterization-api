@@ -111,7 +111,7 @@ export async function getBestQuote(
   return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
     log.info({
       eventType: eventType,
-      body: { ...quote.toLog(), offerer: quote.swapper },
+      body: { ...quote.toLog(), offerer: quote.swapper, endpoint: quote.endpoint, fillerName: quote.fillerName },
     });
 
     if (

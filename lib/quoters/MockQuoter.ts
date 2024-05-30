@@ -5,6 +5,10 @@ import { Quoter, QuoterType } from '.';
 import { QuoteRequest, QuoteResponse } from '../entities';
 
 export const MOCK_FILLER_ADDRESS = '0x0000000000000000000000000000000000000001';
+const METADATA = {
+  endpoint: 'https://uniswap.org',
+  fillerName: 'uniswap',
+};
 
 // mock quoter which simply returns a quote at a preconfigured exchange rate
 export class MockQuoter implements Quoter {
@@ -21,7 +25,7 @@ export class MockQuoter implements Quoter {
     this.log.info(
       `MockQuoter: request ${request.requestId}: ${request.amount.toString()} -> ${amountQuoted.toString()}`
     );
-    return [QuoteResponse.fromRequest(request, amountQuoted, MOCK_FILLER_ADDRESS)];
+    return [QuoteResponse.fromRequest({ request, amountQuoted, metadata: METADATA, filler: MOCK_FILLER_ADDRESS })];
   }
 
   public type(): QuoterType {

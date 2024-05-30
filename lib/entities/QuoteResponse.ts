@@ -15,6 +15,11 @@ export interface QuoteResponseData
   quoteId: string;
 }
 
+export interface QuoteMetadata {
+  endpoint: string;
+  fillerName: string;
+}
+
 type ValidationError = {
   message: string | undefined;
   value: { [key: string]: any };
@@ -25,11 +30,26 @@ interface ValidatedResponse {
   validationError?: ValidationError;
 }
 
+interface FromRfqArgs {
+  request: QuoteRequestData;
+  data: RfqResponse;
+  type: TradeType;
+  metadata: QuoteMetadata;
+}
+
+interface FromRequestArgs {
+  request: QuoteRequestData;
+  amountQuoted: BigNumber;
+  metadata: QuoteMetadata;
+  filler?: string;
+}
+
 // data class for QuoteRequest helpers and conversions
 export class QuoteResponse implements QuoteResponseData {
   public createdAt: string;
 
-  public static fromRequest(request: QuoteRequestData, amountQuoted: BigNumber, filler?: string): QuoteResponse {
+  public static fromRequest(args: FromRequestArgs): QuoteResponse {
+    const { request, amountQuoted, metadata, filler } = args;
     return new QuoteResponse(
       {
         chainId: request.tokenInChainId, // TODO: update schema
@@ -42,11 +62,13 @@ export class QuoteResponse implements QuoteResponseData {
         filler: filler,
         quoteId: request.quoteId ?? uuidv4(),
       },
-      request.type
+      request.type,
+      metadata
     );
   }
 
-  public static fromRFQ(request: QuoteRequestData, data: RfqResponse, type: TradeType): ValidatedResponse {
+  public static fromRFQ(args: FromRfqArgs): ValidatedResponse {
+    const { request, data, type, metadata } = args;
     let validationError: ValidationError | undefined;
 
     const responseValidation = RfqResponseJoi.validate(data, {
@@ -87,13 +109,19 @@ export class QuoteResponse implements QuoteResponseData {
           amountIn,
           amountOut,
         },
-        type
+        type,
+        metadata
       ),
       ...(validationError && { validationError }),
     };
   }
 
-  constructor(private data: QuoteResponseData, public type: TradeType, public createdAtMs = currentTimestampInMs()) {
+  constructor(
+    private data: QuoteResponseData,
+    public type: TradeType,
+    public metadata: QuoteMetadata,
+    public createdAtMs = currentTimestampInMs()
+  ) {
     this.createdAt = timestampInMstoSeconds(parseInt(this.createdAtMs));
   }
 
@@ -162,5 +190,13 @@ export class QuoteResponse implements QuoteResponseData {
 
   public get filler(): string | undefined {
     return this.data.filler;
+  }
+
+  public get endpoint(): string {
+    return this.metadata.endpoint;
+  }
+
+  public get fillerName(): string {
+    return this.metadata.fillerName;
   }
 }
