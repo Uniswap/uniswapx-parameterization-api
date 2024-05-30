@@ -280,7 +280,8 @@ describe('Quote handler', () => {
           },
           data
         ),
-        type
+        type,
+        { fillerName: 'mock', endpoint: 'mock' }
       );
     };
 
