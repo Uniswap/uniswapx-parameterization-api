@@ -51,24 +51,23 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     // Instead of decoding the order, we rely on frontend passing in the requestId
     //   from indicative quote
-    const logBody = {
-      requestId: request.requestId,
-      quoteId: request.quoteId,
-      tokenInChainId: request.tokenInChainId,
-      tokenOutChainId: request.tokenOutChainId,
-      tokenIn: request.tokenIn,
-      tokenOut: request.tokenOut,
-      offerer: request.swapper,
-      amount: request.amount.toString(),
-      type: TradeType[request.type],
-      numOutputs: request.numOutputs,
-      cosigner: request.order.info.cosigner,
-      createdAt: timestampInMstoSeconds(start),
-      createdAtMs: start.toString(),
-    }
     log.info({
       eventType: 'HardRequest',
-      body: logBody,
+      body: {
+        requestId: request.requestId,
+        quoteId: request.quoteId,
+        tokenInChainId: request.tokenInChainId,
+        tokenOutChainId: request.tokenOutChainId,
+        tokenIn: request.tokenIn,
+        tokenOut: request.tokenOut,
+        offerer: request.swapper,
+        amount: request.amount.toString(),
+        type: TradeType[request.type],
+        numOutputs: request.numOutputs,
+        cosigner: request.order.info.cosigner,
+        createdAt: timestampInMstoSeconds(start),
+        createdAtMs: start.toString(),
+      },
     });
     
     let bestQuote;
@@ -88,19 +87,6 @@ export class QuoteHandler extends APIGLambdaHandler<
     } else {
       cosignerData = getDefaultCosignerData(request);
       log.info({ cosignerData: cosignerData }, 'open order with default cosignerData');
-
-      // The RFQ responses are logged in getBestQuote() 
-      // we log the Open Orders here
-      log.info({
-        eventType: 'QuoteResponse',
-        body: { 
-          ...logBody,
-          amountIn: request.totalInputAmountStart.toString(),
-          amountOut: request.totalOutputAmountStart.toString(),
-          filler: cosignerData.exclusiveFiller,
-          swapper: request.swapper
-        },
-      });
     }
 
     // TODO: use server key to cosign instead of local wallet
@@ -120,6 +106,17 @@ export class QuoteHandler extends APIGLambdaHandler<
         metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
         metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
         const hardResponse = new HardQuoteResponse(request, cosignedOrder);
+        if (!bestQuote) {
+          // The RFQ responses are logged in getBestQuote() 
+          // we log the Open Orders here
+          log.info({
+            eventType: 'QuoteResponse',
+            body: {
+              ...hardResponse.toLog(),
+              offerer: request.swapper
+            }
+          });
+        }
         return {
           statusCode: 200,
           body: hardResponse.toResponseJSON(),
