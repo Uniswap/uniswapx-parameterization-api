@@ -2,9 +2,9 @@ import { CosignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
+import { HardQuoteRequest } from '.';
 import { HardQuoteResponseData } from '../handlers/hard-quote/schema';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
-import { HardQuoteRequest } from '.';
 
 // data class for hard quote response helpers and conversions
 export class HardQuoteResponse {
