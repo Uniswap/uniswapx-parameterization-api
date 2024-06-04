@@ -65,10 +65,10 @@ async function main(metrics: MetricsLogger) {
   const result = await fadesRepository.getFades();
 
   if (result) {
-    const fillerHashes = webhookProvider.fillers();
-    const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerHashes);
+    const fillerEndpoints = webhookProvider.fillerEndpoints();
+    const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerEndpoints);
     log.info({ addressToFillerMap }, 'address to filler map from dynamo');
-    const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerHashes);
+    const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
 
     // get fillers new fades from last checked timestamp:
     //  | hash    |     faded  |   postTimestamp  |
