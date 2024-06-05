@@ -5,6 +5,7 @@ import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
 
+import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
 import { CircuitBreakerMetricDimension } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
@@ -67,7 +68,10 @@ async function main(metrics: MetricsLogger) {
   if (result) {
     const fillerEndpoints = webhookProvider.fillerEndpoints();
     const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerEndpoints);
-    log.info({ addressToFillerMap }, 'address to filler map from dynamo');
+    log.info(
+      { map: addressToFillerMap.forEach((filler, addr) => [addr, filler]) },
+      'address to filler map from dynamo'
+    );
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
 
     // get fillers new fades from last checked timestamp:
@@ -134,7 +138,7 @@ export function getFillersNewFades(
 ): FillerFades {
   const newFadesMap: FillerFades = {}; // filler hash -> # of new fades
   rows.forEach((row) => {
-    const fillerAddr = row.fillerAddress.toLowerCase();
+    const fillerAddr = ethers.utils.getAddress(row.fillerAddress);
     const fillerHash = addressToFillerMap.get(fillerAddr);
     if (!fillerHash) {
       log?.info({ fillerAddr }, 'filler address not found dynamo mapping');
