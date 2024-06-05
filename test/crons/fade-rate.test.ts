@@ -4,15 +4,15 @@ import { calculateFillerFadeRates } from '../../lib/cron/fade-rate';
 import { FadesRowType } from '../../lib/repositories';
 
 const FADES_ROWS: FadesRowType[] = [
-  { fillerAddress: '0x1', totalQuotes: 50, fadedQuotes: 10 },
-  { fillerAddress: '0x2', totalQuotes: 50, fadedQuotes: 20 },
-  { fillerAddress: '0x3', totalQuotes: 100, fadedQuotes: 5 },
+  { fillerAddress: '0x0000000000000000000000000000000000000001', totalQuotes: 50, fadedQuotes: 10 },
+  { fillerAddress: '0x0000000000000000000000000000000000000002', totalQuotes: 50, fadedQuotes: 20 },
+  { fillerAddress: '0x0000000000000000000000000000000000000003', totalQuotes: 100, fadedQuotes: 5 },
 ];
 
 const ADDRESS_TO_FILLER = new Map<string, string>([
-  ['0x1', 'filler1'],
-  ['0x2', 'filler1'],
-  ['0x3', 'filler2'],
+  ['0x0000000000000000000000000000000000000001', 'filler1'],
+  ['0x0000000000000000000000000000000000000002', 'filler1'],
+  ['0x0000000000000000000000000000000000000003', 'filler2'],
 ]);
 
 // silent logger in tests
