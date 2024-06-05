@@ -13,31 +13,31 @@ const now = Math.floor(Date.now() / 1000);
 
 const FADES_ROWS: V2FadesRowType[] = [
   // filler1
-  { fillerAddress: '0x1', faded: 1, postTimestamp: now - 100 },
-  { fillerAddress: '0x1', faded: 0, postTimestamp: now - 90 },
-  { fillerAddress: '0x1', faded: 1, postTimestamp: now - 80 },
-  { fillerAddress: '0x2', faded: 1, postTimestamp: now - 80 },
+  { fillerAddress: '0x0000000000000000000000000000000000000001', faded: 1, postTimestamp: now - 100 },
+  { fillerAddress: '0x0000000000000000000000000000000000000001', faded: 0, postTimestamp: now - 90 },
+  { fillerAddress: '0x0000000000000000000000000000000000000001', faded: 1, postTimestamp: now - 80 },
+  { fillerAddress: '0x0000000000000000000000000000000000000002', faded: 1, postTimestamp: now - 80 },
   // filler2
-  { fillerAddress: '0x3', faded: 1, postTimestamp: now - 70 },
-  { fillerAddress: '0x3', faded: 1, postTimestamp: now - 100 },
+  { fillerAddress: '0x0000000000000000000000000000000000000003', faded: 1, postTimestamp: now - 70 },
+  { fillerAddress: '0x0000000000000000000000000000000000000003', faded: 1, postTimestamp: now - 100 },
   // filler3
-  { fillerAddress: '0x4', faded: 1, postTimestamp: now - 100 },
+  { fillerAddress: '0x0000000000000000000000000000000000000004', faded: 1, postTimestamp: now - 100 },
   // filler4
-  { fillerAddress: '0x5', faded: 0, postTimestamp: now - 100 },
+  { fillerAddress: '0x0000000000000000000000000000000000000005', faded: 0, postTimestamp: now - 100 },
   // filler5
-  { fillerAddress: '0x6', faded: 0, postTimestamp: now - 100 },
+  { fillerAddress: '0x0000000000000000000000000000000000000006', faded: 0, postTimestamp: now - 100 },
   // filler6
-  { fillerAddress: '0x7', faded: 1, postTimestamp: now - 100 },
+  { fillerAddress: '0x0000000000000000000000000000000000000007', faded: 1, postTimestamp: now - 100 },
 ];
 
 const ADDRESS_TO_FILLER = new Map<string, string>([
-  ['0x1', 'filler1'],
-  ['0x2', 'filler1'],
-  ['0x3', 'filler2'],
-  ['0x4', 'filler3'],
-  ['0x5', 'filler4'],
-  ['0x6', 'filler5'],
-  ['0x7', 'filler6'],
+  ['0x0000000000000000000000000000000000000001', 'filler1'],
+  ['0x0000000000000000000000000000000000000002', 'filler1'],
+  ['0x0000000000000000000000000000000000000003', 'filler2'],
+  ['0x0000000000000000000000000000000000000004', 'filler3'],
+  ['0x0000000000000000000000000000000000000005', 'filler4'],
+  ['0x0000000000000000000000000000000000000006', 'filler5'],
+  ['0x0000000000000000000000000000000000000007', 'filler6'],
 ]);
 
 const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
