@@ -69,7 +69,7 @@ async function main(metrics: MetricsLogger) {
     const fillerEndpoints = webhookProvider.fillerEndpoints();
     const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerEndpoints);
     log.info(
-      { map: addressToFillerMap.forEach((filler, addr) => [addr, filler]) },
+      { map: [...addressToFillerMap.entries()], size: addressToFillerMap.size },
       'address to filler map from dynamo'
     );
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
