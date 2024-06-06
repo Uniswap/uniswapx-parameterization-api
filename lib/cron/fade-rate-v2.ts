@@ -150,12 +150,14 @@ export function getFillersNewFades(
       (fillerTimestamps.has(fillerHash) && row.postTimestamp > fillerTimestamps.get(fillerHash)!.lastPostTimestamp) ||
       !fillerTimestamps.has(fillerHash)
     ) {
-      log?.info({ filler: fillerHash, addr: fillerAddr }, 'new fade');
+      log?.info({ row: row }, 'new fade');
       if (!newFadesMap[fillerHash]) {
         newFadesMap[fillerHash] = row.faded;
       } else {
         newFadesMap[fillerHash] += row.faded;
       }
+    } else {
+      log?.info({ row: row }, 'no new fade');
     }
   });
   log?.info({ newFadesMap }, '# of new fades by filler');
