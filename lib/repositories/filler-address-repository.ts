@@ -2,6 +2,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
+import { getAddress } from 'ethers/lib/utils';
 import { DYNAMO_TABLE_NAME } from '../constants';
 
 export type DynamoFillerToAddressRow = {
@@ -65,29 +66,33 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
 
   async getFillerAddresses(filler: string): Promise<string[] | undefined> {
     const result = await this._fillerToAddressEntity.get({ pk: filler }, { execute: true, parse: true });
-    return result.Item?.addresses;
+    if (result.Item?.addresses) {
+      return (result.Item.addresses as string[]).map((addr) => getAddress(addr));
+    }
+    return undefined;
   }
 
   async getFillerByAddress(address: string): Promise<string | undefined> {
-    const result = await this._addressToFillerEntity.get({ pk: address }, { execute: true, parse: true });
+    const result = await this._addressToFillerEntity.get({ pk: getAddress(address) }, { execute: true, parse: true });
     return result.Item?.filler;
   }
 
   async addNewAddressToFiller(address: string, filler?: string): Promise<void> {
-    await this._addressToFillerEntity.put({ pk: address, filler: filler });
+    const addrToAdd = getAddress(address);
+    await this._addressToFillerEntity.put({ pk: addrToAdd, filler: filler });
     if (filler) {
       const fillerAddresses = await this.getFillerAddresses(filler);
       if (!fillerAddresses || fillerAddresses.length === 0) {
-        await this._fillerToAddressEntity.put({ pk: filler, addresses: [address] });
+        await this._fillerToAddressEntity.put({ pk: filler, addresses: [addrToAdd] });
       } else {
-        await this._fillerToAddressEntity.update({ pk: filler, addresses: { $add: [address] } });
+        await this._fillerToAddressEntity.update({ pk: filler, addresses: { $add: [addrToAdd] } });
       }
     } else {
-      const existingFiller = await this.getFillerByAddress(address);
+      const existingFiller = await this.getFillerByAddress(addrToAdd);
       if (!existingFiller) {
-        throw new Error(`Filler not found for address ${address}`);
+        throw new Error(`Filler not found for address ${addrToAdd}`);
       }
-      await this._fillerToAddressEntity.update({ pk: existingFiller, addresses: { $add: [address] } });
+      await this._fillerToAddressEntity.update({ pk: existingFiller, addresses: { $add: [addrToAdd] } });
     }
   }
 
@@ -106,13 +111,17 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
     );
     const resMap = new Map<string, Set<string>>();
     items.FillerAddress.forEach((row: DynamoFillerToAddressRow) => {
-      resMap.set(row.pk, new Set<string>(row.addresses));
+      resMap.set(row.pk, new Set<string>(row.addresses.map((addr) => getAddress(addr))));
     });
     return resMap;
   }
 
   async getAddressToFillerMap(fillers: string[]): Promise<Map<string, string>> {
     const fillerAddresses = await this.getFillerAddressesBatch(fillers);
+    DynamoFillerAddressRepository.log.info(
+      { fillerAddressesMap: [...fillerAddresses.entries()] },
+      'filler addresses map'
+    );
     const addrToFillerMap = new Map<string, string>();
     fillerAddresses.forEach((addresses, hash) => {
       addresses.forEach((addr) => addrToFillerMap.set(addr, hash));
