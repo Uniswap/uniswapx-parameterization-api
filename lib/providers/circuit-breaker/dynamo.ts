@@ -61,8 +61,8 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
           return fillerTimestamps.has(e.endpoint) && fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp > now;
         });
 
-        this.log.info({ num: enabledEndpoints.length, endpoints: enabledEndpoints }, `Endpoint enabled`);
-        this.log.info({ num: disabledEndpoints.length, endpoints: disabledEndpoints }, `Endpoint disabled`);
+        this.log.info({ num: enabledEndpoints.length, endpoints: enabledEndpoints }, `Endpoints enabled`);
+        this.log.info({ num: disabledEndpoints.length, endpoints: disabledEndpoints }, `Endpoints disabled`);
 
         return enabledEndpoints;
       }
