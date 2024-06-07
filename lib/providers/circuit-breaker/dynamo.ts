@@ -8,7 +8,7 @@ import { WebhookConfiguration } from '../webhook';
 
 export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
   private log: Logger;
-  private fillerHashes: string[];
+  private fillerEndpoints: string[];
   private lastUpdatedTimestamp: number;
   private timestampDB: BaseTimestampRepository;
   private timestamps: FillerTimestampMap = new Map();
@@ -16,9 +16,9 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
   // try to refetch endpoints every 30 seconds
   private static UPDATE_PERIOD_MS = 1 * 30000;
 
-  constructor(_log: Logger, _fillerHashes: string[] = []) {
+  constructor(_log: Logger, _fillerEndpoints: string[] = []) {
     this.log = _log.child({ quoter: 'CircuitBreakerConfigurationProvider' });
-    this.fillerHashes = _fillerHashes;
+    this.fillerEndpoints = _fillerEndpoints;
     this.lastUpdatedTimestamp = Date.now();
     const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
       marshallOptions: {
@@ -33,7 +33,7 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
 
   async getConfigurations(): Promise<FillerTimestampMap> {
     if (
-      this.fillerHashes.length === 0 ||
+      this.fillerEndpoints.length === 0 ||
       Date.now() - this.lastUpdatedTimestamp > DynamoCircuitBreakerConfigurationProvider.UPDATE_PERIOD_MS
     ) {
       await this.fetchConfigurations();
@@ -44,7 +44,7 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
   }
 
   async fetchConfigurations(): Promise<void> {
-    this.timestamps = await this.timestampDB.getFillerTimestampsMap(this.fillerHashes);
+    this.timestamps = await this.timestampDB.getFillerTimestampsMap(this.fillerEndpoints);
   }
 
   /* add filler if it's not blocked until a future timestamp */
@@ -55,9 +55,15 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
       if (fillerTimestamps.size) {
         this.log.info({ fillerTimestamps: [...fillerTimestamps.entries()] }, `Circuit breaker config used`);
         const enabledEndpoints = endpoints.filter((e) => {
-          return !(fillerTimestamps.has(e.hash) && fillerTimestamps.get(e.hash)!.blockUntilTimestamp > now);
+          return !(fillerTimestamps.has(e.endpoint) && fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp > now);
         });
-        this.log.info({ endpoints: enabledEndpoints }, `Endpoint enabled`);
+        const disabledEndpoints = endpoints.filter((e) => {
+          return fillerTimestamps.has(e.endpoint) && fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp > now;
+        });
+
+        this.log.info({ num: enabledEndpoints.length, endpoints: enabledEndpoints }, `Endpoints enabled`);
+        this.log.info({ num: disabledEndpoints.length, endpoints: disabledEndpoints }, `Endpoints disabled`);
+
         return enabledEndpoints;
       }
 
