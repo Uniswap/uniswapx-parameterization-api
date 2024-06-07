@@ -326,10 +326,10 @@ describe('WebhookQuoter tests', () => {
     describe('circuit breaker v2 tests', () => {
       const now = Math.floor(Date.now() / 1000);
       const mockCBProvider = new MockV2CircuitBreakerConfigurationProvider(
-        ['0xuni', '0x1inch', '0xsearcher'],
+        [WEBHOOK_URL, WEBHOOK_URL_ONEINCH, WEBHOOK_URL_SEARCHER],
         new Map([
-          ['0x1inch', { blockUntilTimestamp: now + 100000, lastPostTimestamp: now - 10 }],
-          ['0xsearcher', { blockUntilTimestamp: now - 10, lastPostTimestamp: now - 100 }],
+          [WEBHOOK_URL_ONEINCH, { blockUntilTimestamp: now + 100000, lastPostTimestamp: now - 10 }],
+          [WEBHOOK_URL_SEARCHER, { blockUntilTimestamp: now - 10, lastPostTimestamp: now - 100 }],
         ])
       );
       const webhookQuoter = new WebhookQuoter(
