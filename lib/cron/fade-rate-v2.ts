@@ -1,13 +1,13 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { metricScope, MetricsLogger } from 'aws-embedded-metrics';
+import { metricScope, MetricsLogger, Unit } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
 
 import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
-import { CircuitBreakerMetricDimension } from '../entities';
+import { CircuitBreakerMetricDimension, Metric } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
 import { SharedConfigs, TimestampRepoRow, V2FadesRepository, V2FadesRowType } from '../repositories';
@@ -86,6 +86,7 @@ async function main(metrics: MetricsLogger) {
       log
     );
     log.info({ updatedTimestamps }, 'filler for which to update timestamp');
+    metrics.putMetric(Metric.CIRCUIT_BREAKER_V2_BLOCKED, updatedTimestamps.length, Unit.Count);
     if (updatedTimestamps.length > 0) {
       await timestampDB.updateTimestampsBatch(updatedTimestamps);
     } else {
