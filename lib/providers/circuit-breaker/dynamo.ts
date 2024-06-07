@@ -16,9 +16,9 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
   // try to refetch endpoints every 30 seconds
   private static UPDATE_PERIOD_MS = 1 * 30000;
 
-  constructor(_log: Logger, _fillerEdnpoints: string[] = []) {
+  constructor(_log: Logger, _fillerEndpoints: string[] = []) {
     this.log = _log.child({ quoter: 'CircuitBreakerConfigurationProvider' });
-    this.fillerEndpoints = _fillerEdnpoints;
+    this.fillerEndpoints = _fillerEndpoints;
     this.lastUpdatedTimestamp = Date.now();
     const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
       marshallOptions: {
