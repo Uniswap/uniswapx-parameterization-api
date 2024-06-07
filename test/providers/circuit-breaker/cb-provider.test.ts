@@ -14,28 +14,28 @@ const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
 const WEBHOOK_CONFIGS = [
   {
     name: 'f1',
-    endpoint: 'http://localhost:3000',
-    hash: 'filler1',
+    endpoint: 'filler1',
+    hash: '0xfiller1',
   },
   {
     name: 'f2',
-    endpoint: 'http://localhost:3000',
-    hash: 'filler2',
+    endpoint: 'filler2',
+    hash: '0xfiller2',
   },
   {
     name: 'f3',
-    endpoint: 'http://localhost:3000',
-    hash: 'filler3',
+    endpoint: 'filler3',
+    hash: '0xfiller3',
   },
   {
     name: 'f4',
-    endpoint: 'http://localhost:3000',
-    hash: 'filler4',
+    endpoint: 'filler4',
+    hash: '0xfiller4',
   },
   {
     name: 'f5',
-    endpoint: 'http://localhost:3000',
-    hash: 'filler5',
+    endpoint: 'filler5',
+    hash: '0xfiller5',
   },
 ];
 
@@ -46,18 +46,18 @@ describe('V2CircuitBreakerProvider', () => {
     expect(await provider.getEligibleEndpoints(WEBHOOK_CONFIGS)).toEqual([
       {
         name: 'f1',
-        endpoint: 'http://localhost:3000',
-        hash: 'filler1',
+        endpoint: 'filler1',
+        hash: '0xfiller1',
       },
       {
         name: 'f2',
-        endpoint: 'http://localhost:3000',
-        hash: 'filler2',
+        endpoint: 'filler2',
+        hash: '0xfiller2',
       },
       {
         name: 'f4',
-        endpoint: 'http://localhost:3000',
-        hash: 'filler4',
+        endpoint: 'filler4',
+        hash: '0xfiller4',
       },
     ]);
   });
