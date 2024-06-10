@@ -261,7 +261,7 @@ const RFQ_PROVIDERS = [
   'Wintermute',
   'Kodea',
   'Flow Traders - Validation',
-  'Flow Traders'
+  'Flow Traders',
   'ODOS',
   'Pear',
   'Altonomy',
