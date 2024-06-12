@@ -256,20 +256,7 @@ export interface DashboardProps extends cdk.NestedStackProps {
 }
 
 // TODO: fetch dynamically from s3?
-const RFQ_PROVIDERS = [
-  'Barter',
-  'Wintermute',
-  'Kodea',
-  'Flow Traders - Validation',
-  'Flow Traders',
-  'ODOS',
-  'Pear',
-  'Altonomy',
-  'SCP',
-  'Propellerheads',
-  'Clipper',
-  'Prycto V2',
-];
+const RFQ_PROVIDERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
 export class ParamDashboardStack extends cdk.NestedStack {
   constructor(scope: Construct, name: string, props: DashboardProps) {
