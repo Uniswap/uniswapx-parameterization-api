@@ -5,9 +5,9 @@ import { Construct } from 'constructs';
 
 import {
   CircuitBreakerMetricDimension,
+  HardQuoteMetricDimension,
   Metric,
   SoftQuoteMetricDimension,
-  UniswapXParamServiceMetricDimension,
 } from '../../lib/entities';
 
 export const NAMESPACE = 'Uniswap';
@@ -47,7 +47,7 @@ export type LambdaWidget = {
   };
 };
 
-const RFQ_SERVICES = [SoftQuoteMetricDimension, UniswapXParamServiceMetricDimension];
+const RFQ_SERVICES = [SoftQuoteMetricDimension, HardQuoteMetricDimension];
 
 const LatencyWidget = (region: string): LambdaWidget[] =>
   RFQ_SERVICES.map((service) => {
@@ -65,7 +65,7 @@ const LatencyWidget = (region: string): LambdaWidget[] =>
         stacked: false,
         region,
         period: 300,
-        title: 'Quote Latency | 5 minutes',
+        title: `${service.Service} Quote Latency | 5 minutes`,
       },
     };
   });
@@ -89,7 +89,7 @@ const RFQLatencyWidget = (region: string, rfqProviders: string[]): LambdaWidget[
         region,
         stat: 'p90',
         period: 300,
-        title: 'RFQ Response Times P90 | 5 minutes',
+        title: `${service.Service} RFQ Response Times P90 | 5 minutes`,
       },
     };
   });
@@ -112,7 +112,7 @@ const QuotesRequestedWidget = (region: string): LambdaWidget[] =>
         stat: 'Sum',
         period: 300,
         stacked: false,
-        title: 'Quotes Requested | 5 minutes',
+        title: `${service.Service} Quotes Requested | 5 minutes`,
       },
     };
   });
@@ -138,7 +138,7 @@ const ErrorRatesWidget = (region: string): LambdaWidget[] =>
         region,
         stat: 'Sum',
         period: 300,
-        title: 'Error Rates',
+        title: `${service.Service} Error Rates`,
         yAxis: {
           left: {
             label: 'Percent',
@@ -216,7 +216,7 @@ const RFQFailRatesWidget = (region: string, rfqProviders: string[]): LambdaWidge
         region,
         stat: 'Sum',
         period: 300,
-        title: 'RFQ Fail Rates',
+        title: `${service.Service} RFQ Fail Rates`,
         yAxis: {
           left: {
             label: 'Percent',
@@ -256,7 +256,7 @@ export interface DashboardProps extends cdk.NestedStackProps {
 }
 
 // TODO: fetch dynamically from s3?
-const RFQ_PROVIDERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+const RFQ_PROVIDERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
 export class ParamDashboardStack extends cdk.NestedStack {
   constructor(scope: Construct, name: string, props: DashboardProps) {
