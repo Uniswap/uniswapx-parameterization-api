@@ -1,12 +1,13 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { metricScope, MetricsLogger } from 'aws-embedded-metrics';
+import { metricScope, MetricsLogger, Unit } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
 
+import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
-import { CircuitBreakerMetricDimension } from '../entities';
+import { CircuitBreakerMetricDimension, Metric } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
 import { SharedConfigs, TimestampRepoRow, V2FadesRepository, V2FadesRowType } from '../repositories';
@@ -17,7 +18,7 @@ import { STAGE } from '../util/stage';
 export type FillerFades = Record<string, number>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
-export const BLOCK_PER_FADE_SECS = 60 * 5; // 5 minutes
+export const BLOCK_PER_FADE_SECS = 60 * 30; // 30 minutes
 
 const log = Logger.createLogger({
   name: 'FadeRate',
@@ -65,10 +66,9 @@ async function main(metrics: MetricsLogger) {
   const result = await fadesRepository.getFades();
 
   if (result) {
-    const fillerHashes = webhookProvider.fillers();
-    const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerHashes);
-    log.info({ addressToFillerMap }, 'address to filler map from dynamo');
-    const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerHashes);
+    const fillerEndpoints = webhookProvider.fillerEndpoints();
+    const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerEndpoints);
+    const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
 
     // get fillers new fades from last checked timestamp:
     //  | hash    |     faded  |   postTimestamp  |
@@ -86,6 +86,7 @@ async function main(metrics: MetricsLogger) {
       log
     );
     log.info({ updatedTimestamps }, 'filler for which to update timestamp');
+    metrics.putMetric(Metric.CIRCUIT_BREAKER_V2_BLOCKED, updatedTimestamps.length, Unit.Count);
     if (updatedTimestamps.length > 0) {
       await timestampDB.updateTimestampsBatch(updatedTimestamps);
     } else {
@@ -132,9 +133,17 @@ export function getFillersNewFades(
   fillerTimestamps: FillerTimestamps,
   log?: Logger
 ): FillerFades {
+  log?.info(
+    {
+      rows: rows,
+      fillerTimestamps: [...fillerTimestamps.entries()],
+      addressToFillerMap: [...addressToFillerMap.entries()],
+    },
+    'getFillersNewFades'
+  );
   const newFadesMap: FillerFades = {}; // filler hash -> # of new fades
   rows.forEach((row) => {
-    const fillerAddr = row.fillerAddress.toLowerCase();
+    const fillerAddr = ethers.utils.getAddress(row.fillerAddress);
     const fillerHash = addressToFillerMap.get(fillerAddr);
     if (!fillerHash) {
       log?.info({ fillerAddr }, 'filler address not found dynamo mapping');

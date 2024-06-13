@@ -14,7 +14,7 @@ export class MockV2CircuitBreakerConfigurationProvider implements CircuitBreaker
     const fillerTimestamps = await this.getConfigurations();
     if (fillerTimestamps.size) {
       const enabledEndpoints = endpoints.filter((e) => {
-        return !(fillerTimestamps.has(e.hash) && fillerTimestamps.get(e.hash)!.blockUntilTimestamp > now);
+        return !(fillerTimestamps.has(e.endpoint) && fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp > now);
       });
       return enabledEndpoints;
     }
