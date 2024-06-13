@@ -20,7 +20,7 @@ import {
 } from './schema';
 
 const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(100); // non-exclusive fillers must override price by this much
-
+const RESPONSE_LOG_TYPE = 'HardResponse';
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
   RequestInjected,
@@ -72,7 +72,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     let bestQuote;
     if (!requestBody.forceOpenOrder) {
-      bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, 'HardResponse');
+      bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, RESPONSE_LOG_TYPE);
       if (!bestQuote && !requestBody.allowNoQuote) {
         if (!requestBody.allowNoQuote) {
           throw new NoQuotesAvailable();
@@ -110,7 +110,7 @@ export class QuoteHandler extends APIGLambdaHandler<
           // The RFQ responses are logged in getBestQuote()
           // we log the Open Orders here
           log.info({
-            eventType: 'QuoteResponse',
+            eventType: RESPONSE_LOG_TYPE,
             body: {
               ...hardResponse.toLog(),
               offerer: request.swapper,
