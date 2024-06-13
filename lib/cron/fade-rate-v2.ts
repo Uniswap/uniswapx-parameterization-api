@@ -18,7 +18,7 @@ import { STAGE } from '../util/stage';
 export type FillerFades = Record<string, number>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
-export const BLOCK_PER_FADE_SECS = 60 * 5; // 5 minutes
+export const BLOCK_PER_FADE_SECS = 60 * 30; // 30 minutes
 
 const log = Logger.createLogger({
   name: 'FadeRate',
