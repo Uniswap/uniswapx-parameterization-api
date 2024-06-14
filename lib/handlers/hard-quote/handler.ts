@@ -3,7 +3,6 @@ import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { CosignedV2DutchOrder, CosignerData } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
-import { v4 as uuidv4 } from 'uuid';
 
 import { HardQuoteRequest, HardQuoteResponse, Metric, QuoteResponse } from '../../entities';
 import { NoQuotesAvailable, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
@@ -20,7 +19,7 @@ import {
 } from './schema';
 
 const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(100); // non-exclusive fillers must override price by this much
-
+const RESPONSE_LOG_TYPE = 'HardResponse';
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
   RequestInjected,
@@ -72,7 +71,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     let bestQuote;
     if (!requestBody.forceOpenOrder) {
-      bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, 'HardResponse');
+      bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, RESPONSE_LOG_TYPE);
       if (!bestQuote && !requestBody.allowNoQuote) {
         if (!requestBody.allowNoQuote) {
           throw new NoQuotesAvailable();
@@ -99,7 +98,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       const response = await orderServiceProvider.postOrder({
         order: cosignedOrder,
         signature: request.innerSig,
-        quoteId: bestQuote?.quoteId ?? uuidv4(),
+        quoteId: bestQuote?.quoteId ?? request.quoteId,
         requestId: request.requestId,
       });
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -110,7 +109,7 @@ export class QuoteHandler extends APIGLambdaHandler<
           // The RFQ responses are logged in getBestQuote()
           // we log the Open Orders here
           log.info({
-            eventType: 'QuoteResponse',
+            eventType: RESPONSE_LOG_TYPE,
             body: {
               ...hardResponse.toLog(),
               offerer: request.swapper,
