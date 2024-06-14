@@ -3,7 +3,6 @@ import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { CosignedV2DutchOrder, CosignerData } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
-import { v4 as uuidv4 } from 'uuid';
 
 import { HardQuoteRequest, HardQuoteResponse, Metric, QuoteResponse } from '../../entities';
 import { NoQuotesAvailable, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
