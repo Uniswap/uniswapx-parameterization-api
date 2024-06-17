@@ -28,4 +28,5 @@ export const DYNAMO_TABLE_KEY = {
   BLOCK_UNTIL_TIMESTAMP: 'blockUntilTimestamp',
   LAST_POST_TIMESTAMP: 'lastPostTimestamp',
   FADED: 'faded',
+  CONSECUTIVE_BLOCKS: 'consecutiveBlocks',
 };

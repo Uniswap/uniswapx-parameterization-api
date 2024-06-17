@@ -32,11 +32,17 @@ export type TimestampRepoRow = {
   hash: string;
   lastPostTimestamp: number;
   blockUntilTimestamp: number;
+  consecutiveBlocks: number;
 };
 
 export type DynamoTimestampRepoRow = Exclude<TimestampRepoRow, 'lastPostTimestamp' | 'blockUntilTimestamp'> & {
   lastPostTimestamp: string;
   blockUntilTimestamp: string;
+  consecutiveBlocks: string;
+};
+
+export type ToUpdateTimestampRow = Omit<TimestampRepoRow, 'blockUntilTimestamp'> & {
+  blockUntilTimestamp?: number;
 };
 
 /*
@@ -83,7 +89,7 @@ export interface BaseSwitchRepository {
 }
 
 export interface BaseTimestampRepository {
-  updateTimestampsBatch(toUpdate: [string, number, number?][]): Promise<void>;
+  updateTimestampsBatch(toUpdate: ToUpdateTimestampRow[]): Promise<void>;
   getFillerTimestamps(hash: string): Promise<TimestampRepoRow>;
   getFillerTimestampsMap(hashes: string[]): Promise<Map<string, Omit<TimestampRepoRow, 'hash'>>>;
   getTimestampsBatch(hashes: string[]): Promise<TimestampRepoRow[]>;

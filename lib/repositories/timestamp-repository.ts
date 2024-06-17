@@ -3,7 +3,7 @@ import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
 
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
-import { BaseTimestampRepository, DynamoTimestampRepoRow, TimestampRepoRow } from './base';
+import { BaseTimestampRepository, DynamoTimestampRepoRow, TimestampRepoRow, ToUpdateTimestampRow } from './base';
 
 export type BatchGetResponse = {
   tableName: string;
@@ -33,6 +33,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         [TimestampRepository.PARTITION_KEY]: { partitionKey: true, type: 'string' },
         [`${DYNAMO_TABLE_KEY.LAST_POST_TIMESTAMP}`]: { type: 'string' },
         [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: { type: 'string' },
+        [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: { type: 'string' },
       },
       table: table,
       autoExecute: true,
@@ -47,13 +48,14 @@ export class TimestampRepository implements BaseTimestampRepository {
     private readonly entity: Entity
   ) {}
 
-  public async updateTimestampsBatch(updatedTimestamps: [string, number, number?][]): Promise<void> {
+  public async updateTimestampsBatch(updatedTimestamps: ToUpdateTimestampRow[]): Promise<void> {
     await this.table.batchWrite(
-      updatedTimestamps.map(([hash, lastTs, postTs]) => {
+      updatedTimestamps.map((row) => {
         return this.entity.putBatch({
-          [TimestampRepository.PARTITION_KEY]: hash,
-          [`${DYNAMO_TABLE_KEY.LAST_POST_TIMESTAMP}`]: lastTs,
-          [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: postTs,
+          [TimestampRepository.PARTITION_KEY]: row.hash,
+          [`${DYNAMO_TABLE_KEY.LAST_POST_TIMESTAMP}`]: row.lastPostTimestamp,
+          [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: row.blockUntilTimestamp,
+          [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: row.consecutiveBlocks,
         });
       }),
       {
@@ -73,6 +75,7 @@ export class TimestampRepository implements BaseTimestampRepository {
       hash: Item?.hash,
       lastPostTimestamp: parseInt(Item?.lastPostTimestamp),
       blockUntilTimestamp: parseInt(Item?.blockUntilTimestamp),
+      consecutiveBlocks: parseInt(Item?.consecutiveBlocks),
     };
   }
 
@@ -93,6 +96,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         hash: row.hash,
         lastPostTimestamp: parseInt(row.lastPostTimestamp),
         blockUntilTimestamp: parseInt(row.blockUntilTimestamp),
+        consecutiveBlocks: parseInt(row.consecutiveBlocks),
       };
     });
   }
@@ -104,6 +108,7 @@ export class TimestampRepository implements BaseTimestampRepository {
       res.set(row.hash, {
         lastPostTimestamp: row.lastPostTimestamp,
         blockUntilTimestamp: row.blockUntilTimestamp,
+        consecutiveBlocks: row.consecutiveBlocks,
       });
     });
     return res;
