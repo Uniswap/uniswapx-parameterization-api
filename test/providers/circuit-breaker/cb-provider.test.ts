@@ -4,11 +4,11 @@ import { MockV2CircuitBreakerConfigurationProvider } from '../../../lib/provider
 const FILLERS = ['filler1', 'filler2', 'filler3', 'filler4', 'filler5'];
 const now = Math.floor(Date.now() / 1000);
 const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
-  ['filler1', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN }],
-  ['filler2', { lastPostTimestamp: now - 75, blockUntilTimestamp: now - 50 }],
-  ['filler3', { lastPostTimestamp: now - 101, blockUntilTimestamp: now + 1000 }],
-  ['filler4', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN }],
-  ['filler5', { lastPostTimestamp: now - 150, blockUntilTimestamp: now + 100 }],
+  ['filler1', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN, consecutiveBlocks: NaN }],
+  ['filler2', { lastPostTimestamp: now - 75, blockUntilTimestamp: now - 50, consecutiveBlocks: 0 }],
+  ['filler3', { lastPostTimestamp: now - 101, blockUntilTimestamp: now + 1000, consecutiveBlocks: 0 }],
+  ['filler4', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN, consecutiveBlocks: 0 }],
+  ['filler5', { lastPostTimestamp: now - 150, blockUntilTimestamp: now + 100, consecutiveBlocks: 1 }],
 ]);
 
 const WEBHOOK_CONFIGS = [
