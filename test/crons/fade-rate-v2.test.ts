@@ -31,6 +31,8 @@ const FADES_ROWS: V2FadesRowType[] = [
   { fillerAddress: '0x0000000000000000000000000000000000000007', faded: 1, postTimestamp: now - 100 },
   // filler7
   { fillerAddress: '0x0000000000000000000000000000000000000008', faded: 1, postTimestamp: now - 100 },
+  // filler8
+  { fillerAddress: '0x0000000000000000000000000000000000000009', faded: 0, postTimestamp: now - 100 },
 ];
 
 const ADDRESS_TO_FILLER = new Map<string, string>([
@@ -42,6 +44,7 @@ const ADDRESS_TO_FILLER = new Map<string, string>([
   ['0x0000000000000000000000000000000000000006', 'filler5'],
   ['0x0000000000000000000000000000000000000007', 'filler6'],
   ['0x0000000000000000000000000000000000000008', 'filler7'],
+  ['0x0000000000000000000000000000000000000009', 'filler8'],
 ]);
 
 const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
@@ -51,6 +54,7 @@ const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
   ['filler4', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN, consecutiveBlocks: 0 }],
   ['filler5', { lastPostTimestamp: now - 150, blockUntilTimestamp: now + 100, consecutiveBlocks: 0 }],
   ['filler7', { lastPostTimestamp: now - 150, blockUntilTimestamp: now - 50, consecutiveBlocks: 2 }],
+  ['filler8', { lastPostTimestamp: now - 150, blockUntilTimestamp: now - 50, consecutiveBlocks: 2 }],
 ]);
 
 // silent logger in tests
@@ -73,6 +77,7 @@ describe('FadeRateCron test', () => {
         filler5: 0,
         filler6: 1,
         filler7: 1,
+        filler8: 0,
       });
     });
   });
@@ -99,12 +104,21 @@ describe('FadeRateCron test', () => {
             blockUntilTimestamp: now + Math.floor(BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
             consecutiveBlocks: 1,
           },
+          // test exponential backoff
           {
             hash: 'filler7',
             lastPostTimestamp: now,
             blockUntilTimestamp:
               now + Math.floor(BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0) * Math.pow(2, 2)),
             consecutiveBlocks: 3,
+          },
+          // test consecutiveBlocks reset
+          // does not really block filler, as blockUntilTimestamp is not in the future
+          {
+            hash: 'filler8',
+            lastPostTimestamp: now,
+            blockUntilTimestamp: now,
+            consecutiveBlocks: 0,
           },
         ])
       );
@@ -119,20 +133,6 @@ describe('FadeRateCron test', () => {
             lastPostTimestamp: now,
             blockUntilTimestamp: now + Math.floor(BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
             consecutiveBlocks: 1,
-          },
-        ])
-      );
-    });
-
-    it('applies exponential backoff for each consecutive block', () => {
-      expect(newTimestamps).toEqual(
-        expect.arrayContaining([
-          {
-            hash: 'filler7',
-            lastPostTimestamp: now,
-            blockUntilTimestamp:
-              now + Math.floor(BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0) * Math.pow(2, 2)),
-            consecutiveBlocks: 3,
           },
         ])
       );
