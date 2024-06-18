@@ -7,7 +7,7 @@ import Logger from 'bunyan';
 
 import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
-import { CircuitBreakerMetricDimension, Metric } from '../entities';
+import { CircuitBreakerMetricDimension, Metric, metricContext } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
 import {
@@ -90,7 +90,8 @@ async function main(metrics: MetricsLogger) {
       fillerTimestamps,
       fillersNewFades,
       Math.floor(Date.now() / 1000),
-      log
+      log,
+      metrics
     );
     log.info({ updatedTimestamps }, 'filler for which to update timestamp');
     metrics.putMetric(Metric.CIRCUIT_BREAKER_V2_BLOCKED, updatedTimestamps.length, Unit.Count);
@@ -102,6 +103,10 @@ async function main(metrics: MetricsLogger) {
   }
 }
 
+function newConsecutiveBlocks(consecutiveBlocks?: number): number {
+  return consecutiveBlocks ? (Number.isNaN(consecutiveBlocks) ? 1 : consecutiveBlocks + 1) : 1;
+}
+
 /* compute blockUntil timestamp for each filler
   blockedUntilTimestamp > current timestamp: skip
   lastPostTimestamp < blockedUntilTimestamp < current timestamp: block for # * unit block time from now
@@ -111,7 +116,8 @@ export function calculateNewTimestamps(
   fillerTimestamps: FillerTimestamps,
   fillersNewFades: FillerFades,
   newPostTimestamp: number,
-  log?: Logger
+  log?: Logger,
+  metrics?: MetricsLogger
 ): ToUpdateTimestampRow[] {
   const updatedTimestamps: ToUpdateTimestampRow[] = [];
   Object.entries(fillersNewFades).forEach((row) => {
@@ -127,11 +133,18 @@ export function calculateNewTimestamps(
         fillerTimestamp?.consecutiveBlocks,
         fades
       );
+      const consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp?.consecutiveBlocks);
+      metrics?.putMetric(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, hash),
+        consecutiveBlocks,
+        Unit.Count
+      );
+
       updatedTimestamps.push({
         hash,
         lastPostTimestamp: newPostTimestamp,
         blockUntilTimestamp,
-        consecutiveBlocks: newConsecutiveBlocks(fillerTimestamp?.consecutiveBlocks),
+        consecutiveBlocks: consecutiveBlocks,
       });
     } else {
       // no new fades, reset consecutive blocks
@@ -214,8 +227,4 @@ export function calculateBlockUntilTimestamp(
   return Math.floor(
     newPostTimestamp + BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, fades - 1) * Math.pow(2, blocks)
   );
-}
-
-function newConsecutiveBlocks(consecutiveBlocks?: number): number {
-  return consecutiveBlocks ? (Number.isNaN(consecutiveBlocks) ? 1 : consecutiveBlocks + 1) : 1;
 }

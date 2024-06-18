@@ -76,6 +76,7 @@ export enum Metric {
   SYNTH_ORDERS_NEGATIVE_OUTCOME = 'SYNTH_ORDERS_NEGATIVE_OUTCOME',
 
   // Metrics for circuit breaker
+  CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS = 'CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS',
   CIRCUIT_BREAKER_V2_BLOCKED = 'CIRCUIT_BREAKER_V2_BLOCKED',
   CIRCUIT_BREAKER_TRIGGERED = 'CIRCUIT_BREAKER_TRIGGERED',
 }
@@ -93,7 +94,8 @@ type MetricNeedingContext =
   | Metric.SYTH_PAIR_ENABLED
   | Metric.SYNTH_PAIR_DISABLED
   | Metric.SYNTH_ORDERS_POSITIVE_OUTCOME
-  | Metric.SYNTH_ORDERS_NEGATIVE_OUTCOME;
+  | Metric.SYNTH_ORDERS_NEGATIVE_OUTCOME
+  | Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS;
 
 export function metricContext(metric: MetricNeedingContext, context: string): string {
   return `${metric}_${context}`;
