@@ -328,8 +328,14 @@ describe('WebhookQuoter tests', () => {
       const mockCBProvider = new MockV2CircuitBreakerConfigurationProvider(
         [WEBHOOK_URL, WEBHOOK_URL_ONEINCH, WEBHOOK_URL_SEARCHER],
         new Map([
-          [WEBHOOK_URL_ONEINCH, { blockUntilTimestamp: now + 100000, lastPostTimestamp: now - 10 }],
-          [WEBHOOK_URL_SEARCHER, { blockUntilTimestamp: now - 10, lastPostTimestamp: now - 100 }],
+          [
+            WEBHOOK_URL_ONEINCH,
+            { blockUntilTimestamp: now + 100000, lastPostTimestamp: now - 10, consecutiveBlocks: 0 },
+          ],
+          [
+            WEBHOOK_URL_SEARCHER,
+            { blockUntilTimestamp: now - 10, lastPostTimestamp: now - 100, consecutiveBlocks: NaN },
+          ],
         ])
       );
       const webhookQuoter = new WebhookQuoter(

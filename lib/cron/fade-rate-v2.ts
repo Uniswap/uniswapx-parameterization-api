@@ -7,10 +7,16 @@ import Logger from 'bunyan';
 
 import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
-import { CircuitBreakerMetricDimension, Metric } from '../entities';
+import { CircuitBreakerMetricDimension, Metric, metricContext } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
-import { SharedConfigs, TimestampRepoRow, V2FadesRepository, V2FadesRowType } from '../repositories';
+import {
+  SharedConfigs,
+  TimestampRepoRow,
+  ToUpdateTimestampRow,
+  V2FadesRepository,
+  V2FadesRowType,
+} from '../repositories';
 import { DynamoFillerAddressRepository } from '../repositories/filler-address-repository';
 import { TimestampRepository } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
@@ -18,7 +24,8 @@ import { STAGE } from '../util/stage';
 export type FillerFades = Record<string, number>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
-export const BLOCK_PER_FADE_SECS = 60 * 30; // 30 minutes
+export const BASE_BLOCK_SECS = 60 * 15; // 15 minutes
+export const NUM_FADES_MULTIPLIER = 1.5;
 
 const log = Logger.createLogger({
   name: 'FadeRate',
@@ -71,19 +78,20 @@ async function main(metrics: MetricsLogger) {
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
 
     // get fillers new fades from last checked timestamp:
-    //  | hash    |     faded  |   postTimestamp  |
-    //  |---- foo ------|---- 3 ----|---- 12345678 ----|
-    //  |---- bar ------|---- 1 ----|---- 12222222 ----|
+    //  | hash     |    faded  |   postTimestamp  |
+    //  |---- foo -|---- 3 ----|---- 12345678 ----|
+    //  |---- bar -|---- 1 ----|---- 12222222 ----|
     const fillersNewFades = getFillersNewFades(result, addressToFillerMap, fillerTimestamps, log);
 
     //  | hash        |lastPostTimestamp|blockUntilTimestamp|
-    //  |---- foo ----|---- 1300000 ----|---- now + fades * block_per_fade ----|
+    //  |---- foo ----|---- 1300000 ----|----      calculated block until  ----|
     //  |---- bar ----|---- 1300000 ----|----      13500000                ----|
     const updatedTimestamps = calculateNewTimestamps(
       fillerTimestamps,
       fillersNewFades,
       Math.floor(Date.now() / 1000),
-      log
+      log,
+      metrics
     );
     log.info({ updatedTimestamps }, 'filler for which to update timestamp');
     metrics.putMetric(Metric.CIRCUIT_BREAKER_V2_BLOCKED, updatedTimestamps.length, Unit.Count);
@@ -95,26 +103,63 @@ async function main(metrics: MetricsLogger) {
   }
 }
 
+function newConsecutiveBlocks(consecutiveBlocks?: number): number {
+  if (!consecutiveBlocks) {
+    return 1;
+  }
+  if (Number.isNaN(consecutiveBlocks)) {
+    return 1;
+  }
+  return consecutiveBlocks + 1;
+}
+
 /* compute blockUntil timestamp for each filler
   blockedUntilTimestamp > current timestamp: skip
   lastPostTimestamp < blockedUntilTimestamp < current timestamp: block for # * unit block time from now
+  increment consecutive blocks afterwards
 */
 export function calculateNewTimestamps(
   fillerTimestamps: FillerTimestamps,
   fillersNewFades: FillerFades,
   newPostTimestamp: number,
-  log?: Logger
-): [string, number, number][] {
-  const updatedTimestamps: [string, number, number][] = [];
+  log?: Logger,
+  metrics?: MetricsLogger
+): ToUpdateTimestampRow[] {
+  const updatedTimestamps: ToUpdateTimestampRow[] = [];
   Object.entries(fillersNewFades).forEach((row) => {
     const hash = row[0];
     const fades = row[1];
-    if (fillerTimestamps.has(hash) && fillerTimestamps.get(hash)!.blockUntilTimestamp > newPostTimestamp) {
+    const fillerTimestamp = fillerTimestamps.get(hash);
+    if (fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp) {
       return;
     }
     if (fades) {
-      const blockUntilTimestamp = newPostTimestamp + fades * BLOCK_PER_FADE_SECS;
-      updatedTimestamps.push([hash, newPostTimestamp, blockUntilTimestamp]);
+      const blockUntilTimestamp = calculateBlockUntilTimestamp(
+        newPostTimestamp,
+        fillerTimestamp?.consecutiveBlocks,
+        fades
+      );
+      const consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp?.consecutiveBlocks);
+      metrics?.putMetric(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, hash),
+        consecutiveBlocks,
+        Unit.Count
+      );
+
+      updatedTimestamps.push({
+        hash,
+        lastPostTimestamp: newPostTimestamp,
+        blockUntilTimestamp,
+        consecutiveBlocks: consecutiveBlocks,
+      });
+    } else {
+      // no new fades, reset consecutive blocks
+      updatedTimestamps.push({
+        hash,
+        lastPostTimestamp: newPostTimestamp,
+        blockUntilTimestamp: newPostTimestamp,
+        consecutiveBlocks: 0,
+      });
     }
   });
   log?.info({ updatedTimestamps }, 'updated timestamps');
@@ -160,4 +205,32 @@ export function getFillersNewFades(
   });
   log?.info({ newFadesMap }, '# of new fades by filler');
   return newFadesMap;
+}
+
+/*
+  calculate the block until timestamp with exponential backoff
+  if a filler faded multiple times in between the last post timestamp and now,
+    we apply a 1.5 multiplier for each fade
+    
+    examples:
+    - 1 fade, 0 consecutive blocks: 15 minutes
+    - 1 fade, 1 consecutive blocks:  (1.5 ^ 0) * 15 * 2^1 = 30 minutes
+    - 1 fade, 2 consecutive blocks:  (1.5 ^ 0) * 15 * 2^2 = 60 minutes
+    - 1 fade, 3 consecutive blocks:  (1.5 ^ 0) * 15 * 2^3 = 120 minutes
+    - 2 fades, 0 consecutive blocks: (1.5 ^ 1) * 15 * 2^0 = 22 minutes
+    - 2 fades 1 consecutive blocks:  (1.5 ^ 1) * 15 * 2^1 = 45 minutes
+    - 2 fades 2 consecutive blocks:  (1.5 ^ 1) * 15 * 2^2 = 90 minute
+    - 3 fades 0 consecutive blocks:  (1.5 ^ 2) * 15 * 2^0 = 33 minutes
+    - 3 fades 1 consecutive blocks:  (1.5 ^ 2) * 15 * 2^1 = 67 minutes
+    - 3 fades 2 consecutive blocks:  (1.5 ^ 2) * 15 * 2^2 = 135 minutes
+*/
+export function calculateBlockUntilTimestamp(
+  newPostTimestamp: number,
+  consecutiveBlocks: number | undefined,
+  fades: number
+): number {
+  const blocks = consecutiveBlocks || 0;
+  return Math.floor(
+    newPostTimestamp + BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, fades - 1) * Math.pow(2, blocks)
+  );
 }

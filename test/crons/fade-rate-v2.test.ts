@@ -1,13 +1,14 @@
 import Logger from 'bunyan';
 
 import {
-  BLOCK_PER_FADE_SECS,
+  BASE_BLOCK_SECS,
   calculateNewTimestamps,
   FillerFades,
   FillerTimestamps,
   getFillersNewFades,
+  NUM_FADES_MULTIPLIER,
 } from '../../lib/cron/fade-rate-v2';
-import { V2FadesRowType } from '../../lib/repositories';
+import { ToUpdateTimestampRow, V2FadesRowType } from '../../lib/repositories';
 
 const now = Math.floor(Date.now() / 1000);
 
@@ -28,6 +29,10 @@ const FADES_ROWS: V2FadesRowType[] = [
   { fillerAddress: '0x0000000000000000000000000000000000000006', faded: 0, postTimestamp: now - 100 },
   // filler6
   { fillerAddress: '0x0000000000000000000000000000000000000007', faded: 1, postTimestamp: now - 100 },
+  // filler7
+  { fillerAddress: '0x0000000000000000000000000000000000000008', faded: 1, postTimestamp: now - 100 },
+  // filler8
+  { fillerAddress: '0x0000000000000000000000000000000000000009', faded: 0, postTimestamp: now - 100 },
 ];
 
 const ADDRESS_TO_FILLER = new Map<string, string>([
@@ -38,14 +43,18 @@ const ADDRESS_TO_FILLER = new Map<string, string>([
   ['0x0000000000000000000000000000000000000005', 'filler4'],
   ['0x0000000000000000000000000000000000000006', 'filler5'],
   ['0x0000000000000000000000000000000000000007', 'filler6'],
+  ['0x0000000000000000000000000000000000000008', 'filler7'],
+  ['0x0000000000000000000000000000000000000009', 'filler8'],
 ]);
 
 const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
-  ['filler1', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN }],
-  ['filler2', { lastPostTimestamp: now - 75, blockUntilTimestamp: now - 50 }],
-  ['filler3', { lastPostTimestamp: now - 101, blockUntilTimestamp: now + 1000 }],
-  ['filler4', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN }],
-  ['filler5', { lastPostTimestamp: now - 150, blockUntilTimestamp: now + 100 }],
+  ['filler1', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN, consecutiveBlocks: NaN }],
+  ['filler2', { lastPostTimestamp: now - 75, blockUntilTimestamp: now - 50, consecutiveBlocks: 0 }],
+  ['filler3', { lastPostTimestamp: now - 101, blockUntilTimestamp: now + 1000, consecutiveBlocks: 0 }],
+  ['filler4', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN, consecutiveBlocks: 0 }],
+  ['filler5', { lastPostTimestamp: now - 150, blockUntilTimestamp: now + 100, consecutiveBlocks: 0 }],
+  ['filler7', { lastPostTimestamp: now - 150, blockUntilTimestamp: now - 50, consecutiveBlocks: 2 }],
+  ['filler8', { lastPostTimestamp: now - 150, blockUntilTimestamp: now - 50, consecutiveBlocks: 2 }],
 ]);
 
 // silent logger in tests
@@ -67,12 +76,14 @@ describe('FadeRateCron test', () => {
         filler4: 0,
         filler5: 0,
         filler6: 1,
+        filler7: 1,
+        filler8: 0,
       });
     });
   });
 
   describe('calculateNewTimestamps', () => {
-    let newTimestamps: [string, number, number][];
+    let newTimestamps: ToUpdateTimestampRow[];
 
     beforeAll(() => {
       newTimestamps = calculateNewTimestamps(FILLER_TIMESTAMPS, newFades, now, logger);
@@ -81,14 +92,49 @@ describe('FadeRateCron test', () => {
     it('calculates blockUntilTimestamp for each filler', () => {
       expect(newTimestamps).toEqual(
         expect.arrayContaining([
-          ['filler1', now, now + BLOCK_PER_FADE_SECS * 3],
-          ['filler2', now, now + BLOCK_PER_FADE_SECS * 1],
+          {
+            hash: 'filler1',
+            lastPostTimestamp: now,
+            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 2)),
+            consecutiveBlocks: 1,
+          },
+          {
+            hash: 'filler2',
+            lastPostTimestamp: now,
+            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
+            consecutiveBlocks: 1,
+          },
+          // test exponential backoff
+          {
+            hash: 'filler7',
+            lastPostTimestamp: now,
+            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0) * Math.pow(2, 2)),
+            consecutiveBlocks: 3,
+          },
+          // test consecutiveBlocks reset
+          // does not really block filler, as blockUntilTimestamp is not in the future
+          {
+            hash: 'filler8',
+            lastPostTimestamp: now,
+            blockUntilTimestamp: now,
+            consecutiveBlocks: 0,
+          },
         ])
       );
     });
 
     it('notices new fillers not already in fillerTimestamps', () => {
-      expect(newTimestamps).toEqual(expect.arrayContaining([['filler6', now, now + BLOCK_PER_FADE_SECS * 1]]));
+      // filler6 one fade, no existing consecutiveBlocks
+      expect(newTimestamps).toEqual(
+        expect.arrayContaining([
+          {
+            hash: 'filler6',
+            lastPostTimestamp: now,
+            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
+            consecutiveBlocks: 1,
+          },
+        ])
+      );
     });
 
     it('keep old blockUntilTimestamp if no new fades', () => {
