@@ -24,7 +24,7 @@ import { STAGE } from '../util/stage';
 export type FillerFades = Record<string, number>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
-export const BLOCK_PER_FADE_SECS = 60 * 15; // 15 minutes
+export const BASE_BLOCK_SECS = 60 * 15; // 15 minutes
 export const NUM_FADES_MULTIPLIER = 1.5;
 
 const log = Logger.createLogger({
@@ -84,7 +84,7 @@ async function main(metrics: MetricsLogger) {
     const fillersNewFades = getFillersNewFades(result, addressToFillerMap, fillerTimestamps, log);
 
     //  | hash        |lastPostTimestamp|blockUntilTimestamp|
-    //  |---- foo ----|---- 1300000 ----|---- now + fades * block_per_fade ----|
+    //  |---- foo ----|---- 1300000 ----|----      calculated block until  ----|
     //  |---- bar ----|---- 1300000 ----|----      13500000                ----|
     const updatedTimestamps = calculateNewTimestamps(
       fillerTimestamps,
@@ -225,6 +225,6 @@ export function calculateBlockUntilTimestamp(
 ): number {
   const blocks = consecutiveBlocks || 0;
   return Math.floor(
-    newPostTimestamp + BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, fades - 1) * Math.pow(2, blocks)
+    newPostTimestamp + BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, fades - 1) * Math.pow(2, blocks)
   );
 }
