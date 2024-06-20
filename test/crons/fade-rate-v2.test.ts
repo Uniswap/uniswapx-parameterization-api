@@ -1,7 +1,7 @@
 import Logger from 'bunyan';
 
 import {
-  BLOCK_PER_FADE_SECS,
+  BASE_BLOCK_SECS,
   calculateNewTimestamps,
   FillerFades,
   FillerTimestamps,
@@ -95,21 +95,20 @@ describe('FadeRateCron test', () => {
           {
             hash: 'filler1',
             lastPostTimestamp: now,
-            blockUntilTimestamp: now + Math.floor(BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, 2)),
+            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 2)),
             consecutiveBlocks: 1,
           },
           {
             hash: 'filler2',
             lastPostTimestamp: now,
-            blockUntilTimestamp: now + Math.floor(BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
+            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
             consecutiveBlocks: 1,
           },
           // test exponential backoff
           {
             hash: 'filler7',
             lastPostTimestamp: now,
-            blockUntilTimestamp:
-              now + Math.floor(BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0) * Math.pow(2, 2)),
+            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0) * Math.pow(2, 2)),
             consecutiveBlocks: 3,
           },
           // test consecutiveBlocks reset
@@ -131,7 +130,7 @@ describe('FadeRateCron test', () => {
           {
             hash: 'filler6',
             lastPostTimestamp: now,
-            blockUntilTimestamp: now + Math.floor(BLOCK_PER_FADE_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
+            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
             consecutiveBlocks: 1,
           },
         ])
