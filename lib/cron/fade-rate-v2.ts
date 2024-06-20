@@ -104,7 +104,13 @@ async function main(metrics: MetricsLogger) {
 }
 
 function newConsecutiveBlocks(consecutiveBlocks?: number): number {
-  return consecutiveBlocks ? (Number.isNaN(consecutiveBlocks) ? 1 : consecutiveBlocks + 1) : 1;
+  if (!consecutiveBlocks) {
+    return 1;
+  }
+  if (Number.isNaN(consecutiveBlocks)) {
+    return 1;
+  }
+  return consecutiveBlocks + 1;
 }
 
 /* compute blockUntil timestamp for each filler
