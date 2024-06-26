@@ -17,6 +17,7 @@ import {
   HardQuoteResponseData,
   HardQuoteResponseDataJoi,
 } from './schema';
+import { ChainId } from '../../util/chains';
 
 const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(100); // non-exclusive fillers must override price by this much
 const RESPONSE_LOG_TYPE = 'HardResponse';
@@ -207,8 +208,10 @@ export function getDefaultCosignerData(request: HardQuoteRequest): CosignerData 
 function getDecayStartTime(chainId: number): number {
   const nowTimestamp = Math.floor(Date.now() / 1000);
   switch (chainId) {
-    case 1:
+    case ChainId.MAINNET:
       return nowTimestamp + 24; // 2 blocks
+    case ChainId.ARBITRUM_ONE:
+      return nowTimestamp + 1; // 1 second
     default:
       return nowTimestamp + 10; // 10 seconds
   }
@@ -216,7 +219,7 @@ function getDecayStartTime(chainId: number): number {
 
 function getDecayEndTime(chainId: number, startTime: number): number {
   switch (chainId) {
-    case 1:
+    case ChainId.MAINNET:
       return startTime + 60; // 5 blocks
     default:
       return startTime + 30; // 30 seconds
