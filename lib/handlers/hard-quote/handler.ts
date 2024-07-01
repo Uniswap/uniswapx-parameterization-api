@@ -221,6 +221,8 @@ function getDecayEndTime(chainId: number, startTime: number): number {
   switch (chainId) {
     case ChainId.MAINNET:
       return startTime + 60; // 5 blocks
+    case ChainId.ARBITRUM_ONE:
+      return startTime + 10; // 10 seconds
     default:
       return startTime + 30; // 30 seconds
   }
