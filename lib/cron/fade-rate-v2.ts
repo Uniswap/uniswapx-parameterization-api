@@ -24,7 +24,7 @@ import { STAGE } from '../util/stage';
 export type FillerFades = Record<string, number>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
-export const BASE_BLOCK_SECS = 60 * 15; // 15 minutes
+export const BASE_BLOCK_SECS = 60 * 20; // 20 minutes
 export const NUM_FADES_MULTIPLIER = 1.5;
 
 const log = Logger.createLogger({
@@ -213,16 +213,16 @@ export function getFillersNewFades(
     we apply a 1.5 multiplier for each fade
     
     examples:
-    - 1 fade, 0 consecutive blocks: 15 minutes
-    - 1 fade, 1 consecutive blocks:  (1.5 ^ 0) * 15 * 2^1 = 30 minutes
-    - 1 fade, 2 consecutive blocks:  (1.5 ^ 0) * 15 * 2^2 = 60 minutes
-    - 1 fade, 3 consecutive blocks:  (1.5 ^ 0) * 15 * 2^3 = 120 minutes
-    - 2 fades, 0 consecutive blocks: (1.5 ^ 1) * 15 * 2^0 = 22 minutes
-    - 2 fades 1 consecutive blocks:  (1.5 ^ 1) * 15 * 2^1 = 45 minutes
-    - 2 fades 2 consecutive blocks:  (1.5 ^ 1) * 15 * 2^2 = 90 minute
-    - 3 fades 0 consecutive blocks:  (1.5 ^ 2) * 15 * 2^0 = 33 minutes
-    - 3 fades 1 consecutive blocks:  (1.5 ^ 2) * 15 * 2^1 = 67 minutes
-    - 3 fades 2 consecutive blocks:  (1.5 ^ 2) * 15 * 2^2 = 135 minutes
+    - 1 fade, 0 consecutive blocks: 20 minutes
+    - 1 fade, 1 consecutive blocks:  (1.5 ^ 0) * 20 * 2^1 = 40 minutes
+    - 1 fade, 2 consecutive blocks:  (1.5 ^ 0) * 20 * 2^2 = 80 minutes
+    - 1 fade, 3 consecutive blocks:  (1.5 ^ 0) * 20 * 2^3 = 160 minutes
+    - 2 fades, 0 consecutive blocks: (1.5 ^ 1) * 20 * 2^0 = 30 minutes
+    - 2 fades 1 consecutive blocks:  (1.5 ^ 1) * 20 * 2^1 = 60 minutes
+    - 2 fades 2 consecutive blocks:  (1.5 ^ 1) * 20 * 2^2 = 120 minute
+    - 3 fades 0 consecutive blocks:  (1.5 ^ 2) * 20 * 2^0 = 45 minutes
+    - 3 fades 1 consecutive blocks:  (1.5 ^ 2) * 20 * 2^1 = 90 minutes
+    - 3 fades 2 consecutive blocks:  (1.5 ^ 2) * 20 * 2^2 = 180 minutes
 */
 export function calculateBlockUntilTimestamp(
   newPostTimestamp: number,
