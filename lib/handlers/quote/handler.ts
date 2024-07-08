@@ -4,6 +4,7 @@ import Logger from 'bunyan';
 import Joi from 'joi';
 
 import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
+import { ProtocolVersion } from '../../providers';
 import { Quoter } from '../../quoters';
 import { NoQuotesAvailable } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
@@ -105,6 +106,11 @@ export async function getBestQuote(
     default:
       metric.putMetric(Metric.RFQ_COUNT_4_PLUS, 1, MetricLoggerUnit.Count);
       break;
+  }
+
+  // don't use X if less than 2 fillers show up in soft quote
+  if (responses.length < 2 && quoteRequest.protocol == ProtocolVersion.V2) {
+    return null;
   }
 
   // return the response with the highest amountOut value

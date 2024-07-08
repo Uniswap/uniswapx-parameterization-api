@@ -144,6 +144,20 @@ describe('Quote handler', () => {
     ).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
 
+  it('Returns no soft quote in V2 if less than two fillers show up', async () => {
+    const quoters = [new MockQuoter(logger, 1, 1)];
+    const request = getRequest('1', 'EXACT_INPUT', ProtocolVersion.V2);
+    const response = await getQuoteHandler(quoters).handler(getEvent(request), {} as unknown as Context);
+    expect(response.statusCode).toEqual(404);
+    const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+    expect(quoteResponse).toMatchObject(
+      expect.objectContaining({
+        errorCode: 'QUOTE_ERROR',
+        detail: 'No quotes available',
+      })
+    );
+  });
+
   it('Pick the greater of two quotes - EXACT_IN', async () => {
     const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
     const amountIn = ethers.utils.parseEther('1');
