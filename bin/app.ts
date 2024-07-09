@@ -1,10 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
-import { CfnOutput, SecretValue, Stack, StackProps, Stage, StageProps } from 'aws-cdk-lib';
+import { CfnOutput,SecretValue,Stack,StackProps,Stage,StageProps } from 'aws-cdk-lib';
 import * as chatbot from 'aws-cdk-lib/aws-chatbot';
-import { BuildEnvironmentVariableType, BuildSpec } from 'aws-cdk-lib/aws-codebuild';
+import { BuildEnvironmentVariableType,BuildSpec } from 'aws-cdk-lib/aws-codebuild';
 import { PipelineNotificationEvents } from 'aws-cdk-lib/aws-codepipeline';
 import * as sm from 'aws-cdk-lib/aws-secretsmanager';
-import { CodeBuildStep, CodePipeline, CodePipelineSource } from 'aws-cdk-lib/pipelines';
+import { CodeBuildStep,CodePipeline,CodePipelineSource } from 'aws-cdk-lib/pipelines';
 import { Construct } from 'constructs';
 import dotenv from 'dotenv';
 
@@ -47,8 +47,9 @@ export class APIPipeline extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const code = CodePipelineSource.gitHub('Uniswap/uniswapx-parameterization-api', 'main', {
-      authentication: SecretValue.secretsManager('github-token-2'),
+    const code = CodePipelineSource.connection('Uniswap/uniswapx-parameterization-api', 'main', {
+      connectionArn:
+        'arn:aws:codestar-connections:us-east-2:644039819003:connection/4806faf1-c31e-4ea2-a5bf-c6fc1fa79487',
     });
 
     const synthStep = new CodeBuildStep('Synth', {
