@@ -211,7 +211,7 @@ function getDecayStartTime(chainId: number): number {
     case ChainId.MAINNET:
       return nowTimestamp + 24; // 2 blocks
     case ChainId.ARBITRUM_ONE:
-      return nowTimestamp + 1; // 1 second
+      return nowTimestamp; // start immediately
     default:
       return nowTimestamp + 10; // 10 seconds
   }
@@ -222,7 +222,7 @@ function getDecayEndTime(chainId: number, startTime: number): number {
     case ChainId.MAINNET:
       return startTime + 60; // 5 blocks
     case ChainId.ARBITRUM_ONE:
-      return startTime + 10; // 10 seconds
+      return startTime + 7; // 7 seconds
     default:
       return startTime + 30; // 30 seconds
   }
