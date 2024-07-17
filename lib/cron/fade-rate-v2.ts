@@ -131,9 +131,13 @@ export function calculateNewTimestamps(
     const fades = row[1];
     const fillerTimestamp = fillerTimestamps.get(hash);
     if (fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp) {
-      return;
-    }
-    if (fades) {
+      updatedTimestamps.push({
+        hash,
+        lastPostTimestamp: newPostTimestamp,
+        blockUntilTimestamp: fillerTimestamp.blockUntilTimestamp,
+        consecutiveBlocks: fillerTimestamp.consecutiveBlocks,
+      });
+    } else if (fades) {
       const blockUntilTimestamp = calculateBlockUntilTimestamp(
         newPostTimestamp,
         fillerTimestamp?.consecutiveBlocks,

@@ -104,6 +104,19 @@ describe('FadeRateCron test', () => {
             blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
             consecutiveBlocks: 1,
           },
+          // still update lastPostTimestamp when blockUntilTimestamp > now
+          {
+            hash: 'filler3',
+            lastPostTimestamp: now,
+            blockUntilTimestamp: now + 1000,
+            consecutiveBlocks: 0,
+          },
+          {
+            hash: 'filler5',
+            lastPostTimestamp: now,
+            blockUntilTimestamp: now + 100,
+            consecutiveBlocks: 0,
+          },
           // test exponential backoff
           {
             hash: 'filler7',
@@ -138,12 +151,7 @@ describe('FadeRateCron test', () => {
     });
 
     it('keep old blockUntilTimestamp if no new fades', () => {
-      expect(newTimestamps).not.toContain([['filler5', expect.anything(), expect.anything()]]);
       expect(newTimestamps).not.toContain([['filler4', expect.anything(), expect.anything()]]);
-    });
-
-    it('ignores fillers with blockUntilTimestamp > current timestamp', () => {
-      expect(newTimestamps).not.toContain([['filler3', expect.anything(), expect.anything()]]);
     });
   });
 });
