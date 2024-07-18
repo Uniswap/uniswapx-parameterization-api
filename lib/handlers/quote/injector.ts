@@ -23,6 +23,7 @@ import {
 } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
+import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
 import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { S3FillerComplianceConfigurationProvider } from '../../providers/compliance/s3';
 import { Quoter, WebhookQuoter } from '../../quoters';
@@ -53,12 +54,12 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const stage = process.env['stage'];
     const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
-    const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
 
-    const circuitBreakerProvider = new S3CircuitBreakerConfigurationProvider(
+    const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
+    await webhookProvider.fetchEndpoints();
+    const circuitBreakerProvider = new DynamoCircuitBreakerConfigurationProvider(
       log,
-      `${FADE_RATE_BUCKET}-${stage}-1`,
-      FADE_RATE_S3_KEY
+      webhookProvider.fillerEndpoints()
     );
 
     const complianceKey = stage === STAGE.BETA ? BETA_COMPLIANCE_S3_KEY : PROD_COMPLIANCE_S3_KEY;
