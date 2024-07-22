@@ -222,7 +222,7 @@ function getDecayEndTime(chainId: number, startTime: number): number {
     case ChainId.MAINNET:
       return startTime + 60; // 5 blocks
     case ChainId.ARBITRUM_ONE:
-      return startTime + 7; // 7 seconds
+      return startTime + 8; // 8 seconds
     default:
       return startTime + 30; // 30 seconds
   }
