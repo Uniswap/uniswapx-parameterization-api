@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 
 import {
@@ -149,6 +150,40 @@ const ErrorRatesWidget = (region: string): LambdaWidget[] =>
     };
   });
 
+
+  const LambdaErrorRatesWidget = (region: string, scope: Construct): LambdaWidget[] =>
+
+    scope.node.children
+    .filter((service) => service instanceof lambda.Function)
+    .map((service) => {
+      return {
+        height: 10,
+        width: 11,
+        y: 22,
+        x: 0,
+        type: 'metric',
+        properties: {
+          metrics: [
+            [ "AWS/Lambda", "Errors", "FunctionName", (service as lambda.Function).functionName, { "id": "errors", "stat": "Sum", "color": "#d13212", "region": region } ],
+            [ ".", "Invocations", ".", ".", { "id": "invocations", "stat": "Sum", "visible": false, "region":region } ],
+            [ { "expression": "100 - 100 * errors / MAX([errors, invocations])", "label": "Success rate (%)", "id": "availability", "yAxis": "right", "region": region } ]
+          ],
+          view: 'timeSeries',
+          stacked: true,
+          region,
+          stat: 'Sum',
+          period: 300,
+          title: `${(service as lambda.Function).functionName} Error Rates`,
+          yAxis: {
+            left: {
+              label: 'Percent',
+              showUnits: false,
+            },
+          },
+        },
+      };
+    });
+
 const FailingRFQLogsWidget = (region: string, logGroup: string): LambdaWidget => {
   return {
     type: 'log',
@@ -274,6 +309,7 @@ export class ParamDashboardStack extends cdk.NestedStack {
           QuotesRequestedWidget(region),
           ErrorRatesWidget(region),
           RFQFailRatesWidget(region, RFQ_PROVIDERS),
+          LambdaErrorRatesWidget(region, scope),
           FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupArn),
           CircuitBreakerV2Widget(region),
         ].flat(),
