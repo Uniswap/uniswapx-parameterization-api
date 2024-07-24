@@ -1,3 +1,5 @@
+import { KMSClient } from '@aws-sdk/client-kms';
+import { KmsSigner } from '@uniswap/signer';
 import { TradeType } from '@uniswap/sdk-core';
 import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { CosignedV2DutchOrder, CosignerData } from '@uniswap/uniswapx-sdk';
@@ -18,6 +20,7 @@ import {
   HardQuoteResponseDataJoi,
 } from './schema';
 import { ChainId } from '../../util/chains';
+import { checkDefined } from '../../preconditions/preconditions';
 
 const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(100); // non-exclusive fillers must override price by this much
 const RESPONSE_LOG_TYPE = 'HardResponse';
@@ -33,7 +36,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
       requestInjected: { log, metric },
-      containerInjected: { quoters, orderServiceProvider, cosigner, cosignerAddress },
+      containerInjected: { quoters, orderServiceProvider, cosignerAddress },
       requestBody,
     } = params;
     const start = Date.now();
@@ -89,7 +92,9 @@ export class QuoteHandler extends APIGLambdaHandler<
       log.info({ cosignerData: cosignerData }, 'open order with default cosignerData');
     }
 
-    // TODO: use server key to cosign instead of local wallet
+    const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
+    const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
+    const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);
     const cosignature = await cosigner.signDigest(request.order.cosignatureHash(cosignerData));
     const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(request.order, cosignerData, cosignature);
 
