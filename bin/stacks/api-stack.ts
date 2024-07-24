@@ -443,7 +443,7 @@ export class APIStack extends cdk.Stack {
         // For this metric 'avg' represents error rate.
         statistic: 'avg',
       }),
-      threshold: 0.05,
+      threshold: 0.03,
       // Beta has much less traffic so is more susceptible to transient errors.
       evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
     });
@@ -453,9 +453,9 @@ export class APIStack extends cdk.Stack {
       metric: api.metricServerError({
         period: Duration.minutes(5),
         // For this metric 'avg' represents error rate.
-        statistic: 'avg',
+        statistic: 'sum',
       }),
-      threshold: 0.03,
+      threshold: 100,
       // Beta has much less traffic so is more susceptible to transient errors.
       evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
     });
@@ -464,9 +464,9 @@ export class APIStack extends cdk.Stack {
       alarmName: 'UniswapXParameterizationAPI-SEV3-4XX',
       metric: api.metricClientError({
         period: Duration.minutes(5),
-        statistic: 'avg',
+        statistic: 'sum',
       }),
-      threshold: 0.98,
+      threshold: 50,
       evaluationPeriods: 3,
     });
 
@@ -595,18 +595,17 @@ export class APIStack extends cdk.Stack {
           comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         });
 
-        // TODO: enable before going live
-        //const quotePostErrorAlarmSev2 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV2-PostErrorRate`, {
-        //  alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-PostErrorRate-${dimension.Service}`,
-        //  metric: quotePostErrorMetric,
-        //  evaluationPeriods: 3,
-        //  threshold: 20,
-        //  comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        //});
+        const quotePostErrorAlarmSev2 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV2-PostErrorRate`, {
+         alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-PostErrorRate-${dimension.Service}`,
+         metric: quotePostErrorMetric,
+         evaluationPeriods: 3,
+         threshold: 50,
+         comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        });
 
         if (chatBotTopic) {
           quotePostErrorAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-          //quotePostErrorAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+          quotePostErrorAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
         }
       }
 
