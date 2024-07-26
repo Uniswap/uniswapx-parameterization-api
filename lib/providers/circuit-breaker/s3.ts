@@ -12,7 +12,6 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
   private log: Logger;
   private fillers: CircuitBreakerConfiguration[];
   private lastUpdatedTimestamp: number;
-  private client: S3Client;
   allow_list: Set<string>;
 
   // try to refetch endpoints every 5 mins
@@ -28,11 +27,6 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
     this.log = _log.child({ quoter: 'S3CircuitBreakerConfigurationProvider' });
     this.fillers = [];
     this.lastUpdatedTimestamp = Date.now();
-    this.client = new S3Client({
-      requestHandler: new NodeHttpHandler({
-        requestTimeout: 500,
-      }),
-    });
     this.allow_list = _allow_list;
   }
 
@@ -79,7 +73,12 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
 
   async fetchConfigurations(): Promise<void> {
     try {
-      const s3Res = await this.client.send(
+      const client = new S3Client({
+        requestHandler: new NodeHttpHandler({
+          requestTimeout: 500,
+        }),
+      });
+      const s3Res = await client.send(
         new GetObjectCommand({
           Bucket: this.bucket,
           Key: this.key,
@@ -110,7 +109,12 @@ export class S3CircuitBreakerConfigurationProvider implements CircuitBreakerConf
         enabled: rate < S3CircuitBreakerConfigurationProvider.FILL_RATE_THRESHOLD,
       });
     }
-    await this.client.send(
+    const client = new S3Client({
+      requestHandler: new NodeHttpHandler({
+        requestTimeout: 500,
+      }),
+    });
+    await client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: this.key,
