@@ -6,5 +6,5 @@ export const PROD_TABLE_CAPACITY: TableCapacityConfig = {
   fillerAddress: { billingMode: BillingMode.PROVISIONED, readCapacity: 50, writeCapacity: 200 },
   fadeRate: { billingMode: BillingMode.PROVISIONED, readCapacity: 50, writeCapacity: 5 },
   synthSwitch: { billingMode: BillingMode.PROVISIONED, readCapacity: 2000, writeCapacity: 5 },
-  timestamps: { billingMode: BillingMode.PROVISIONED, readCapacity: 100, writeCapacity: 50 },
+  timestamps: { billingMode: BillingMode.PROVISIONED, readCapacity: 100, writeCapacity: 10 },
 };
