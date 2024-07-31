@@ -9,28 +9,17 @@ import {
   BETA_COMPLIANCE_S3_KEY,
   BETA_S3_KEY,
   COMPLIANCE_CONFIG_BUCKET,
-  FADE_RATE_BUCKET,
-  FADE_RATE_S3_KEY,
-  INTEGRATION_S3_KEY,
   PRODUCTION_S3_KEY,
   PROD_COMPLIANCE_S3_KEY,
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
-import {
-  AWSMetricsLogger,
-  SoftQuoteMetricDimension,
-  UniswapXParamServiceIntegrationMetricDimension,
-} from '../../entities/aws-metrics-logger';
+import { AWSMetricsLogger, SoftQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
-import { S3CircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/s3';
 import { S3FillerComplianceConfigurationProvider } from '../../providers/compliance/s3';
 import { Quoter, WebhookQuoter } from '../../quoters';
-import {
-  DynamoFillerAddressRepository,
-  MockFillerAddressRepository,
-} from '../../repositories/filler-address-repository';
+import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
