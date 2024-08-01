@@ -440,10 +440,10 @@ export class APIStack extends cdk.Stack {
       alarmName: 'UniswapXParameterizationAPI-SEV2-5XX',
       metric: api.metricServerError({
         period: Duration.minutes(5),
-        // For this metric 'sum' represents error count.
-        statistic: 'sum',
+        // For this metric 'avg' represents error rate.
+        statistic: 'avg',
       }),
-      threshold: 200,
+      threshold: 0.5,
       // Beta has much less traffic so is more susceptible to transient errors.
       evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
     });
@@ -596,11 +596,11 @@ export class APIStack extends cdk.Stack {
         });
 
         const quotePostErrorAlarmSev2 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV2-PostErrorRate`, {
-         alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-PostErrorRate-${dimension.Service}`,
-         metric: quotePostErrorMetric,
-         evaluationPeriods: 3,
-         threshold: 50,
-         comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-PostErrorRate-${dimension.Service}`,
+          metric: quotePostErrorMetric,
+          evaluationPeriods: 3,
+          threshold: 50,
+          comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         });
 
         if (chatBotTopic) {
