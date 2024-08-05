@@ -30,3 +30,7 @@ export const DYNAMO_TABLE_KEY = {
   FADED: 'faded',
   CONSECUTIVE_BLOCKS: 'consecutiveBlocks',
 };
+
+export const POST_ORDER_ERROR_REASON = {
+  INSUFFICIENT_FUNDS: 'Onchain validation failed: InsufficientFunds',
+};
