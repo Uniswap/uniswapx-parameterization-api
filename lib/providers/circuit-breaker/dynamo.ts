@@ -47,7 +47,8 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
     this.timestamps = await this.timestampDB.getFillerTimestampsMap(this.fillerEndpoints);
   }
 
-  /* add filler if it's not blocked until a future timestamp */
+  /* add filler to `enabled` array if it's not blocked until a future timestamp 
+     add disabled fillers and the `blockUntilTimestamp`s to disabled array */
   async getEndpointStatuses(endpoints: WebhookConfiguration[]): Promise<EndpointStatuses> {
     try {
       const now = Math.floor(Date.now() / 1000);
