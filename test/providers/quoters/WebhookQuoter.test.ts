@@ -150,7 +150,6 @@ describe('WebhookQuoter tests', () => {
       });
     const response = await webhookQuoter.quote(request);
     expect(response.length).toEqual(2);
-    console.log(JSON.stringify(response));
     expect(['uniswap', 'searcher']).toContain(response[0].fillerName);
     expect(['uniswap', 'searcher']).toContain(response[1].fillerName);
     expect([WEBHOOK_URL, WEBHOOK_URL_SEARCHER]).toContain(response[0].endpoint);
@@ -230,6 +229,36 @@ describe('WebhookQuoter tests', () => {
         {
           quoteId: expect.any(String),
           ...request.toCleanJSON(),
+        },
+        {
+          headers: {},
+          timeout: 500,
+        }
+      );
+    });
+
+    it('notify fillers of circuit breaker status', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: quote,
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: request.tokenOut,
+              tokenOut: request.tokenIn,
+            },
+          });
+        });
+
+      await webhookQuoter.quote(request);
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_ONEINCH,
+        {
+          blockUntilTimestamp: expect.any(Number),
         },
         {
           headers: {},
