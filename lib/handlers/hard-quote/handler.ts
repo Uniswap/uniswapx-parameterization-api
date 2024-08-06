@@ -1,12 +1,15 @@
 import { KMSClient } from '@aws-sdk/client-kms';
-import { KmsSigner } from '@uniswap/signer';
 import { TradeType } from '@uniswap/sdk-core';
+import { KmsSigner } from '@uniswap/signer';
 import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { CosignedV2DutchOrder, CosignerData } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
+import { POST_ORDER_ERROR_REASON } from '../../constants';
 import { HardQuoteRequest, HardQuoteResponse, Metric, QuoteResponse } from '../../entities';
+import { checkDefined } from '../../preconditions/preconditions';
+import { ChainId } from '../../util/chains';
 import { NoQuotesAvailable, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
@@ -19,8 +22,6 @@ import {
   HardQuoteResponseData,
   HardQuoteResponseDataJoi,
 } from './schema';
-import { ChainId } from '../../util/chains';
-import { checkDefined } from '../../preconditions/preconditions';
 
 const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(100); // non-exclusive fillers must override price by this much
 const RESPONSE_LOG_TYPE = 'HardResponse';
@@ -127,9 +128,14 @@ export class QuoteHandler extends APIGLambdaHandler<
           body: hardResponse.toResponseJSON(),
         };
       } else {
-        log.error({ error: response }, 'Error posting order');
+        const error = response as ErrorResponse;
+        log.error({ error: error }, 'Error posting order');
+
+        // user error should not be alerted on
+        if (error.detail != POST_ORDER_ERROR_REASON.INSUFFICIENT_FUNDS) {
+          metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
+        }
         metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
-        metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
         return {
           ...response,
           statusCode: 400,
