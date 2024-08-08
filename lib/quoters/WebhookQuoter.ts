@@ -4,7 +4,7 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Quoter, QuoterType } from '.';
+import { FullRfqRequest, Quoter, QuoterType } from '.';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
@@ -119,10 +119,26 @@ export class WebhookQuoter implements Quoter {
       timeoutSettingMs: axiosConfig.timeout,
     };
 
+    const fullCleanRequest: FullRfqRequest = {
+      quoteRequest: cleanRequest,
+      metadata: {
+        blocked: false,
+        blockUntilTimestamp: 0,
+      },
+    };
+
+    const fullOpposingCleanRequest: FullRfqRequest = {
+      quoteRequest: opposingCleanRequest,
+      metadata: {
+        blocked: false,
+        blockUntilTimestamp: 0,
+      },
+    };
+
     try {
       const [hookResponse, opposite] = await Promise.all([
-        axios.post(endpoint, cleanRequest, axiosConfig),
-        axios.post(endpoint, opposingCleanRequest, axiosConfig),
+        axios.post(endpoint, fullCleanRequest, axiosConfig),
+        axios.post(endpoint, fullOpposingCleanRequest, axiosConfig),
       ]);
 
       metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);
@@ -315,13 +331,13 @@ export class WebhookQuoter implements Quoter {
       timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
       ...(!!status.webhook.headers && { headers: status.webhook.headers }),
     };
-    axios.post(
-      status.webhook.endpoint,
-      {
+    const fullRequest: FullRfqRequest = {
+      metadata: {
+        blocked: true,
         blockUntilTimestamp: status.blockUntil,
       },
-      axiosConfig
-    );
+    };
+    axios.post(status.webhook.endpoint, fullRequest, axiosConfig);
   }
 }
 

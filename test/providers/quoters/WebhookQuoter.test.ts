@@ -216,12 +216,18 @@ describe('WebhookQuoter tests', () => {
 
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          quoteRequest: { quoteId: expect.any(String), ...request.toCleanJSON() },
+          metadata: { blocked: false, blockUntilTimestamp: 0 },
+        },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          quoteRequest: { quoteId: expect.any(String), ...request.toCleanJSON() },
+          metadata: { blocked: false, blockUntilTimestamp: 0 },
+        },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).not.toBeCalledWith(
@@ -258,7 +264,8 @@ describe('WebhookQuoter tests', () => {
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         {
-          blockUntilTimestamp: expect.any(Number),
+          quoteRequest: undefined,
+          metadata: { blockUntilTimestamp: expect.any(Number), blocked: true },
         },
         {
           headers: {},
@@ -308,12 +315,15 @@ describe('WebhookQuoter tests', () => {
       await webhookQuoter.quote(request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
-        { blockUntilTimestamp: expect.any(Number) },
+        { quoteRequest: undefined, metadata: { blockUntilTimestamp: expect.any(Number), blocked: true } },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          quoteRequest: { quoteId: expect.any(String), ...request.toCleanJSON() },
+          metadata: { blocked: false, blockUntilTimestamp: 0 },
+        },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), {
@@ -343,12 +353,18 @@ describe('WebhookQuoter tests', () => {
       await webhookQuoter.quote(request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          quoteRequest: { quoteId: expect.any(String), ...request.toCleanJSON() },
+          metadata: { blocked: false, blockUntilTimestamp: 0 },
+        },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          quoteRequest: { quoteId: expect.any(String), ...request.toCleanJSON() },
+          metadata: { blocked: false, blockUntilTimestamp: 0 },
+        },
         {
           headers: {},
           timeout: 500,
@@ -357,7 +373,10 @@ describe('WebhookQuoter tests', () => {
       // empty config defaults to v1 only
       expect(mockedAxios.post).not.toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          quoteRequest: { quoteId: expect.any(String), ...request.toCleanJSON() },
+          metadata: { blocked: false, blockUntilTimestamp: 0 },
+        },
         {
           headers: {},
           timeout: 500,
@@ -388,12 +407,18 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].toResponseJSON()).toEqual({ ...quote, swapper: request.swapper, quoteId: expect.any(String) });
     expect(mockedAxios.post).toBeCalledWith(
       WEBHOOK_URL,
-      { quoteId: expect.any(String), ...request.toOpposingCleanJSON() },
+      {
+        quoteRequest: { quoteId: expect.any(String), ...request.toOpposingCleanJSON() },
+        metadata: { blocked: false, blockUntilTimestamp: 0 },
+      },
       { headers: {}, timeout: 500 }
     );
     expect(mockedAxios.post).toBeCalledWith(
       WEBHOOK_URL,
-      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      {
+        quoteRequest: { quoteId: expect.any(String), ...request.toCleanJSON() },
+        metadata: { blocked: false, blockUntilTimestamp: 0 },
+      },
       { headers: {}, timeout: 500 }
     );
   });
