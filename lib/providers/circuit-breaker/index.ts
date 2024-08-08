@@ -7,8 +7,16 @@ export interface CircuitBreakerConfiguration {
   enabled: boolean;
 }
 
+export interface EndpointStatuses {
+  enabled: WebhookConfiguration[];
+  disabled: {
+    webhook: WebhookConfiguration;
+    blockUntil: number;
+  }[];
+}
+
 export interface CircuitBreakerConfigurationProvider {
   allow_list?: Set<string>;
   getConfigurations(): Promise<CircuitBreakerConfiguration[] | FillerTimestampMap>;
-  getEligibleEndpoints(endpoints: WebhookConfiguration[]): Promise<WebhookConfiguration[]>;
+  getEndpointStatuses(endpoints: WebhookConfiguration[]): Promise<EndpointStatuses>;
 }
