@@ -251,7 +251,7 @@ export class APIStack extends cdk.Stack {
       vpcSubnets: {
         subnets: [...vpc.privateSubnets],
       },
-      memorySize: 1024,
+      memorySize: 2048,
       bundling: {
         minify: true,
         sourceMap: true,
@@ -281,7 +281,7 @@ export class APIStack extends cdk.Stack {
       vpcSubnets: {
         subnets: [...vpc.privateSubnets],
       },
-      memorySize: 1024,
+      memorySize: 2048,
       bundling: {
         minify: true,
         sourceMap: true,
