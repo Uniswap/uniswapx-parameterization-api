@@ -1,4 +1,4 @@
-import { QuoteRequest, QuoteRequestDataJSON, QuoteResponse } from '../entities';
+import { QuoteRequest, QuoteResponse } from '../entities';
 
 export enum QuoterType {
   TEST = 'TEST',
@@ -9,14 +9,6 @@ export enum QuoterType {
 export interface Quoter {
   quote(request: QuoteRequest): Promise<QuoteResponse[]>;
   type(): QuoterType;
-}
-
-export interface FullRfqRequest {
-  quoteRequest?: QuoteRequestDataJSON;
-  metadata: {
-    blocked: boolean;
-    blockUntilTimestamp: number;
-  };
 }
 
 export * from './MockQuoter';
