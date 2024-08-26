@@ -2,7 +2,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import Logger from 'bunyan';
 
-import { CircuitBreakerConfigurationProvider } from '.';
+import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '.';
 import { BaseTimestampRepository, FillerTimestampMap, TimestampRepository } from '../../repositories';
 import { WebhookConfiguration } from '../webhook';
 
@@ -47,8 +47,9 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
     this.timestamps = await this.timestampDB.getFillerTimestampsMap(this.fillerEndpoints);
   }
 
-  /* add filler if it's not blocked until a future timestamp */
-  async getEligibleEndpoints(endpoints: WebhookConfiguration[]): Promise<WebhookConfiguration[]> {
+  /* add filler to `enabled` array if it's not blocked until a future timestamp 
+     add disabled fillers and the `blockUntilTimestamp`s to disabled array */
+  async getEndpointStatuses(endpoints: WebhookConfiguration[]): Promise<EndpointStatuses> {
     try {
       const now = Math.floor(Date.now() / 1000);
       const fillerTimestamps = await this.getConfigurations();
@@ -57,20 +58,36 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
         const enabledEndpoints = endpoints.filter((e) => {
           return !(fillerTimestamps.has(e.endpoint) && fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp > now);
         });
-        const disabledEndpoints = endpoints.filter((e) => {
-          return fillerTimestamps.has(e.endpoint) && fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp > now;
-        });
+        const disabledEndpoints = endpoints
+          .filter((e) => {
+            return fillerTimestamps.has(e.endpoint) && fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp > now;
+          })
+          .map((e) => {
+            return {
+              webhook: e,
+              blockUntil: fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp,
+            };
+          });
 
         this.log.info({ num: enabledEndpoints.length, endpoints: enabledEndpoints }, `Endpoints enabled`);
         this.log.info({ num: disabledEndpoints.length, endpoints: disabledEndpoints }, `Endpoints disabled`);
 
-        return enabledEndpoints;
+        return {
+          enabled: enabledEndpoints,
+          disabled: disabledEndpoints,
+        };
       }
 
-      return endpoints;
+      return {
+        enabled: endpoints,
+        disabled: [],
+      };
     } catch (e) {
       this.log.error({ error: e }, `Error getting eligible endpoints, default to returning all`);
-      return endpoints;
+      return {
+        enabled: endpoints,
+        disabled: [],
+      };
     }
   }
 }

@@ -1,4 +1,4 @@
-import { CircuitBreakerConfiguration, CircuitBreakerConfigurationProvider } from '.';
+import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '.';
 import { FillerTimestampMap } from '../../repositories';
 import { WebhookConfiguration } from '../webhook';
 
@@ -9,42 +9,32 @@ export class MockV2CircuitBreakerConfigurationProvider implements CircuitBreaker
     return this.timestamps;
   }
 
-  async getEligibleEndpoints(endpoints: WebhookConfiguration[]): Promise<WebhookConfiguration[]> {
+  async getEndpointStatuses(endpoints: WebhookConfiguration[]): Promise<EndpointStatuses> {
     const now = Math.floor(Date.now() / 1000);
     const fillerTimestamps = await this.getConfigurations();
     if (fillerTimestamps.size) {
       const enabledEndpoints = endpoints.filter((e) => {
         return !(fillerTimestamps.has(e.endpoint) && fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp > now);
       });
-      return enabledEndpoints;
+      const disabledEndpoints = endpoints
+        .filter((e) => {
+          return fillerTimestamps.has(e.endpoint) && fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp > now;
+        })
+        .map((e) => {
+          return {
+            webhook: e,
+            blockUntil: fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp,
+          };
+        });
+
+      return {
+        enabled: enabledEndpoints,
+        disabled: disabledEndpoints,
+      };
     }
-    return endpoints;
-  }
-}
-
-export class MockCircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
-  allow_list: Set<string>;
-
-  constructor(private config: CircuitBreakerConfiguration[], _allow_list: Set<string> = new Set<string>([])) {
-    this.allow_list = _allow_list;
-  }
-
-  async getConfigurations(): Promise<CircuitBreakerConfiguration[]> {
-    return this.config;
-  }
-
-  async getEligibleEndpoints(endpoints: WebhookConfiguration[]): Promise<WebhookConfiguration[]> {
-    const fillerToConfigMap = new Map(this.config.map((c) => [c.hash, c]));
-    const enabledEndpoints: WebhookConfiguration[] = [];
-    endpoints.forEach((e) => {
-      if (
-        this.allow_list.has(e.hash) ||
-        (fillerToConfigMap.has(e.hash) && fillerToConfigMap.get(e.hash)?.enabled) ||
-        !fillerToConfigMap.has(e.hash) // default to allowing fillers not in the config
-      ) {
-        enabledEndpoints.push(e);
-      }
-    });
-    return enabledEndpoints;
+    return {
+      enabled: endpoints,
+      disabled: [],
+    };
   }
 }

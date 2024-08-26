@@ -17,7 +17,7 @@ import {
 } from '../entities';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { FirehoseLogger } from '../providers/analytics';
-import { CircuitBreakerConfigurationProvider } from '../providers/circuit-breaker';
+import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { timestampInMstoISOString } from '../util/time';
@@ -36,23 +36,32 @@ export class WebhookQuoter implements Quoter {
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
     private complianceProvider: FillerComplianceConfigurationProvider,
-    private repository: FillerAddressRepository,
-    _allow_list: Set<string> = new Set<string>(['22a23abb38e0612e58ebdd15756b18110e6aac078645210afe0c60f8220307b0'])
+    private repository: FillerAddressRepository
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
 
   public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
-    let endpoints = await this.getEligibleEndpoints();
+    const statuses = await this.getEndpointStatuses();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
-    endpoints = endpoints.filter(
+    const enabledEndpoints = statuses.enabled.filter(
       (e) =>
         passFillerCompliance(e, endpointToAddrsMap, request.swapper) &&
         getEndpointSupportedProtocols(e).includes(request.protocol)
     );
 
-    this.log.info({ endpoints }, `Fetching quotes from ${endpoints.length} endpoints`);
-    const quotes = await Promise.all(endpoints.map((e) => this.fetchQuote(e, request)));
+    const disabledEndpoints = statuses.disabled;
+
+    this.log.info(
+      { enabled: enabledEndpoints, disabled: disabledEndpoints },
+      `Fetching quotes from ${enabledEndpoints.length} endpoints and notifying disabled endpoints`
+    );
+
+    const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request)));
+
+    // should not await and block
+    Promise.all(disabledEndpoints.map((e) => this.notifyBlock(e)));
+
     return quotes.filter((q) => q !== null) as QuoteResponse[];
   }
 
@@ -60,9 +69,9 @@ export class WebhookQuoter implements Quoter {
     return QuoterType.RFQ;
   }
 
-  private async getEligibleEndpoints(): Promise<WebhookConfiguration[]> {
+  private async getEndpointStatuses(): Promise<EndpointStatuses> {
     const endpoints = await this.webhookProvider.getEndpoints();
-    return this.circuitBreakerProvider.getEligibleEndpoints(endpoints);
+    return this.circuitBreakerProvider.getEndpointStatuses(endpoints);
   }
 
   private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
@@ -298,6 +307,21 @@ export class WebhookQuoter implements Quoter {
       }
       return null;
     }
+  }
+
+  private async notifyBlock(status: { webhook: WebhookConfiguration; blockUntil: number }): Promise<void> {
+    const timeoutOverride = status.webhook.overrides?.timeout;
+    const axiosConfig = {
+      timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
+      ...(!!status.webhook.headers && { headers: status.webhook.headers }),
+    };
+    axios.post(
+      status.webhook.endpoint,
+      {
+        blockUntilTimestamp: status.blockUntil,
+      },
+      axiosConfig
+    );
   }
 }
 

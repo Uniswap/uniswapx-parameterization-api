@@ -15,10 +15,10 @@ import {
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
-import { MockCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter, WebhookQuoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
+import { MOCK_V2_CB_PROVIDER } from '../../fixtures';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -237,15 +237,12 @@ describe('Quote handler', () => {
         { endpoint: 'https://uniswap.org', headers: {}, name: 'uniswap', hash: '0xuni' },
       ]);
 
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { fadeRate: 0.02, enabled: true, hash: '0xuni' },
-      ]);
       const quoters = [
         new WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
-          circuitBreakerProvider,
+          MOCK_V2_CB_PROVIDER,
           emptyMockComplianceProvider,
           repository
         ),
@@ -312,15 +309,12 @@ describe('Quote handler', () => {
           hash: '0xuni',
         },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
       const quoters = [
         new WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
-          circuitBreakerProvider,
+          MOCK_V2_CB_PROVIDER,
           emptyMockComplianceProvider,
           repository
         ),
@@ -369,15 +363,12 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
       const quoters = [
         new WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
-          circuitBreakerProvider,
+          MOCK_V2_CB_PROVIDER,
           emptyMockComplianceProvider,
           repository
         ),
@@ -404,15 +395,12 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
       const quoters = [
         new WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
-          circuitBreakerProvider,
+          MOCK_V2_CB_PROVIDER,
           emptyMockComplianceProvider,
           repository
         ),
@@ -440,15 +428,12 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
       const quoters = [
         new WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
-          circuitBreakerProvider,
+          MOCK_V2_CB_PROVIDER,
           emptyMockComplianceProvider,
           repository
         ),
@@ -479,15 +464,12 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
       const quoters = [
         new WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
-          circuitBreakerProvider,
+          MOCK_V2_CB_PROVIDER,
           emptyMockComplianceProvider,
           repository
         ),
@@ -542,15 +524,12 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
       const quoters = [
         new WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
-          circuitBreakerProvider,
+          MOCK_V2_CB_PROVIDER,
           emptyMockComplianceProvider,
           repository
         ),
@@ -590,15 +569,12 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const circuitBreakerProvider = new MockCircuitBreakerConfigurationProvider([
-        { hash: '0xuni', fadeRate: 0.02, enabled: true },
-      ]);
       const quoters = [
         new WebhookQuoter(
           logger,
           mockFirehoseLogger,
           webhookProvider,
-          circuitBreakerProvider,
+          MOCK_V2_CB_PROVIDER,
           mockComplianceProvider,
           repository
         ),
