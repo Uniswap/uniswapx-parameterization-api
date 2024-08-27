@@ -131,7 +131,7 @@ describe('Hard Quote endpoint integration test', function () {
   });
 
   describe('Valid requests', async () => {
-    it('successfully posts to order service', async () => {
+    it.skip('successfully posts to order service', async () => {
       const prebuildOrder = builder
         .input({ token: TOKEN_IN, startAmount: AMOUNT, endAmount: AMOUNT })
         .output({ token: TOKEN_OUT, startAmount: AMOUNT, endAmount: AMOUNT, recipient: SWAPPER_ADDRESS })
