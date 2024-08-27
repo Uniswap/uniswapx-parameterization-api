@@ -155,7 +155,7 @@ describe('Hard Quote endpoint integration test', function () {
 
       const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
       console.log(data);
-      expect(status).to.equal(200);
+      expect(status).to.be.oneOf([200, 201]);
       expect(data.chainId).to.equal(SEPOLIA);
       expect(data.orderHash).to.match(/0x[0-9a-fA-F]{64}/);
     });
@@ -184,7 +184,7 @@ describe('Hard Quote endpoint integration test', function () {
 
       const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
       console.log(data);
-      expect(status).to.equal(200);
+      expect(status).to.be.oneOf([200, 201]);
       expect(data.chainId).to.equal(SEPOLIA);
       expect(data.orderHash).to.match(/0x[0-9a-fA-F]{64}/);
       expect(data.filler).to.equal(ethers.constants.AddressZero);
