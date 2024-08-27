@@ -24,6 +24,7 @@ import { timestampInMstoISOString } from '../util/time';
 
 // TODO: shorten, maybe take from env config
 const WEBHOOK_TIMEOUT_MS = 500;
+const NOTIFICATION_TIMEOUT_MS = 10;
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
@@ -60,7 +61,7 @@ export class WebhookQuoter implements Quoter {
     const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request)));
 
     // should not await and block
-    Promise.all(disabledEndpoints.map((e) => this.notifyBlock(e)));
+    Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e)));
 
     return quotes.filter((q) => q !== null) as QuoteResponse[];
   }
@@ -310,9 +311,8 @@ export class WebhookQuoter implements Quoter {
   }
 
   private async notifyBlock(status: { webhook: WebhookConfiguration; blockUntil: number }): Promise<void> {
-    const timeoutOverride = status.webhook.overrides?.timeout;
     const axiosConfig = {
-      timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
+      timeout: NOTIFICATION_TIMEOUT_MS,
       ...(!!status.webhook.headers && { headers: status.webhook.headers }),
     };
     try {
