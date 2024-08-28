@@ -58,7 +58,9 @@ export class WebhookQuoter implements Quoter {
     const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request)));
 
     // should not await and block
-    Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e)));
+    Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
+      this.log.info({ results }, 'Notified disabled endpoints');
+    });
 
     return quotes.filter((q) => q !== null) as QuoteResponse[];
   }
@@ -312,20 +314,17 @@ export class WebhookQuoter implements Quoter {
       timeout: NOTIFICATION_TIMEOUT_MS,
       ...(!!status.webhook.headers && { headers: status.webhook.headers }),
     };
-    try {
-      axios.post(
+    axios
+      .post(
         status.webhook.endpoint,
         {
           blockUntilTimestamp: status.blockUntil,
         },
         axiosConfig
-      );
-    } catch (e) {
-      this.log.error(
-        { endpoint: status.webhook.endpoint, error: e },
-        `Error notifying block to ${status.webhook.endpoint}`
-      );
-    }
+      )
+      .catch((e) => {
+        this.log.error({ endpoint: status.webhook.endpoint, error: e }, `Axios error notifying block`);
+      });
   }
 }
 
