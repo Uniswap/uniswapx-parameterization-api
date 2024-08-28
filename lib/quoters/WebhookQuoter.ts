@@ -314,7 +314,7 @@ export class WebhookQuoter implements Quoter {
       timeout: NOTIFICATION_TIMEOUT_MS,
       ...(!!status.webhook.headers && { headers: status.webhook.headers }),
     };
-    axios
+    await axios
       .post(
         status.webhook.endpoint,
         {
