@@ -322,8 +322,8 @@ export class WebhookQuoter implements Quoter {
         },
         axiosConfig
       )
-      .catch((e) => {
-        this.log.error({ endpoint: status.webhook.endpoint, error: e }, `Axios error notifying block`);
+      .catch((_e) => {
+        return;
       });
   }
 }
