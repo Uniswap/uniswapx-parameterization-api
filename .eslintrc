@@ -29,7 +29,7 @@
     "import/no-duplicates": "error",
     "@typescript-eslint/no-empty-interface": "off",
     "@typescript-eslint/ban-types": "warn",
-    "@typescript-eslint/no-unused-vars": "warn",
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
     "@typescript-eslint/ban-ts-comment": "off"
   }
 }
