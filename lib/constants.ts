@@ -34,3 +34,6 @@ export const DYNAMO_TABLE_KEY = {
 export const POST_ORDER_ERROR_REASON = {
   INSUFFICIENT_FUNDS: 'Onchain validation failed: InsufficientFunds',
 };
+
+export const WEBHOOK_TIMEOUT_MS = 500;
+export const NOTIFICATION_TIMEOUT_MS = 10;
