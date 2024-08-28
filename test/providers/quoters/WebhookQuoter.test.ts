@@ -2,6 +2,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
+import { NOTIFICATION_TIMEOUT_MS } from '../../../lib/constants';
 import { AnalyticsEventType, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
@@ -262,7 +263,7 @@ describe('WebhookQuoter tests', () => {
         },
         {
           headers: {},
-          timeout: 500,
+          timeout: NOTIFICATION_TIMEOUT_MS,
         }
       );
     });
@@ -306,10 +307,11 @@ describe('WebhookQuoter tests', () => {
         });
 
       await webhookQuoter.quote(request);
+      // blocked
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { blockUntilTimestamp: expect.any(Number) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeout: NOTIFICATION_TIMEOUT_MS }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
