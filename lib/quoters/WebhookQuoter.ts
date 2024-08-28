@@ -58,7 +58,9 @@ export class WebhookQuoter implements Quoter {
     const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request)));
 
     // should not await and block
-    Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e)));
+    Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
+      this.log.info({ results }, 'Notified disabled endpoints');
+    });
 
     return quotes.filter((q) => q !== null) as QuoteResponse[];
   }
