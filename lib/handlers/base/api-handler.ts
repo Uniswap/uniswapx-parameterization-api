@@ -88,22 +88,29 @@ export abstract class APIGLambdaHandler<
   }
 
   get handler(): APIGatewayProxyHandler {
-    return async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> => {
-      const handler = this.buildHandler();
+    return metricScope(
+      (metric: MetricsLogger) =>
+        async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> => {
+          const requestStart = new Date().getTime();
+          const handler = this.buildHandler();
+          const response = await handler(event, context);
+          const requestEnd = new Date().getTime();
 
-      const response = await handler(event, context);
+          // Track latency
+          metric.putMetric(Metric.QUOTE_LATENCY, requestEnd - requestStart, MetricLoggerUnit.Milliseconds);
 
-      return {
-        ...response,
-        headers: {
-          ...response.headers,
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-          'Access-Control-Allow-Credentials': true,
-          'Content-Type': 'application/json',
-        },
-      };
-    };
+          return {
+            ...response,
+            headers: {
+              ...response.headers,
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+              'Access-Control-Allow-Credentials': true,
+              'Content-Type': 'application/json',
+            },
+          };
+        }
+    );
   }
 
   protected buildHandler(): APIGatewayProxyHandler {
@@ -236,10 +243,10 @@ export abstract class APIGLambdaHandler<
     log: Logger
   ): Promise<
     | {
-        state: 'valid';
-        requestBody: ReqBody;
-        requestQueryParams: ReqQueryParams;
-      }
+    state: 'valid';
+    requestBody: ReqBody;
+    requestQueryParams: ReqQueryParams;
+  }
     | { state: 'invalid'; errorResponse: APIGatewayProxyResult }
   > {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
