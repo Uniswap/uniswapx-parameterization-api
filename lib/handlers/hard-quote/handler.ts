@@ -112,6 +112,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       });
       if (response.statusCode == 200 || response.statusCode == 201) {
         metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+        metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
         const hardResponse = new HardQuoteResponse(request, cosignedOrder);
         if (!bestQuote) {
           // The RFQ responses are logged in getBestQuote()

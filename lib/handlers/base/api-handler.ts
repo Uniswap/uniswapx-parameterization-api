@@ -9,7 +9,7 @@ import {
 import { default as bunyan, default as Logger } from 'bunyan';
 import Joi from 'joi';
 
-import { Metric } from '../../entities';
+import { Metric, MetricDimension } from '../../entities';
 import { CustomError, ErrorCode } from '../../util/errors';
 import { BaseHandleRequestParams, BaseInjector, BaseLambdaHandler, BaseRInj } from './base';
 
@@ -96,8 +96,9 @@ export abstract class APIGLambdaHandler<
           const response = await handler(event, context);
           const requestEnd = new Date().getTime();
 
-          // Track latency
-          metric.putMetric(Metric.QUOTE_LATENCY, requestEnd - requestStart, MetricLoggerUnit.Milliseconds);
+          // Track handler duration
+          metric.putDimensions({ [MetricDimension.METHOD]: this.handlerName });
+          metric.putMetric(Metric.HANDLER_DURATION, requestEnd - requestStart, MetricLoggerUnit.Milliseconds);
 
           return {
             ...response,

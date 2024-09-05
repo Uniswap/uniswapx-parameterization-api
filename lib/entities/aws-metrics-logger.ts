@@ -37,6 +37,10 @@ export class AWSMetricsLogger implements IMetric {
   }
 }
 
+export enum MetricDimension {
+  METHOD = 'method',
+}
+
 export enum Metric {
   QUOTE_200 = 'QUOTE_200',
   QUOTE_400 = 'QUOTE_400',
@@ -46,6 +50,7 @@ export enum Metric {
   QUOTE_REQUESTED = 'QUOTE_REQUESTED',
   QUOTE_LATENCY = 'QUOTE_LATENCY',
   QUOTE_RESPONSE_COUNT = 'QUOTE_RESPONSE_COUNT',
+  HANDLER_DURATION = 'HANDLER_DURATION',
 
   QUOTE_POST_ERROR = 'QUOTE_POST_ERROR',
   QUOTE_POST_ATTEMPT = 'QUOTE_POST_ATTEMPT',
