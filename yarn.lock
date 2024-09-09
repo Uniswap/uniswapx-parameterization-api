@@ -30,10 +30,10 @@
   resolved "https://registry.npmjs.org/@aws-cdk/asset-node-proxy-agent-v5/-/asset-node-proxy-agent-v5-2.0.166.tgz#467507db141cd829ff8aa9d6ea5519310a4276b8"
   integrity sha512-j0xnccpUQHXJKPgCwQcGGNu4lRiC1PptYfdxBIH1L4dRK91iBxtSQHESRQX+yB47oGLaF/WfNN/aF3WXwlhikg==
 
-"@aws-cdk/aws-redshift-alpha@^2.54.0-alpha.0":
-  version "2.54.0-alpha.0"
-  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-redshift-alpha/-/aws-redshift-alpha-2.54.0-alpha.0.tgz#eac9251cdb6939b2848191b42cc33f326a29917d"
-  integrity sha512-7/bxH6KMLArBfgJxiylNaz8NLV1EHcxa/kLctUK9xRBsn40DobZ/mIZxXc0keCK/siTKwv9i5qiGQ7l0YvJHOA==
+"@aws-cdk/aws-redshift-alpha@^2.85.0-alpha.0":
+  version "2.85.0-alpha.0"
+  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-redshift-alpha/-/aws-redshift-alpha-2.85.0-alpha.0.tgz#1231c32eb288516c5e5901e81009f5fe1d185839"
+  integrity sha512-oBXABcEWtVn8yPYR4wOoufdZe8J+nyvy3j0u2l8Gr5GXGQsRgSKWicqFjDid8vwfsX3xh5m26QclXsPWXsm6mw==
 
 "@aws-crypto/crc32@3.0.0":
   version "3.0.0"
