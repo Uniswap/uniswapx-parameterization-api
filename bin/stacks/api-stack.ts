@@ -257,7 +257,7 @@ export class APIStack extends cdk.Stack {
         sourceMap: true,
       },
       environment: {
-        VERSION: '2',
+        VERSION: '4',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
@@ -287,7 +287,7 @@ export class APIStack extends cdk.Stack {
         sourceMap: true,
       },
       environment: {
-        VERSION: '2',
+        VERSION: '4',
         NODE_OPTIONS: '--enable-source-maps',
         REGION: region,
         KMS_KEY_ID: kmsStack.key.keyId,
@@ -315,7 +315,7 @@ export class APIStack extends cdk.Stack {
         sourceMap: true,
       },
       environment: {
-        VERSION: '3',
+        VERSION: '4',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
