@@ -1,5 +1,3 @@
-import { KMSClient } from '@aws-sdk/client-kms';
-import { KmsSigner } from '@uniswap/signer';
 import { IMetric, setGlobalLogger, setGlobalMetric } from '@uniswap/smart-order-router';
 import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
@@ -23,7 +21,6 @@ import { HardQuoteRequestBody } from './schema';
 export interface ContainerInjected {
   quoters: Quoter[];
   firehose: FirehoseLogger;
-  cosignerAddress: string;
   orderServiceProvider: OrderServiceProvider;
 }
 
@@ -43,11 +40,6 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
 
     const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
-
-    const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
-    const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
-    const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);
-    const cosignerAddress = await cosigner.getAddress();
 
     const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
     await webhookProvider.fetchEndpoints();
@@ -82,11 +74,9 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const quoters: Quoter[] = [
       new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
-    log.info({ cosignerAddress }, 'Cosigner address from KMS Signer');
     return {
       quoters: quoters,
       firehose: firehose,
-      cosignerAddress,
       orderServiceProvider,
     };
   }
