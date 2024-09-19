@@ -46,6 +46,8 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     const request = HardQuoteRequest.fromHardRequestBody(requestBody);
 
+    // re-create KmsClient every call to avoid clock skew issue
+    // https://github.com/aws/aws-sdk-js-v3/issues/6400
     const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
     const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
     const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);
