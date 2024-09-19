@@ -1,3 +1,4 @@
+import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
 import { CosignedV2DutchOrder, UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
 import { createMetricsLogger } from 'aws-embedded-metrics';
@@ -19,8 +20,11 @@ import {
 import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter } from '../../../lib/quoters';
+import { KmsSigner } from '@uniswap/signer';
 
 jest.mock('axios');
+jest.mock('@aws-sdk/client-kms');
+jest.mock('@uniswap/signer');
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -32,6 +36,9 @@ const CHAIN_ID = 1;
 // silent logger in tests
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
+
+process.env.KMS_KEY_ID = 'test-key-id';
+process.env.REGION = 'us-east-2';
 
 export const getOrder = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV2DutchOrder => {
   const now = Math.floor(new Date().getTime() / 1000);
@@ -70,7 +77,17 @@ export const getOrder = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV2Dut
 describe('Quote handler', () => {
   const swapperWallet = Wallet.createRandom();
   const cosignerWallet = Wallet.createRandom();
-
+  
+  const mockGetAddress = jest.fn().mockResolvedValue(cosignerWallet.address);
+  const mockSignDigest = jest.fn().mockImplementation((digest) => cosignerWallet.signMessage(ethers.utils.arrayify(digest)));
+  
+  (KmsSigner as jest.Mock).mockImplementation(() => ({
+    getAddress: mockGetAddress,
+    signDigest: mockSignDigest,
+  }));
+  (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
+  
+  
   // Creating mocks for all the handler dependencies.
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
@@ -89,8 +106,6 @@ describe('Quote handler', () => {
         getContainerInjected: () => {
           return {
             quoters,
-            cosigner: cosignerWallet._signingKey(),
-            cosignerAddress: cosignerWallet.address,
             orderServiceProvider: new MockOrderServiceProvider(),
           };
         },
