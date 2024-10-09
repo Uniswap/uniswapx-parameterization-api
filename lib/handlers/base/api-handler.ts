@@ -9,7 +9,7 @@ import {
 import { default as bunyan, default as Logger } from 'bunyan';
 import Joi from 'joi';
 
-import { Metric } from '../../entities';
+import { Metric, MetricDimension } from '../../entities';
 import { CustomError, ErrorCode } from '../../util/errors';
 import { BaseHandleRequestParams, BaseInjector, BaseLambdaHandler, BaseRInj } from './base';
 
@@ -88,22 +88,30 @@ export abstract class APIGLambdaHandler<
   }
 
   get handler(): APIGatewayProxyHandler {
-    return async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> => {
-      const handler = this.buildHandler();
+    return metricScope(
+      (metric: MetricsLogger) =>
+        async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> => {
+          const requestStart = new Date().getTime();
+          const handler = this.buildHandler();
+          const response = await handler(event, context);
+          const requestEnd = new Date().getTime();
 
-      const response = await handler(event, context);
+          // Track handler duration
+          metric.putDimensions({ [MetricDimension.METHOD]: this.handlerName });
+          metric.putMetric(Metric.HANDLER_DURATION, requestEnd - requestStart, MetricLoggerUnit.Milliseconds);
 
-      return {
-        ...response,
-        headers: {
-          ...response.headers,
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-          'Access-Control-Allow-Credentials': true,
-          'Content-Type': 'application/json',
-        },
-      };
-    };
+          return {
+            ...response,
+            headers: {
+              ...response.headers,
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+              'Access-Control-Allow-Credentials': true,
+              'Content-Type': 'application/json',
+            },
+          };
+        }
+    );
   }
 
   protected buildHandler(): APIGatewayProxyHandler {
@@ -187,10 +195,12 @@ export abstract class APIGLambdaHandler<
               ({ body, statusCode } = handleRequestResult);
             }
           } catch (err) {
-            log.error({ err }, 'Unexpected error in handler');
             if (err instanceof CustomError) {
-              return err.toJSON(id);
+              const errorJson = err.toJSON(id);
+              log.error({ errorJson }, 'Unexpected error in handler');
+              return errorJson;
             }
+            log.error({ err }, 'Unexpected error in handler');
             metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
             return INTERNAL_ERROR(id);
           }
@@ -236,10 +246,10 @@ export abstract class APIGLambdaHandler<
     log: Logger
   ): Promise<
     | {
-        state: 'valid';
-        requestBody: ReqBody;
-        requestQueryParams: ReqQueryParams;
-      }
+    state: 'valid';
+    requestBody: ReqBody;
+    requestQueryParams: ReqQueryParams;
+  }
     | { state: 'invalid'; errorResponse: APIGatewayProxyResult }
   > {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
