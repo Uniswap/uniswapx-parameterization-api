@@ -50,11 +50,6 @@
     "us-east-2b",
     "us-east-2c"
   ],
-  "availability-zones:account=032111050613:region=us-east-2": [
-    "us-east-2a",
-    "us-east-2b",
-    "us-east-2c"
-  ],
   "availability-zones:account=637423166136:region=us-east-2": [
     "us-east-2a",
     "us-east-2b",
