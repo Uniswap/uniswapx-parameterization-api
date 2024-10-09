@@ -195,10 +195,12 @@ export abstract class APIGLambdaHandler<
               ({ body, statusCode } = handleRequestResult);
             }
           } catch (err) {
-            log.error({ err }, 'Unexpected error in handler');
             if (err instanceof CustomError) {
-              return err.toJSON(id);
+              const errorJson = err.toJSON(id);
+              log.error({ errorJson }, 'Unexpected error in handler');
+              return errorJson;
             }
+            log.error({ err }, 'Unexpected error in handler');
             metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
             return INTERNAL_ERROR(id);
           }
