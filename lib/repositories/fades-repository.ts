@@ -181,7 +181,7 @@ AND latestOrdersV2.quoteId IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND chainId NOT IN (5,8001,420,421613) -- exclude mainnet goerli, polygon goerli, optimism goerli and arbitrum goerli testnets 
 AND
-    postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '48 HOURS')) -- 2 days rolling window
+    postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '20 MINUTE')) -- 20-minute rolling window
 )
 ORDER BY rfqFiller, postTimestamp DESC
 LIMIT 1000 
