@@ -71,6 +71,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     const rfqResponseBucket = new aws_s3.Bucket(this, 'RfqResponseBucket');
     const hardResponseBucket = new aws_s3.Bucket(this, 'HardResponseBucket');
     const unifiedRoutingResponseBucket = new aws_s3.Bucket(this, 'UnifiedRoutingResponseBucket');
+    const unifiedRoutingConfigBucket = new aws_s3.Bucket(this, 'UnifiedRoutingConfigBucket');
     const fillBucket = new aws_s3.Bucket(this, 'FillBucket');
     const ordersBucket = new aws_s3.Bucket(this, 'OrdersBucket');
     const activeOrdersBucket = new aws_s3.Bucket(this, 'ActiveOrdersBucket');
@@ -91,6 +92,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     botOrderLoaderBucket.grantRead(dsRole);
     botOrderRouterBucket.grantRead(dsRole);
     botOrderBroadcasterBucket.grantRead(dsRole);
+    unifiedRoutingConfigBucket.grantRead(dsRole);
 
     /* Redshift Initialization */
     const rsRole = new aws_iam.Role(this, 'RedshiftRole', {
@@ -240,6 +242,32 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'routing', dataType: RS_DATA_TYPES.ROUTING },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
         { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
+      ],
+    });
+
+    const uraConfigTable = new aws_rs.Table(this, 'UnifiedRoutingConfigTable', {
+      cluster: rsCluster,
+      adminUser: creds,
+      databaseName: RS_DATABASE_NAME,
+      tableName: 'UnifiedRoutingConfigs',
+      tableColumns: [
+        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
+        { name: 'slippageTolerance', dataType: RS_DATA_TYPES.SLIPPAGE },
+        { name: 'deadlineBufferSecs', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'filterOpenOrdersOnTokenList', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'minimumOrderSizeUSD', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'minimumPriceImpactBps', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'forceOpenOrders', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'priceImprovementBps', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'largeAuctionPeriodSecs', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'priceBufferBps.external-api', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'priceBufferBps.external-api:mobile', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'priceBufferBps.uniswap-android', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'priceBufferBps.uniswap-extension', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'priceBufferBps.uniswap-ios', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'priceBufferBps.uniswap-web', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'priceBufferBps.unknown', dataType: RS_DATA_TYPES.INTEGER },
+        { name: 'mpsPerPriorityFeeWei', dataType: RS_DATA_TYPES.INTEGER },
       ],
     });
 
@@ -435,6 +463,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     botOrderLoaderBucket.grantReadWrite(firehoseRole);
     botOrderRouterBucket.grantReadWrite(firehoseRole);
     botOrderBroadcasterBucket.grantReadWrite(firehoseRole);
+    unifiedRoutingConfigBucket.grantReadWrite(firehoseRole);
 
     const botOrderEventsProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'BotOrderEventsProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_18_X,
@@ -978,6 +1007,39 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    const uraConfigStream = new aws_firehose.CfnDeliveryStream(this, 'UnifiedRoutingConfigStream', {
+      redshiftDestinationConfiguration: {
+        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
+        username: 'admin',
+        password: creds.secretValueFromJson('password').toString(),
+        s3Configuration: {
+          bucketArn: unifiedRoutingConfigBucket.bucketArn,
+          roleArn: firehoseRole.roleArn,
+          compressionFormat: 'UNCOMPRESSED',
+        },
+        roleArn: firehoseRole.roleArn,
+        copyCommand: {
+          copyOptions: "JSON 'auto ignorecase'",
+          dataTableName: uraConfigTable.tableName,
+          dataTableColumns: uraConfigTable.tableColumns.map((column) => column.name).toString(),
+        },
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: quoteProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
     /* Firehose Alarms */
     const allStreams = [
       uraRequestStream,
@@ -992,6 +1054,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       botOrderLoaderStream,
       botOrderRouterStream,
       botOrderBroadcasterStream,
+      uraConfigStream,
     ];
 
     allStreams.forEach((stream) => {
@@ -1128,6 +1191,12 @@ export class AnalyticsStack extends cdk.NestedStack {
       destinationName: 'botOrderBroadcasterDestination',
     });
 
+    const uraConfigDestination = new aws_logs.CfnDestination(this, 'uraConfigDestination', {
+      roleArn: subscriptionRole.roleArn,
+      targetArn: uraConfigStream.attrArn,
+      destinationName: 'uraConfigDestination',
+    });
+
     // hack to get around with CDK bug where `new aws_iam.PolicyDocument({...}).string()` doesn't really turn it into a string
     // enclosed in if statement to allow deploying stack w/o having to set up x-account logging
     if (props.envVars['FILL_LOG_SENDER_ACCOUNT']) {
@@ -1194,6 +1263,20 @@ export class AnalyticsStack extends cdk.NestedStack {
         ],
       });
       uraResponseDestination.destinationPolicy = JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Sid: '',
+            Effect: 'Allow',
+            Principal: {
+              AWS: props.envVars['URA_ACCOUNT'],
+            },
+            Action: 'logs:PutSubscriptionFilter',
+            Resource: '*',
+          },
+        ],
+      });
+      uraConfigDestination.destinationPolicy = JSON.stringify({
         Version: '2012-10-17',
         Statement: [
           {
@@ -1310,6 +1393,9 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
     new CfnOutput(this, 'BOT_ACCOUNT', {
       value: props.envVars['BOT_ACCOUNT'],
+    });
+    new CfnOutput(this, 'uraConfigDestinationName', {
+      value: uraConfigDestination.attrArn,
     });
   }
 }
