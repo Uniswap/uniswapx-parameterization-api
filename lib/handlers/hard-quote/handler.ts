@@ -7,7 +7,7 @@ import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
 import { POST_ORDER_ERROR_REASON } from '../../constants';
-import { HardQuoteRequest, HardQuoteResponse, Metric, QuoteResponse } from '../../entities';
+import { HardQuoteRequest, Metric, QuoteResponse } from '../../entities';
 import { checkDefined } from '../../preconditions/preconditions';
 import { ChainId } from '../../util/chains';
 import { NoQuotesAvailable, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
@@ -22,6 +22,7 @@ import {
   HardQuoteResponseData,
   HardQuoteResponseDataJoi,
 } from './schema';
+import { V2HardQuoteResponse } from '../../entities/V2HardQuoteResponse';
 
 const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(100); // non-exclusive fillers must override price by this much
 const RESPONSE_LOG_TYPE = 'HardResponse';
@@ -113,7 +114,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       if (response.statusCode == 200 || response.statusCode == 201) {
         metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
         metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
-        const hardResponse = new HardQuoteResponse(request, cosignedOrder);
+        const hardResponse = new V2HardQuoteResponse(request, cosignedOrder);
         if (!bestQuote) {
           // The RFQ responses are logged in getBestQuote()
           // we log the Open Orders here

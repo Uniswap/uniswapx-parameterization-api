@@ -7,9 +7,10 @@ import {
 import { ethers, Wallet } from 'ethers';
 import { parseEther } from 'ethers/lib/utils';
 
-import { HardQuoteRequest, HardQuoteResponse } from '../../lib/entities';
+import { HardQuoteRequest } from '../../lib/entities';
 import { HardQuoteRequestBody } from '../../lib/handlers/hard-quote';
 import { getOrder } from '../handlers/hard-quote/handler.test';
+import { V2HardQuoteResponse } from '../../lib/entities/V2HardQuoteResponse';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f7';
@@ -51,7 +52,7 @@ describe('HardQuoteResponse', () => {
       cosignerData,
       ethers.utils.joinSignature(cosignature)
     );
-    return new HardQuoteResponse(new HardQuoteRequest(await getRequest(unsigned)), order);
+    return new V2HardQuoteResponse(new HardQuoteRequest(await getRequest(unsigned)), order);
   };
 
   it('toResponseJSON', async () => {
