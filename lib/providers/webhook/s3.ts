@@ -82,6 +82,6 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
       this.lastUpdatedEndpointsTimestamp = Date.now();
     }
     const config = this.endpoints.find((e) => e.endpoint === endpoint);
-    return config?.supportedVersions ?? [ProtocolVersion.V1];
+    return config?.supportedVersions ?? [ProtocolVersion.V1, ProtocolVersion.V2];
   }
 }
