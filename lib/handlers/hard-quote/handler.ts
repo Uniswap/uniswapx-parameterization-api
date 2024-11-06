@@ -2,7 +2,7 @@ import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
 import { KmsSigner } from '@uniswap/signer';
 import { MetricLoggerUnit } from '@uniswap/smart-order-router';
-import { CosignedV2DutchOrder, CosignerData } from '@uniswap/uniswapx-sdk';
+import { CosignedV2DutchOrder, CosignerData, OrderType, UniswapXOrderParser } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
@@ -45,8 +45,19 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
-    const request = HardQuoteRequest.fromHardRequestBody(requestBody);
+    const orderParser = new UniswapXOrderParser();
+    const orderType: OrderType = orderParser.getOrderTypeFromEncoded(requestBody.encodedInnerOrder, requestBody.tokenInChainId);
 
+    const request = HardQuoteRequest.fromHardRequestBody(requestBody, orderType);
+
+
+    // if (orderType == OrderType.Dutch_V2) {
+
+    // } else if (orderType == OrderType.Dutch_V3) {
+
+    // } else {
+    //   throw new Error('Unsupported order type');
+    // }
     // re-create KmsClient every call to avoid clock skew issue
     // https://github.com/aws/aws-sdk-js-v3/issues/6400
     const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
@@ -93,7 +104,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     let cosignerData: CosignerData;
     if (bestQuote) {
-      cosignerData = getCosignerData(request, bestQuote);
+      cosignerData = getCosignerData(request, bestQuote, orderType);
       log.info({ bestQuote: bestQuote }, 'bestQuote');
     } else {
       cosignerData = getDefaultCosignerData(request);
@@ -162,40 +173,54 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 }
 
-export function getCosignerData(request: HardQuoteRequest, quote: QuoteResponse): CosignerData {
-  const decayStartTime = getDecayStartTime(request.tokenInChainId);
-  // default to open order with the original prices
-  let filler = ethers.constants.AddressZero;
-  let inputOverride = BigNumber.from(0);
-  const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
+export function getCosignerData(request: HardQuoteRequest, quote: QuoteResponse, orderType: OrderType): CosignerData {
+  if (orderType === OrderType.Dutch_V2) {
+    const decayStartTime = getDecayStartTime(request.tokenInChainId);
+    // default to open order with the original prices
+    let filler = ethers.constants.AddressZero;
+    let inputOverride = BigNumber.from(0);
+    const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
 
-  // if the quote is better, then increase amounts by the difference
-  if (request.type === TradeType.EXACT_INPUT) {
-    if (quote.amountOut.gt(request.totalOutputAmountStart)) {
-      const increase = quote.amountOut.sub(request.totalOutputAmountStart);
-      // give all the increase to the first (swapper) output
-      outputOverrides[0] = request.order.info.outputs[0].startAmount.add(increase);
-      if (quote.filler) {
-        filler = quote.filler;
+    // if the quote is better, then increase amounts by the difference
+    if (request.type === TradeType.EXACT_INPUT) {
+      if (quote.amountOut.gt(request.totalOutputAmountStart)) {
+        const increase = quote.amountOut.sub(request.totalOutputAmountStart);
+        // give all the increase to the first (swapper) output
+        outputOverrides[0] = request.order.info.outputs[0].startAmount.add(increase);
+        if (quote.filler) {
+          filler = quote.filler;
+        }
+      }
+    } else {
+      if (quote.amountIn.lt(request.totalInputAmountStart)) {
+        inputOverride = quote.amountIn;
+        if (quote.filler) {
+          filler = quote.filler;
+        }
       }
     }
-  } else {
-    if (quote.amountIn.lt(request.totalInputAmountStart)) {
-      inputOverride = quote.amountIn;
-      if (quote.filler) {
-        filler = quote.filler;
-      }
-    }
+
+    return {
+      decayStartTime: decayStartTime,
+      decayEndTime: getDecayEndTime(request.tokenInChainId, decayStartTime),
+      exclusiveFiller: filler,
+      exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+      inputOverride: inputOverride,
+      outputOverrides: outputOverrides,
+    };
+  } 
+  // else if (orderType == OrderType.Dutch_V3) {
+  //   return {
+  //     decayStartBlock: 1,
+  //     exclusiveFiller: ethers.constants.AddressZero,
+  //     exclusivityOverrideBps: BigNumber.from(0),
+  //     inputOverride: BigNumber.from(0),
+  //     outputOverrides: request.order.info.outputs.map(() => BigNumber.from(0)),
+  //   }
+  // } 
+  else {
+    throw new Error('Unsupported order type');
   }
-
-  return {
-    decayStartTime: decayStartTime,
-    decayEndTime: getDecayEndTime(request.tokenInChainId, decayStartTime),
-    exclusiveFiller: filler,
-    exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
-    inputOverride: inputOverride,
-    outputOverrides: outputOverrides,
-  };
 }
 
 export function getDefaultCosignerData(request: HardQuoteRequest): CosignerData {

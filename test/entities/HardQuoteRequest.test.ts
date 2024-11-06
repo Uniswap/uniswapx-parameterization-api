@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
+import { OrderType, UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 
 import { HardQuoteRequest } from '../../lib/entities';
@@ -55,7 +55,8 @@ const makeRequest = (data: Partial<HardQuoteRequestBody>): HardQuoteRequest => {
         innerSig: '0x',
       },
       data
-    )
+    ),
+    OrderType.Dutch_V2
   );
 };
 

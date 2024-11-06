@@ -1,6 +1,7 @@
 import {
   CosignedV2DutchOrder,
   CosignerData,
+  OrderType,
   UnsignedV2DutchOrder,
   UnsignedV2DutchOrderInfo,
 } from '@uniswap/uniswapx-sdk';
@@ -52,7 +53,7 @@ describe('HardQuoteResponse', () => {
       cosignerData,
       ethers.utils.joinSignature(cosignature)
     );
-    return new V2HardQuoteResponse(new HardQuoteRequest(await getRequest(unsigned)), order);
+    return new V2HardQuoteResponse(new HardQuoteRequest(await getRequest(unsigned), OrderType.Dutch_V2), order);
   };
 
   it('toResponseJSON', async () => {
