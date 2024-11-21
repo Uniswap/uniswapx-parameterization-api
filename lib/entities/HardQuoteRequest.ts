@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
+import { OrderType, UnsignedV2DutchOrder, UnsignedV3DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers, utils } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -8,7 +8,7 @@ import { HardQuoteRequestBody } from '../handlers/hard-quote';
 import { ProtocolVersion } from '../providers';
 
 export class HardQuoteRequest {
-  public order: UnsignedV2DutchOrder;
+  public order: UnsignedV2DutchOrder | UnsignedV3DutchOrder;
   private data: HardQuoteRequestBody;
 
   public static fromHardRequestBody(body: HardQuoteRequestBody, orderType: OrderType): HardQuoteRequest {

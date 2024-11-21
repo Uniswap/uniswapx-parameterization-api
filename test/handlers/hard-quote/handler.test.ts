@@ -1,6 +1,6 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
-import { CosignedV2DutchOrder, OrderType, UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
+import { CosignedV2DutchOrder, CosignerData, OrderType, UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
 import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 // import axios from 'axios';
@@ -303,7 +303,7 @@ describe('Quote handler', () => {
     it('updates decay times reasonably', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const now = Math.floor(Date.now() / 1000);
-      const cosignerData = getCosignerData(new HardQuoteRequest(request, OrderType.Dutch_V2), getQuoteResponse({}), OrderType.Dutch_V2);
+      const cosignerData: CosignerData = getCosignerData(new HardQuoteRequest(request, OrderType.Dutch_V2), getQuoteResponse({}), OrderType.Dutch_V2) as CosignerData;
       expect(cosignerData.decayStartTime).toBeGreaterThan(now);
       expect(cosignerData.decayStartTime).toBeLessThan(now + 1000);
       expect(cosignerData.decayEndTime).toBeGreaterThan(cosignerData.decayStartTime);
