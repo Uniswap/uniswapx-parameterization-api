@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { OrderType, UnsignedV2DutchOrder, UnsignedV3DutchOrder } from '@uniswap/uniswapx-sdk';
+import { OrderType, UnsignedV2DutchOrder, UnsignedV3DutchOrder, V3DutchOrderBuilder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers, utils } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -22,9 +22,8 @@ export class HardQuoteRequest {
     };
     if (orderType === OrderType.Dutch_V2) {
       this.order = UnsignedV2DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
-    // } else if (orderType === OrderType.Dutch_V3) {
-    //   this.order = UnsignedV3DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
-    // } 
+    } else if (orderType === OrderType.Dutch_V3) {
+      this.order = UnsignedV3DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
     } else {
       throw new Error('Unsupported order type');
     }
@@ -122,12 +121,12 @@ export class HardQuoteRequest {
         ? TradeType.EXACT_INPUT
         : TradeType.EXACT_OUTPUT
     } 
-    // else if (this.order instanceof UnsignedV3DutchOrder) {
-    //   const startAmount = this.order.info.input.startAmount;
-    //   return startAmount.eq(V3DutchOrderBuilder.getMinAmountOut(startAmount, this.order.info.input.curve.relativeAmounts))
-    //     ? TradeType.EXACT_INPUT
-    //     : TradeType.EXACT_OUTPUT
-    // } 
+    else if (this.order instanceof UnsignedV3DutchOrder) {
+      const startAmount = this.order.info.input.startAmount;
+      return startAmount.eq(V3DutchOrderBuilder.getMinAmountOut(startAmount, this.order.info.input.curve.relativeAmounts))
+        ? TradeType.EXACT_INPUT
+        : TradeType.EXACT_OUTPUT
+    }
     else {
       throw new Error('Unsupported order type');
     }

@@ -186,9 +186,11 @@ export function getCosignerData(
       let inputOverride = BigNumber.from(0);
       const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
 
+      // if the quote is better, then increase amounts by the difference
       if (request.type === TradeType.EXACT_INPUT) {
         if (quote.amountOut.gt(request.totalOutputAmountStart)) {
           const increase = quote.amountOut.sub(request.totalOutputAmountStart);
+          // give all the increase to the first (swapper) output
           outputOverrides[0] = request.order.info.outputs[0].startAmount.add(increase);
           if (quote.filler) {
             filler = quote.filler;
@@ -214,17 +216,7 @@ export function getCosignerData(
       return v2Data;
     }
 
-    case OrderType.Dutch_V3: {
-      const v3Data: V3CosignerData = {
-        decayStartBlock: 1,
-        exclusiveFiller: ethers.constants.AddressZero,
-        exclusivityOverrideBps: BigNumber.from(0),
-        inputOverride: BigNumber.from(0),
-        outputOverrides: request.order.info.outputs.map(() => BigNumber.from(0)),
-      };
-      return v3Data;
-    }
-
+    case OrderType.Dutch_V3: // fallthrough; currently not expecting users to use V3 for RFQ
     default:
       throw new Error('Unsupported order type');
   }
