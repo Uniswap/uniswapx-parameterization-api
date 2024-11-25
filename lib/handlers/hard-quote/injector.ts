@@ -17,11 +17,13 @@ import { DynamoFillerAddressRepository } from '../../repositories/filler-address
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { HardQuoteRequestBody } from './schema';
+import { ethers } from 'ethers';
 
 export interface ContainerInjected {
   quoters: Quoter[];
   firehose: FirehoseLogger;
   orderServiceProvider: OrderServiceProvider;
+  provider: ethers.providers.Provider;
 }
 
 export interface RequestInjected extends ApiRInj {
@@ -74,10 +76,16 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const quoters: Quoter[] = [
       new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
+
+    const provider = new ethers.providers.JsonRpcProvider(
+      process.env.ARBITRUM_RPC_URL
+    );
+
     return {
       quoters: quoters,
       firehose: firehose,
       orderServiceProvider,
+      provider,
     };
   }
 

@@ -37,3 +37,4 @@ export const POST_ORDER_ERROR_REASON = {
 
 export const WEBHOOK_TIMEOUT_MS = 500;
 export const NOTIFICATION_TIMEOUT_MS = 10;
+export const V3_BLOCK_BUFFER = 4;

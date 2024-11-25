@@ -15,7 +15,7 @@ import {
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
-import { POST_ORDER_ERROR_REASON } from '../../constants';
+import { POST_ORDER_ERROR_REASON, V3_BLOCK_BUFFER } from '../../constants';
 import { HardQuoteRequest, Metric, QuoteResponse } from '../../entities';
 import { V2HardQuoteResponse } from '../../entities/V2HardQuoteResponse';
 import { V3HardQuoteResponse } from '../../entities/V3HardQuoteResponse';
@@ -48,7 +48,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
       requestInjected: { log, metric },
-      containerInjected: { quoters, orderServiceProvider },
+      containerInjected: { quoters, orderServiceProvider, provider },
       requestBody,
     } = params;
     const start = Date.now();
@@ -109,7 +109,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       cosignerData = getCosignerData(request, bestQuote, orderType);
       log.info({ bestQuote: bestQuote }, 'bestQuote');
     } else {
-      cosignerData = getDefaultCosignerData(request, orderType);
+      cosignerData = await getDefaultCosignerData(request, orderType, provider);
       log.info({ cosignerData: cosignerData }, 'open order with default cosignerData');
     }
 
@@ -221,12 +221,16 @@ export function getCosignerData(
       throw new Error('Unsupported order type');
   }
 }
-export function getDefaultCosignerData(request: HardQuoteRequest, orderType: OrderType): CosignerData | V3CosignerData {
+export async function getDefaultCosignerData(
+  request: HardQuoteRequest,
+  orderType: OrderType,
+  provider: ethers.providers.Provider
+): Promise<CosignerData | V3CosignerData> {
   switch (orderType) {
     case OrderType.Dutch_V2:
       return getDefaultV2CosignerData(request);
     case OrderType.Dutch_V3:
-      return getDefaultV3CosignerData(request);
+      return await getDefaultV3CosignerData(request, provider);
     default:
       throw new Error('Unsupported order type');
   }
@@ -306,9 +310,11 @@ function getDefaultV2CosignerData(request: HardQuoteRequest): CosignerData {
   };
 }
 
-function getDefaultV3CosignerData(request: HardQuoteRequest): V3CosignerData {
+async function getDefaultV3CosignerData(request: HardQuoteRequest, provider: ethers.providers.Provider): Promise<V3CosignerData> {
+  const currentBlock = await provider.getBlockNumber();
+
   return {
-    decayStartBlock: 1,
+    decayStartBlock: currentBlock + V3_BLOCK_BUFFER,
     exclusiveFiller: ethers.constants.AddressZero,
     exclusivityOverrideBps: BigNumber.from(0),
     inputOverride: BigNumber.from(0),
