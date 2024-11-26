@@ -78,14 +78,14 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
 
-    const chainIdRpcMap = new Map<ChainId, ethers.providers.StaticJsonRpcProvider>();
+    const chainIdRpcMap = new Map<ChainId, ethers.providers.JsonRpcProvider>();
     supportedChains.forEach(
       chainId => {
         const rpcUrl = checkDefined(
           process.env[`RPC_${chainId}`],
           `RPC_${chainId} is not defined`
         );
-        const provider = new ethers.providers.StaticJsonRpcProvider(rpcUrl, chainId); // specify chainId to avoid detecctNetwork() call on initialization
+        const provider = new ethers.providers.JsonRpcProvider(rpcUrl, chainId);
         chainIdRpcMap.set(chainId, provider);
       }
     );
