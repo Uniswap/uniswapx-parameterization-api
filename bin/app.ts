@@ -113,6 +113,11 @@ export class APIPipeline extends Stack {
         'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-parameterization-api-internal-api-key-uw4sIa',
     });
 
+    const rpcUrls = sm.Secret.fromSecretAttributes(this, 'rpcUrls', {
+      secretCompleteArn:
+        'arn:aws:secretsmanager:us-east-2:644039819003:secret:prod/param-api/rpc-urls-HJyniu',
+    });
+
     // Beta us-east-2
 
     const betaUsEast2Stage = new APIStage(this, 'beta-us-east-2', {
@@ -123,7 +128,7 @@ export class APIPipeline extends Stack {
       envVars: {
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_BETA').toString(),
-        ARBITRUM_RPC_URL: urlSecrets.secretValueFromJson('ARBITRUM_RPC_URL').toString(),
+        RPC_42161: rpcUrls.secretValueFromJson('RPC_42161').toString(),
         FILL_LOG_SENDER_ACCOUNT: '321377678687',
         ORDER_LOG_SENDER_ACCOUNT: '321377678687',
         URA_ACCOUNT: '665191769009',
@@ -144,7 +149,7 @@ export class APIPipeline extends Stack {
       envVars: {
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_PROD').toString(),
-        ARBITRUM_RPC_URL: urlSecrets.secretValueFromJson('ARBITRUM_RPC_URL').toString(),
+        RPC_42161: rpcUrls.secretValueFromJson('RPC_42161').toString(),
         FILL_LOG_SENDER_ACCOUNT: '316116520258',
         ORDER_LOG_SENDER_ACCOUNT: '316116520258',
         URA_ACCOUNT: '652077092967',
@@ -246,7 +251,7 @@ envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
-envVars['ARBITRUM_RPC_URL'] = process.env['ARBITRUM_RPC_URL'] || '';
+envVars['RPC_42161'] = process.env['RPC_42161'] || '';
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {

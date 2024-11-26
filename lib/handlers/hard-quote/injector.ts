@@ -18,12 +18,13 @@ import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { HardQuoteRequestBody } from './schema';
 import { ethers } from 'ethers';
+import { ChainId, supportedChains } from '../../util/chains';
 
 export interface ContainerInjected {
   quoters: Quoter[];
   firehose: FirehoseLogger;
   orderServiceProvider: OrderServiceProvider;
-  provider: ethers.providers.Provider;
+  chainIdRpcMap: Map<ChainId, ethers.providers.StaticJsonRpcProvider>;
 }
 
 export interface RequestInjected extends ApiRInj {
@@ -42,7 +43,6 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
 
     const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
-    const rpcProviderUrl = checkDefined(process.env.ARBITRUM_RPC_URL, 'ARBITRUM_RPC_URL is not defined');
 
     const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
     await webhookProvider.fetchEndpoints();
@@ -78,15 +78,23 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
 
-    const provider = new ethers.providers.JsonRpcProvider(
-      rpcProviderUrl,
+    const chainIdRpcMap = new Map<ChainId, ethers.providers.StaticJsonRpcProvider>();
+    supportedChains.forEach(
+      chainId => {
+        const rpcUrl = checkDefined(
+          process.env[`RPC_${chainId}`],
+          `RPC_${chainId} is not defined`
+        );
+        const provider = new ethers.providers.StaticJsonRpcProvider(rpcUrl, chainId); // specify chainId to avoid detecctNetwork() call on initialization
+        chainIdRpcMap.set(chainId, provider);
+      }
     );
 
     return {
       quoters: quoters,
       firehose: firehose,
       orderServiceProvider,
-      provider,
+      chainIdRpcMap,
     };
   }
 

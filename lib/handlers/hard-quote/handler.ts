@@ -48,13 +48,19 @@ export class QuoteHandler extends APIGLambdaHandler<
   ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
       requestInjected: { log, metric },
-      containerInjected: { quoters, orderServiceProvider, provider },
+      containerInjected: { quoters, orderServiceProvider, chainIdRpcMap },
       requestBody,
     } = params;
     const start = Date.now();
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
+    const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
+    if (!provider)
+      throw new Error(
+        `No rpc provider found for chain: ${requestBody.tokenInChainId}`
+      );
+    
     const orderParser = new UniswapXOrderParser();
     const orderType: OrderType = orderParser.getOrderTypeFromEncoded(
       requestBody.encodedInnerOrder,
