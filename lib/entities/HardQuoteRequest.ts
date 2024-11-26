@@ -123,9 +123,11 @@ export class HardQuoteRequest {
     } 
     else if (this.order instanceof UnsignedV3DutchOrder) {
       const startAmount = this.order.info.input.startAmount;
-      return startAmount.eq(V3DutchOrderBuilder.getMinAmountOut(startAmount, this.order.info.input.curve.relativeAmounts))
-        ? TradeType.EXACT_INPUT
-        : TradeType.EXACT_OUTPUT
+      // If curve doesn't exist OR startAmount equals minAmountOut, then it's EXACT_INPUT
+      return !this.order.info.input.curve || 
+          startAmount.eq(V3DutchOrderBuilder.getMinAmountOut(startAmount, this.order.info.input.curve.relativeAmounts))
+        ? TradeType.EXACT_INPUT 
+        : TradeType.EXACT_OUTPUT;
     }
     else {
       throw new Error('Unsupported order type');
