@@ -42,6 +42,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
 
     const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
+    const rpcProviderUrl = checkDefined(process.env.ARBITRUM_RPC_URL, 'ARBITRUM_RPC_URL is not defined');
 
     const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
     await webhookProvider.fetchEndpoints();
@@ -78,7 +79,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     ];
 
     const provider = new ethers.providers.JsonRpcProvider(
-      process.env.ARBITRUM_RPC_URL
+      rpcProviderUrl,
     );
 
     return {
