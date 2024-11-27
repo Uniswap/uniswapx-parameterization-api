@@ -2,17 +2,17 @@ import * as cdk from 'aws-cdk-lib';
 import { CfnOutput, Duration } from 'aws-cdk-lib';
 import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
-import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
+// import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
 import { CfnEIP, NatProvider, Vpc } from 'aws-cdk-lib/aws-ec2';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
-import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
-import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+// import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
+// import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as aws_logs from 'aws-cdk-lib/aws-logs';
 import * as aws_waf from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
-import * as path from 'path';
+// import * as path from 'path';
 import { KmsStack } from './kms-stack';
 
 import { DYNAMO_TABLE_NAME } from '../../lib/constants';
@@ -25,11 +25,11 @@ import {
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
-import { AnalyticsStack } from './analytics-stack';
-import { CronDashboardStack } from './cron-dashboard-stack';
-import { CronStack } from './cron-stack';
-import { FirehoseStack } from './firehose-stack';
-import { ParamDashboardStack } from './param-dashboard-stack';
+// import { AnalyticsStack } from './analytics-stack';
+// import { CronDashboardStack } from './cron-dashboard-stack';
+// import { CronStack } from './cron-stack';
+// import { FirehoseStack } from './firehose-stack';
+// import { ParamDashboardStack } from './param-dashboard-stack';
 
 /**
  * APIStack
@@ -53,7 +53,8 @@ export class APIStack extends cdk.Stack {
   ) {
     super(parent, name, props);
     const region = cdk.Stack.of(this).region;
-    const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
+    //const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
+    const { internalApiKey, stage, chatbotSNSArn } = props;
 
     /*
      *  API Gateway Initialization
@@ -170,7 +171,7 @@ export class APIStack extends cdk.Stack {
      * Firehose Initialization
      */
 
-    const firehoseStack = new FirehoseStack(this, 'FirehoseStack');
+    // const firehoseStack = new FirehoseStack(this, 'FirehoseStack');
 
     /*
      * Lambda Initialization
@@ -233,7 +234,8 @@ export class APIStack extends cdk.Stack {
       ],
     });
 
-    const vpc = new Vpc(this, 'QuoteLambdaVpc', {
+    // const vpc = 
+    new Vpc(this, 'QuoteLambdaVpc', {
       vpcName: 'QuoteLambdaVpc',
       natGateways: 1,
       natGatewayProvider: NatProvider.gateway({
@@ -242,185 +244,185 @@ export class APIStack extends cdk.Stack {
       maxAzs: 3,
     });
 
-    const quoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Quote', {
-      role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/quote/exports.ts'),
-      handler: 'quoteHandler',
-      vpc,
-      vpcSubnets: {
-        subnets: [...vpc.privateSubnets],
-      },
-      memorySize: 2048,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        VERSION: '4',
-        NODE_OPTIONS: '--enable-source-maps',
-        ...props.envVars,
-        stage,
-        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
-      },
-      timeout: Duration.seconds(30),
-    });
+    // const quoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Quote', {
+    //   role: lambdaRole,
+    //   runtime: aws_lambda.Runtime.NODEJS_18_X,
+    //   entry: path.join(__dirname, '../../lib/handlers/quote/exports.ts'),
+    //   handler: 'quoteHandler',
+    //   vpc,
+    //   vpcSubnets: {
+    //     subnets: [...vpc.privateSubnets],
+    //   },
+    //   memorySize: 2048,
+    //   bundling: {
+    //     minify: true,
+    //     sourceMap: true,
+    //   },
+    //   environment: {
+    //     VERSION: '4',
+    //     NODE_OPTIONS: '--enable-source-maps',
+    //     ...props.envVars,
+    //     stage,
+    //     ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+    //   },
+    //   timeout: Duration.seconds(30),
+    // });
 
-    const quoteLambdaAlias = new aws_lambda.Alias(this, `GetOrdersLiveAlias`, {
-      aliasName: 'live',
-      version: quoteLambda.currentVersion,
-      provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
-    });
+    // const quoteLambdaAlias = new aws_lambda.Alias(this, `GetOrdersLiveAlias`, {
+    //   aliasName: 'live',
+    //   version: quoteLambda.currentVersion,
+    //   provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
+    // });
 
-    const hardQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'HardQuote', {
-      role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/hard-quote/exports.ts'),
-      handler: 'hardQuoteHandler',
-      vpc,
-      vpcSubnets: {
-        subnets: [...vpc.privateSubnets],
-      },
-      memorySize: 2048,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        VERSION: '4',
-        NODE_OPTIONS: '--enable-source-maps',
-        REGION: region,
-        KMS_KEY_ID: kmsStack.key.keyId,
-        ...props.envVars,
-        stage,
-        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
-      },
-      timeout: Duration.seconds(30),
-    });
+    // const hardQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'HardQuote', {
+    //   role: lambdaRole,
+    //   runtime: aws_lambda.Runtime.NODEJS_18_X,
+    //   entry: path.join(__dirname, '../../lib/handlers/hard-quote/exports.ts'),
+    //   handler: 'hardQuoteHandler',
+    //   vpc,
+    //   vpcSubnets: {
+    //     subnets: [...vpc.privateSubnets],
+    //   },
+    //   memorySize: 2048,
+    //   bundling: {
+    //     minify: true,
+    //     sourceMap: true,
+    //   },
+    //   environment: {
+    //     VERSION: '4',
+    //     NODE_OPTIONS: '--enable-source-maps',
+    //     REGION: region,
+    //     KMS_KEY_ID: kmsStack.key.keyId,
+    //     ...props.envVars,
+    //     stage,
+    //     ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+    //   },
+    //   timeout: Duration.seconds(30),
+    // });
 
-    const hardQuoteLambdaAlias = new aws_lambda.Alias(this, `HardQuoteLiveAlias`, {
-      aliasName: 'live',
-      version: hardQuoteLambda.currentVersion,
-      provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
-    });
+    // const hardQuoteLambdaAlias = new aws_lambda.Alias(this, `HardQuoteLiveAlias`, {
+    //   aliasName: 'live',
+    //   version: hardQuoteLambda.currentVersion,
+    //   provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
+    // });
 
-    const switchLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Switch', {
-      role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/synth-switch/exports.ts'),
-      handler: 'switchHandler',
-      memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        VERSION: '4',
-        NODE_OPTIONS: '--enable-source-maps',
-        ...props.envVars,
-        stage,
-        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
-      },
-      timeout: Duration.seconds(30),
-    });
+    // const switchLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Switch', {
+    //   role: lambdaRole,
+    //   runtime: aws_lambda.Runtime.NODEJS_18_X,
+    //   entry: path.join(__dirname, '../../lib/handlers/synth-switch/exports.ts'),
+    //   handler: 'switchHandler',
+    //   memorySize: 512,
+    //   bundling: {
+    //     minify: true,
+    //     sourceMap: true,
+    //   },
+    //   environment: {
+    //     VERSION: '4',
+    //     NODE_OPTIONS: '--enable-source-maps',
+    //     ...props.envVars,
+    //     stage,
+    //     ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+    //   },
+    //   timeout: Duration.seconds(30),
+    // });
 
-    const switchLambdaAlias = new aws_lambda.Alias(this, `SwitchLiveAlias`, {
-      aliasName: 'live',
-      version: switchLambda.currentVersion,
-      provisionedConcurrentExecutions: 0,
-    });
+    // const switchLambdaAlias = new aws_lambda.Alias(this, `SwitchLiveAlias`, {
+    //   aliasName: 'live',
+    //   version: switchLambda.currentVersion,
+    //   provisionedConcurrentExecutions: 0,
+    // });
 
-    if (provisionedConcurrency > 0) {
-      const quoteTarget = new aws_asg.ScalableTarget(this, 'QuoteProvConcASG', {
-        serviceNamespace: aws_asg.ServiceNamespace.LAMBDA,
-        maxCapacity: provisionedConcurrency * 10,
-        minCapacity: provisionedConcurrency,
-        resourceId: `function:${quoteLambdaAlias.lambda.functionName}:${quoteLambdaAlias.aliasName}`,
-        scalableDimension: 'lambda:function:ProvisionedConcurrency',
-      });
+    // if (provisionedConcurrency > 0) {
+    //   const quoteTarget = new aws_asg.ScalableTarget(this, 'QuoteProvConcASG', {
+    //     serviceNamespace: aws_asg.ServiceNamespace.LAMBDA,
+    //     maxCapacity: provisionedConcurrency * 10,
+    //     minCapacity: provisionedConcurrency,
+    //     resourceId: `function:${quoteLambdaAlias.lambda.functionName}:${quoteLambdaAlias.aliasName}`,
+    //     scalableDimension: 'lambda:function:ProvisionedConcurrency',
+    //   });
 
-      quoteTarget.node.addDependency(quoteLambdaAlias);
+    //   quoteTarget.node.addDependency(quoteLambdaAlias);
 
-      quoteTarget.scaleToTrackMetric('QuoteProvConcTracking', {
-        targetValue: 0.7,
-        predefinedMetric: aws_asg.PredefinedMetric.LAMBDA_PROVISIONED_CONCURRENCY_UTILIZATION,
-      });
-    }
+    //   quoteTarget.scaleToTrackMetric('QuoteProvConcTracking', {
+    //     targetValue: 0.7,
+    //     predefinedMetric: aws_asg.PredefinedMetric.LAMBDA_PROVISIONED_CONCURRENCY_UTILIZATION,
+    //   });
+    // }
 
-    /*
-     * APIG <> Lambda Integration
-     */
-    const quoteLambdaIntegration = new aws_apigateway.LambdaIntegration(quoteLambdaAlias, {});
-    const quote = api.root.addResource('quote', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
-        allowMethods: aws_apigateway.Cors.ALL_METHODS,
-      },
-    });
-    quote.addMethod('POST', quoteLambdaIntegration);
+    // /*
+    //  * APIG <> Lambda Integration
+    //  */
+    // const quoteLambdaIntegration = new aws_apigateway.LambdaIntegration(quoteLambdaAlias, {});
+    // const quote = api.root.addResource('quote', {
+    //   defaultCorsPreflightOptions: {
+    //     allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+    //     allowMethods: aws_apigateway.Cors.ALL_METHODS,
+    //   },
+    // });
+    // quote.addMethod('POST', quoteLambdaIntegration);
 
-    const hardQuoteLambdaIntegration = new aws_apigateway.LambdaIntegration(hardQuoteLambdaAlias, {});
-    const hardQuote = api.root.addResource('hard-quote', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
-        allowMethods: aws_apigateway.Cors.ALL_METHODS,
-      },
-    });
-    hardQuote.addMethod('POST', hardQuoteLambdaIntegration);
+    // const hardQuoteLambdaIntegration = new aws_apigateway.LambdaIntegration(hardQuoteLambdaAlias, {});
+    // const hardQuote = api.root.addResource('hard-quote', {
+    //   defaultCorsPreflightOptions: {
+    //     allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+    //     allowMethods: aws_apigateway.Cors.ALL_METHODS,
+    //   },
+    // });
+    // hardQuote.addMethod('POST', hardQuoteLambdaIntegration);
 
-    const switchLambdaIntegration = new aws_apigateway.LambdaIntegration(switchLambdaAlias, {});
-    const switchResource = api.root.addResource('synthetic-switch', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
-        allowMethods: aws_apigateway.Cors.ALL_METHODS,
-      },
-    });
-    const enabled = switchResource.addResource('enabled');
+    // const switchLambdaIntegration = new aws_apigateway.LambdaIntegration(switchLambdaAlias, {});
+    // const switchResource = api.root.addResource('synthetic-switch', {
+    //   defaultCorsPreflightOptions: {
+    //     allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+    //     allowMethods: aws_apigateway.Cors.ALL_METHODS,
+    //   },
+    // });
+    // const enabled = switchResource.addResource('enabled');
 
     /* add auth key */
-    const apiAuthzKey = api.addApiKey('AuthzKey');
-    const plan = api.addUsagePlan('AccessPlan', {
-      name: 'AccessPlan',
-    });
-    plan.addApiKey(apiAuthzKey);
-    plan.addApiStage({
-      stage: api.deploymentStage,
-    });
+    // const apiAuthzKey = api.addApiKey('AuthzKey');
+    // const plan = api.addUsagePlan('AccessPlan', {
+    //   name: 'AccessPlan',
+    // });
+    // plan.addApiKey(apiAuthzKey);
+    // plan.addApiStage({
+    //   stage: api.deploymentStage,
+    // });
 
-    enabled.addMethod('GET', switchLambdaIntegration, { apiKeyRequired: true });
+    // enabled.addMethod('GET', switchLambdaIntegration, { apiKeyRequired: true });
 
-    /*
-     * Param Dashboard Stack Initialization
-     */
-    new ParamDashboardStack(this, 'ParamDashboardStack', {
-      quoteLambda,
-    });
+    // /*
+    //  * Param Dashboard Stack Initialization
+    //  */
+    // new ParamDashboardStack(this, 'ParamDashboardStack', {
+    //   quoteLambda,
+    // });
 
     /*
      * Analytics Stack Initialization
      */
-    const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
-      quoteLambda,
-      hardQuoteLambda,
-      envVars: props.envVars,
-      analyticsStreamArn: firehoseStack.analyticsStreamArn,
-      stage,
-      chatbotSNSArn,
-    });
+    // const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
+    //   quoteLambda,
+    //   hardQuoteLambda,
+    //   envVars: props.envVars,
+    //   analyticsStreamArn: firehoseStack.analyticsStreamArn,
+    //   stage,
+    //   chatbotSNSArn,
+    // });
 
-    const cronStack = new CronStack(this, 'CronStack', {
-      RsDatabase: analyticsStack.dbName,
-      RsClusterIdentifier: analyticsStack.clusterId,
-      RedshiftCredSecretArn: analyticsStack.credSecretArn,
-      lambdaRole: lambdaRole,
-      chatbotSNSArn: chatbotSNSArn,
-      stage: stage,
-    });
+    // const cronStack = new CronStack(this, 'CronStack', {
+    //   RsDatabase: analyticsStack.dbName,
+    //   RsClusterIdentifier: analyticsStack.clusterId,
+    //   RedshiftCredSecretArn: analyticsStack.credSecretArn,
+    //   lambdaRole: lambdaRole,
+    //   chatbotSNSArn: chatbotSNSArn,
+    //   stage: stage,
+    // });
 
-    new CronDashboardStack(this, 'CronDashboardStack', {
-      synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
-      quoteLambdaName: quoteLambda.functionName,
-    });
+    // new CronDashboardStack(this, 'CronDashboardStack', {
+    //   synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
+    //   quoteLambdaName: quoteLambda.functionName,
+    // });
 
     /* filler addr table */
     new aws_dynamo.Table(this, `FillerAddrTable`, {
