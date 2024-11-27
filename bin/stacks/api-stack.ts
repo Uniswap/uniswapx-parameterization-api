@@ -25,7 +25,7 @@ import {
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
-import { AnalyticsStack } from './analytics-stack';
+// import { AnalyticsStack } from './analytics-stack';
 import { CronDashboardStack } from './cron-dashboard-stack';
 import { CronStack } from './cron-stack';
 import { FirehoseStack } from './firehose-stack';
@@ -171,7 +171,8 @@ export class APIStack extends cdk.Stack {
      * Firehose Initialization
      */
 
-    const firehoseStack = new FirehoseStack(this, 'FirehoseStack');
+    //const firehoseStack = 
+    new FirehoseStack(this, 'FirehoseStack');
 
     /*
      * Lambda Initialization
@@ -401,19 +402,19 @@ export class APIStack extends cdk.Stack {
     /*
      * Analytics Stack Initialization
      */
-    const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
-      // quoteLambda,
-      // hardQuoteLambda,
-      envVars: props.envVars,
-      analyticsStreamArn: firehoseStack.analyticsStreamArn,
-      stage,
-      chatbotSNSArn,
-    });
+    // const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
+    //   // quoteLambda,
+    //   // hardQuoteLambda,
+    //   envVars: props.envVars,
+    //   analyticsStreamArn: firehoseStack.analyticsStreamArn,
+    //   stage,
+    //   chatbotSNSArn,
+    // });
 
     const cronStack = new CronStack(this, 'CronStack', {
-      RsDatabase: analyticsStack.dbName,
-      RsClusterIdentifier: analyticsStack.clusterId,
-      RedshiftCredSecretArn: analyticsStack.credSecretArn,
+      RsDatabase: 'uniswap_x',
+      RsClusterIdentifier: 'parametrizationcluster2acf90d1-nv1fmfiwbsgj',
+      RedshiftCredSecretArn: 'arn:aws:secretsmanager:us-east-2:801328487475:secret:RsCredsD1DA9D21-wfkkcOIPjYTj-H9Py06',
       lambdaRole: lambdaRole,
       chatbotSNSArn: chatbotSNSArn,
       stage: stage,
