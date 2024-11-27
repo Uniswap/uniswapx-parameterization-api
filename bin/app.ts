@@ -134,26 +134,26 @@ export class APIPipeline extends Stack {
 
     this.addIntegTests(code, betaUsEast2Stage, betaUsEast2AppStage, STAGE.BETA);
 
-    // // Prod us-east-2
-    // const prodUsEast2Stage = new APIStage(this, 'prod-us-east-2', {
-    //   env: { account: '830217277613', region: 'us-east-2' },
-    //   provisionedConcurrency: 70,
-    //   internalApiKey: internalApiKey.secretValue.toString(),
-    //   chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
-    //   envVars: {
-    //     RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
-    //     ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_PROD').toString(),
-    //     FILL_LOG_SENDER_ACCOUNT: '316116520258',
-    //     ORDER_LOG_SENDER_ACCOUNT: '316116520258',
-    //     URA_ACCOUNT: '652077092967',
-    //     BOT_ACCOUNT: '456809954954',
-    //   },
-    //   stage: STAGE.PROD,
-    // });
+    // Prod us-east-2
+    const prodUsEast2Stage = new APIStage(this, 'prod-us-east-2', {
+      env: { account: '830217277613', region: 'us-east-2' },
+      provisionedConcurrency: 70,
+      internalApiKey: internalApiKey.secretValue.toString(),
+      chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
+      envVars: {
+        RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
+        ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_PROD').toString(),
+        FILL_LOG_SENDER_ACCOUNT: '316116520258',
+        ORDER_LOG_SENDER_ACCOUNT: '316116520258',
+        URA_ACCOUNT: '652077092967',
+        BOT_ACCOUNT: '456809954954',
+      },
+      stage: STAGE.PROD,
+    });
 
-    // const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);
+    const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);
 
-    // this.addIntegTests(code, prodUsEast2Stage, prodUsEast2AppStage, STAGE.PROD);
+    this.addIntegTests(code, prodUsEast2Stage, prodUsEast2AppStage, STAGE.PROD);
 
     pipeline.buildPipeline();
 
