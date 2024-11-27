@@ -2,7 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { CfnOutput, Duration } from 'aws-cdk-lib';
 import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
-import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
+//import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
 import { CfnEIP, NatProvider, Vpc } from 'aws-cdk-lib/aws-ec2';
@@ -331,20 +331,20 @@ export class APIStack extends cdk.Stack {
     });
 
     if (provisionedConcurrency > 0) {
-      const quoteTarget = new aws_asg.ScalableTarget(this, 'QuoteProvConcASG', {
-        serviceNamespace: aws_asg.ServiceNamespace.LAMBDA,
-        maxCapacity: provisionedConcurrency * 10,
-        minCapacity: provisionedConcurrency,
-        resourceId: `function:${quoteLambdaAlias.lambda.functionName}:${quoteLambdaAlias.aliasName}`,
-        scalableDimension: 'lambda:function:ProvisionedConcurrency',
-      });
+      // const quoteTarget = new aws_asg.ScalableTarget(this, 'QuoteProvConcASG', {
+      //   serviceNamespace: aws_asg.ServiceNamespace.LAMBDA,
+      //   maxCapacity: provisionedConcurrency * 10,
+      //   minCapacity: provisionedConcurrency,
+      //   resourceId: `function:${quoteLambdaAlias.lambda.functionName}:${quoteLambdaAlias.aliasName}`,
+      //   scalableDimension: 'lambda:function:ProvisionedConcurrency',
+      // });
 
-      quoteTarget.node.addDependency(quoteLambdaAlias);
+      // quoteTarget.node.addDependency(quoteLambdaAlias);
 
-      quoteTarget.scaleToTrackMetric('QuoteProvConcTracking', {
-        targetValue: 0.7,
-        predefinedMetric: aws_asg.PredefinedMetric.LAMBDA_PROVISIONED_CONCURRENCY_UTILIZATION,
-      });
+      // quoteTarget.scaleToTrackMetric('QuoteProvConcTracking', {
+      //   targetValue: 0.7,
+      //   predefinedMetric: aws_asg.PredefinedMetric.LAMBDA_PROVISIONED_CONCURRENCY_UTILIZATION,
+      // });
     }
 
     /*
