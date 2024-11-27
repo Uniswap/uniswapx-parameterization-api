@@ -2,7 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { CfnOutput, Duration } from 'aws-cdk-lib';
 import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
-import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
+//import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
 import { CfnEIP, NatProvider, Vpc } from 'aws-cdk-lib/aws-ec2';
