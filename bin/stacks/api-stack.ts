@@ -25,11 +25,11 @@ import {
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
-// import { AnalyticsStack } from './analytics-stack';
-// import { CronDashboardStack } from './cron-dashboard-stack';
-// import { CronStack } from './cron-stack';
-// import { FirehoseStack } from './firehose-stack';
-// import { ParamDashboardStack } from './param-dashboard-stack';
+import { AnalyticsStack } from './analytics-stack';
+import { CronDashboardStack } from './cron-dashboard-stack';
+import { CronStack } from './cron-stack';
+import { FirehoseStack } from './firehose-stack';
+import { ParamDashboardStack } from './param-dashboard-stack';
 
 /**
  * APIStack
@@ -171,7 +171,7 @@ export class APIStack extends cdk.Stack {
      * Firehose Initialization
      */
 
-    // const firehoseStack = new FirehoseStack(this, 'FirehoseStack');
+    const firehoseStack = new FirehoseStack(this, 'FirehoseStack');
 
     /*
      * Lambda Initialization
@@ -391,38 +391,38 @@ export class APIStack extends cdk.Stack {
 
     // enabled.addMethod('GET', switchLambdaIntegration, { apiKeyRequired: true });
 
-    // /*
-    //  * Param Dashboard Stack Initialization
-    //  */
-    // new ParamDashboardStack(this, 'ParamDashboardStack', {
-    //   quoteLambda,
-    // });
+    /*
+     * Param Dashboard Stack Initialization
+     */
+    new ParamDashboardStack(this, 'ParamDashboardStack', {
+      //quoteLambda,
+    });
 
     /*
      * Analytics Stack Initialization
      */
-    // const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
-    //   quoteLambda,
-    //   hardQuoteLambda,
-    //   envVars: props.envVars,
-    //   analyticsStreamArn: firehoseStack.analyticsStreamArn,
-    //   stage,
-    //   chatbotSNSArn,
-    // });
+    const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
+      // quoteLambda,
+      // hardQuoteLambda,
+      envVars: props.envVars,
+      analyticsStreamArn: firehoseStack.analyticsStreamArn,
+      stage,
+      chatbotSNSArn,
+    });
 
-    // const cronStack = new CronStack(this, 'CronStack', {
-    //   RsDatabase: analyticsStack.dbName,
-    //   RsClusterIdentifier: analyticsStack.clusterId,
-    //   RedshiftCredSecretArn: analyticsStack.credSecretArn,
-    //   lambdaRole: lambdaRole,
-    //   chatbotSNSArn: chatbotSNSArn,
-    //   stage: stage,
-    // });
+    const cronStack = new CronStack(this, 'CronStack', {
+      RsDatabase: analyticsStack.dbName,
+      RsClusterIdentifier: analyticsStack.clusterId,
+      RedshiftCredSecretArn: analyticsStack.credSecretArn,
+      lambdaRole: lambdaRole,
+      chatbotSNSArn: chatbotSNSArn,
+      stage: stage,
+    });
 
-    // new CronDashboardStack(this, 'CronDashboardStack', {
-    //   synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
-    //   quoteLambdaName: quoteLambda.functionName,
-    // });
+    new CronDashboardStack(this, 'CronDashboardStack', {
+      synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
+      quoteLambdaName: 'beta-us-east-2-GoudaParameterization-QuoteE2906A56-dD269KqZUBHo'//quoteLambda.functionName,
+    });
 
     /* filler addr table */
     new aws_dynamo.Table(this, `FillerAddrTable`, {

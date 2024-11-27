@@ -38,8 +38,8 @@ enum RS_DATA_TYPES {
 }
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
-  quoteLambda: aws_lambda_nodejs.NodejsFunction;
-  hardQuoteLambda: aws_lambda_nodejs.NodejsFunction;
+  // quoteLambda: aws_lambda_nodejs.NodejsFunction;
+  // hardQuoteLambda: aws_lambda_nodejs.NodejsFunction;
   envVars: Record<string, string>;
   analyticsStreamArn: string;
   stage: string;
@@ -62,7 +62,7 @@ export class AnalyticsStack extends cdk.NestedStack {
 
   constructor(scope: Construct, id: string, props: AnalyticsStackProps) {
     super(scope, id, props);
-    const { quoteLambda, hardQuoteLambda, analyticsStreamArn, stage, chatbotSNSArn } = props;
+    const { analyticsStreamArn, stage, chatbotSNSArn } = props;
 
     /* S3 Initialization */
     const rfqRequestBucket = new aws_s3.Bucket(this, 'RfqRequestBucket');
@@ -1259,28 +1259,28 @@ export class AnalyticsStack extends cdk.NestedStack {
     new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
       destinationArn: rfqRequestFirehoseStream.attrArn,
       filterPattern: '{ $.eventType = "QuoteRequest" }',
-      logGroupName: quoteLambda.logGroup.logGroupName,
+      logGroupName: '/aws/lambda/beta-us-east-2-GoudaParameterization-QuoteE2906A56-dD269KqZUBHo',
       roleArn: subscriptionRole.roleArn,
     });
 
     new aws_logs.CfnSubscriptionFilter(this, 'ResponseSub', {
       destinationArn: rfqResponseFirehoseStream.attrArn,
       filterPattern: '{ $.eventType = "QuoteResponse" }',
-      logGroupName: quoteLambda.logGroup.logGroupName,
+      logGroupName: '/aws/lambda/beta-us-east-2-GoudaParameterization-QuoteE2906A56-dD269KqZUBHo',
       roleArn: subscriptionRole.roleArn,
     });
 
     new aws_logs.CfnSubscriptionFilter(this, 'HardRequestSub', {
       destinationArn: hardRequestFirehoseStream.attrArn,
       filterPattern: '{ $.eventType = "HardRequest" }',
-      logGroupName: hardQuoteLambda.logGroup.logGroupName,
+      logGroupName: '/aws/lambda/beta-us-east-2-GoudaParameteriza-HardQuote29A66D69-nfILopzkGEIk',
       roleArn: subscriptionRole.roleArn,
     });
 
     new aws_logs.CfnSubscriptionFilter(this, 'HardResponseSub', {
       destinationArn: hardResponseFirehoseStream.attrArn,
       filterPattern: '{ $.eventType = "HardResponse" }',
-      logGroupName: hardQuoteLambda.logGroup.logGroupName,
+      logGroupName: '/aws/lambda/beta-us-east-2-GoudaParameteriza-HardQuote29A66D69-nfILopzkGEIk',
       roleArn: subscriptionRole.roleArn,
     });
 
