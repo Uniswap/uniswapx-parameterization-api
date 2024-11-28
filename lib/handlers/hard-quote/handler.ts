@@ -100,6 +100,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     }
     const cosignature = await cosigner.signDigest(request.order.cosignatureHash(cosignerData));
     const cosignedOrder = CosignedV2DutchOrder.fromUnsignedOrder(request.order, cosignerData, cosignature);
+    log.info({ cosignedOrder: cosignedOrder }, 'cosignedOrder');
 
     try {
       metric.putMetric(Metric.QUOTE_POST_ATTEMPT, 1, MetricLoggerUnit.Count);
