@@ -42,11 +42,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
 
     const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
-    await webhookProvider.fetchEndpoints();
-    const circuitBreakerProvider = new DynamoCircuitBreakerConfigurationProvider(
-      log,
-      webhookProvider.fillerEndpoints()
-    );
+    const circuitBreakerProvider = new DynamoCircuitBreakerConfigurationProvider(log, webhookProvider);
 
     const orderServiceProvider = new UniswapXServiceProvider(log, orderServiceUrl);
 
