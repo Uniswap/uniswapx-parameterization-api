@@ -1,6 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-// import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 
@@ -287,7 +287,7 @@ const CircuitBreakerV2Widget = (region: string): LambdaWidget => {
 };
 
 export interface DashboardProps extends cdk.NestedStackProps {
-  //quoteLambda: aws_lambda_nodejs.NodejsFunction;
+  quoteLambda: aws_lambda_nodejs.NodejsFunction;
 }
 
 // TODO: fetch dynamically from s3?
@@ -310,7 +310,7 @@ export class ParamDashboardStack extends cdk.NestedStack {
           ErrorRatesWidget(region),
           RFQFailRatesWidget(region, RFQ_PROVIDERS),
           LambdaErrorRatesWidget(region, scope),
-          FailingRFQLogsWidget(region, 'arn:aws:logs:us-east-2:801328487475:log-group:/aws/lambda/beta-us-east-2-GoudaParameterization-QuoteE2906A56-dD269KqZUBHo:*'),
+          FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupArn),
           CircuitBreakerV2Widget(region),
         ].flat(),
       }),
