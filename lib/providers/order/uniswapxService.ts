@@ -4,9 +4,13 @@ import Logger from 'bunyan';
 import { OrderServiceProvider, PostOrderArgs, UniswapXServiceResponse } from '.';
 import { ErrorResponse } from '../../handlers/base';
 import { ErrorCode } from '../../util/errors';
+import { CosignedV2DutchOrder, CosignedV3DutchOrder, OrderType } from '@uniswap/uniswapx-sdk';
 
 const ORDER_SERVICE_TIMEOUT_MS = 2000;
-const V2_ORDER_TYPE = 'Dutch_V2';
+const ORDER_TYPE_MAP = new Map<Function, string>([
+  [CosignedV2DutchOrder, OrderType.Dutch_V2],
+  [CosignedV3DutchOrder, OrderType.Dutch_V3]
+]);
 
 export class UniswapXServiceProvider implements OrderServiceProvider {
   private log: Logger;
@@ -18,6 +22,11 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
   async postOrder(args: PostOrderArgs): Promise<ErrorResponse | UniswapXServiceResponse> {
     const { order, signature, quoteId, requestId } = args;
     this.log.info({ orderHash: order.hash() }, 'Posting order to UniswapX Service');
+
+    const orderType = ORDER_TYPE_MAP.get(order.constructor);
+    if (!orderType) {
+      throw new Error(`Unsupported order type: ${order.constructor.name}`);
+    }
 
     const axiosConfig = {
       timeout: ORDER_SERVICE_TIMEOUT_MS,
@@ -31,7 +40,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
           chainId: order.chainId,
           quoteId: quoteId,
           requestId: requestId,
-          orderType: V2_ORDER_TYPE,
+          orderType: orderType,
         },
         axiosConfig
       );
