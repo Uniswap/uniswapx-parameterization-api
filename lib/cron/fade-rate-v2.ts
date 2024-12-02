@@ -25,7 +25,7 @@ export type FillerFades = Record<string, number>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
 export const BASE_BLOCK_SECS = 60 * 15; // 15 minutes
-export const NUM_FADES_MULTIPLIER = 1.5;
+export const NUM_FADES_MULTIPLIER = 1.2;
 
 const log = Logger.createLogger({
   name: 'FadeRate',
@@ -214,19 +214,19 @@ export function getFillersNewFades(
 /*
   calculate the block until timestamp with exponential backoff
   if a filler faded multiple times in between the last post timestamp and now,
-    we apply a 1.5 multiplier for each fade
+    we apply a 1.2 multiplier for each fade
     
     examples:
     - 1 fade, 0 consecutive blocks: 15 minutes
-    - 1 fade, 1 consecutive blocks:  (1.5 ^ 0) * 15 * 2^1 = 30 minutes
-    - 1 fade, 2 consecutive blocks:  (1.5 ^ 0) * 15 * 2^2 = 60 minutes
-    - 1 fade, 3 consecutive blocks:  (1.5 ^ 0) * 15 * 2^3 = 120 minutes
-    - 2 fades, 0 consecutive blocks: (1.5 ^ 1) * 15 * 2^0 = 22 minutes
-    - 2 fades 1 consecutive blocks:  (1.5 ^ 1) * 15 * 2^1 = 45 minutes
-    - 2 fades 2 consecutive blocks:  (1.5 ^ 1) * 15 * 2^2 = 90 minute
-    - 3 fades 0 consecutive blocks:  (1.5 ^ 2) * 15 * 2^0 = 33 minutes
-    - 3 fades 1 consecutive blocks:  (1.5 ^ 2) * 15 * 2^1 = 67 minutes
-    - 3 fades 2 consecutive blocks:  (1.5 ^ 2) * 15 * 2^2 = 135 minutes
+    - 1 fade, 1 consecutive blocks:  (1.2 ^ 0) * 15 * 2^1 = 30 minutes
+    - 1 fade, 2 consecutive blocks:  (1.2 ^ 0) * 15 * 2^2 = 60 minutes
+    - 1 fade, 3 consecutive blocks:  (1.2 ^ 0) * 15 * 2^3 = 120 minutes
+    - 2 fades, 0 consecutive blocks: (1.2 ^ 1) * 15 * 2^0 = 18 minutes
+    - 2 fades 1 consecutive blocks:  (1.2 ^ 1) * 15 * 2^1 = 36 minutes
+    - 2 fades 2 consecutive blocks:  (1.2 ^ 1) * 15 * 2^2 = 72 minute
+    - 3 fades 0 consecutive blocks:  (1.2 ^ 2) * 15 * 2^0 = 21 minutes
+    - 3 fades 1 consecutive blocks:  (1.2 ^ 2) * 15 * 2^1 = 43 minutes
+    - 3 fades 2 consecutive blocks:  (1.2 ^ 2) * 15 * 2^2 = 86 minutes
 */
 export function calculateBlockUntilTimestamp(
   newPostTimestamp: number,
