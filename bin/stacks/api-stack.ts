@@ -440,10 +440,10 @@ export class APIStack extends cdk.Stack {
       alarmName: 'UniswapXParameterizationAPI-SEV2-5XX',
       metric: api.metricServerError({
         period: Duration.minutes(5),
-        // For this metric 'avg' represents error rate.
-        statistic: 'avg',
+        // For this metric 'sum' represents error count.
+        statistic: 'sum',
       }),
-      threshold: 0.5,
+      threshold: 100,
       // Beta has much less traffic so is more susceptible to transient errors.
       evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
     });
@@ -455,7 +455,7 @@ export class APIStack extends cdk.Stack {
         // For this metric 'sum' represents error count.
         statistic: 'sum',
       }),
-      threshold: 100,
+      threshold: 20,
       // Beta has much less traffic so is more susceptible to transient errors.
       evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
     });
