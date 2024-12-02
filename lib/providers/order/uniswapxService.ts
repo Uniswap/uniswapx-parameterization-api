@@ -4,12 +4,12 @@ import Logger from 'bunyan';
 import { OrderServiceProvider, PostOrderArgs, UniswapXServiceResponse } from '.';
 import { ErrorResponse } from '../../handlers/base';
 import { ErrorCode } from '../../util/errors';
-import { CosignedV2DutchOrder, CosignedV3DutchOrder } from '@uniswap/uniswapx-sdk';
+import { CosignedV2DutchOrder, CosignedV3DutchOrder, OrderType } from '@uniswap/uniswapx-sdk';
 
 const ORDER_SERVICE_TIMEOUT_MS = 2000;
 const ORDER_TYPE_MAP = new Map<Function, string>([
-  [CosignedV2DutchOrder, 'Dutch_V2'],
-  [CosignedV3DutchOrder, 'Dutch_V3']
+  [CosignedV2DutchOrder, OrderType.Dutch_V2],
+  [CosignedV3DutchOrder, OrderType.Dutch_V3]
 ]);
 
 export class UniswapXServiceProvider implements OrderServiceProvider {
