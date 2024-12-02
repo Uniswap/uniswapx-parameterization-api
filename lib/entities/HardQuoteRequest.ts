@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
+import { OrderType, UnsignedV2DutchOrder, UnsignedV3DutchOrder, V3DutchOrderBuilder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers, utils } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -8,19 +8,25 @@ import { HardQuoteRequestBody } from '../handlers/hard-quote';
 import { ProtocolVersion } from '../providers';
 
 export class HardQuoteRequest {
-  public order: UnsignedV2DutchOrder;
+  public order: UnsignedV2DutchOrder | UnsignedV3DutchOrder;
   private data: HardQuoteRequestBody;
 
-  public static fromHardRequestBody(body: HardQuoteRequestBody): HardQuoteRequest {
-    return new HardQuoteRequest(body);
+  public static fromHardRequestBody(body: HardQuoteRequestBody, orderType: OrderType): HardQuoteRequest {
+    return new HardQuoteRequest(body, orderType);
   }
 
-  constructor(_data: HardQuoteRequestBody) {
+  constructor(_data: HardQuoteRequestBody, orderType: OrderType) {
     this.data = {
       ..._data,
       requestId: _data.quoteId ?? uuidv4(),
     };
-    this.order = UnsignedV2DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
+    if (orderType === OrderType.Dutch_V2) {
+      this.order = UnsignedV2DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
+    } else if (orderType === OrderType.Dutch_V3) {
+      this.order = UnsignedV3DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
+    } else {
+      throw new Error('Unsupported order type');
+    }
   }
 
   public toCleanJSON(): QuoteRequestDataJSON {
@@ -110,9 +116,22 @@ export class HardQuoteRequest {
   }
 
   public get type(): TradeType {
-    return this.order.info.input.startAmount.eq(this.order.info.input.endAmount)
-      ? TradeType.EXACT_INPUT
-      : TradeType.EXACT_OUTPUT;
+    if (this.order instanceof UnsignedV2DutchOrder) {
+      return this.order.info.input.startAmount.eq(this.order.info.input.endAmount)
+        ? TradeType.EXACT_INPUT
+        : TradeType.EXACT_OUTPUT
+    } 
+    else if (this.order instanceof UnsignedV3DutchOrder) {
+      const startAmount = this.order.info.input.startAmount;
+      // If curve doesn't exist OR startAmount equals minAmountOut, then it's EXACT_INPUT
+      return !this.order.info.input.curve || 
+          startAmount.eq(V3DutchOrderBuilder.getMinAmountOut(startAmount, this.order.info.input.curve.relativeAmounts))
+        ? TradeType.EXACT_INPUT 
+        : TradeType.EXACT_OUTPUT;
+    }
+    else {
+      throw new Error('Unsupported order type');
+    }
   }
 
   public get numOutputs(): number {

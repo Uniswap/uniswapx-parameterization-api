@@ -6,6 +6,10 @@ export enum ChainId {
   ARBITRUM_ONE = 42161,
 }
 
+export const supportedChains = [
+  ChainId.ARBITRUM_ONE,
+]
+
 export enum ChainName {
   // ChainNames match infura network strings
   MAINNET = 'mainnet',

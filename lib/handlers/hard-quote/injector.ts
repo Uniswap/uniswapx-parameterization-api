@@ -17,11 +17,14 @@ import { DynamoFillerAddressRepository } from '../../repositories/filler-address
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { HardQuoteRequestBody } from './schema';
+import { ethers } from 'ethers';
+import { ChainId, supportedChains } from '../../util/chains';
 
 export interface ContainerInjected {
   quoters: Quoter[];
   firehose: FirehoseLogger;
   orderServiceProvider: OrderServiceProvider;
+  chainIdRpcMap: Map<ChainId, ethers.providers.StaticJsonRpcProvider>;
 }
 
 export interface RequestInjected extends ApiRInj {
@@ -70,10 +73,24 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const quoters: Quoter[] = [
       new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
+
+    const chainIdRpcMap = new Map<ChainId, ethers.providers.JsonRpcProvider>();
+    supportedChains.forEach(
+      chainId => {
+        const rpcUrl = checkDefined(
+          process.env[`RPC_${chainId}`],
+          `RPC_${chainId} is not defined`
+        );
+        const provider = new ethers.providers.JsonRpcProvider(rpcUrl, chainId);
+        chainIdRpcMap.set(chainId, provider);
+      }
+    );
+
     return {
       quoters: quoters,
       firehose: firehose,
       orderServiceProvider,
+      chainIdRpcMap,
     };
   }
 

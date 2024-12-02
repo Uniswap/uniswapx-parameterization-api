@@ -5312,10 +5312,10 @@
   resolved "https://registry.yarnpkg.com/@uniswap/token-lists/-/token-lists-1.0.0-beta.33.tgz#966ba96c9ccc8f0e9e09809890b438203f2b1911"
   integrity sha512-JQkXcpRI3jFG8y3/CGC4TS8NkDgcxXaOQuYW8Qdvd6DcDiIyg2vVYCG9igFEzF0G6UvxgHkBKC7cWCgzZNYvQg==
 
-"@uniswap/uniswapx-sdk@2.1.0-beta.4":
-  version "2.1.0-beta.4"
-  resolved "https://registry.yarnpkg.com/@uniswap/uniswapx-sdk/-/uniswapx-sdk-2.1.0-beta.4.tgz#052bd0d3601e4e14eb76e744f4ab164b952756c9"
-  integrity sha512-kIbWoGiMrrpq265/99+zOBOlHP/t22lLYKW5C7yKT0HiSM+t671Nl6hvUftRkdf2J7CribOBH1koJyWjkMikOA==
+"@uniswap/uniswapx-sdk@2.1.0-beta.20":
+  version "2.1.0-beta.20"
+  resolved "https://registry.yarnpkg.com/@uniswap/uniswapx-sdk/-/uniswapx-sdk-2.1.0-beta.20.tgz#9cfa3a51821ffbf316eb50481b4980a94ea60065"
+  integrity sha512-T07Z3GV7JlWVeq7WSOqBYvS9KMGltmtfH6xvw0hTuRtqXloGA5Qd7ruNzG0IKSqWCr8x+YGuVTpy/xvbX7uMzQ==
   dependencies:
     "@ethersproject/bytes" "^5.7.0"
     "@ethersproject/providers" "^5.7.0"

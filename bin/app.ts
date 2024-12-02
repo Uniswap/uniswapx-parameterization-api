@@ -11,6 +11,7 @@ import dotenv from 'dotenv';
 import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
+import { ChainId, supportedChains } from '../lib/util/chains';
 
 dotenv.config();
 
@@ -113,14 +114,29 @@ export class APIPipeline extends Stack {
         'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-parameterization-api-internal-api-key-uw4sIa',
     });
 
-    // Beta us-east-2
+    const rpcUrls = sm.Secret.fromSecretAttributes(this, 'rpcUrls', {
+      secretCompleteArn:
+        'arn:aws:secretsmanager:us-east-2:644039819003:secret:prod/param-api/rpc-urls-HJyniu',
+    });
 
+    const jsonRpcProviders = {} as {[chainKey: string]: string};
+    supportedChains.forEach(
+      (chainId: ChainId) => {
+        const mapKey = `RPC_${chainId}`;
+        jsonRpcProviders[mapKey] = rpcUrls
+          .secretValueFromJson(mapKey)
+          .toString();
+      }
+    );
+
+    // Beta us-east-2
     const betaUsEast2Stage = new APIStage(this, 'beta-us-east-2', {
       env: { account: '801328487475', region: 'us-east-2' },
       provisionedConcurrency: 2,
       internalApiKey: internalApiKey.secretValue.toString(),
       stage: STAGE.BETA,
       envVars: {
+        ...jsonRpcProviders,
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_BETA').toString(),
         FILL_LOG_SENDER_ACCOUNT: '321377678687',
@@ -141,6 +157,7 @@ export class APIPipeline extends Stack {
       internalApiKey: internalApiKey.secretValue.toString(),
       chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
       envVars: {
+        ...jsonRpcProviders,
         RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_PROD').toString(),
         FILL_LOG_SENDER_ACCOUNT: '316116520258',
@@ -244,6 +261,13 @@ envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
+const jsonRpcProviders = {} as {[chainKey: string]: string};
+supportedChains.forEach(
+  (chainId: ChainId) => {
+    const mapKey = `RPC_${chainId}`;
+    jsonRpcProviders[mapKey] = process.env[mapKey] || '';
+  }
+);
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {
@@ -255,7 +279,10 @@ new APIStack(app, `${SERVICE_NAME}Stack`, {
   throttlingOverride: process.env.THROTTLE_PER_FIVE_MINS,
   chatbotSNSArn: process.env.CHATBOT_SNS_ARN,
   stage: STAGE.LOCAL,
-  envVars,
+  envVars: {
+    ...envVars,
+    ...jsonRpcProviders,
+  },
 });
 
 new APIPipeline(app, `${SERVICE_NAME}PipelineStack`, {

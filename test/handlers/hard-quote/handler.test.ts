@@ -1,6 +1,6 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
-import { CosignedV2DutchOrder, UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
+import { CosignedV2DutchOrder, CosignerData, OrderType, UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
 import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 // import axios from 'axios';
@@ -107,6 +107,10 @@ describe('Quote handler', () => {
           return {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
+            // Mock chainIdRpcMap
+            chainIdRpcMap: new Map([
+              [42161, new ethers.providers.StaticJsonRpcProvider()],
+            ]),
           };
         },
         getRequestInjected: () => requestInjectedMock,
@@ -303,7 +307,7 @@ describe('Quote handler', () => {
     it('updates decay times reasonably', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const now = Math.floor(Date.now() / 1000);
-      const cosignerData = getCosignerData(new HardQuoteRequest(request), getQuoteResponse({}));
+      const cosignerData: CosignerData = getCosignerData(new HardQuoteRequest(request, OrderType.Dutch_V2), getQuoteResponse({}), OrderType.Dutch_V2) as CosignerData;
       expect(cosignerData.decayStartTime).toBeGreaterThan(now);
       expect(cosignerData.decayStartTime).toBeLessThan(now + 1000);
       expect(cosignerData.decayEndTime).toBeGreaterThan(cosignerData.decayStartTime);
@@ -313,8 +317,9 @@ describe('Quote handler', () => {
     it('exact input quote worse, no exclusivity', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const cosignerData = getCosignerData(
-        new HardQuoteRequest(request),
-        getQuoteResponse({ amountOut: ethers.utils.parseEther('0.8') })
+        new HardQuoteRequest(request, OrderType.Dutch_V2),
+        getQuoteResponse({ amountOut: ethers.utils.parseEther('0.8') }),
+        OrderType.Dutch_V2
       );
       expect(cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
       expect(cosignerData.inputOverride).toEqual(BigNumber.from(0));
@@ -326,8 +331,9 @@ describe('Quote handler', () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const outputAmount = ethers.utils.parseEther('2');
       const cosignerData = getCosignerData(
-        new HardQuoteRequest(request),
-        getQuoteResponse({ amountOut: outputAmount })
+        new HardQuoteRequest(request, OrderType.Dutch_V2),
+        getQuoteResponse({ amountOut: outputAmount }),
+        OrderType.Dutch_V2
       );
       expect(cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
       expect(cosignerData.inputOverride).toEqual(BigNumber.from(0));
@@ -338,8 +344,9 @@ describe('Quote handler', () => {
     it('exact output quote worse, no exclusivity', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const cosignerData = getCosignerData(
-        new HardQuoteRequest(request),
-        getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT)
+        new HardQuoteRequest(request, OrderType.Dutch_V2),
+        getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT),
+        OrderType.Dutch_V2
       );
       expect(cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
       expect(cosignerData.inputOverride).toEqual(BigNumber.from(0));
@@ -351,8 +358,9 @@ describe('Quote handler', () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const inputOverride = ethers.utils.parseEther('0.8');
       const cosignerData = getCosignerData(
-        new HardQuoteRequest(request),
-        getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT)
+        new HardQuoteRequest(request, OrderType.Dutch_V2),
+        getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT),
+        OrderType.Dutch_V2
       );
       expect(cosignerData.exclusiveFiller).toEqual(MOCK_FILLER_ADDRESS);
       expect(cosignerData.inputOverride).toEqual(inputOverride);
