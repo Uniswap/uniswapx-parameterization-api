@@ -1,26 +1,65 @@
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import axios from 'axios';
 import { default as Logger } from 'bunyan';
 
-import { FillerComplianceConfiguration, FillerComplianceConfigurationProvider } from '.';
+import { FillerComplianceConfiguration, FillerComplianceConfigurationProvider, FillerComplianceList } from '.';
 import { checkDefined } from '../../preconditions/preconditions';
 
 export class S3FillerComplianceConfigurationProvider implements FillerComplianceConfigurationProvider {
   private log: Logger;
   private configs: FillerComplianceConfiguration[];
   private endpointToExcludedAddrsMap: Map<string, Set<string>>;
+  private lastFetchTime: number;
+  private readonly REFRESH_INTERVAL = 5 * 60 * 1000;
 
   constructor(_log: Logger, private bucket: string, private key: string) {
     this.configs = [];
     this.log = _log.child({ quoter: 'S3FillerComplianceConfigurationProvider' });
     this.endpointToExcludedAddrsMap = new Map<string, Set<string>>();
+    this.lastFetchTime = 0;
   }
+
+  private async fetchComplianceList(url: string): Promise<string[]> {
+    try {
+      const response = await axios.get(url);
+      if (response.status !== 200) {
+        this.log.warn(
+          { url, status: response.status },
+          'Failed to fetch compliance list'
+        );
+        return [];
+      }
+      const complianceList = response.data as FillerComplianceList;
+      return complianceList.addresses;
+    } catch (e: any) {
+      this.log.warn(
+        { url, error: e.message },
+        'Error fetching compliance list'
+      );
+      return [];
+    }
+  }
+
   async getEndpointToExcludedAddrsMap(): Promise<Map<string, Set<string>>> {
-    if (this.configs.length === 0) {
+    const now = Date.now();
+    if (this.configs.length === 0 || now - this.lastFetchTime >= this.REFRESH_INTERVAL) {
       await this.fetchConfigs();
+      this.endpointToExcludedAddrsMap.clear();
+      this.lastFetchTime = now;
     }
     if (this.endpointToExcludedAddrsMap.size > 0) {
       return this.endpointToExcludedAddrsMap;
     }
+
+    // Fetch additional addresses from complianceListUrl for each config
+    for (const config of this.configs) {
+      if (config.complianceListUrl) {
+        const additionalAddresses = await this.fetchComplianceList(config.complianceListUrl);
+        config.addresses = [...config.addresses, ...additionalAddresses];
+      }
+    }
+
+    // Build the endpoint to addresses map
     this.configs.forEach((config) => {
       config.endpoints.forEach((endpoint) => {
         if (!this.endpointToExcludedAddrsMap.has(endpoint)) {
@@ -31,6 +70,7 @@ export class S3FillerComplianceConfigurationProvider implements FillerCompliance
         });
       });
     });
+
     return this.endpointToExcludedAddrsMap;
   }
 

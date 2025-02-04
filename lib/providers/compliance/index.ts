@@ -1,6 +1,10 @@
 export interface FillerComplianceConfiguration {
   endpoints: string[];
   addresses: string[];
+  complianceListUrl?: string;
+}
+export interface FillerComplianceList {
+  addresses: string[];
 }
 
 export interface FillerComplianceConfigurationProvider {
