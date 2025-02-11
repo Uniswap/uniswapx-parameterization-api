@@ -115,9 +115,9 @@ describe('Quote handler', () => {
   };
 
   it('Simple request and response', async () => {
-    const quoters = [new MockQuoter(logger, 1, 1)];
+    const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 1, 2)];
     const amountIn = ethers.utils.parseEther('1');
-    const request = getRequest(amountIn.toString());
+    const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
     const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
       getEvent(request),
@@ -129,9 +129,9 @@ describe('Quote handler', () => {
   });
 
   it('Handles hex amount', async () => {
-    const quoters = [new MockQuoter(logger, 1, 1)];
+    const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 1, 2)];
     const amountIn = ethers.utils.parseEther('1');
-    const request = getRequest(amountIn.toHexString());
+    const request = getRequest(amountIn.toHexString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
     const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
       getEvent(request),
@@ -235,6 +235,7 @@ describe('Quote handler', () => {
     it('Simple request and response', async () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { endpoint: 'https://uniswap.org', headers: {}, name: 'uniswap', hash: '0xuni' },
+        { endpoint: 'https://foo.org', headers: {}, name: 'foo', hash: '0xfoo' },
       ]);
 
       const quoters = [
@@ -248,7 +249,7 @@ describe('Quote handler', () => {
         ),
       ];
       const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
+      const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -278,8 +279,35 @@ describe('Quote handler', () => {
               quoteId: QUOTE_ID,
             },
           });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              amountOut: amountIn.mul(1).toString(),
+              requestId: request.requestId,
+              tokenIn: request.tokenIn,
+              tokenOut: request.tokenOut,
+              amountIn: request.amount,
+              swapper: request.swapper,
+              chainId: request.tokenInChainId,
+              quoteId: QUOTE_ID,
+            },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              amountOut: amountIn.mul(1).toString(),
+              requestId: request.requestId,
+              tokenIn: request.tokenOut,
+              tokenOut: request.tokenIn,
+              amountIn: request.amount,
+              swapper: request.swapper,
+              chainId: request.tokenInChainId,
+              quoteId: QUOTE_ID,
+            },
+          });
         });
-
       const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
         getEvent(request),
         {} as unknown as Context
@@ -308,6 +336,12 @@ describe('Quote handler', () => {
           },
           hash: '0xuni',
         },
+        {
+          name: 'foo',
+          endpoint: 'https://foo.org',
+          headers: {},
+          hash: '0xfoo',
+        },
       ]);
       const quoters = [
         new WebhookQuoter(
@@ -320,7 +354,7 @@ describe('Quote handler', () => {
         ),
       ];
       const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
+      const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, options: any) => {
@@ -334,6 +368,30 @@ describe('Quote handler', () => {
         .mockImplementationOnce((_endpoint, _req, options: any) => {
           expect(options.headers['X-Authentication']).toEqual('1234');
           const res = responseFromRequest(request, { amountOut: amountIn.mul(3).toString() });
+          return Promise.resolve({
+            data: {
+              ...res,
+              tokenIn: res.tokenOut,
+              tokenOut: res.tokenIn,
+            },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              amountOut: amountIn.mul(1).toString(),
+              requestId: request.requestId,
+              tokenIn: request.tokenIn,
+              tokenOut: request.tokenOut,
+              amountIn: request.amount,
+              swapper: request.swapper,
+              chainId: request.tokenInChainId,
+              quoteId: QUOTE_ID,
+            },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          const res = responseFromRequest(request, { amountOut: amountIn.mul(1).toString() });
           return Promise.resolve({
             data: {
               ...res,
@@ -427,6 +485,7 @@ describe('Quote handler', () => {
     it('uses backup on failure', async () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
+        { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
         new WebhookQuoter(
@@ -438,9 +497,10 @@ describe('Quote handler', () => {
           repository
         ),
         new MockQuoter(logger, 1, 1),
+        new MockQuoter(logger, 1, 2),
       ];
       const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
+      const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
       mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
@@ -463,6 +523,7 @@ describe('Quote handler', () => {
     it('uses if better than backup', async () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
+        { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
         new WebhookQuoter(
@@ -476,7 +537,7 @@ describe('Quote handler', () => {
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
+      const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
