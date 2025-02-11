@@ -9,7 +9,13 @@ import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { WebhookQuoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
-import { MOCK_V2_CB_PROVIDER, WEBHOOK_URL, WEBHOOK_URL_ONEINCH, WEBHOOK_URL_SEARCHER } from '../../fixtures';
+import {
+  MOCK_V2_CB_PROVIDER,
+  WEBHOOK_URL,
+  WEBHOOK_URL_FOO,
+  WEBHOOK_URL_ONEINCH,
+  WEBHOOK_URL_SEARCHER,
+} from '../../fixtures';
 
 jest.mock('axios');
 jest.mock('../../../lib/providers/analytics');
@@ -280,6 +286,12 @@ describe('WebhookQuoter tests', () => {
         hash: '0xsearcher',
         supportedVersions: [ProtocolVersion.V1, ProtocolVersion.V2],
       },
+      {
+        name: 'foo',
+        endpoint: WEBHOOK_URL_FOO,
+        headers: {},
+        hash: '0xfoo',
+      },
     ]);
     const webhookQuoter = new WebhookQuoter(
       logger,
@@ -322,6 +334,11 @@ describe('WebhookQuoter tests', () => {
         headers: {},
         timeout: 500,
       });
+      // empty supportedVersions defaults to v2 only
+      expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL_FOO, request.toCleanJSON(), {
+        headers: {},
+        timeout: 500,
+      });
     });
 
     it('v2 quote request only sent to fillers supporting v2', async () => {
@@ -356,8 +373,8 @@ describe('WebhookQuoter tests', () => {
           timeout: 500,
         }
       );
-      // empty config defaults to v1 only
-      expect(mockedAxios.post).not.toBeCalledWith(
+      // empty config defaults to v2 only
+      expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { quoteId: expect.any(String), ...request.toCleanJSON() },
         {
