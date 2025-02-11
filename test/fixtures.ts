@@ -5,6 +5,7 @@ const now = Math.floor(Date.now() / 1000);
 export const WEBHOOK_URL = 'https://uniswap.org';
 export const WEBHOOK_URL_ONEINCH = 'https://1inch.io';
 export const WEBHOOK_URL_SEARCHER = 'https://searcher.com';
+export const WEBHOOK_URL_FOO = 'https://foo.com';
 
 export const MOCK_V2_CB_PROVIDER = new MockV2CircuitBreakerConfigurationProvider(
   [WEBHOOK_URL, WEBHOOK_URL_ONEINCH, WEBHOOK_URL_SEARCHER],

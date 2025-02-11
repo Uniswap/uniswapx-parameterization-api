@@ -9,7 +9,13 @@ import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { WebhookQuoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
-import { MOCK_V2_CB_PROVIDER, WEBHOOK_URL, WEBHOOK_URL_ONEINCH, WEBHOOK_URL_SEARCHER } from '../../fixtures';
+import {
+  MOCK_V2_CB_PROVIDER,
+  WEBHOOK_URL,
+  WEBHOOK_URL_FOO,
+  WEBHOOK_URL_ONEINCH,
+  WEBHOOK_URL_SEARCHER,
+} from '../../fixtures';
 
 jest.mock('axios');
 jest.mock('../../../lib/providers/analytics');
@@ -38,9 +44,21 @@ describe('WebhookQuoter tests', () => {
   });
 
   const webhookProvider = new MockWebhookConfigurationProvider([
-    { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, hash: '0xuni' },
+    {
+      name: 'uniswap',
+      endpoint: WEBHOOK_URL,
+      headers: {},
+      hash: '0xuni',
+      supportedVersions: [ProtocolVersion.V1, ProtocolVersion.V2],
+    },
     { name: '1inch', endpoint: WEBHOOK_URL_ONEINCH, headers: {}, hash: '0x1inch' },
-    { name: 'searcher', endpoint: WEBHOOK_URL_SEARCHER, headers: {}, hash: '0xsearcher' },
+    {
+      name: 'searcher',
+      endpoint: WEBHOOK_URL_SEARCHER,
+      headers: {},
+      hash: '0xsearcher',
+      supportedVersions: [ProtocolVersion.V1, ProtocolVersion.V2],
+    },
   ]);
 
   const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
@@ -271,7 +289,13 @@ describe('WebhookQuoter tests', () => {
 
   describe('Supported protocols tests', () => {
     const webhookProvider = new MockWebhookConfigurationProvider([
-      { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, hash: '0xuni', supportedVersions: [ProtocolVersion.V2] },
+      {
+        name: 'uniswap',
+        endpoint: WEBHOOK_URL,
+        headers: {},
+        hash: '0xuni',
+        supportedVersions: [ProtocolVersion.V1, ProtocolVersion.V2],
+      },
       { name: '1inch', endpoint: WEBHOOK_URL_ONEINCH, headers: {}, hash: '0x1inch' },
       {
         name: 'searcher',
@@ -279,6 +303,12 @@ describe('WebhookQuoter tests', () => {
         headers: {},
         hash: '0xsearcher',
         supportedVersions: [ProtocolVersion.V1, ProtocolVersion.V2],
+      },
+      {
+        name: 'foo',
+        endpoint: WEBHOOK_URL_FOO,
+        headers: {},
+        hash: '0xfoo',
       },
     ]);
     const webhookQuoter = new WebhookQuoter(
@@ -322,6 +352,11 @@ describe('WebhookQuoter tests', () => {
         headers: {},
         timeout: 500,
       });
+      // empty supportedVersions defaults to v2 only
+      expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL_FOO, request.toCleanJSON(), {
+        headers: {},
+        timeout: 500,
+      });
     });
 
     it('v2 quote request only sent to fillers supporting v2', async () => {
@@ -356,9 +391,9 @@ describe('WebhookQuoter tests', () => {
           timeout: 500,
         }
       );
-      // empty config defaults to v1 only
-      expect(mockedAxios.post).not.toBeCalledWith(
-        WEBHOOK_URL_ONEINCH,
+      // empty config defaults to v2 only
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_FOO,
         { quoteId: expect.any(String), ...request.toCleanJSON() },
         {
           headers: {},
@@ -446,6 +481,7 @@ describe('WebhookQuoter tests', () => {
       emptyMockComplianceProvider,
       repository
     );
+    const request = makeQuoteRequest({ tokenInChainId: 1, tokenOutChainId: 1, protocol: ProtocolVersion.V2 });
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
       tokenIn: request.tokenIn,
@@ -480,6 +516,7 @@ describe('WebhookQuoter tests', () => {
   });
 
   it('Skips if chainId not configured', async () => {
+    const request = makeQuoteRequest({ protocol: ProtocolVersion.V2 });
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6], hash: '0xuni' },
     ]);
