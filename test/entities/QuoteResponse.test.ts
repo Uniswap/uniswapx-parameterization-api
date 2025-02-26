@@ -1,5 +1,6 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { parseEther } from 'ethers/lib/utils';
+import { ethers } from 'ethers';
 
 import { QuoteResponse } from '../../lib/entities';
 import { ProtocolVersion } from '../../lib/providers';
@@ -68,7 +69,7 @@ describe('QuoteRequest', () => {
 
   describe('fromRFQ', () => {
     it('fromRFQ with valid response', async () => {
-      const response = QuoteResponse.fromRFQ({
+      const response = await QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -87,7 +88,7 @@ describe('QuoteRequest', () => {
     });
 
     it('fromRFQ with valid response - allow checksumed', async () => {
-      const response = QuoteResponse.fromRFQ({
+      const response = await QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -114,7 +115,7 @@ describe('QuoteRequest', () => {
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
       };
-      const response = QuoteResponse.fromRFQ({
+      const response = await QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: invalidResponse,
         type: TradeType.EXACT_INPUT,
@@ -122,7 +123,7 @@ describe('QuoteRequest', () => {
       });
       // ensure we overwrite amount with the request amount, dont just accept what the quoter returned
       expect(response.response.amountIn).toEqual(quoteRequest.amount);
-      expect(response.validationError?.message).toBe('"amountIn" must be a string');
+      expect(response.validationError?.message).toContain('"amountIn" must be a string');
       expect(response.validationError?.value).toBe(invalidResponse);
     });
 
@@ -136,14 +137,14 @@ describe('QuoteRequest', () => {
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
       };
-      const response = QuoteResponse.fromRFQ({
+      const response = await QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: invalidResponse,
         type: TradeType.EXACT_INPUT,
         metadata: METADATA,
       });
       expect(response.response.tokenIn).toEqual('0x0000000000000000000000000000000000000000');
-      expect(response.validationError?.message).toBe(
+      expect(response.validationError?.message).toContain(
         'RFQ response token mismatch: request tokenIn: 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984 tokenOut: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 response tokenIn: 0x0000000000000000000000000000000000000000 tokenOut: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
       );
       expect(response.validationError?.value).toBe(invalidResponse);
@@ -159,17 +160,203 @@ describe('QuoteRequest', () => {
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
       };
-      const response = QuoteResponse.fromRFQ({
+      const response = await QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: invalidResponse,
         type: TradeType.EXACT_INPUT,
         metadata: METADATA,
       });
       expect(response.response.tokenOut).toEqual('0x0000000000000000000000000000000000000000');
-      expect(response.validationError?.message).toBe(
+      expect(response.validationError?.message).toContain(
         'RFQ response token mismatch: request tokenIn: 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984 tokenOut: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 response tokenIn: 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984 tokenOut: 0x0000000000000000000000000000000000000000'
       );
       expect(response.validationError?.value).toBe(invalidResponse);
+    });
+
+    it('fromRFQ with permissioned tokenIn - no provider', async () => {
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockReturnValue(true);
+      
+      const response = await QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
+          chainId: CHAIN_ID,
+          requestId: REQUEST_ID,
+          tokenIn: TOKEN_IN,
+          amountIn: parseEther('1').toString(),
+          tokenOut: TOKEN_OUT,
+          amountOut: parseEther('1').toString(),
+          quoteId: QUOTE_ID,
+          filler: '0x1234567890123456789012345678901234567890',
+        },
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      });
+
+      expect(response.validationError?.message).toContain(
+        `provider is required for permissioned token check for tokenIn: ${TOKEN_IN}`
+      );
+    });
+
+    it('fromRFQ with permissioned tokenOut - no provider', async () => {
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
+        .mockImplementation((token) => token === TOKEN_OUT);
+      
+      const response = await QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
+          chainId: CHAIN_ID,
+          requestId: REQUEST_ID,
+          tokenIn: TOKEN_IN,
+          amountIn: parseEther('1').toString(),
+          tokenOut: TOKEN_OUT,
+          amountOut: parseEther('1').toString(),
+          quoteId: QUOTE_ID,
+          filler: '0x1234567890123456789012345678901234567890',
+        },
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      });
+
+      expect(response.validationError?.message).toContain(
+        `provider is required for permissioned token check for tokenOut: ${TOKEN_OUT}`
+      );
+    });
+
+    it('fromRFQ with permissioned tokenIn - failed preTransferCheck', async () => {
+      const mockProvider = {} as ethers.providers.JsonRpcProvider;
+      const filler = '0x1234567890123456789012345678901234567890';
+      
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
+        .mockImplementation((token) => token === TOKEN_IN);
+      jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
+        .mockResolvedValue(false);
+
+      const response = await QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
+          chainId: CHAIN_ID,
+          requestId: REQUEST_ID,
+          tokenIn: TOKEN_IN,
+          amountIn: parseEther('1').toString(),
+          tokenOut: TOKEN_OUT,
+          amountOut: parseEther('1').toString(),
+          quoteId: QUOTE_ID,
+          filler,
+        },
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      }, mockProvider);
+
+      expect(response.validationError?.message).toContain(
+        `preTransferCheck check failed for tokenIn: ${TOKEN_IN} from ${SWAPPER} to ${filler}`
+      );
+    });
+
+    it('fromRFQ with permissioned tokenOut - failed preTransferCheck', async () => {
+      const mockProvider = {} as ethers.providers.JsonRpcProvider;
+      const filler = '0x1234567890123456789012345678901234567890';
+      
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
+        .mockImplementation((token) => token === TOKEN_OUT);
+      jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
+        .mockResolvedValue(false);
+
+      const response = await QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
+          chainId: CHAIN_ID,
+          requestId: REQUEST_ID,
+          tokenIn: TOKEN_IN,
+          amountIn: parseEther('1').toString(),
+          tokenOut: TOKEN_OUT,
+          amountOut: parseEther('1').toString(),
+          quoteId: QUOTE_ID,
+          filler,
+        },
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      }, mockProvider);
+
+      expect(response.validationError?.message).toContain(
+        `preTransferCheck check failed for tokenOut: ${TOKEN_OUT} from ${filler} to ${SWAPPER}`
+      );
+    });
+
+    it('fromRFQ with permissioned tokens - successful preTransferCheck', async () => {
+      const mockProvider = {} as ethers.providers.JsonRpcProvider;
+      const filler = '0x1234567890123456789012345678901234567890';
+      const amountIn = parseEther('2');
+      const amountOut = parseEther('1.5');
+      
+      const preTransferCheckMock = jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
+        .mockResolvedValue(true);
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockReturnValue(true);
+
+      const response = await QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
+          chainId: CHAIN_ID,
+          requestId: REQUEST_ID,
+          tokenIn: TOKEN_IN,
+          amountIn: amountIn.toString(),
+          tokenOut: TOKEN_OUT,
+          amountOut: amountOut.toString(),
+          quoteId: QUOTE_ID,
+          filler,
+        },
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      }, mockProvider);
+
+      expect(response.validationError).toBe(undefined);
+      expect(preTransferCheckMock).toHaveBeenCalledTimes(2);
+      expect(preTransferCheckMock).toHaveBeenCalledWith(
+        TOKEN_IN,
+        SWAPPER,
+        filler,
+        amountIn,
+        mockProvider
+      );
+      expect(preTransferCheckMock).toHaveBeenCalledWith(
+        TOKEN_OUT,
+        filler,
+        SWAPPER,
+        amountOut,
+        mockProvider
+      );
+    });
+
+    it('fromRFQ with permissioned tokens - preTransferCheck throws error', async () => {
+      const mockProvider = {} as ethers.providers.JsonRpcProvider;
+      const filler = '0x1234567890123456789012345678901234567890';
+      const mockLogger = { error: jest.fn() } as any;
+      
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockReturnValue(true);
+      jest.spyOn(PermissionedTokenValidator, 'preTransferCheck').mockImplementation(() => {
+        throw new Error('Simulated preTransferCheck error');
+      });
+
+      const response = await QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
+          chainId: CHAIN_ID,
+          requestId: REQUEST_ID,
+          tokenIn: TOKEN_IN,
+          amountIn: parseEther('1').toString(),
+          tokenOut: TOKEN_OUT,
+          amountOut: parseEther('1').toString(),
+          quoteId: QUOTE_ID,
+          filler,
+        },
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      }, mockProvider, mockLogger);
+
+      expect(response.validationError).toBe(undefined);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        { error: new Error('Simulated preTransferCheck error') },
+        'error checking permissioned tokens'
+      );
     });
   });
 

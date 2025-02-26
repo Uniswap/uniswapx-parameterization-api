@@ -3,6 +3,7 @@ import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
+import { ethers } from 'ethers';
 
 import { Quoter, QuoterType } from '.';
 import { NOTIFICATION_TIMEOUT_MS, WEBHOOK_TIMEOUT_MS } from '../constants';
@@ -39,7 +40,7 @@ export class WebhookQuoter implements Quoter {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
 
-  public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
+  public async quote(request: QuoteRequest, provider?: ethers.providers.JsonRpcProvider): Promise<QuoteResponse[]> {
     const statuses = await this.getEndpointStatuses();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     const enabledEndpoints = statuses.enabled.filter(
@@ -55,7 +56,7 @@ export class WebhookQuoter implements Quoter {
       `Fetching quotes from ${enabledEndpoints.length} endpoints and notifying disabled endpoints`
     );
 
-    const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request)));
+    const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request, provider)));
 
     // should not await and block
     Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
@@ -74,7 +75,7 @@ export class WebhookQuoter implements Quoter {
     return this.circuitBreakerProvider.getEndpointStatuses(endpoints);
   }
 
-  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
+  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest, provider?: ethers.providers.JsonRpcProvider): Promise<QuoteResponse | null> {
     const { name, endpoint, headers } = config;
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
       this.log.debug(
@@ -148,12 +149,12 @@ export class WebhookQuoter implements Quoter {
         fillerName: config.name,
       };
 
-      const { response, validationError } = QuoteResponse.fromRFQ({
+      const { response, validationError } = await QuoteResponse.fromRFQ({
         request,
         data: hookResponse.data,
         type: request.type,
         metadata,
-      });
+      }, provider, this.log);
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
@@ -247,12 +248,12 @@ export class WebhookQuoter implements Quoter {
       }
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
-      const opposingResponse = QuoteResponse.fromRFQ({
+      const opposingResponse = await QuoteResponse.fromRFQ({
         request: opposingRequest,
         data: opposite.data,
         type: opposingRequest.type,
         metadata,
-      });
+      }, provider, this.log);
       if (
         opposingResponse &&
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&

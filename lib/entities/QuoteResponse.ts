@@ -1,10 +1,11 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { BigNumber } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
 import { QuoteRequestData } from '.';
 import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
+import Logger from 'bunyan';
 
 export interface QuoteResponseData
   extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type' | 'numOutputs' | 'protocol'> {
@@ -67,9 +68,9 @@ export class QuoteResponse implements QuoteResponseData {
     );
   }
 
-  public static fromRFQ(args: FromRfqArgs): ValidatedResponse {
+  public static async fromRFQ(args: FromRfqArgs, provider?: ethers.providers.JsonRpcProvider, log?: Logger): Promise<ValidatedResponse> {
     const { request, data, type, metadata } = args;
-    let validationError: ValidationError | undefined;
+    let validationErrors: string[] = [];
 
     const responseValidation = RfqResponseJoi.validate(data, {
       allowUnknown: true,
@@ -77,10 +78,7 @@ export class QuoteResponse implements QuoteResponseData {
     });
 
     if (responseValidation?.error) {
-      validationError = {
-        message: responseValidation.error?.message,
-        value: data,
-      };
+      validationErrors.push(responseValidation.error?.message);
     }
 
     // ensure quoted tokens match
@@ -88,10 +86,7 @@ export class QuoteResponse implements QuoteResponseData {
       request?.tokenIn?.toLowerCase() !== data?.tokenIn?.toLowerCase() ||
       request?.tokenOut?.toLowerCase() !== data?.tokenOut?.toLowerCase()
     ) {
-      validationError = {
-        message: `RFQ response token mismatch: request tokenIn: ${request.tokenIn} tokenOut: ${request.tokenOut} response tokenIn: ${data.tokenIn} tokenOut: ${data.tokenOut}`,
-        value: data,
-      };
+      validationErrors.push(`RFQ response token mismatch: request tokenIn: ${request.tokenIn} tokenOut: ${request.tokenOut} response tokenIn: ${data.tokenIn} tokenOut: ${data.tokenOut}`);
     }
 
     // take quoted amount from RFQ response
@@ -100,6 +95,49 @@ export class QuoteResponse implements QuoteResponseData {
       request.type === TradeType.EXACT_INPUT
         ? [request.amount, BigNumber.from(data.amountOut ?? 0)]
         : [BigNumber.from(data.amountIn ?? 0), request.amount];
+
+    // permissioned tokens check
+    try {
+      if(PermissionedTokenValidator.isPermissionedToken(request.tokenIn)) {
+        if (!provider) {
+          validationErrors.push(`provider is required for permissioned token check for tokenIn: ${request.tokenIn}`);
+        } else {
+          const preTransferCheckResult = await PermissionedTokenValidator.preTransferCheck(
+            provider,
+            request.tokenIn,
+            request.swapper,
+            data.filler,
+            amountIn
+        );
+
+        if(!preTransferCheckResult) {
+          validationErrors.push(`preTransferCheck check failed for tokenIn: ${request.tokenIn} from ${request.swapper} to ${data.filler} with amount ${amountIn}`);
+          }
+        }
+      }
+      if (PermissionedTokenValidator.isPermissionedToken(request.tokenOut)){
+        if (!provider) {
+          validationErrors.push(`provider is required for permissioned token check for tokenOut: ${request.tokenOut}`);
+        } else {
+          // permissioned token is tokenOut
+          const preTransferCheckResult = await PermissionedTokenValidator.preTransferCheck(
+            provider,
+            request.tokenOut,
+            data.filler,
+            request.swapper,
+            amountOut
+          );
+
+          if(!preTransferCheckResult) {
+            validationErrors.push(`preTransferCheck check failed for tokenOut: ${request.tokenOut} from ${data.filler} to ${request.swapper} with amount ${amountOut}`);
+          }
+        }
+      }
+    } catch (error) {
+      // fail open, likely a dev error
+      log?.error({ error }, 'error checking permissioned tokens');
+    }
+
     return {
       response: new QuoteResponse(
         {
@@ -112,7 +150,7 @@ export class QuoteResponse implements QuoteResponseData {
         type,
         metadata
       ),
-      ...(validationError && { validationError }),
+      ...(validationErrors.length > 0 && { validationError: {message: validationErrors.join(',\n'), value: data} }),
     };
   }
 

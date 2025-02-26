@@ -1,3 +1,4 @@
+import { ethers } from 'ethers';
 import { QuoteRequest, QuoteResponse } from '../entities';
 
 export enum QuoterType {
@@ -7,7 +8,7 @@ export enum QuoterType {
 }
 
 export interface Quoter {
-  quote(request: QuoteRequest): Promise<QuoteResponse[]>;
+  quote(request: QuoteRequest, provider?: ethers.providers.JsonRpcProvider): Promise<QuoteResponse[]>;
   type(): QuoterType;
 }
 
