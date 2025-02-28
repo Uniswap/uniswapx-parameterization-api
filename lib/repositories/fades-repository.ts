@@ -2,6 +2,7 @@ import { GetStatementResultCommand, RedshiftDataClient } from '@aws-sdk/client-r
 import Logger from 'bunyan';
 
 import { BaseRedshiftRepository, SharedConfigs } from './base';
+import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 
 export type FadesRowType = {
   fillerAddress: string;

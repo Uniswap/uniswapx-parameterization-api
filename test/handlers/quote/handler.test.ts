@@ -63,6 +63,10 @@ describe('Quote handler', () => {
         getContainerInjected: () => {
           return {
             quoters,
+            // Mock chainIdRpcMap
+            chainIdRpcMap: new Map([
+              [42161, new ethers.providers.StaticJsonRpcProvider()],
+            ]),
           };
         },
         getRequestInjected: () => requestInjectedMock,

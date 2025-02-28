@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { QuoteRequestData } from '.';
 import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
+import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
 import Logger from 'bunyan';
 
 export interface QuoteResponseData
@@ -98,7 +99,7 @@ export class QuoteResponse implements QuoteResponseData {
 
     // permissioned tokens check
     try {
-      if(PermissionedTokenValidator.isPermissionedToken(request.tokenIn)) {
+      if(data.filler && PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId)) {
         if (!provider) {
           validationErrors.push(`provider is required for permissioned token check for tokenIn: ${request.tokenIn}`);
         } else {
@@ -107,7 +108,7 @@ export class QuoteResponse implements QuoteResponseData {
             request.tokenIn,
             request.swapper,
             data.filler,
-            amountIn
+            amountIn.toString()
         );
 
         if(!preTransferCheckResult) {
@@ -115,7 +116,7 @@ export class QuoteResponse implements QuoteResponseData {
           }
         }
       }
-      if (PermissionedTokenValidator.isPermissionedToken(request.tokenOut)){
+      if (data.filler && PermissionedTokenValidator.isPermissionedToken(request.tokenOut, request.tokenOutChainId)){
         if (!provider) {
           validationErrors.push(`provider is required for permissioned token check for tokenOut: ${request.tokenOut}`);
         } else {
@@ -125,7 +126,7 @@ export class QuoteResponse implements QuoteResponseData {
             request.tokenOut,
             data.filler,
             request.swapper,
-            amountOut
+            amountOut.toString()
           );
 
           if(!preTransferCheckResult) {

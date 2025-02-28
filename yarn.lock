@@ -5231,12 +5231,15 @@
     tiny-invariant "^1.1.0"
     toformat "^2.0.0"
 
-"@uniswap/sdk-core@^5.0.0":
-  version "5.0.0"
-  resolved "https://registry.yarnpkg.com/@uniswap/sdk-core/-/sdk-core-5.0.0.tgz#7accd8c7372b14811777cbd1d92133d4de57c683"
-  integrity sha512-m5KmkqvvEz5rurRHdG3zGJappi1Crxet3B2dpgDFgq5MKoKd6qCbeChRkoQjTTJpY1MLGCsXj8ZtZ0/arisvLQ==
+"@uniswap/sdk-core@^7.5.0":
+  version "7.6.0"
+  resolved "https://registry.yarnpkg.com/@uniswap/sdk-core/-/sdk-core-7.6.0.tgz#6e131a7b6d9490bcf64f51dd5c24ae6a2c7c21a1"
+  integrity sha512-s9MRalQxI53Vf32GMkqjmOAH0xg1o71fL5lr/aVDJMGoBr+q72vpATrRTiSWIvJqYyApwUdc2I5BB3UuD3bPhQ==
   dependencies:
     "@ethersproject/address" "^5.0.2"
+    "@ethersproject/bytes" "^5.7.0"
+    "@ethersproject/keccak256" "5.7.0"
+    "@ethersproject/strings" "5.7.0"
     big.js "^5.2.2"
     decimal.js-light "^2.5.0"
     jsbi "^3.1.4"
@@ -5312,15 +5315,15 @@
   resolved "https://registry.yarnpkg.com/@uniswap/token-lists/-/token-lists-1.0.0-beta.33.tgz#966ba96c9ccc8f0e9e09809890b438203f2b1911"
   integrity sha512-JQkXcpRI3jFG8y3/CGC4TS8NkDgcxXaOQuYW8Qdvd6DcDiIyg2vVYCG9igFEzF0G6UvxgHkBKC7cWCgzZNYvQg==
 
-"@uniswap/uniswapx-sdk@2.1.0-beta.22":
-  version "2.1.0-beta.22"
-  resolved "https://registry.yarnpkg.com/@uniswap/uniswapx-sdk/-/uniswapx-sdk-2.1.0-beta.22.tgz#ddcdf036c66ddf49c97b916a08c2ddc4e68cb09b"
-  integrity sha512-g6a+/gGJnVjGgDhnKsC5NcyeHaPz0wK+Lzu1zCJiPUcvVcMskshlepBMwYTyGu2OEVeTOhkvw/1df4sjovRizw==
+"@uniswap/uniswapx-sdk@3.0.0-beta.5":
+  version "3.0.0-beta.5"
+  resolved "https://registry.yarnpkg.com/@uniswap/uniswapx-sdk/-/uniswapx-sdk-3.0.0-beta.5.tgz#620b7ddfc4d0174b982e6565ff3f7ad4ced1cbb9"
+  integrity sha512-Tg94svR1GDFX87sUsSkCPNUJ2gCxW2K73kVUN3adX8Rato7TlC+FhF2njkknEstR5jMMJXBaNJtKI65t3qwwKA==
   dependencies:
     "@ethersproject/bytes" "^5.7.0"
     "@ethersproject/providers" "^5.7.0"
     "@uniswap/permit2-sdk" "^1.2.1"
-    "@uniswap/sdk-core" "^5.0.0"
+    "@uniswap/sdk-core" "^7.5.0"
     ethers "^5.7.0"
 
 "@uniswap/universal-router-sdk@^1.3.0":

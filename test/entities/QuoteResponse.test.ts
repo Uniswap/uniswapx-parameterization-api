@@ -4,6 +4,7 @@ import { ethers } from 'ethers';
 
 import { QuoteResponse } from '../../lib/entities';
 import { ProtocolVersion } from '../../lib/providers';
+import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f7';
@@ -182,7 +183,7 @@ describe('QuoteRequest', () => {
           chainId: CHAIN_ID,
           requestId: REQUEST_ID,
           tokenIn: TOKEN_IN,
-          amountIn: parseEther('1').toString(),
+          amountIn: quoteRequest.amount.toString(),
           tokenOut: TOKEN_OUT,
           amountOut: parseEther('1').toString(),
           quoteId: QUOTE_ID,
@@ -207,7 +208,7 @@ describe('QuoteRequest', () => {
           chainId: CHAIN_ID,
           requestId: REQUEST_ID,
           tokenIn: TOKEN_IN,
-          amountIn: parseEther('1').toString(),
+          amountIn: quoteRequest.amount.toString(),
           tokenOut: TOKEN_OUT,
           amountOut: parseEther('1').toString(),
           quoteId: QUOTE_ID,
@@ -237,7 +238,7 @@ describe('QuoteRequest', () => {
           chainId: CHAIN_ID,
           requestId: REQUEST_ID,
           tokenIn: TOKEN_IN,
-          amountIn: parseEther('1').toString(),
+          amountIn: quoteRequest.amount.toString(),
           tokenOut: TOKEN_OUT,
           amountOut: parseEther('1').toString(),
           quoteId: QUOTE_ID,
@@ -267,7 +268,7 @@ describe('QuoteRequest', () => {
           chainId: CHAIN_ID,
           requestId: REQUEST_ID,
           tokenIn: TOKEN_IN,
-          amountIn: parseEther('1').toString(),
+          amountIn: quoteRequest.amount.toString(),
           tokenOut: TOKEN_OUT,
           amountOut: parseEther('1').toString(),
           quoteId: QUOTE_ID,
@@ -285,7 +286,7 @@ describe('QuoteRequest', () => {
     it('fromRFQ with permissioned tokens - successful preTransferCheck', async () => {
       const mockProvider = {} as ethers.providers.JsonRpcProvider;
       const filler = '0x1234567890123456789012345678901234567890';
-      const amountIn = parseEther('2');
+      const amountIn = quoteRequest.amount;
       const amountOut = parseEther('1.5');
       
       const preTransferCheckMock = jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
@@ -310,19 +311,19 @@ describe('QuoteRequest', () => {
 
       expect(response.validationError).toBe(undefined);
       expect(preTransferCheckMock).toHaveBeenCalledTimes(2);
-      expect(preTransferCheckMock).toHaveBeenCalledWith(
+      expect(preTransferCheckMock).toHaveBeenNthCalledWith(1,
+        mockProvider,
         TOKEN_IN,
         SWAPPER,
         filler,
-        amountIn,
-        mockProvider
+        amountIn.toString()
       );
-      expect(preTransferCheckMock).toHaveBeenCalledWith(
+      expect(preTransferCheckMock).toHaveBeenNthCalledWith(2,
+        mockProvider,
         TOKEN_OUT,
         filler,
         SWAPPER,
-        amountOut,
-        mockProvider
+        amountOut.toString()
       );
     });
 
