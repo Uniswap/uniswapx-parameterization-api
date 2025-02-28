@@ -23,6 +23,7 @@ import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../provid
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { timestampInMstoISOString } from '../util/time';
+import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
@@ -43,7 +44,11 @@ export class WebhookQuoter implements Quoter {
   public async quote(request: QuoteRequest, provider?: ethers.providers.JsonRpcProvider): Promise<QuoteResponse[]> {
     const statuses = await this.getEndpointStatuses();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
-    const enabledEndpoints = statuses.enabled.filter(
+    // Ignore endpoint status if token is permissioned
+    const isPermissionedToken = PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId) 
+    || PermissionedTokenValidator.isPermissionedToken(request.tokenOut, request.tokenOutChainId);
+    const baseFillerSet = isPermissionedToken ? statuses.enabled.concat(statuses.disabled.map(e => e.webhook)) : statuses.enabled;
+    const enabledEndpoints = baseFillerSet.filter(
       (e) =>
         passFillerCompliance(e, endpointToAddrsMap, request.swapper) &&
         getEndpointSupportedProtocols(e).includes(request.protocol)
@@ -59,9 +64,11 @@ export class WebhookQuoter implements Quoter {
     const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request, provider)));
 
     // should not await and block
-    Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
-      this.log.info({ results }, 'Notified disabled endpoints');
-    });
+    if (!isPermissionedToken) {
+      Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
+        this.log.info({ results }, 'Notified disabled endpoints');
+      });
+    }
 
     return quotes.filter((q) => q !== null) as QuoteResponse[];
   }
