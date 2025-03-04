@@ -99,41 +99,52 @@ export class QuoteResponse implements QuoteResponseData {
 
     // permissioned tokens check
     try {
-      if(data.filler && PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId)) {
-        if (!provider) {
-          validationErrors.push(`provider is required for permissioned token check for tokenIn: ${request.tokenIn}`);
-        } else {
-          const preTransferCheckResult = await PermissionedTokenValidator.preTransferCheck(
-            provider,
-            request.tokenIn,
-            request.swapper,
-            data.filler,
-            amountIn.toString()
-        );
+      const checks: Promise<void>[] = [];
+      if (data && data.filler) {
+        // Check if tokenIn is permissioned
+        if (PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId)) {
+          if (!provider) {
+            validationErrors.push(`provider is required for permissioned token check for tokenIn: ${request.tokenIn}`);
+          } else {
+            checks.push(
+              PermissionedTokenValidator.preTransferCheck(
+                provider,
+                request.tokenIn,
+                request.swapper,
+                data.filler,
+                amountIn.toString()
+              ).then(result => {
+                if (!result) {
+                  validationErrors.push(`preTransferCheck check failed for tokenIn: ${request.tokenIn} from ${request.swapper} to ${data.filler} with amount ${amountIn}`);
+                }
+              })
+            );
+          }
+        }
 
-        if(!preTransferCheckResult) {
-          validationErrors.push(`preTransferCheck check failed for tokenIn: ${request.tokenIn} from ${request.swapper} to ${data.filler} with amount ${amountIn}`);
+        // Check if tokenOut is permissioned
+        if (PermissionedTokenValidator.isPermissionedToken(request.tokenOut, request.tokenOutChainId)) {
+          if (!provider) {
+            validationErrors.push(`provider is required for permissioned token check for tokenOut: ${request.tokenOut}`);
+          } else {
+            checks.push(
+              PermissionedTokenValidator.preTransferCheck(
+                provider,
+                request.tokenOut,
+                data.filler,
+                request.swapper,
+                amountOut.toString()
+              ).then(result => {
+                if (!result) {
+                  validationErrors.push(`preTransferCheck check failed for tokenOut: ${request.tokenOut} from ${data.filler} to ${request.swapper} with amount ${amountOut}`);
+                }
+              })
+            );
           }
         }
       }
-      if (data.filler && PermissionedTokenValidator.isPermissionedToken(request.tokenOut, request.tokenOutChainId)){
-        if (!provider) {
-          validationErrors.push(`provider is required for permissioned token check for tokenOut: ${request.tokenOut}`);
-        } else {
-          // permissioned token is tokenOut
-          const preTransferCheckResult = await PermissionedTokenValidator.preTransferCheck(
-            provider,
-            request.tokenOut,
-            data.filler,
-            request.swapper,
-            amountOut.toString()
-          );
 
-          if(!preTransferCheckResult) {
-            validationErrors.push(`preTransferCheck check failed for tokenOut: ${request.tokenOut} from ${data.filler} to ${request.swapper} with amount ${amountOut}`);
-          }
-        }
-      }
+      await Promise.all(checks);
     } catch (error) {
       // fail open, likely a dev error
       log?.error({ error }, 'error checking permissioned tokens');
