@@ -12,6 +12,7 @@ import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import path from 'path';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 
 const RS_DATABASE_NAME = 'uniswap_x'; // must be lowercase
 const ADMIN = 'admin';
@@ -879,105 +880,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const botOrderLoaderStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderLoaderStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: botOrderLoaderBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: botOrderLoaderTable.tableName,
-          dataTableColumns: botOrderLoaderTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: botOrderEventsProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
-    const botOrderRouterStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderRouterStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: botOrderRouterBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: botOrderRouterTable.tableName,
-          dataTableColumns: botOrderRouterTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: botOrderEventsProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
-    const botOrderBroadcasterStream = new aws_firehose.CfnDeliveryStream(this, 'botOrderBroadcasterStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: botOrderBroadcasterBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: botOrderBroadcasterTable.tableName,
-          dataTableColumns: botOrderBroadcasterTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: botOrderEventsProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
     /* Firehose Alarms */
     const allStreams = [
       uraRequestStream,
@@ -989,9 +891,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       fillStream,
       orderStream,
       activeOrderStream,
-      botOrderLoaderStream,
-      botOrderRouterStream,
-      botOrderBroadcasterStream,
     ];
 
     allStreams.forEach((stream) => {
@@ -1040,6 +939,8 @@ export class AnalyticsStack extends cdk.NestedStack {
         treatMissingData: cdk.aws_cloudwatch.TreatMissingData.BREACHING,
         actionsEnabled: true,
       });
+      // Override the logical ID to use exact name
+      (missingRecordsSev3.node.defaultChild as cloudwatch.CfnAlarm).overrideLogicalId(missingRecordsName);
 
       const s3DeliverySev3 = new cdk.aws_cloudwatch.Alarm(this, s3DeliverySuccessSev3Name, {
         metric: deliveryToS3,
@@ -1131,24 +1032,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       destinationName: 'uraResponseDestination',
     });
 
-    const botOrderLoaderDestination = new aws_logs.CfnDestination(this, 'botOrderLoaderDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: botOrderLoaderStream.attrArn,
-      destinationName: 'botOrderLoaderDestination',
-    });
-
-    const botOrderRouterDestination = new aws_logs.CfnDestination(this, 'botOrderRouterDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: botOrderRouterStream.attrArn,
-      destinationName: 'botOrderRouterDestination',
-    });
-
-    const botOrderBroadcasterDestination = new aws_logs.CfnDestination(this, 'botOrderBroadcasterDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: botOrderBroadcasterStream.attrArn,
-      destinationName: 'botOrderBroadcasterDestination',
-    });
-
     // hack to get around with CDK bug where `new aws_iam.PolicyDocument({...}).string()` doesn't really turn it into a string
     // enclosed in if statement to allow deploying stack w/o having to set up x-account logging
     if (props.envVars['FILL_LOG_SENDER_ACCOUNT']) {
@@ -1230,51 +1113,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       });
     }
 
-    if (props.envVars['BOT_ACCOUNT']) {
-      botOrderLoaderDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['BOT_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-      botOrderRouterDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['BOT_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-      botOrderBroadcasterDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['BOT_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-    }
-
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
     // same here regarding CDK not having a stable implementation of this resource
     new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
@@ -1319,15 +1157,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
     new CfnOutput(this, 'UraAccount', {
       value: props.envVars['URA_ACCOUNT'],
-    });
-    new CfnOutput(this, 'botOrderLoaderDestinationName', {
-      value: botOrderLoaderDestination.attrArn,
-    });
-    new CfnOutput(this, 'botOrderRouterDestinationName', {
-      value: botOrderRouterDestination.attrArn,
-    });
-    new CfnOutput(this, 'botOrderBroadcasterDestinationName', {
-      value: botOrderBroadcasterDestination.attrArn,
     });
     new CfnOutput(this, 'BOT_ACCOUNT', {
       value: props.envVars['BOT_ACCOUNT'],
