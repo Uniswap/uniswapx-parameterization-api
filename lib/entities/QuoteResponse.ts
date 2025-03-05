@@ -1,12 +1,10 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { BigNumber, ethers } from 'ethers';
+import { BigNumber } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
 import { QuoteRequestData } from '.';
 import { PostQuoteResponse, RfqResponse, RfqResponseJoi } from '../handlers/quote/schema';
 import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
-import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
-import Logger from 'bunyan';
 
 export interface QuoteResponseData
   extends Omit<QuoteRequestData, 'tokenInChainId' | 'tokenOutChainId' | 'amount' | 'type' | 'numOutputs' | 'protocol'> {
@@ -69,7 +67,7 @@ export class QuoteResponse implements QuoteResponseData {
     );
   }
 
-  public static async fromRFQ(args: FromRfqArgs, provider?: ethers.providers.JsonRpcProvider, log?: Logger): Promise<ValidatedResponse> {
+  public static async fromRFQ(args: FromRfqArgs): Promise<ValidatedResponse> {
     const { request, data, type, metadata } = args;
     let validationErrors: string[] = [];
 
@@ -96,59 +94,6 @@ export class QuoteResponse implements QuoteResponseData {
       request.type === TradeType.EXACT_INPUT
         ? [request.amount, BigNumber.from(data.amountOut ?? 0)]
         : [BigNumber.from(data.amountIn ?? 0), request.amount];
-
-    // permissioned tokens check
-    try {
-      const checks: Promise<void>[] = [];
-      if (data && data.filler) {
-        // Check if tokenIn is permissioned
-        if (PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId)) {
-          if (!provider) {
-            validationErrors.push(`provider is required for permissioned token check for tokenIn: ${request.tokenIn}`);
-          } else {
-            checks.push(
-              PermissionedTokenValidator.preTransferCheck(
-                provider,
-                request.tokenIn,
-                request.swapper,
-                data.filler,
-                amountIn.toString()
-              ).then(result => {
-                if (!result) {
-                  validationErrors.push(`preTransferCheck check failed for tokenIn: ${request.tokenIn} from ${request.swapper} to ${data.filler} with amount ${amountIn}`);
-                }
-              })
-            );
-          }
-        }
-
-        // Check if tokenOut is permissioned
-        if (PermissionedTokenValidator.isPermissionedToken(request.tokenOut, request.tokenOutChainId)) {
-          if (!provider) {
-            validationErrors.push(`provider is required for permissioned token check for tokenOut: ${request.tokenOut}`);
-          } else {
-            checks.push(
-              PermissionedTokenValidator.preTransferCheck(
-                provider,
-                request.tokenOut,
-                data.filler,
-                request.swapper,
-                amountOut.toString()
-              ).then(result => {
-                if (!result) {
-                  validationErrors.push(`preTransferCheck check failed for tokenOut: ${request.tokenOut} from ${data.filler} to ${request.swapper} with amount ${amountOut}`);
-                }
-              })
-            );
-          }
-        }
-      }
-
-      await Promise.all(checks);
-    } catch (error) {
-      // fail open, likely a dev error
-      log?.error({ error }, 'error checking permissioned tokens');
-    }
 
     return {
       response: new QuoteResponse(

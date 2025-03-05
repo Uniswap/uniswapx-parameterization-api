@@ -24,6 +24,7 @@ import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { timestampInMstoISOString } from '../util/time';
 import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
+import { RFQValidator } from '../util/rfqValidator';
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
@@ -161,7 +162,15 @@ export class WebhookQuoter implements Quoter {
         data: hookResponse.data,
         type: request.type,
         metadata,
-      }, provider, this.log);
+      });
+      const validatePermissionedTokensError = await RFQValidator.validatePermissionedTokens(
+        request,
+        hookResponse.data,
+        request.amount,
+        response.amountOut,
+        provider,
+        this.log
+      );
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
@@ -185,12 +194,13 @@ export class WebhookQuoter implements Quoter {
       }
 
       // RFQ provider response failed validation
-      if (validationError) {
+      if (validationError || validatePermissionedTokensError) {
+        const error = validationError || validatePermissionedTokensError;
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
         this.log.error(
           {
-            error: validationError,
+            error,
             response,
             webhookUrl: endpoint,
           },
@@ -201,7 +211,7 @@ export class WebhookQuoter implements Quoter {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.VALIDATION_ERROR,
-            validationError: validationError,
+            validationError: error,
           })
         );
         return null;
@@ -260,11 +270,20 @@ export class WebhookQuoter implements Quoter {
         data: opposite.data,
         type: opposingRequest.type,
         metadata,
-      }, provider, this.log);
+      });
+      const validateOpposingPermissionedTokensError = await RFQValidator.validatePermissionedTokens(
+        opposingRequest,
+        opposite.data,
+        opposingRequest.amount,
+        opposingResponse.response.amountOut,
+        provider,
+        this.log
+      );
       if (
         opposingResponse &&
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&
-        !opposingResponse.validationError
+        !opposingResponse.validationError &&
+        !validateOpposingPermissionedTokensError
       ) {
         this.log.info({
           eventType: 'QuoteResponse',

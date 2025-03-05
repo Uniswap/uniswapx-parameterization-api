@@ -5,6 +5,7 @@ import { ethers } from 'ethers';
 import { QuoteResponse } from '../../lib/entities';
 import { ProtocolVersion } from '../../lib/providers';
 import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
+import { RFQValidator } from '../../lib/util/rfqValidator';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f7';
@@ -175,7 +176,8 @@ describe('QuoteRequest', () => {
     });
 
     it('fromRFQ with permissioned tokenIn - no provider', async () => {
-      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockReturnValue(true);
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
+        .mockImplementation((token) => token === TOKEN_IN);
       
       const response = await QuoteResponse.fromRFQ({
         request: quoteRequest,
@@ -193,9 +195,48 @@ describe('QuoteRequest', () => {
         metadata: METADATA,
       });
 
-      expect(response.validationError?.message).toContain(
-        `provider is required for permissioned token check for tokenIn: ${TOKEN_IN}`
+      const validationError = await RFQValidator.validatePermissionedTokens(
+        quoteRequest,
+        response.response.toResponseJSON(),
+        quoteRequest.amount,
+        response.response.amountOut
       );
+
+      expect(validationError).toContain(
+        `provider is required for permissioned token check for token: ${TOKEN_IN} on chain: ${CHAIN_ID}`
+      );
+    });
+
+    it('fromRFQ with no permissioned tokens - no provider', async () => {
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockReturnValue(false);
+      const preTransferCheckMock = jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
+        .mockResolvedValue(true);
+      
+      const response = await QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
+          chainId: CHAIN_ID,
+          requestId: REQUEST_ID,
+          tokenIn: TOKEN_IN,
+          amountIn: quoteRequest.amount.toString(),
+          tokenOut: TOKEN_OUT,
+          amountOut: parseEther('1').toString(),
+          quoteId: QUOTE_ID,
+          filler: '0x1234567890123456789012345678901234567890',
+        },
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      });
+
+      const validationError = await RFQValidator.validatePermissionedTokens(
+        quoteRequest,
+        response.response.toResponseJSON(),
+        quoteRequest.amount,
+        response.response.amountOut
+      );
+
+      expect(validationError).toBe(undefined);
+      expect(preTransferCheckMock).toHaveBeenCalledTimes(0);
     });
 
     it('fromRFQ with permissioned tokenOut - no provider', async () => {
@@ -218,8 +259,15 @@ describe('QuoteRequest', () => {
         metadata: METADATA,
       });
 
-      expect(response.validationError?.message).toContain(
-        `provider is required for permissioned token check for tokenOut: ${TOKEN_OUT}`
+      const validationError = await RFQValidator.validatePermissionedTokens(
+        quoteRequest,
+        response.response.toResponseJSON(),
+        quoteRequest.amount,
+        response.response.amountOut
+      );
+
+      expect(validationError).toContain(
+        `provider is required for permissioned token check for token: ${TOKEN_OUT} on chain: ${CHAIN_ID}`
       );
     });
 
@@ -246,10 +294,18 @@ describe('QuoteRequest', () => {
         },
         type: TradeType.EXACT_INPUT,
         metadata: METADATA,
-      }, mockProvider);
+      });
 
-      expect(response.validationError?.message).toContain(
-        `preTransferCheck check failed for tokenIn: ${TOKEN_IN} from ${SWAPPER} to ${filler}`
+      const validationError = await RFQValidator.validatePermissionedTokens(
+        quoteRequest,
+        response.response.toResponseJSON(),
+        quoteRequest.amount,
+        response.response.amountOut,
+        mockProvider
+      );
+
+      expect(validationError).toContain(
+        `preTransferCheck check failed for token: ${TOKEN_IN} from ${SWAPPER} to ${filler}`
       );
     });
 
@@ -276,10 +332,18 @@ describe('QuoteRequest', () => {
         },
         type: TradeType.EXACT_INPUT,
         metadata: METADATA,
-      }, mockProvider);
+      });
 
-      expect(response.validationError?.message).toContain(
-        `preTransferCheck check failed for tokenOut: ${TOKEN_OUT} from ${filler} to ${SWAPPER}`
+      const validationError = await RFQValidator.validatePermissionedTokens(
+        quoteRequest,
+        response.response.toResponseJSON(),
+        quoteRequest.amount,
+        response.response.amountOut,
+        mockProvider
+      );
+
+      expect(validationError).toContain(
+        `preTransferCheck check failed for token: ${TOKEN_OUT} from ${filler} to ${SWAPPER}`
       );
     });
 
@@ -307,9 +371,17 @@ describe('QuoteRequest', () => {
         },
         type: TradeType.EXACT_INPUT,
         metadata: METADATA,
-      }, mockProvider);
+      });
 
-      expect(response.validationError).toBe(undefined);
+      const validationError = await RFQValidator.validatePermissionedTokens(
+        quoteRequest,
+        response.response.toResponseJSON(),
+        quoteRequest.amount,
+        response.response.amountOut,
+        mockProvider
+      );
+
+      expect(validationError).toBe(undefined);
       expect(preTransferCheckMock).toHaveBeenCalledTimes(2);
       expect(preTransferCheckMock).toHaveBeenNthCalledWith(1,
         mockProvider,
@@ -351,9 +423,18 @@ describe('QuoteRequest', () => {
         },
         type: TradeType.EXACT_INPUT,
         metadata: METADATA,
-      }, mockProvider, mockLogger);
+      });
 
-      expect(response.validationError).toBe(undefined);
+      const validationError = await RFQValidator.validatePermissionedTokens(
+        quoteRequest,
+        response.response.toResponseJSON(),
+        quoteRequest.amount,
+        response.response.amountOut,
+        mockProvider,
+        mockLogger
+      );
+
+      expect(validationError).toBe(undefined);
       expect(mockLogger.error).toHaveBeenCalledWith(
         { error: new Error('Simulated preTransferCheck error') },
         'error checking permissioned tokens'

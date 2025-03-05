@@ -1,6 +1,6 @@
 import Joi from 'joi';
 
-import { FieldValidator } from '../../util/validator';
+import { FieldValidator } from '../../util/fieldValidator';
 
 export const SynthSwitchQueryParamsJoi = Joi.object({
   tokenIn: FieldValidator.address.required(),

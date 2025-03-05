@@ -1,6 +1,6 @@
 import Joi from 'joi';
 
-import { FieldValidator } from '../../util/validator';
+import { FieldValidator } from '../../util/fieldValidator';
 
 /* Hard quote request from user */
 export const HardQuoteRequestBodyJoi = Joi.object({
