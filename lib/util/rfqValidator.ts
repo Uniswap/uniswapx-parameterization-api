@@ -5,6 +5,19 @@ import { RfqResponse } from "../handlers/quote";
 import { PermissionedTokenValidator } from "@uniswap/uniswapx-sdk";
 
 export class RFQValidator {
+  static ProviderRequiredError = class extends Error {
+    constructor(tokenAddress: string, chainId: number) {
+      super(`provider is required for permissioned token check for token: ${tokenAddress} on chain: ${chainId}`);
+      this.name = 'ProviderRequiredError';
+    }
+  };
+
+  static PreTransferCheckError = class extends Error {
+    constructor(tokenAddress: string, from: string, to: string, amount: string) {
+      super(`preTransferCheck check failed for token: ${tokenAddress} from ${from} to ${to} with amount ${amount}`);
+      this.name = 'PreTransferCheckError';
+    }
+  };
 
   /**
    * Validates if a token requires permission checks and if so, performs the preTransferCheck
@@ -29,7 +42,7 @@ export class RFQValidator {
     }
 
     if (!provider) {
-      return `provider is required for permissioned token check for token: ${tokenAddress} on chain: ${chainId}`;
+      return new RFQValidator.ProviderRequiredError(tokenAddress, chainId).message;
     }
 
     const isValid = await PermissionedTokenValidator.preTransferCheck(
@@ -41,7 +54,7 @@ export class RFQValidator {
     );
 
     if (!isValid) {
-      return `preTransferCheck check failed for token: ${tokenAddress} from ${from} to ${to} with amount ${amount}`;
+      return new RFQValidator.PreTransferCheckError(tokenAddress, from, to, amount).message;
     }
 
     return undefined;

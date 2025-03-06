@@ -67,9 +67,9 @@ export class QuoteResponse implements QuoteResponseData {
     );
   }
 
-  public static async fromRFQ(args: FromRfqArgs): Promise<ValidatedResponse> {
+  public static fromRFQ(args: FromRfqArgs): ValidatedResponse {
     const { request, data, type, metadata } = args;
-    let validationErrors: string[] = [];
+    let validationError: ValidationError | undefined;
 
     const responseValidation = RfqResponseJoi.validate(data, {
       allowUnknown: true,
@@ -77,7 +77,10 @@ export class QuoteResponse implements QuoteResponseData {
     });
 
     if (responseValidation?.error) {
-      validationErrors.push(responseValidation.error?.message);
+      validationError = {
+        message: responseValidation.error?.message,
+        value: data,
+      };
     }
 
     // ensure quoted tokens match
@@ -85,7 +88,10 @@ export class QuoteResponse implements QuoteResponseData {
       request?.tokenIn?.toLowerCase() !== data?.tokenIn?.toLowerCase() ||
       request?.tokenOut?.toLowerCase() !== data?.tokenOut?.toLowerCase()
     ) {
-      validationErrors.push(`RFQ response token mismatch: request tokenIn: ${request.tokenIn} tokenOut: ${request.tokenOut} response tokenIn: ${data.tokenIn} tokenOut: ${data.tokenOut}`);
+      validationError = {
+        message: `RFQ response token mismatch: request tokenIn: ${request.tokenIn} tokenOut: ${request.tokenOut} response tokenIn: ${data.tokenIn} tokenOut: ${data.tokenOut}`,
+        value: data,
+      };
     }
 
     // take quoted amount from RFQ response
@@ -94,7 +100,6 @@ export class QuoteResponse implements QuoteResponseData {
       request.type === TradeType.EXACT_INPUT
         ? [request.amount, BigNumber.from(data.amountOut ?? 0)]
         : [BigNumber.from(data.amountIn ?? 0), request.amount];
-
     return {
       response: new QuoteResponse(
         {
@@ -107,7 +112,7 @@ export class QuoteResponse implements QuoteResponseData {
         type,
         metadata
       ),
-      ...(validationErrors.length > 0 && { validationError: {message: validationErrors.join(',\n'), value: data} }),
+      ...(validationError && { validationError }),
     };
   }
 

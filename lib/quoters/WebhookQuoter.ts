@@ -157,7 +157,7 @@ export class WebhookQuoter implements Quoter {
         fillerName: config.name,
       };
 
-      const { response, validationError } = await QuoteResponse.fromRFQ({
+      const { response, validationError } = QuoteResponse.fromRFQ({
         request,
         data: hookResponse.data,
         type: request.type,
@@ -265,25 +265,16 @@ export class WebhookQuoter implements Quoter {
       }
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
-      const opposingResponse = await QuoteResponse.fromRFQ({
+      const opposingResponse = QuoteResponse.fromRFQ({
         request: opposingRequest,
         data: opposite.data,
         type: opposingRequest.type,
         metadata,
       });
-      const validateOpposingPermissionedTokensError = await RFQValidator.validatePermissionedTokens(
-        opposingRequest,
-        opposite.data,
-        opposingRequest.amount,
-        opposingResponse.response.amountOut,
-        provider,
-        this.log
-      );
       if (
         opposingResponse &&
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&
-        !opposingResponse.validationError &&
-        !validateOpposingPermissionedTokensError
+        !opposingResponse.validationError
       ) {
         this.log.info({
           eventType: 'QuoteResponse',

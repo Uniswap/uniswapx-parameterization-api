@@ -71,7 +71,7 @@ describe('QuoteRequest', () => {
 
   describe('fromRFQ', () => {
     it('fromRFQ with valid response', async () => {
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -90,7 +90,7 @@ describe('QuoteRequest', () => {
     });
 
     it('fromRFQ with valid response - allow checksumed', async () => {
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -117,7 +117,7 @@ describe('QuoteRequest', () => {
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
       };
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: invalidResponse,
         type: TradeType.EXACT_INPUT,
@@ -139,7 +139,7 @@ describe('QuoteRequest', () => {
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
       };
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: invalidResponse,
         type: TradeType.EXACT_INPUT,
@@ -162,7 +162,7 @@ describe('QuoteRequest', () => {
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
       };
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: invalidResponse,
         type: TradeType.EXACT_INPUT,
@@ -179,7 +179,7 @@ describe('QuoteRequest', () => {
       jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
         .mockImplementation((token) => token === TOKEN_IN);
       
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -212,7 +212,7 @@ describe('QuoteRequest', () => {
       const preTransferCheckMock = jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
         .mockResolvedValue(true);
       
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -243,7 +243,7 @@ describe('QuoteRequest', () => {
       jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
         .mockImplementation((token) => token === TOKEN_OUT);
       
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -280,7 +280,7 @@ describe('QuoteRequest', () => {
       jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
         .mockResolvedValue(false);
 
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -318,7 +318,7 @@ describe('QuoteRequest', () => {
       jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
         .mockResolvedValue(false);
 
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -357,7 +357,7 @@ describe('QuoteRequest', () => {
         .mockResolvedValue(true);
       jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockReturnValue(true);
 
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
@@ -409,7 +409,7 @@ describe('QuoteRequest', () => {
         throw new Error('Simulated preTransferCheck error');
       });
 
-      const response = await QuoteResponse.fromRFQ({
+      const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
           chainId: CHAIN_ID,
