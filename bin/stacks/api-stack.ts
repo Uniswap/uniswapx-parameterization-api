@@ -366,7 +366,10 @@ export class APIStack extends cdk.Stack {
         allowMethods: aws_apigateway.Cors.ALL_METHODS,
       },
     });
-    hardQuote.addMethod('POST', hardQuoteLambdaIntegration);
+
+    hardQuote.addMethod('POST', hardQuoteLambdaIntegration, { 
+      apiKeyRequired: false, // TODO: Set to true once Trading API has integrated 
+    });
 
     const switchLambdaIntegration = new aws_apigateway.LambdaIntegration(switchLambdaAlias, {});
     const switchResource = api.root.addResource('synthetic-switch', {
@@ -377,12 +380,16 @@ export class APIStack extends cdk.Stack {
     });
     const enabled = switchResource.addResource('enabled');
 
-    /* add auth key */
+    /* add auth keys */
+    const tradingAPIKey = api.addApiKey('TradingAPIKey');
+    const devAPIKey = api.addApiKey('DevAPIKey');
     const apiAuthzKey = api.addApiKey('AuthzKey');
     const plan = api.addUsagePlan('AccessPlan', {
       name: 'AccessPlan',
     });
     plan.addApiKey(apiAuthzKey);
+    plan.addApiKey(tradingAPIKey);
+    plan.addApiKey(devAPIKey);
     plan.addApiStage({
       stage: api.deploymentStage,
     });
