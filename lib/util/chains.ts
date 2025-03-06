@@ -7,6 +7,7 @@ export enum ChainId {
 }
 
 export const supportedChains = [
+  ChainId.MAINNET,
   ChainId.ARBITRUM_ONE,
 ]
 

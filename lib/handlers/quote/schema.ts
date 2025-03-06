@@ -1,7 +1,7 @@
 import Joi from 'joi';
 
 import { ProtocolVersion } from '../../providers';
-import { FieldValidator } from '../../util/validator';
+import { FieldValidator } from '../../util/fieldValidator';
 
 export const PostQuoteRequestBodyJoi = Joi.object({
   requestId: FieldValidator.requestId.required(),

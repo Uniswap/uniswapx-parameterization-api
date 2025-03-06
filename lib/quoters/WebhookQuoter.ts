@@ -3,6 +3,7 @@ import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { v4 as uuidv4 } from 'uuid';
+import { ethers } from 'ethers';
 
 import { Quoter, QuoterType } from '.';
 import { NOTIFICATION_TIMEOUT_MS, WEBHOOK_TIMEOUT_MS } from '../constants';
@@ -22,6 +23,8 @@ import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../provid
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { timestampInMstoISOString } from '../util/time';
+import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
+import { RFQValidator } from '../util/rfqValidator';
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
@@ -39,10 +42,14 @@ export class WebhookQuoter implements Quoter {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
 
-  public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
+  public async quote(request: QuoteRequest, provider?: ethers.providers.JsonRpcProvider): Promise<QuoteResponse[]> {
     const statuses = await this.getEndpointStatuses();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
-    const enabledEndpoints = statuses.enabled.filter(
+    // Ignore endpoint status if token is permissioned
+    const isPermissionedToken = PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId) 
+    || PermissionedTokenValidator.isPermissionedToken(request.tokenOut, request.tokenOutChainId);
+    const baseFillerSet = isPermissionedToken ? statuses.enabled.concat(statuses.disabled.map(e => e.webhook)) : statuses.enabled;
+    const enabledEndpoints = baseFillerSet.filter(
       (e) =>
         passFillerCompliance(e, endpointToAddrsMap, request.swapper) &&
         getEndpointSupportedProtocols(e).includes(request.protocol)
@@ -55,12 +62,14 @@ export class WebhookQuoter implements Quoter {
       `Fetching quotes from ${enabledEndpoints.length} endpoints and notifying disabled endpoints`
     );
 
-    const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request)));
+    const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request, provider)));
 
     // should not await and block
-    Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
-      this.log.info({ results }, 'Notified disabled endpoints');
-    });
+    if (!isPermissionedToken) {
+      Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
+        this.log.info({ results }, 'Notified disabled endpoints');
+      });
+    }
 
     return quotes.filter((q) => q !== null) as QuoteResponse[];
   }
@@ -74,7 +83,7 @@ export class WebhookQuoter implements Quoter {
     return this.circuitBreakerProvider.getEndpointStatuses(endpoints);
   }
 
-  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest): Promise<QuoteResponse | null> {
+  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest, provider?: ethers.providers.JsonRpcProvider): Promise<QuoteResponse | null> {
     const { name, endpoint, headers } = config;
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
       this.log.debug(
@@ -154,6 +163,14 @@ export class WebhookQuoter implements Quoter {
         type: request.type,
         metadata,
       });
+      const validatePermissionedTokensError = await RFQValidator.validatePermissionedTokens(
+        request,
+        hookResponse.data,
+        request.amount,
+        response.amountOut,
+        provider,
+        this.log
+      );
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
@@ -177,12 +194,13 @@ export class WebhookQuoter implements Quoter {
       }
 
       // RFQ provider response failed validation
-      if (validationError) {
+      if (validationError || validatePermissionedTokensError) {
+        const error = validationError || validatePermissionedTokensError;
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
         this.log.error(
           {
-            error: validationError,
+            error,
             response,
             webhookUrl: endpoint,
           },
@@ -193,7 +211,7 @@ export class WebhookQuoter implements Quoter {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.VALIDATION_ERROR,
-            validationError: validationError,
+            validationError: error,
           })
         );
         return null;

@@ -2,6 +2,7 @@ import { GetStatementResultCommand, RedshiftDataClient } from '@aws-sdk/client-r
 import Logger from 'bunyan';
 
 import { BaseRedshiftRepository, SharedConfigs } from './base';
+import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 
 export type FadesRowType = {
   fillerAddress: string;
@@ -168,7 +169,7 @@ WITH latestOrdersV2 AS (
   LIMIT 1000
 )
 SELECT
-    latestOrdersV2.chainid as chainId, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp,
+    latestOrdersV2.chainid as chainId, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut
     CASE
       WHEN latestOrdersV2.inputstartamount = latestOrdersV2.inputendamount THEN 'EXACT_INPUT'
       ELSE 'EXACT_OUTPUT'
@@ -193,6 +194,8 @@ SELECT
     postTimestamp,
     CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END AS faded
 FROM latestRfqsV2
+WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map(token => token.address.toLowerCase()).join(',')})
+AND LOWER(tokenOut) NOT IN (${PERMISSIONED_TOKENS.map(token => token.address.toLowerCase()).join(',')})
 ORDER BY rfqFiller, postTimestamp DESC
 LIMIT 1000
 `;

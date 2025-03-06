@@ -2,6 +2,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
 import Joi from 'joi';
+import { ethers } from 'ethers';
 
 import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';
@@ -27,11 +28,13 @@ export class QuoteHandler extends APIGLambdaHandler<
     const {
       requestInjected: { log, metric },
       requestBody,
-      containerInjected: { quoters },
+      containerInjected: { quoters, chainIdRpcMap },
     } = params;
     const start = Date.now();
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
+
+    const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
 
     const request = QuoteRequest.fromRequestBody(requestBody);
     log.info({
@@ -51,7 +54,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       },
     });
 
-    const bestQuote = await getBestQuote(quoters, request, log, metric);
+    const bestQuote = await getBestQuote(quoters, request, log, metric, provider);
     if (!bestQuote) {
       metric.putMetric(Metric.QUOTE_404, 1, MetricLoggerUnit.Count);
       throw new NoQuotesAvailable();
@@ -86,9 +89,10 @@ export async function getBestQuote(
   quoteRequest: QuoteRequest,
   log: Logger,
   metric: IMetric,
+  provider?: ethers.providers.JsonRpcProvider,
   eventType: EventType = 'QuoteResponse'
 ): Promise<QuoteResponse | null> {
-  const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest)))).flat();
+  const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest, provider)))).flat();
   switch (responses.length) {
     case 0:
       metric.putMetric(Metric.RFQ_COUNT_0, 1, MetricLoggerUnit.Count);

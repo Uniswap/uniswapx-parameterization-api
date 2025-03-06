@@ -16,6 +16,7 @@ import {
   WEBHOOK_URL_ONEINCH,
   WEBHOOK_URL_SEARCHER,
 } from '../../fixtures';
+import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 
 jest.mock('axios');
 jest.mock('../../../lib/providers/analytics');
@@ -283,6 +284,135 @@ describe('WebhookQuoter tests', () => {
           headers: {},
           timeout: NOTIFICATION_TIMEOUT_MS,
         }
+      );
+    });
+
+    it('Calls to all endpoints if tokenIn is permissioned', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: PERMISSIONED_TOKENS[0].address,
+            },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: request.tokenOut,
+              tokenOut: PERMISSIONED_TOKENS[0].address,
+            },
+          });
+        });
+      
+      const permissionedTokenRequest = makeQuoteRequest({
+        tokenIn: PERMISSIONED_TOKENS[0].address,
+        protocol: ProtocolVersion.V2,
+      });
+      await webhookQuoter.quote(permissionedTokenRequest);
+
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL,
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_SEARCHER,
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_ONEINCH,
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+    });
+
+    it('Calls to all endpoints if tokenOut is permissioned', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenOut: PERMISSIONED_TOKENS[0].address,
+            },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: PERMISSIONED_TOKENS[0].address,
+              tokenOut: request.tokenIn,
+            },
+          });
+        });
+      
+      const permissionedTokenRequest = makeQuoteRequest({
+        tokenOut: PERMISSIONED_TOKENS[0].address,
+        protocol: ProtocolVersion.V2,
+      });
+      await webhookQuoter.quote(permissionedTokenRequest);
+
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL,
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_SEARCHER,
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_ONEINCH,
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+    });
+
+    it('Permissioned tokens still filter on supported protocol', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: PERMISSIONED_TOKENS[0].address,
+            },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: request.tokenOut,
+              tokenOut: PERMISSIONED_TOKENS[0].address,
+            },
+          });
+        });
+      
+      const permissionedTokenRequest = makeQuoteRequest({
+        tokenIn: PERMISSIONED_TOKENS[0].address,
+        protocol: ProtocolVersion.V1, // 1Inch only supports v2
+      });
+      await webhookQuoter.quote(permissionedTokenRequest);
+
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL,
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_SEARCHER,
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).not.toBeCalledWith(
+        WEBHOOK_URL_ONEINCH,
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { headers: {}, timeout: 500 }
       );
     });
   });
