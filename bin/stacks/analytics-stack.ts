@@ -12,7 +12,6 @@ import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import path from 'path';
-import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 
 const RS_DATABASE_NAME = 'uniswap_x'; // must be lowercase
 const ADMIN = 'admin';
@@ -856,9 +855,8 @@ export class AnalyticsStack extends cdk.NestedStack {
         evaluationPeriods: 1 * 60 / 5, // 1 hour (1 * 60 * 5 minutes)
         treatMissingData: cdk.aws_cloudwatch.TreatMissingData.BREACHING,
         actionsEnabled: true,
+        alarmName: missingRecordsName
       });
-      // Override the logical ID to use exact name
-      (missingRecordsSev3.node.defaultChild as cloudwatch.CfnAlarm).overrideLogicalId(missingRecordsName);
 
       const s3DeliverySev3 = new cdk.aws_cloudwatch.Alarm(this, s3DeliverySuccessSev3Name, {
         metric: deliveryToS3,
