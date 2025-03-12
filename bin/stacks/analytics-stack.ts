@@ -852,7 +852,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         metric: incomingRecords,
         comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
         threshold: 1,
-        evaluationPeriods: 1 * 60 / 5, // 1 hour (1 * 60 * 5 minutes)
+        evaluationPeriods: 12 * 60 / 5, // 12 hours (12 * 60 / 5 minutes)
         treatMissingData: cdk.aws_cloudwatch.TreatMissingData.BREACHING,
         actionsEnabled: true,
         alarmName: missingRecordsName
