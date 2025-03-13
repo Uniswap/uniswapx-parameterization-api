@@ -756,7 +756,8 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     // cannot setup log processor for s3 destination via cfnDeliveryStream even though
     //    it's supported through the console :(
-    const activeOrderStream = new aws_firehose.CfnDeliveryStream(this, 'activeOrderRedshiftStream', {
+    const activeOrderRedshiftStreamName = 'activeOrderRedshiftStream';
+    const activeOrderStream = new aws_firehose.CfnDeliveryStream(this, activeOrderRedshiftStreamName, {
       s3DestinationConfiguration: {
         bucketArn: activeOrdersBucket.bucketArn,
         roleArn: firehoseRole.roleArn,
@@ -847,16 +848,20 @@ export class AnalyticsStack extends cdk.NestedStack {
         statistic: 'Sum',
         period: cdk.Duration.minutes(5),
       });
-
-      const missingRecordsSev3 = new cdk.aws_cloudwatch.Alarm(this, missingRecordsName, {
-        metric: incomingRecords,
-        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-        threshold: 1,
-        evaluationPeriods: 12 * 60 / 5, // 12 hours (12 * 60 / 5 minutes)
-        treatMissingData: cdk.aws_cloudwatch.TreatMissingData.BREACHING,
-        actionsEnabled: true,
-        alarmName: missingRecordsName
-      });
+      if (stream.node.id !== activeOrderRedshiftStreamName) {
+        const missingRecordsSev3 = new cdk.aws_cloudwatch.Alarm(this, missingRecordsName, {
+          metric: incomingRecords,
+          comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+          threshold: 1,
+            evaluationPeriods: 12 * 60 / 5, // 12 hours (12 * 60 / 5 minutes)
+            treatMissingData: cdk.aws_cloudwatch.TreatMissingData.BREACHING,
+            actionsEnabled: true,
+            alarmName: missingRecordsName,
+        });
+        if (chatBotTopic) {
+          missingRecordsSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+        }
+      }
 
       const s3DeliverySev3 = new cdk.aws_cloudwatch.Alarm(this, s3DeliverySuccessSev3Name, {
         metric: deliveryToS3,
@@ -897,7 +902,6 @@ export class AnalyticsStack extends cdk.NestedStack {
         s3DeliverySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
         redshiftDeliverySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
         redshiftDeliverySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-        missingRecordsSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       }
     });
 
