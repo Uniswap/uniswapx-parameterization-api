@@ -381,8 +381,14 @@ export class APIStack extends cdk.Stack {
     const enabled = switchResource.addResource('enabled');
 
     /* add auth keys */
-    const tradingAPIKey = api.addApiKey('TradingAPIKey');
-    const devAPIKey = api.addApiKey('DevAPIKey');
+    const tradingAPIKey = api.addApiKey('TradingAPIKey', {
+      apiKeyName: 'tradingAPIKey',
+      description: 'API Key for trading endpoints',
+    });
+    const devAPIKey = api.addApiKey('DevAPIKey', {
+      apiKeyName: 'devAPIKey',
+      description: 'API Key for development use',
+    });
     const apiAuthzKey = api.addApiKey('AuthzKey');
     const plan = api.addUsagePlan('AccessPlan', {
       name: 'AccessPlan',
