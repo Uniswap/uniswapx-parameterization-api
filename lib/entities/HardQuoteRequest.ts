@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { OrderType, UnsignedV2DutchOrder, UnsignedV3DutchOrder, V3DutchOrderBuilder } from '@uniswap/uniswapx-sdk';
+import { OrderType, UnsignedV2DutchOrder, UnsignedV3DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers, utils } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -122,10 +122,9 @@ export class HardQuoteRequest {
         : TradeType.EXACT_OUTPUT
     } 
     else if (this.order instanceof UnsignedV3DutchOrder) {
-      const startAmount = this.order.info.input.startAmount;
-      // If curve doesn't exist OR startAmount equals minAmountOut, then it's EXACT_INPUT
+      // If curve doesn't exist OR has all relative amounts are zero, then it's EXACT_INPUT
       return !this.order.info.input.curve || 
-          startAmount.eq(V3DutchOrderBuilder.getMinAmountOut(startAmount, this.order.info.input.curve.relativeAmounts))
+          !this.order.info.input.curve.relativeAmounts.some(relativeAmount => relativeAmount !== BigInt(0))
         ? TradeType.EXACT_INPUT 
         : TradeType.EXACT_OUTPUT;
     }
