@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { OrderType, UnsignedV2DutchOrder, UnsignedV3DutchOrder, V3DutchOrderBuilder } from '@uniswap/uniswapx-sdk';
+import { OrderType, UnsignedV2DutchOrder, UnsignedV3DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers, utils } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
