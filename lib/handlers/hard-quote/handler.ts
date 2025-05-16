@@ -226,7 +226,7 @@ export function getCosignerData(
 export async function getDefaultCosignerData(
   request: HardQuoteRequest,
   orderType: OrderType,
-  provider: ethers.providers.JsonRpcProvider | undefined
+  provider: ethers.providers.StaticJsonRpcProvider | undefined
 ): Promise<CosignerData | V3CosignerData> {
   switch (orderType) {
     case OrderType.Dutch_V2:
@@ -312,7 +312,7 @@ function getDefaultV2CosignerData(request: HardQuoteRequest): CosignerData {
   };
 }
 
-async function getDefaultV3CosignerData(request: HardQuoteRequest, provider: ethers.providers.JsonRpcProvider | undefined): Promise<V3CosignerData> {
+async function getDefaultV3CosignerData(request: HardQuoteRequest, provider: ethers.providers.StaticJsonRpcProvider | undefined): Promise<V3CosignerData> {
   if (!provider)
     throw new Error(
       `No rpc provider found for chain: ${request.tokenInChainId}, which is required for V3 Dutch orders`

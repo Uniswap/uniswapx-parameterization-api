@@ -26,7 +26,7 @@ export class RFQValidator {
    * @param from - The address tokens are being transferred from
    * @param to - The address tokens are being transferred to
    * @param amount - The amount of tokens being transferred (as a string)
-   * @param provider - Optional JsonRpcProvider needed for permissioned token checks
+   * @param provider - Optional StaticJsonRpcProvider needed for permissioned token checks
    * @returns A string containing an error message if validation fails, undefined if successful
    */
   private static async validatePermissionedToken(
@@ -35,7 +35,7 @@ export class RFQValidator {
     from: string,
     to: string,
     amount: string,
-    provider?: ethers.providers.JsonRpcProvider
+    provider?: ethers.providers.StaticJsonRpcProvider
   ): Promise<string | undefined> {
     if (!PermissionedTokenValidator.isPermissionedToken(tokenAddress, chainId)) {
       return undefined;
@@ -66,7 +66,7 @@ export class RFQValidator {
    * @param data - The RFQ response data containing filler information
    * @param amountIn - The input amount as a BigNumber
    * @param amountOut - The output amount as a BigNumber
-   * @param provider - Optional JsonRpcProvider needed for permissioned token checks
+   * @param provider - Optional StaticJsonRpcProvider needed for permissioned token checks
    * @param log - Optional logger instance for error reporting
    * @returns A string containing the first error message encountered, undefined if all validations pass
    * @dev This function fails open (returns undefined) if an error occurs during validation
@@ -77,7 +77,7 @@ export class RFQValidator {
     data: RfqResponse,
     amountIn: BigNumber,
     amountOut: BigNumber,
-    provider?: ethers.providers.JsonRpcProvider,
+    provider?: ethers.providers.StaticJsonRpcProvider,
     log?: Logger
   ): Promise<string | undefined> {
     

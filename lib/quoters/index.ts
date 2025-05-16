@@ -8,7 +8,7 @@ export enum QuoterType {
 }
 
 export interface Quoter {
-  quote(request: QuoteRequest, provider?: ethers.providers.JsonRpcProvider): Promise<QuoteResponse[]>;
+  quote(request: QuoteRequest, provider?: ethers.providers.StaticJsonRpcProvider): Promise<QuoteResponse[]>;
   type(): QuoterType;
 }
 

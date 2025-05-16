@@ -272,7 +272,7 @@ describe('QuoteRequest', () => {
     });
 
     it('fromRFQ with permissioned tokenIn - failed preTransferCheck', async () => {
-      const mockProvider = {} as ethers.providers.JsonRpcProvider;
+      const mockProvider = {} as ethers.providers.StaticJsonRpcProvider;
       const filler = '0x1234567890123456789012345678901234567890';
       
       jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
@@ -310,7 +310,7 @@ describe('QuoteRequest', () => {
     });
 
     it('fromRFQ with permissioned tokenOut - failed preTransferCheck', async () => {
-      const mockProvider = {} as ethers.providers.JsonRpcProvider;
+      const mockProvider = {} as ethers.providers.StaticJsonRpcProvider;
       const filler = '0x1234567890123456789012345678901234567890';
       
       jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
@@ -348,7 +348,7 @@ describe('QuoteRequest', () => {
     });
 
     it('fromRFQ with permissioned tokens - successful preTransferCheck', async () => {
-      const mockProvider = {} as ethers.providers.JsonRpcProvider;
+      const mockProvider = {} as ethers.providers.StaticJsonRpcProvider;
       const filler = '0x1234567890123456789012345678901234567890';
       const amountIn = quoteRequest.amount;
       const amountOut = parseEther('1.5');
@@ -400,7 +400,7 @@ describe('QuoteRequest', () => {
     });
 
     it('fromRFQ with permissioned tokens - preTransferCheck throws error', async () => {
-      const mockProvider = {} as ethers.providers.JsonRpcProvider;
+      const mockProvider = {} as ethers.providers.StaticJsonRpcProvider;
       const filler = '0x1234567890123456789012345678901234567890';
       const mockLogger = { error: jest.fn() } as any;
       

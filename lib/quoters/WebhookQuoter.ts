@@ -42,7 +42,7 @@ export class WebhookQuoter implements Quoter {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
 
-  public async quote(request: QuoteRequest, provider?: ethers.providers.JsonRpcProvider): Promise<QuoteResponse[]> {
+  public async quote(request: QuoteRequest, provider?: ethers.providers.StaticJsonRpcProvider): Promise<QuoteResponse[]> {
     const statuses = await this.getEndpointStatuses();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     // Ignore endpoint status if token is permissioned
@@ -83,7 +83,7 @@ export class WebhookQuoter implements Quoter {
     return this.circuitBreakerProvider.getEndpointStatuses(endpoints);
   }
 
-  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest, provider?: ethers.providers.JsonRpcProvider): Promise<QuoteResponse | null> {
+  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest, provider?: ethers.providers.StaticJsonRpcProvider): Promise<QuoteResponse | null> {
     const { name, endpoint, headers } = config;
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
       this.log.debug(

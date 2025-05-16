@@ -5,7 +5,7 @@ import { default as bunyan, default as Logger } from 'bunyan';
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../../constants';
+import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET, RPC_HEADERS } from '../../constants';
 import { AWSMetricsLogger, HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
 import { OrderServiceProvider, S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../../providers';
@@ -74,15 +74,18 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
 
-    const chainIdRpcMap = new Map<ChainId, ethers.providers.JsonRpcProvider>();
+    const chainIdRpcMap = new Map<ChainId, ethers.providers.StaticJsonRpcProvider>();
     supportedChains.forEach(
       chainId => {
         const rpcUrl = checkDefined(
           process.env[`RPC_${chainId}`],
           `RPC_${chainId} is not defined`
         );
-        const provider = new ethers.providers.JsonRpcProvider(rpcUrl, chainId);
-        chainIdRpcMap.set(chainId, provider);
+        const provider = new ethers.providers.StaticJsonRpcProvider({
+          url: rpcUrl,
+          headers: RPC_HEADERS
+        }, chainId)
+        chainIdRpcMap.set(  chainId, provider);
       }
     );
 

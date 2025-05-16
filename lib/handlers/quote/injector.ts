@@ -11,6 +11,7 @@ import {
   COMPLIANCE_CONFIG_BUCKET,
   PRODUCTION_S3_KEY,
   PROD_COMPLIANCE_S3_KEY,
+  RPC_HEADERS,
   WEBHOOK_CONFIG_BUCKET,
 } from '../../constants';
 import { AWSMetricsLogger, SoftQuoteMetricDimension } from '../../entities/aws-metrics-logger';
@@ -74,14 +75,17 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
     ];
 
-    const chainIdRpcMap = new Map<ChainId, ethers.providers.JsonRpcProvider>();
+    const chainIdRpcMap = new Map<ChainId, ethers.providers.StaticJsonRpcProvider>();
     supportedChains.forEach(
       chainId => {
         const rpcUrl = checkDefined(
           process.env[`RPC_${chainId}`],
           `RPC_${chainId} is not defined`
         );
-        const provider = new ethers.providers.JsonRpcProvider(rpcUrl, chainId);
+        const provider = new ethers.providers.StaticJsonRpcProvider({
+          url: rpcUrl,
+          headers: RPC_HEADERS
+        }, chainId)
         chainIdRpcMap.set(chainId, provider);
       }
     );

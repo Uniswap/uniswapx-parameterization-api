@@ -89,7 +89,7 @@ export async function getBestQuote(
   quoteRequest: QuoteRequest,
   log: Logger,
   metric: IMetric,
-  provider?: ethers.providers.JsonRpcProvider,
+  provider?: ethers.providers.StaticJsonRpcProvider,
   eventType: EventType = 'QuoteResponse'
 ): Promise<QuoteResponse | null> {
   const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest, provider)))).flat();

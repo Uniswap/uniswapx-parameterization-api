@@ -38,3 +38,7 @@ export const POST_ORDER_ERROR_REASON = {
 export const WEBHOOK_TIMEOUT_MS = 500;
 export const NOTIFICATION_TIMEOUT_MS = 10;
 export const V3_BLOCK_BUFFER = 4;
+
+export const RPC_HEADERS = {
+  'x-uni-service-id': 'x_parameterization_api',
+} as const
