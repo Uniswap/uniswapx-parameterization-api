@@ -26,6 +26,7 @@
   "devDependencies": {
     "@shelf/jest-dynamodb": "^3.4.1",
     "@types/aws-lambda": "^8.10.108",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/bunyan": "^1.8.8",
     "@types/chai": "^4.3.4",
     "@types/chai-as-promised": "^7.1.5",
@@ -37,6 +38,7 @@
     "@typescript-eslint/eslint-plugin": "^5.40.1",
     "@typescript-eslint/parser": "^5.40.1",
     "aws-sdk-client-mock": "^2.0.0",
+    "better-sqlite3": "^11.10.0",
     "esbuild": "^0.15.12",
     "eslint": "^8.26.0",
     "eslint-config-prettier": "^8.5.0",
