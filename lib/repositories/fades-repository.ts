@@ -199,8 +199,8 @@ SELECT
     postTimestamp,
     CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END AS faded
 FROM latestRfqsV2
-WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map(token => token.address.toLowerCase()).join(',')})
-AND LOWER(tokenOut) NOT IN (${PERMISSIONED_TOKENS.map(token => token.address.toLowerCase()).join(',')})
+WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map(token => `'${token.address.toLowerCase()}'`).join(',')})
+AND LOWER(tokenOut) NOT IN (${PERMISSIONED_TOKENS.map(token => `'${token.address.toLowerCase()}'`).join(',')})
 ORDER BY rfqFiller, postTimestamp DESC
 LIMIT 1000
 `;
