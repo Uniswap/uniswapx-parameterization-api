@@ -112,6 +112,9 @@ export class V2FadesRepository extends BaseRedshiftRepository {
 }
 
 const CREATE_VIEW_SQL = `
+DROP VIEW IF EXISTS rfqOrdersTimestamp;
+
+
 CREATE OR REPLACE VIEW rfqOrdersTimestamp 
 AS (
 WITH latestOrders AS (
@@ -158,6 +161,8 @@ WHERE totalQuotes >= 10;
 `;
 
 const V2_CREATE_VIEW_SQL = `
+DROP VIEW IF EXISTS latestRfqsV2;
+
 CREATE OR REPLACE VIEW latestRfqsV2 
 AS (
 WITH latestOrdersV2 AS (
