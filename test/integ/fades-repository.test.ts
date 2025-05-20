@@ -1,3 +1,4 @@
+import { expect } from 'chai';
 import { RedshiftDataClient } from '@aws-sdk/client-redshift-data';
 import { V2FadesRepository } from '../../lib/repositories';
 import { checkDefined } from '../../lib/preconditions/preconditions';
