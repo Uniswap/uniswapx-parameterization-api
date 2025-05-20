@@ -5,7 +5,7 @@ import { checkDefined } from '../../lib/preconditions/preconditions';
 describe('FadesRepository Integration Tests', () => {
   let v2FadesRepository: V2FadesRepository;
 
-  beforeAll(() => {
+  beforeEach(() => {
 
     const REDSHIFT_DATABASE = checkDefined(
         process.env.REDSHIFT_DATABASE,
