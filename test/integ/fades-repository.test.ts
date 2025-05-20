@@ -1,3 +1,4 @@
+import { expect } from 'chai';
 import { RedshiftDataClient } from '@aws-sdk/client-redshift-data';
 import { V2FadesRepository } from '../../lib/repositories';
 import { checkDefined } from '../../lib/preconditions/preconditions';
@@ -31,9 +32,9 @@ describe('FadesRepository Integration Tests', () => {
 
   describe('createFadesView', () => {
     it('should successfully create V2 fades view', async () => {
-      await expect(v2FadesRepository.createFadesView()).resolves.not.toThrow();
+      await expect(v2FadesRepository.createFadesView()).to.not.throw;
       const result = await v2FadesRepository.getFades();
-      expect(result).toBeDefined();
+      expect(result).to.not.be.undefined;
     });
   });
 });
