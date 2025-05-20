@@ -17,7 +17,9 @@ dotenv.config();
 
 export class APIStage extends Stage {
   public readonly url: CfnOutput;
-
+  public readonly RsDatabase: CfnOutput;
+  public readonly RsClusterIdentifier: CfnOutput;
+  public readonly RedshiftCredSecretArn: CfnOutput;
   constructor(
     scope: Construct,
     id: string,
@@ -32,7 +34,7 @@ export class APIStage extends Stage {
     super(scope, id, props);
     const { provisionedConcurrency, internalApiKey, chatbotSNSArn, stage, env, envVars } = props;
 
-    const { url } = new APIStack(this, `${SERVICE_NAME}API`, {
+    const { url, RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn } = new APIStack(this, `${SERVICE_NAME}API`, {
       env,
       provisionedConcurrency,
       internalApiKey,
@@ -41,6 +43,9 @@ export class APIStage extends Stage {
       envVars,
     });
     this.url = url;
+    this.RsDatabase = RsDatabase;
+    this.RsClusterIdentifier = RsClusterIdentifier;
+    this.RedshiftCredSecretArn = RedshiftCredSecretArn;
   }
 }
 
@@ -197,6 +202,9 @@ export class APIPipeline extends Stack {
       input: sourceArtifact,
       envFromCfnOutputs: {
         UNISWAP_API: apiStage.url,
+        REDSHIFT_DATABASE: apiStage.RsDatabase,
+        REDSHIFT_CLUSTER_IDENTIFIER: apiStage.RsClusterIdentifier,
+        REDSHIFT_SECRET_ARN: apiStage.RedshiftCredSecretArn,
       },
       buildEnvironment: {
         buildImage: cdk.aws_codebuild.LinuxBuildImage.STANDARD_7_0,
