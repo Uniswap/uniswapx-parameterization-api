@@ -251,11 +251,22 @@ export class APIPipeline extends Stack {
           ],
           resources: ['*'],
         }),
+        new aws_iam.PolicyStatement({
+          effect: aws_iam.Effect.ALLOW,
+          actions: [
+            'kms:Decrypt',
+            'kms:DescribeKey'
+          ],
+          resources: ['*'],
+        }),
       ],
       commands: [
         'git config --global url."https://${GH_TOKEN}@github.com/".insteadOf ssh://git@github.com/',
         'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc',
         'echo "UNISWAP_API=${UNISWAP_API}" > .env',
+        'echo "REDSHIFT_DATABASE=${REDSHIFT_DATABASE}" >> .env',
+        'echo "REDSHIFT_CLUSTER_IDENTIFIER=${REDSHIFT_CLUSTER_IDENTIFIER}" >> .env',
+        'echo "REDSHIFT_SECRET_ARN=${REDSHIFT_SECRET_ARN}" >> .env',
         'yarn install --frozen-lockfile --network-concurrency 1',
         'yarn build',
         'yarn test:integ',
