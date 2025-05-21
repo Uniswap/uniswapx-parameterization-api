@@ -7,6 +7,7 @@ import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { CodeBuildStep, CodePipeline, CodePipelineSource } from 'aws-cdk-lib/pipelines';
 import { Construct } from 'constructs';
 import dotenv from 'dotenv';
+import * as aws_iam from 'aws-cdk-lib/aws-iam';
 
 import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
@@ -236,6 +237,21 @@ export class APIPipeline extends Stack {
           },
         },
       },
+      rolePolicyStatements: [
+        new aws_iam.PolicyStatement({
+          effect: aws_iam.Effect.ALLOW,
+          actions: ['redshift-data:*'],
+          resources: ['*'],
+        }),
+        new aws_iam.PolicyStatement({
+          effect: aws_iam.Effect.ALLOW,
+          actions: [
+            'secretsmanager:GetSecretValue',
+            'secretsmanager:DescribeSecret'
+          ],
+          resources: ['*'],
+        }),
+      ],
       commands: [
         'git config --global url."https://${GH_TOKEN}@github.com/".insteadOf ssh://git@github.com/',
         'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc',
