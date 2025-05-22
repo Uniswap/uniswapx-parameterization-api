@@ -38,9 +38,6 @@ import { ParamDashboardStack } from './param-dashboard-stack';
  */
 export class APIStack extends cdk.Stack {
   public readonly url: CfnOutput;
-  public readonly RsDatabase: CfnOutput;
-  public readonly RsClusterIdentifier: CfnOutput;
-  public readonly RedshiftCredSecretArn: CfnOutput;
 
   constructor(
     parent: Construct,
@@ -645,18 +642,6 @@ export class APIStack extends cdk.Stack {
 
     this.url = new CfnOutput(this, 'Url', {
       value: api.url,
-    });
-
-    this.RsDatabase = new CfnOutput(this, 'RsDatabase', {
-      value: analyticsStack.dbName,
-    });
-
-    this.RsClusterIdentifier = new CfnOutput(this, 'RsClusterIdentifier', {
-      value: analyticsStack.clusterId,
-    });
-
-    this.RedshiftCredSecretArn = new CfnOutput(this, 'RedshiftCredSecretArn', {
-      value: analyticsStack.credSecretArn,
     });
   }
 }

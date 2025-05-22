@@ -7,7 +7,6 @@ import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { CodeBuildStep, CodePipeline, CodePipelineSource } from 'aws-cdk-lib/pipelines';
 import { Construct } from 'constructs';
 import dotenv from 'dotenv';
-import * as aws_iam from 'aws-cdk-lib/aws-iam';
 
 import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
@@ -18,9 +17,6 @@ dotenv.config();
 
 export class APIStage extends Stage {
   public readonly url: CfnOutput;
-  public readonly RsDatabase: CfnOutput;
-  public readonly RsClusterIdentifier: CfnOutput;
-  public readonly RedshiftCredSecretArn: CfnOutput;
   constructor(
     scope: Construct,
     id: string,
@@ -35,7 +31,7 @@ export class APIStage extends Stage {
     super(scope, id, props);
     const { provisionedConcurrency, internalApiKey, chatbotSNSArn, stage, env, envVars } = props;
 
-    const { url, RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn } = new APIStack(this, `${SERVICE_NAME}API`, {
+    const { url } = new APIStack(this, `${SERVICE_NAME}API`, {
       env,
       provisionedConcurrency,
       internalApiKey,
@@ -44,9 +40,6 @@ export class APIStage extends Stage {
       envVars,
     });
     this.url = url;
-    this.RsDatabase = RsDatabase;
-    this.RsClusterIdentifier = RsClusterIdentifier;
-    this.RedshiftCredSecretArn = RedshiftCredSecretArn;
   }
 }
 
@@ -203,9 +196,6 @@ export class APIPipeline extends Stack {
       input: sourceArtifact,
       envFromCfnOutputs: {
         UNISWAP_API: apiStage.url,
-        REDSHIFT_DATABASE: apiStage.RsDatabase,
-        REDSHIFT_CLUSTER_IDENTIFIER: apiStage.RsClusterIdentifier,
-        REDSHIFT_SECRET_ARN: apiStage.RedshiftCredSecretArn,
       },
       buildEnvironment: {
         buildImage: cdk.aws_codebuild.LinuxBuildImage.STANDARD_7_0,
@@ -237,36 +227,10 @@ export class APIPipeline extends Stack {
           },
         },
       },
-      rolePolicyStatements: [
-        new aws_iam.PolicyStatement({
-          effect: aws_iam.Effect.ALLOW,
-          actions: ['redshift-data:*'],
-          resources: ['*'],
-        }),
-        new aws_iam.PolicyStatement({
-          effect: aws_iam.Effect.ALLOW,
-          actions: [
-            'secretsmanager:GetSecretValue',
-            'secretsmanager:DescribeSecret'
-          ],
-          resources: ['*'],
-        }),
-        new aws_iam.PolicyStatement({
-          effect: aws_iam.Effect.ALLOW,
-          actions: [
-            'kms:Decrypt',
-            'kms:DescribeKey'
-          ],
-          resources: ['*'],
-        }),
-      ],
       commands: [
         'git config --global url."https://${GH_TOKEN}@github.com/".insteadOf ssh://git@github.com/',
         'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc',
         'echo "UNISWAP_API=${UNISWAP_API}" > .env',
-        'echo "REDSHIFT_DATABASE=${REDSHIFT_DATABASE}" >> .env',
-        'echo "REDSHIFT_CLUSTER_IDENTIFIER=${REDSHIFT_CLUSTER_IDENTIFIER}" >> .env',
-        'echo "REDSHIFT_SECRET_ARN=${REDSHIFT_SECRET_ARN}" >> .env',
         'yarn install --frozen-lockfile --network-concurrency 1',
         'yarn build',
         'yarn test:integ',
