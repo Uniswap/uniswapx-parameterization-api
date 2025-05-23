@@ -80,6 +80,27 @@ export class CronStack extends cdk.NestedStack {
           ...envVars,
         },
       });
+
+      // Add Sev3 alarm for FadeRateV2Cron lambda errors
+      const fadeRateV2CronErrors = this.fadeRateV2CronLambda.metricErrors({
+        period: cdk.Duration.minutes(5),
+        statistic: cdk.aws_cloudwatch.Stats.SUM,
+        label: 'FadeRateV2Cron Errors',
+      });
+
+      const fadeRateV2CronSev3 = new cdk.aws_cloudwatch.Alarm(this, 'FadeRateV2Cron-SEV3-Errors', {
+        metric: fadeRateV2CronErrors,
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
+        actionsEnabled: true,
+      });
+
+      if (chatbotTopic) {
+        fadeRateV2CronSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotTopic));
+      }
+
       new aws_events.Rule(this, `FadeRateV2CronSchedule`, {
         schedule: aws_events.Schedule.rate(Duration.minutes(10)),
         targets: [new aws_events_targets.LambdaFunction(this.fadeRateV2CronLambda)],
