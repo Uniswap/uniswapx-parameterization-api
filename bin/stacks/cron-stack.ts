@@ -51,7 +51,7 @@ export class CronStack extends cdk.NestedStack {
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
-    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, stage, envVars } = props;
+    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, stage, envVars, chatbotSNSArn } = props;
 
     new s3.Bucket(this, 'FadeRateS3', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -59,7 +59,11 @@ export class CronStack extends cdk.NestedStack {
       bucketName: `${FADE_RATE_BUCKET}-${stage}-1`,
     });
 
-    let chatbotTopic: ITopic | undefined;
+    let chatbotTopic: cdk.aws_sns.ITopic | undefined = undefined;
+    if (chatbotSNSArn) {
+      chatbotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
+    }
+
     if (stage == STAGE.PROD || STAGE.LOCAL) {
       this.fadeRateV2CronLambda = new aws_lambda_nodejs.NodejsFunction(this, `FadeRateV2Cron`, {
         role: lambdaRole,
