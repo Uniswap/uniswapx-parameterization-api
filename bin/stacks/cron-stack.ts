@@ -51,7 +51,7 @@ export class CronStack extends cdk.NestedStack {
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
-    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, stage, envVars } = props;
+    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, stage, envVars, chatbotSNSArn } = props;
 
     new s3.Bucket(this, 'FadeRateS3', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -59,7 +59,10 @@ export class CronStack extends cdk.NestedStack {
       bucketName: `${FADE_RATE_BUCKET}-${stage}-1`,
     });
 
-    let chatbotTopic: ITopic | undefined;
+    const chatbotTopic = chatbotSNSArn 
+      ? cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn)
+      : undefined;
+
     if (stage == STAGE.PROD || STAGE.LOCAL) {
       this.fadeRateV2CronLambda = new aws_lambda_nodejs.NodejsFunction(this, `FadeRateV2Cron`, {
         role: lambdaRole,
@@ -80,6 +83,27 @@ export class CronStack extends cdk.NestedStack {
           ...envVars,
         },
       });
+
+      // Add Sev3 alarm for FadeRateV2Cron lambda errors
+      const fadeRateV2CronErrors = this.fadeRateV2CronLambda.metricErrors({
+        period: cdk.Duration.minutes(5),
+        statistic: cdk.aws_cloudwatch.Stats.SUM,
+        label: 'FadeRateV2Cron Errors',
+      });
+
+      const fadeRateV2CronSev3 = new cdk.aws_cloudwatch.Alarm(this, 'FadeRateV2Cron-SEV3-Errors', {
+        metric: fadeRateV2CronErrors,
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
+        actionsEnabled: true,
+      });
+
+      if (chatbotTopic) {
+        fadeRateV2CronSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotTopic));
+      }
+
       new aws_events.Rule(this, `FadeRateV2CronSchedule`, {
         schedule: aws_events.Schedule.rate(Duration.minutes(10)),
         targets: [new aws_events_targets.LambdaFunction(this.fadeRateV2CronLambda)],
