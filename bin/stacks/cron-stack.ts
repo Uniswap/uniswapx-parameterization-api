@@ -59,10 +59,9 @@ export class CronStack extends cdk.NestedStack {
       bucketName: `${FADE_RATE_BUCKET}-${stage}-1`,
     });
 
-    let chatbotTopic: cdk.aws_sns.ITopic | undefined = undefined;
-    if (chatbotSNSArn) {
-      chatbotTopic = cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn);
-    }
+    const chatbotTopic = chatbotSNSArn 
+      ? cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn)
+      : undefined;
 
     if (stage == STAGE.PROD || STAGE.LOCAL) {
       this.fadeRateV2CronLambda = new aws_lambda_nodejs.NodejsFunction(this, `FadeRateV2Cron`, {
