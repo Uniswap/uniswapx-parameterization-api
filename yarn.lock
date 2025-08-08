@@ -25,10 +25,10 @@
   resolved "https://registry.yarnpkg.com/@aws-cdk/asset-node-proxy-agent-v6/-/asset-node-proxy-agent-v6-2.1.0.tgz#6d3c7860354d4856a7e75375f2f0ecab313b4989"
   integrity sha512-7bY3J8GCVxLupn/kNmpPc5VJz8grx+4RKfnnJiO1LG+uxkZfANZG3RMHhE+qQxxwkyQ9/MfPtTpf748UhR425A==
 
-"@aws-cdk/aws-redshift-alpha@^2.102.0-alpha.0":
-  version "2.102.0-alpha.0"
-  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-redshift-alpha/-/aws-redshift-alpha-2.102.0-alpha.0.tgz#3962d822af035f744ea6542e837885bdb0b8d2f5"
-  integrity sha512-c//Urh12CubueJr/XLfikrUSDaFQGqRfOTZEUdnHy6uWUv47EEhDOo13ogYfTvPaKizhUaOFMf+FJTeoh2lAcA==
+"@aws-cdk/aws-redshift-alpha@^2.200.1-alpha.0":
+  version "2.200.1-alpha.0"
+  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-redshift-alpha/-/aws-redshift-alpha-2.200.1-alpha.0.tgz#e664cb2100887501b5d7256baf60a259e21c1d63"
+  integrity sha512-GBPumtUpS1XT0cLG6O74c8TclZBG3SLvcnDBuVN/T16g/wX3gLMyUsZaibvMwFV9+3Djgb2s/oLFVUUXcTlNpw==
 
 "@aws-cdk/cloud-assembly-schema@^44.1.0":
   version "44.9.0"
