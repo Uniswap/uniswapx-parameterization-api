@@ -341,47 +341,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const unimindResponseTable = new aws_rs.Table(this, 'UnimindResponseTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'UnimindResponses',
-      tableColumns: [
-        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'pi', dataType: 'float8' },
-        { name: 'tau', dataType: 'float8' },
-        { name: 'batchNumber', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'algorithmVersion', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'pair', dataType: 'varchar(100)' },
-        { name: 'swapper', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'priceImpact', dataType: 'float8' },
-        { name: 'referencePrice', dataType: 'float8' },
-        { name: 'route', dataType: 'text' },
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
-      ],
-    });
-
-    const unimindParameterUpdateTable = new aws_rs.Table(this, 'UnimindParameterUpdateTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'UnimindParameterUpdates',
-      tableColumns: [
-        { name: 'pair', dataType: 'varchar(100)' },
-        { name: 'updateType', dataType: 'varchar(50)' },
-        { name: 'previousIntrinsicValues', dataType: 'text' },
-        { name: 'newIntrinsicValues', dataType: 'text' },
-        { name: 'orderCount', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'totalCount', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'batchNumber', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'algorithmVersion', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'updateThreshold', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
-      ],
-    });
-
     /* Kinesis Firehose Initialization */
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
@@ -887,22 +846,12 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    // S3-only streams for Unimind events (no Redshift needed)
     const unimindResponseStream = new aws_firehose.CfnDeliveryStream(this, 'UnimindResponseStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: unimindResponseBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
+      extendedS3DestinationConfiguration: {
+        bucketArn: unimindResponseBucket.bucketArn,
         roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: unimindResponseTable.tableName,
-          dataTableColumns: unimindResponseTable.tableColumns.map((column) => column.name).toString(),
-        },
+        compressionFormat: 'UNCOMPRESSED',
         processingConfiguration: {
           enabled: true,
           processors: [
@@ -921,21 +870,10 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     const unimindParameterUpdateStream = new aws_firehose.CfnDeliveryStream(this, 'UnimindParameterUpdateStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: unimindParameterUpdateBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
+      extendedS3DestinationConfiguration: {
+        bucketArn: unimindParameterUpdateBucket.bucketArn,
         roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: unimindParameterUpdateTable.tableName,
-          dataTableColumns: unimindParameterUpdateTable.tableColumns.map((column) => column.name).toString(),
-        },
+        compressionFormat: 'UNCOMPRESSED',
         processingConfiguration: {
           enabled: true,
           processors: [
