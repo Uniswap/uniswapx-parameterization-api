@@ -1202,7 +1202,8 @@ export class AnalyticsStack extends cdk.NestedStack {
       });
     }
 
-    if (props.envVars['UNIMIND_LOG_SENDER_ACCOUNT']) {
+    // Use ORDER_LOG_SENDER_ACCOUNT since uniswapx-service is in the same account as order-service
+    if (props.envVars['ORDER_LOG_SENDER_ACCOUNT']) {
       unimindResponseDestination.destinationPolicy = JSON.stringify({
         Version: '2012-10-17',
         Statement: [
@@ -1210,7 +1211,7 @@ export class AnalyticsStack extends cdk.NestedStack {
             Sid: '',
             Effect: 'Allow',
             Principal: {
-              AWS: props.envVars['UNIMIND_LOG_SENDER_ACCOUNT'],
+              AWS: props.envVars['ORDER_LOG_SENDER_ACCOUNT'],
             },
             Action: 'logs:PutSubscriptionFilter',
             Resource: '*',
@@ -1224,7 +1225,7 @@ export class AnalyticsStack extends cdk.NestedStack {
             Sid: '',
             Effect: 'Allow',
             Principal: {
-              AWS: props.envVars['UNIMIND_LOG_SENDER_ACCOUNT'],
+              AWS: props.envVars['ORDER_LOG_SENDER_ACCOUNT'],
             },
             Action: 'logs:PutSubscriptionFilter',
             Resource: '*',
@@ -1286,9 +1287,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
     new CfnOutput(this, 'BOT_ACCOUNT', {
       value: props.envVars['BOT_ACCOUNT'],
-    });
-    new CfnOutput(this, 'UNIMIND_LOG_SENDER_ACCOUNT', {
-      value: props.envVars['UNIMIND_LOG_SENDER_ACCOUNT'],
     });
   }
 }
