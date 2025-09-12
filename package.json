@@ -31,7 +31,7 @@
     "@types/chai-as-promised": "^7.1.5",
     "@types/chai-subset": "^1.3.3",
     "@types/jest": "^29.2.0",
-    "@types/node": "^18.17.1",
+    "@types/node": "^20.14.8",
     "@types/qs": "^6.9.7",
     "@types/uuid": "^9.0.0",
     "@typescript-eslint/eslint-plugin": "^5.40.1",
@@ -68,11 +68,11 @@
     "@uniswap/router-sdk": "^1.4.0",
     "@uniswap/sdk-core": "^3.1.0",
     "@uniswap/signer": "0.0.3-beta.4",
-    "@uniswap/smart-order-router": "^3.3.0",
+    "@uniswap/smart-order-router": "^4.22.20",
     "@uniswap/token-lists": "^1.0.0-beta.31",
     "@uniswap/uniswapx-sdk": "3.0.0-beta.9",
     "@uniswap/v3-sdk": "^3.9.0",
-    "aws-cdk-lib": "^2.210.0",
+    "aws-cdk-lib": "^2.214.0",
     "aws-embedded-metrics": "^4.1.0",
     "aws-sdk": "^2.1542.0",
     "axios": "^1.2.1",
@@ -97,5 +97,8 @@
     "semi": true,
     "singleQuote": true,
     "organizeImportsSkipDestructiveCodeActions": true
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

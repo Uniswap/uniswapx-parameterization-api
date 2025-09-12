@@ -27,6 +27,10 @@ export const HardQuoteMetricDimension = {
 
 export class AWSMetricsLogger implements IMetric {
   constructor(private awsMetricLogger: AWSEmbeddedMetricsLogger) {}
+  
+  public setProperty(key: string, value: unknown): void {
+    this.awsMetricLogger.setProperty(key, value);
+  }
 
   public putDimensions(dimensions: Record<string, string>): void {
     this.awsMetricLogger.putDimensions(dimensions);

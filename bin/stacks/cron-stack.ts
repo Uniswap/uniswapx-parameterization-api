@@ -66,7 +66,7 @@ export class CronStack extends cdk.NestedStack {
     if (stage == STAGE.PROD || STAGE.LOCAL) {
       this.fadeRateV2CronLambda = new aws_lambda_nodejs.NodejsFunction(this, `FadeRateV2Cron`, {
         role: lambdaRole,
-        runtime: aws_lambda.Runtime.NODEJS_18_X,
+        runtime: aws_lambda.Runtime.NODEJS_20_X,
         entry: path.join(__dirname, '../../lib/cron/fade-rate-v2.ts'),
         handler: 'handler',
         timeout: Duration.seconds(240),
@@ -126,7 +126,7 @@ export class CronStack extends cdk.NestedStack {
 
     this.synthSwitchCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}SynthSwitch`, {
       role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/cron/synth-switch.ts'),
       handler: 'handler',
       timeout: Duration.minutes(10), // should be more than enough
@@ -151,7 +151,7 @@ export class CronStack extends cdk.NestedStack {
 
     this.redshiftReaperCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}Reaper`, {
       role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/cron/redshift-reaper.ts'),
       handler: 'handler',
       timeout: Duration.seconds(600), // deletion of large number of rows can take a while
