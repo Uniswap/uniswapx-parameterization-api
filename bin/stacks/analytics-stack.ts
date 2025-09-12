@@ -355,7 +355,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     botOrderBroadcasterBucket.grantReadWrite(firehoseRole);
 
     const botOrderEventsProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'BotOrderEventsProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'botOrderEventsProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
@@ -374,7 +374,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     const quoteProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'quoteProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
@@ -393,7 +393,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     const postOrderProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'postedOrderProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'postOrderProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
@@ -412,7 +412,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     const fillEventProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'FillLogProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'fillEventProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
@@ -431,7 +431,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     const activeOrderProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'ActiveOrderProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'activeOrderEventProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher

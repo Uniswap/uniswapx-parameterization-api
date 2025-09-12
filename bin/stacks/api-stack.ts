@@ -244,7 +244,7 @@ export class APIStack extends cdk.Stack {
 
     const quoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Quote', {
       role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/handlers/quote/exports.ts'),
       handler: 'quoteHandler',
       vpc,
@@ -274,7 +274,7 @@ export class APIStack extends cdk.Stack {
 
     const hardQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'HardQuote', {
       role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/handlers/hard-quote/exports.ts'),
       handler: 'hardQuoteHandler',
       vpc,
@@ -306,7 +306,7 @@ export class APIStack extends cdk.Stack {
 
     const switchLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Switch', {
       role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/handlers/synth-switch/exports.ts'),
       handler: 'switchHandler',
       memorySize: 512,
