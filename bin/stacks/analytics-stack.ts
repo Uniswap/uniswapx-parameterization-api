@@ -77,6 +77,8 @@ export class AnalyticsStack extends cdk.NestedStack {
     const botOrderLoaderBucket = new aws_s3.Bucket(this, 'BotOrderLoaderBucket');
     const botOrderRouterBucket = new aws_s3.Bucket(this, 'BotOrderRouterBucket');
     const botOrderBroadcasterBucket = new aws_s3.Bucket(this, 'BotOrderBroadcasterBucket');
+    const unimindResponseBucket = new aws_s3.Bucket(this, 'UnimindResponseBucket');
+    const unimindParameterUpdateBucket = new aws_s3.Bucket(this, 'UnimindParameterUpdateBucket');
 
     const dsRole = aws_iam.Role.fromRoleArn(this, 'DsRole', 'arn:aws:iam::867401673276:user/bq-load-sa');
     rfqRequestBucket.grantRead(dsRole);
@@ -91,6 +93,8 @@ export class AnalyticsStack extends cdk.NestedStack {
     botOrderLoaderBucket.grantRead(dsRole);
     botOrderRouterBucket.grantRead(dsRole);
     botOrderBroadcasterBucket.grantRead(dsRole);
+    unimindResponseBucket.grantRead(dsRole);
+    unimindParameterUpdateBucket.grantRead(dsRole);
 
     /* Redshift Initialization */
     const rsRole = new aws_iam.Role(this, 'RedshiftRole', {
@@ -353,6 +357,8 @@ export class AnalyticsStack extends cdk.NestedStack {
     botOrderLoaderBucket.grantReadWrite(firehoseRole);
     botOrderRouterBucket.grantReadWrite(firehoseRole);
     botOrderBroadcasterBucket.grantReadWrite(firehoseRole);
+    unimindResponseBucket.grantReadWrite(firehoseRole);
+    unimindParameterUpdateBucket.grantReadWrite(firehoseRole);
 
     const botOrderEventsProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'BotOrderEventsProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_20_X,
@@ -449,6 +455,44 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    const unimindResponseProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'UnimindResponseProcessor', {
+      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'unimindResponseProcessor',
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 512,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+        ANALYTICS_STREAM_ARN: analyticsStreamArn,
+        ...props.envVars,
+        stage,
+      },
+    });
+
+    const unimindParameterUpdateProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'UnimindParameterUpdateProcessor', {
+      runtime: aws_lambda.Runtime.NODEJS_18_X,
+      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+      handler: 'unimindParameterUpdateProcessor',
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 512,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+      },
+      environment: {
+        VERSION: '2',
+        NODE_OPTIONS: '--enable-source-maps',
+        ANALYTICS_STREAM_ARN: analyticsStreamArn,
+        ...props.envVars,
+        stage,
+      },
+    });
+
     firehoseRole.addToPolicy(
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
@@ -459,6 +503,8 @@ export class AnalyticsStack extends cdk.NestedStack {
           postOrderProcessorLambda.functionArn,
           botOrderEventsProcessorLambda.functionArn,
           activeOrderProcessorLambda.functionArn,
+          unimindResponseProcessorLambda.functionArn,
+          unimindParameterUpdateProcessorLambda.functionArn,
         ],
       })
     );
@@ -474,6 +520,8 @@ export class AnalyticsStack extends cdk.NestedStack {
       postOrderProcessorLambda,
       botOrderEventsProcessorLambda,
       activeOrderProcessorLambda,
+      unimindResponseProcessorLambda,
+      unimindParameterUpdateProcessorLambda,
     ].forEach((lambda) => {
       const successRateSev2Name = `${lambda.node.id}-SEV2-SuccessRate`;
       const successRateSev3Name = `${lambda.node.id}-SEV3-SuccessRate`;
@@ -798,6 +846,51 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
+    // S3-only streams for Unimind events (no Redshift needed)
+    const unimindResponseStream = new aws_firehose.CfnDeliveryStream(this, 'UnimindResponseStream', {
+      extendedS3DestinationConfiguration: {
+        bucketArn: unimindResponseBucket.bucketArn,
+        roleArn: firehoseRole.roleArn,
+        compressionFormat: 'UNCOMPRESSED',
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: unimindResponseProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const unimindParameterUpdateStream = new aws_firehose.CfnDeliveryStream(this, 'UnimindParameterUpdateStream', {
+      extendedS3DestinationConfiguration: {
+        bucketArn: unimindParameterUpdateBucket.bucketArn,
+        roleArn: firehoseRole.roleArn,
+        compressionFormat: 'UNCOMPRESSED',
+        processingConfiguration: {
+          enabled: true,
+          processors: [
+            {
+              type: 'Lambda',
+              parameters: [
+                {
+                  parameterName: 'LambdaArn',
+                  parameterValue: unimindParameterUpdateProcessorLambda.functionArn,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
     /* Firehose Alarms */
     const allStreams = [
       uraRequestStream,
@@ -809,6 +902,8 @@ export class AnalyticsStack extends cdk.NestedStack {
       fillStream,
       orderStream,
       activeOrderStream,
+      unimindResponseStream,
+      unimindParameterUpdateStream,
     ];
 
     allStreams.forEach((stream) => {
@@ -952,6 +1047,18 @@ export class AnalyticsStack extends cdk.NestedStack {
       destinationName: 'uraResponseDestination',
     });
 
+    const unimindResponseDestination = new aws_logs.CfnDestination(this, 'UnimindResponseDestination', {
+      roleArn: subscriptionRole.roleArn,
+      targetArn: unimindResponseStream.attrArn,
+      destinationName: 'unimindResponseDestination',
+    });
+
+    const unimindParameterUpdateDestination = new aws_logs.CfnDestination(this, 'UnimindParameterUpdateDestination', {
+      roleArn: subscriptionRole.roleArn,
+      targetArn: unimindParameterUpdateStream.attrArn,
+      destinationName: 'unimindParameterUpdateDestination',
+    });
+
     // hack to get around with CDK bug where `new aws_iam.PolicyDocument({...}).string()` doesn't really turn it into a string
     // enclosed in if statement to allow deploying stack w/o having to set up x-account logging
     if (props.envVars['FILL_LOG_SENDER_ACCOUNT']) {
@@ -1033,6 +1140,38 @@ export class AnalyticsStack extends cdk.NestedStack {
       });
     }
 
+    // Use ORDER_LOG_SENDER_ACCOUNT since uniswapx-service is in the same account as order-service
+    if (props.envVars['ORDER_LOG_SENDER_ACCOUNT']) {
+      unimindResponseDestination.destinationPolicy = JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Sid: '',
+            Effect: 'Allow',
+            Principal: {
+              AWS: props.envVars['ORDER_LOG_SENDER_ACCOUNT'],
+            },
+            Action: 'logs:PutSubscriptionFilter',
+            Resource: '*',
+          },
+        ],
+      });
+      unimindParameterUpdateDestination.destinationPolicy = JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Sid: '',
+            Effect: 'Allow',
+            Principal: {
+              AWS: props.envVars['ORDER_LOG_SENDER_ACCOUNT'],
+            },
+            Action: 'logs:PutSubscriptionFilter',
+            Resource: '*',
+          },
+        ],
+      });
+    }
+
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
     // same here regarding CDK not having a stable implementation of this resource
     new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
@@ -1074,6 +1213,12 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
     new CfnOutput(this, 'uraResponseDestinationName', {
       value: uraResponseDestination.attrArn,
+    });
+    new CfnOutput(this, 'unimindResponseDestinationName', {
+      value: unimindResponseDestination.attrArn,
+    });
+    new CfnOutput(this, 'unimindParameterUpdateDestinationName', {
+      value: unimindParameterUpdateDestination.attrArn,
     });
     new CfnOutput(this, 'UraAccount', {
       value: props.envVars['URA_ACCOUNT'],
