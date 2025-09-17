@@ -227,6 +227,16 @@ export class APIPipeline extends Stack {
           },
         },
       },
+      rolePolicyStatements: [
+        new cdk.aws_iam.PolicyStatement({
+          effect: cdk.aws_iam.Effect.ALLOW,
+          actions: [
+            'kms:Decrypt',
+            'kms:DescribeKey'
+          ],
+          resources: ['*'],
+        }),
+      ],
       commands: [
         'git config --global url."https://${GH_TOKEN}@github.com/".insteadOf ssh://git@github.com/',
         'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc',
