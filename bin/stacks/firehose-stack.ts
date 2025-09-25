@@ -41,5 +41,29 @@ export class FirehoseStack extends cdk.NestedStack {
       } 
     });
     this.analyticsStreamArn = analyticsEventsStream.attrArn;
+
+    // Role for CloudWatch in Order Service to deliver subscription-filter traffic to this Firehose stream
+    const logsToFirehoseRole = new aws_iam.Role(this, 'LogsToFirehoseRole', {
+      assumedBy: new aws_iam.ServicePrincipal('logs.us-east-2.amazonaws.com', {
+        conditions: {
+          StringEquals: {
+            'aws:SourceAccount': ['321377678687', '316116520258'], // Order Service Beta, Prod
+          },
+          ArnLike: {
+            'aws:SourceArn': [
+              'arn:aws:logs:us-east-2:321377678687:log-group:/aws/lambda/GoudaService*', // Beta
+              'arn:aws:logs:us-east-2:316116520258:log-group:/aws/lambda/GoudaService*', // Prod
+            ],
+          },
+        },
+      }),
+      description: 'Assumed by CloudWatch in Order Service beta/prod to write to Firehose',
+    });
+    logsToFirehoseRole.addToPolicy(new aws_iam.PolicyStatement({
+      actions: ['firehose:PutRecord', 'firehose:PutRecordBatch', 'firehose:DescribeDeliveryStream'],
+      resources: [analyticsEventsStream.attrArn],
+    }));
+
+    new cdk.CfnOutput(this, 'LogsToFirehoseRoleArn', { value: logsToFirehoseRole.roleArn });
   }
 }
