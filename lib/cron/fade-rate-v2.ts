@@ -136,7 +136,7 @@ export function calculateNewTimestamps(
     const isCurrentlyBlocked = fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp;
 
     if (isCurrentlyBlocked && fades) {
-      // CRITICAL FIX: Stack penalties while blocked!
+      // Stack penalties while blocked
       // Extend the block from current blockUntil, not from now
       const extendedBlockUntil = calculateBlockUntilTimestamp(
         fillerTimestamp.blockUntilTimestamp, // Extend from when current block ends
@@ -144,7 +144,7 @@ export function calculateNewTimestamps(
         fades
       );
       const consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp.consecutiveBlocks);
-      
+
       log?.info(
         { hash, currentBlockUntil: fillerTimestamp.blockUntilTimestamp, extendedBlockUntil, fades },
         'Extending block for filler who faded while blocked'
