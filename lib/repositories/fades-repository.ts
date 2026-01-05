@@ -171,9 +171,9 @@ WITH latestOrdersV2 AS (
   SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype = 'Dutch_V2'
   )
-  WHERE row_num <= 20
+  WHERE row_num <= 50
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
-  LIMIT 1000
+  LIMIT 5000
 )
 SELECT
     latestOrdersV2.chainid as chainId, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
@@ -189,10 +189,10 @@ AND latestOrdersV2.quoteId IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND chainId NOT IN (5,8001,420,421613) -- exclude mainnet goerli, polygon goerli, optimism goerli and arbitrum goerli testnets 
 AND
-    deadline >= extract(epoch from (GETDATE() - INTERVAL '20 MINUTE')) -- 20-minute rolling window based on order completion time
+    deadline >= extract(epoch from (GETDATE() - INTERVAL '1 HOUR')) -- 1-hour rolling window based on order completion time
 )
 ORDER BY rfqFiller, deadline DESC
-LIMIT 1000 
+LIMIT 5000 
 `;
 
 const V2_FADE_RATE_SQL = `
@@ -209,5 +209,5 @@ FROM latestRfqsV2
 WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
 AND LOWER(tokenOut) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
 ORDER BY rfqFiller, deadline DESC
-LIMIT 1000
+LIMIT 5000
 `;
