@@ -4,6 +4,9 @@ import Logger from 'bunyan';
 import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { BaseRedshiftRepository, SharedConfigs } from './base';
 
+// Number of recent orders to evaluate per filler for fade rate calculation
+export const ORDERS_PER_FILLER_LIMIT = 50;
+
 export type FadesRowType = {
   fillerAddress: string;
   totalQuotes: number;
@@ -171,7 +174,7 @@ WITH latestOrdersV2 AS (
   SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype = 'Dutch_V2'
   )
-  WHERE row_num <= 50
+  WHERE row_num <= ${ORDERS_PER_FILLER_LIMIT}
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
   LIMIT 5000
 )
