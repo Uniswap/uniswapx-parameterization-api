@@ -114,9 +114,12 @@ function newConsecutiveBlocks(consecutiveBlocks?: number): number {
 }
 
 /* compute blockUntil timestamp for each filler
-  blockedUntilTimestamp > current timestamp: skip
-  lastPostTimestamp < blockedUntilTimestamp < current timestamp: block for # * unit block time from now
-  increment consecutive blocks afterwards
+  If currently blocked:
+    - With new fades: EXTEND the block from current blockUntil and increment consecutiveBlocks
+    - Without new fades: keep existing block (don't decay while blocked)
+  If not blocked:
+    - With new fades: calculate new block, increment consecutiveBlocks
+    - Without new fades: decay consecutiveBlocks by 1
 */
 export function calculateNewTimestamps(
   fillerTimestamps: FillerTimestamps,
@@ -130,7 +133,36 @@ export function calculateNewTimestamps(
     const hash = row[0];
     const fades = row[1];
     const fillerTimestamp = fillerTimestamps.get(hash);
-    if (fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp) {
+    const isCurrentlyBlocked = fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp;
+
+    if (isCurrentlyBlocked && fades) {
+      // Stack penalties while blocked
+      // Extend the block from current blockUntil, not from now
+      const extendedBlockUntil = calculateBlockUntilTimestamp(
+        fillerTimestamp.blockUntilTimestamp, // Extend from when current block ends
+        fillerTimestamp.consecutiveBlocks,
+        fades
+      );
+      const consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp.consecutiveBlocks);
+
+      log?.info(
+        { hash, currentBlockUntil: fillerTimestamp.blockUntilTimestamp, extendedBlockUntil, fades },
+        'Extending block for filler who faded while blocked'
+      );
+      metrics?.putMetric(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, hash),
+        consecutiveBlocks,
+        Unit.Count
+      );
+
+      updatedTimestamps.push({
+        hash,
+        lastPostTimestamp: newPostTimestamp,
+        blockUntilTimestamp: extendedBlockUntil,
+        consecutiveBlocks,
+      });
+    } else if (isCurrentlyBlocked) {
+      // Blocked but no new fades - keep existing block, don't decay
       updatedTimestamps.push({
         hash,
         lastPostTimestamp: newPostTimestamp,
@@ -157,12 +189,14 @@ export function calculateNewTimestamps(
         consecutiveBlocks: consecutiveBlocks,
       });
     } else {
-      // no new fades, reset consecutive blocks
+      // no new fades, decay consecutive blocks gradually instead of resetting
+      // This prevents gaming by alternating fade/clean cycles
+      const decayedBlocks = Math.max(0, (fillerTimestamp?.consecutiveBlocks || 0) - 1);
       updatedTimestamps.push({
         hash,
         lastPostTimestamp: newPostTimestamp,
         blockUntilTimestamp: newPostTimestamp,
-        consecutiveBlocks: 0,
+        consecutiveBlocks: decayedBlocks,
       });
     }
   });
@@ -172,9 +206,13 @@ export function calculateNewTimestamps(
 
 /* find the number of new fades, for each filler entity, from 
    the last time this cron is run
-   @param rows: info about individual orders: filler address, faded or not, post timestamp
-   @param fillerTimestamps: last post timestamp and block until timestamp for each filler
+   @param rows: info about individual orders: filler address, faded or not, deadline (completion time)
+   @param fillerTimestamps: last checked timestamp and block until timestamp for each filler
    @param addressToFillerMap: map of address to filler hash
+   
+   NOTE: We use `deadline` (order completion time) instead of `postTimestamp` to determine
+   "new" orders. This ensures orders that were posted before the last cron run but completed
+   after are still counted, preventing the "in-flight orders" exploit.
 */
 export function getFillersNewFades(
   rows: V2FadesRowType[],
@@ -197,7 +235,9 @@ export function getFillersNewFades(
     if (!fillerHash) {
       log?.info({ fillerAddr }, 'filler address not found dynamo mapping');
     } else if (
-      (fillerTimestamps.has(fillerHash) && row.postTimestamp > fillerTimestamps.get(fillerHash)!.lastPostTimestamp) ||
+      // Use deadline (completion time) instead of postTimestamp to catch orders
+      // that were posted before lastPostTimestamp but completed after
+      (fillerTimestamps.has(fillerHash) && row.deadline > fillerTimestamps.get(fillerHash)!.lastPostTimestamp) ||
       !fillerTimestamps.has(fillerHash)
     ) {
       if (!newFadesMap[fillerHash]) {

@@ -1,8 +1,11 @@
 import { GetStatementResultCommand, RedshiftDataClient } from '@aws-sdk/client-redshift-data';
 import Logger from 'bunyan';
 
-import { BaseRedshiftRepository, SharedConfigs } from './base';
 import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
+import { BaseRedshiftRepository, SharedConfigs } from './base';
+
+// Number of recent orders to evaluate per filler for fade rate calculation
+export const ORDERS_PER_FILLER_LIMIT = 50;
 
 export type FadesRowType = {
   fillerAddress: string;
@@ -14,6 +17,7 @@ export type V2FadesRowType = {
   fillerAddress: string;
   faded: number;
   postTimestamp: number;
+  deadline: number; // When the order outcome was finalized
 };
 
 export class FadesRepository extends BaseRedshiftRepository {
@@ -87,10 +91,10 @@ export class V2FadesRepository extends BaseRedshiftRepository {
     const stmtId = await this.executeStatement(V2_FADE_RATE_SQL, V2FadesRepository.log, { waitTimeMs: 2_000 });
     const response = await this.client.send(new GetStatementResultCommand({ Id: stmtId }));
     /* result should be in the following format
-        | rfqFiller    |     faded  |   postTimestamp  |
-        |---- bar ------|---- 0 ----|---- 12222222 ----|
-        |---- foo ------|---- 1 ----|---- 12345679 ----|
-        |---- foo ------|---- 0 ----|---- 12345678 ----|
+        | rfqFiller    |   postTimestamp  |   deadline   |   faded  |
+        |---- bar ------|---- 12222222 ---|--- 12222282 -|---- 0 ---|
+        |---- foo ------|---- 12345679 ---|--- 12345739 -|---- 1 ---|
+        |---- foo ------|---- 12345678 ---|--- 12345738 -|---- 0 ---|
       */
     const result = response.Records;
     if (!result) {
@@ -102,7 +106,8 @@ export class V2FadesRepository extends BaseRedshiftRepository {
         // the ordering of the fields has to match that in the sql query
         fillerAddress: row[0].stringValue as string,
         postTimestamp: parseInt(row[1].stringValue as string),
-        faded: Number(row[2].longValue as number),
+        deadline: parseInt(row[2].stringValue as string),
+        faded: Number(row[3].longValue as number),
       };
       return formattedRow;
     });
@@ -169,12 +174,12 @@ WITH latestOrdersV2 AS (
   SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype = 'Dutch_V2'
   )
-  WHERE row_num <= 20
+  WHERE row_num <= ${ORDERS_PER_FILLER_LIMIT}
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
-  LIMIT 1000
+  LIMIT 5000
 )
 SELECT
-    latestOrdersV2.chainid as chainId, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
+    latestOrdersV2.chainid as chainId, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
     CASE
       WHEN latestOrdersV2.inputstartamount = latestOrdersV2.inputendamount THEN 'EXACT_INPUT'
       ELSE 'EXACT_OUTPUT'
@@ -187,20 +192,25 @@ AND latestOrdersV2.quoteId IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND chainId NOT IN (5,8001,420,421613) -- exclude mainnet goerli, polygon goerli, optimism goerli and arbitrum goerli testnets 
 AND
-    postTimestamp >= extract(epoch from (GETDATE() - INTERVAL '20 MINUTE')) -- 20-minute rolling window
+    deadline >= extract(epoch from (GETDATE() - INTERVAL '1 HOUR')) -- 1-hour rolling window based on order completion time
 )
-ORDER BY rfqFiller, postTimestamp DESC
-LIMIT 1000 
+ORDER BY rfqFiller, deadline DESC
+LIMIT 5000 
 `;
 
 const V2_FADE_RATE_SQL = `
 SELECT 
     rfqFiller,
     postTimestamp,
-    CASE WHEN (decayStartTime < fillTimestamp) THEN 1 ELSE 0 END AS faded
+    deadline,
+    CASE 
+      WHEN fillTimestamp IS NULL THEN 1
+      WHEN decayStartTime < fillTimestamp THEN 1
+      ELSE 0 
+    END AS faded
 FROM latestRfqsV2
-WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map(token => `'${token.address.toLowerCase()}'`).join(',')})
-AND LOWER(tokenOut) NOT IN (${PERMISSIONED_TOKENS.map(token => `'${token.address.toLowerCase()}'`).join(',')})
-ORDER BY rfqFiller, postTimestamp DESC
-LIMIT 1000
+WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
+AND LOWER(tokenOut) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
+ORDER BY rfqFiller, deadline DESC
+LIMIT 5000
 `;
