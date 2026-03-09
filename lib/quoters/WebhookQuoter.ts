@@ -123,7 +123,6 @@ export class WebhookQuoter implements Quoter {
       requestId: cleanRequest.requestId,
       quoteId: cleanRequest.quoteId,
       name: name,
-      algo_id: name,
       endpoint: endpoint,
       requestTime: timestampInMstoISOString(before),
       timeoutSettingMs: axiosConfig.timeout,
@@ -151,6 +150,7 @@ export class WebhookQuoter implements Quoter {
         data: hookResponse.data,
         responseTime: timestampInMstoISOString(Date.now()),
         latencyMs: Date.now() - before,
+        algo_id: hookResponse.data?.filler,
       };
 
       const metadata: QuoteMetadata = {
@@ -284,7 +284,7 @@ export class WebhookQuoter implements Quoter {
             offerer: opposingResponse.response.swapper,
             endpoint: endpoint,
             fillerName: config.name,
-            algo_id: config.name,
+            algo_id: opposingResponse.response.filler,
           },
         });
       }

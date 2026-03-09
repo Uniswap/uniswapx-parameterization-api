@@ -724,6 +724,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 200,
           data: quote,
+          algo_id: FILLER,
           responseType: WebhookResponseType.VALIDATION_ERROR,
           validationError: {
             message: '"amountIn" is required',
@@ -770,6 +771,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 200,
           data: quote,
+          algo_id: FILLER,
           responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
           mismatchedRequestId: quote.requestId,
         },
@@ -800,6 +802,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 404,
           data: '',
+          algo_id: undefined,
           responseType: WebhookResponseType.NON_QUOTE,
         },
       })
@@ -843,6 +846,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 200,
           data: quote,
+          algo_id: FILLER,
           responseType: WebhookResponseType.NON_QUOTE,
         },
       })
@@ -898,6 +902,7 @@ describe('WebhookQuoter tests', () => {
           ...sharedWebhookResponseEventProperties,
           status: 200,
           data: quote,
+          algo_id: FILLER,
           responseType: WebhookResponseType.NON_QUOTE,
         },
       })
