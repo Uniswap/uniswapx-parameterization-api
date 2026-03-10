@@ -468,6 +468,7 @@ describe('QuoteRequest', () => {
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
       filler: undefined,
+      algo_id: undefined,
       tokenInChainId: CHAIN_ID,
       tokenOutChainId: CHAIN_ID,
     });

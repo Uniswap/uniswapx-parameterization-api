@@ -150,6 +150,7 @@ export class WebhookQuoter implements Quoter {
         data: hookResponse.data,
         responseTime: timestampInMstoISOString(Date.now()),
         latencyMs: Date.now() - before,
+        algo_id: hookResponse.data?.filler,
       };
 
       const metadata: QuoteMetadata = {
@@ -283,6 +284,7 @@ export class WebhookQuoter implements Quoter {
             offerer: opposingResponse.response.swapper,
             endpoint: endpoint,
             fillerName: config.name,
+            algo_id: opposingResponse.response.filler,
           },
         });
       }

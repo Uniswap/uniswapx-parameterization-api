@@ -151,6 +151,7 @@ export class QuoteResponse implements QuoteResponseData {
       amountOut: this.amountOut.toString(),
       swapper: this.swapper,
       filler: this.filler,
+      algo_id: this.filler,
       createdAt: this.createdAt,
       createdAtMs: this.createdAtMs,
     };
