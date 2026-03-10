@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+
+permissions: {}
+
 jobs:
   test:
     name: Lint and test
@@ -34,6 +37,8 @@ jobs:
           egress-policy: audit
       - name: Checkout repo
         uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+        with:
+          persist-credentials: false
 
       - name: Use Node ${{ matrix.node }}
         uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3

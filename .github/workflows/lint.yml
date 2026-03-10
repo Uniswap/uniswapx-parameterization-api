@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+
+permissions: {}
+
 jobs:
   run-linters:
     name: lint
@@ -29,6 +32,8 @@ jobs:
           egress-policy: audit
       - name: Check out Git repository
         uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+        with:
+          persist-credentials: false
 
       - name: Set up node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
