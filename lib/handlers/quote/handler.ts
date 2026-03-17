@@ -11,20 +11,30 @@ import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
 import { ContainerInjected, RequestInjected } from './injector';
-import { PostQuoteRequestBody, PostQuoteRequestBodyJoi, PostQuoteResponse, URAResponseJoi } from './schema';
+import {
+  PostQuoteRequestBody,
+  PostQuoteRequestBodyJoi,
+  PostQuoteResponseWithAllQuotes,
+  URAResponseJoi,
+} from './schema';
 
 export type EventType = 'QuoteResponse' | 'HardResponse';
+
+export interface BestQuoteResult {
+  bestQuote: QuoteResponse | null;
+  allQuotes: QuoteResponse[];
+}
 
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
   RequestInjected,
   PostQuoteRequestBody,
   void,
-  PostQuoteResponse
+  PostQuoteResponseWithAllQuotes
 > {
   public async handleRequest(
     params: APIHandleRequestParams<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>
-  ): Promise<ErrorResponse | Response<PostQuoteResponse>> {
+  ): Promise<ErrorResponse | Response<PostQuoteResponseWithAllQuotes>> {
     const {
       requestInjected: { log, metric },
       requestBody,
@@ -54,7 +64,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       },
     });
 
-    const bestQuote = await getBestQuote(quoters, request, log, metric, provider);
+    const { bestQuote, allQuotes } = await getBestQuote(quoters, request, log, metric, provider);
     if (!bestQuote) {
       metric.putMetric(Metric.QUOTE_404, 1, MetricLoggerUnit.Count);
       throw new NoQuotesAvailable();
@@ -66,7 +76,10 @@ export class QuoteHandler extends APIGLambdaHandler<
     metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
     return {
       statusCode: 200,
-      body: bestQuote.toResponseJSON(),
+      body: {
+        ...bestQuote.toResponseJSON(),
+        allQuotes: allQuotes.map((q) => q.toResponseJSON()),
+      },
     };
   }
 
@@ -83,7 +96,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 }
 
-// fetch quotes from all quoters and return the best one
+// fetch quotes from all quoters and return the best one along with all quotes
 export async function getBestQuote(
   quoters: Quoter[],
   quoteRequest: QuoteRequest,
@@ -91,7 +104,7 @@ export async function getBestQuote(
   metric: IMetric,
   provider?: ethers.providers.StaticJsonRpcProvider,
   eventType: EventType = 'QuoteResponse'
-): Promise<QuoteResponse | null> {
+): Promise<BestQuoteResult> {
   const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest, provider)))).flat();
   switch (responses.length) {
     case 0:
@@ -112,19 +125,21 @@ export async function getBestQuote(
   }
 
   // return the response with the highest amountOut value
-  return responses.reduce((bestQuote: QuoteResponse | null, quote: QuoteResponse) => {
+  const bestQuote = responses.reduce((best: QuoteResponse | null, quote: QuoteResponse) => {
     log.info({
       eventType: eventType,
       body: { ...quote.toLog(), offerer: quote.swapper, endpoint: quote.endpoint, fillerName: quote.fillerName },
     });
 
     if (
-      !bestQuote ||
-      (quoteRequest.type == TradeType.EXACT_INPUT && quote.amountOut.gt(bestQuote.amountOut)) ||
-      (quoteRequest.type == TradeType.EXACT_OUTPUT && quote.amountIn.lt(bestQuote.amountIn))
+      !best ||
+      (quoteRequest.type == TradeType.EXACT_INPUT && quote.amountOut.gt(best.amountOut)) ||
+      (quoteRequest.type == TradeType.EXACT_OUTPUT && quote.amountIn.lt(best.amountIn))
     ) {
       return quote;
     }
-    return bestQuote;
+    return best;
   }, null);
+
+  return { bestQuote, allQuotes: responses };
 }

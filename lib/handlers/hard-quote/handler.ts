@@ -98,7 +98,8 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     let bestQuote;
     if (!requestBody.forceOpenOrder) {
-      bestQuote = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, provider, RESPONSE_LOG_TYPE);
+      const result = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, provider, RESPONSE_LOG_TYPE);
+      bestQuote = result.bestQuote;
       if (!bestQuote && !requestBody.allowNoQuote) {
         if (!requestBody.allowNoQuote) {
           throw new NoQuotesAvailable();
