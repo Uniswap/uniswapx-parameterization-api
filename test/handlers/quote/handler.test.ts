@@ -10,6 +10,7 @@ import {
   ContainerInjected,
   PostQuoteRequestBody,
   PostQuoteResponse,
+  PostQuoteResponseWithAllQuotes,
   RequestInjected,
 } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
@@ -127,7 +128,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const { allQuotes, ...quoteResponse }: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
     expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
@@ -141,7 +142,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const { allQuotes, ...quoteResponse }: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
     expect(
       responseFromRequest(request, { amountIn: amountIn.toString(), amountOut: amountIn.toString() })
@@ -157,7 +158,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const { allQuotes, ...quoteResponse }: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
     expect(
       responseFromRequest(request, { amountOut: amountIn.mul(2).toString(), amountIn: amountIn.mul(1).toString() })
@@ -176,7 +177,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const { allQuotes, ...quoteResponse }: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
     expect(
       responseFromRequest(request, { amountOut: amountOut.mul(1).toString(), amountIn: amountOut.mul(1).toString() })
@@ -195,7 +196,7 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // random quoteId
+    const { allQuotes, ...quoteResponse }: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
     expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
@@ -302,7 +303,7 @@ describe('Quote handler', () => {
         getEvent(request),
         {} as unknown as Context
       );
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      const quoteResponse: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
       expect(response.statusCode).toEqual(200);
       expect(quoteResponse).toMatchObject({
         amountOut: amountIn.mul(2).toString(),
@@ -395,7 +396,7 @@ describe('Quote handler', () => {
         getEvent(request),
         {} as unknown as Context
       );
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      const quoteResponse: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
       expect(response.statusCode).toEqual(200);
       expect(quoteResponse).toMatchObject({
         amountOut: amountIn.mul(2).toString(),
@@ -506,7 +507,7 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(200);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
+      const { allQuotes, ...quoteResponse }: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
       expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
     });
 
@@ -564,7 +565,7 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(200);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      const { allQuotes, ...quoteResponse }: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
       expect(responseFromRequest(request, { amountOut: amountIn.mul(2).toString() })).toMatchObject({
         ...quoteResponse,
         quoteId: QUOTE_ID,
@@ -609,7 +610,7 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(200);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body); // MockQuoter wins so returns a random quoteId
+      const { allQuotes, ...quoteResponse }: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
       expect(responseFromRequest(request, { amountOut: amountIn.toString() })).toMatchObject({
         ...quoteResponse,
         quoteId: expect.any(String),
@@ -638,13 +639,123 @@ describe('Quote handler', () => {
         {} as unknown as Context
       );
       expect(response.statusCode).toEqual(404);
-      const quoteResponse: PostQuoteResponse = JSON.parse(response.body);
+      const quoteResponse = JSON.parse(response.body);
       expect(quoteResponse).toMatchObject(
         expect.objectContaining({
           errorCode: 'QUOTE_ERROR',
           detail: 'No quotes available',
         })
       );
+    });
+  });
+
+  describe('allQuotes in response', () => {
+    it('returns allQuotes with a single quoter', async () => {
+      const quoters = [new MockQuoter(logger, 1, 1)];
+      const amountIn = ethers.utils.parseEther('1');
+      const request = getRequest(amountIn.toString());
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      const body: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
+      expect(response.statusCode).toEqual(200);
+      expect(body.allQuotes).toBeDefined();
+      expect(body.allQuotes).toHaveLength(1);
+      expect(body.allQuotes![0].amountOut).toEqual(amountIn.toString());
+    });
+
+    it('returns allQuotes with multiple quoters', async () => {
+      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+      const amountIn = ethers.utils.parseEther('1');
+      const request = getRequest(amountIn.toString());
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      const body: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
+      expect(response.statusCode).toEqual(200);
+      expect(body.allQuotes).toBeDefined();
+      expect(body.allQuotes).toHaveLength(2);
+
+      // best quote should be the one with higher amountOut (2x)
+      expect(body.amountOut).toEqual(amountIn.mul(2).toString());
+
+      // allQuotes should contain both
+      const amounts = body.allQuotes!.map((q) => q.amountOut).sort();
+      expect(amounts).toEqual([amountIn.toString(), amountIn.mul(2).toString()].sort());
+    });
+
+    it('allQuotes contains all quotes even when best is selected - EXACT_INPUT', async () => {
+      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 3, 1), new MockQuoter(logger, 2, 1)];
+      const amountIn = ethers.utils.parseEther('1');
+      const request = getRequest(amountIn.toString());
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      const body: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
+      expect(response.statusCode).toEqual(200);
+
+      // best quote is 3x
+      expect(body.amountOut).toEqual(amountIn.mul(3).toString());
+
+      // allQuotes has all 3
+      expect(body.allQuotes).toHaveLength(3);
+      const amounts = body.allQuotes!.map((q) => q.amountOut).sort();
+      expect(amounts).toEqual(
+        [amountIn.toString(), amountIn.mul(2).toString(), amountIn.mul(3).toString()].sort()
+      );
+    });
+
+    it('allQuotes contains all quotes - EXACT_OUTPUT', async () => {
+      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+      const amountOut = ethers.utils.parseEther('1');
+      const request = getRequest(amountOut.toString(), 'EXACT_OUTPUT');
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      const body: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
+      expect(response.statusCode).toEqual(200);
+
+      // best quote for EXACT_OUTPUT is the one with lowest amountIn (1x)
+      expect(body.amountIn).toEqual(amountOut.toString());
+
+      // allQuotes has both
+      expect(body.allQuotes).toHaveLength(2);
+      const amountsIn = body.allQuotes!.map((q) => q.amountIn).sort();
+      expect(amountsIn).toEqual([amountOut.toString(), amountOut.mul(2).toString()].sort());
+    });
+
+    it('top-level fields match best quote for backwards compatibility', async () => {
+      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+      const amountIn = ethers.utils.parseEther('1');
+      const request = getRequest(amountIn.toString());
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      const body: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
+
+      // top-level fields should be the best quote
+      expect(body.chainId).toEqual(CHAIN_ID);
+      expect(body.requestId).toEqual(REQUEST_ID);
+      expect(body.tokenIn).toEqual(TOKEN_IN);
+      expect(body.tokenOut).toEqual(TOKEN_OUT);
+      expect(body.amountOut).toEqual(amountIn.mul(2).toString());
+      expect(body.swapper).toEqual(SWAPPER);
+      expect(body.filler).toEqual(MOCK_FILLER_ADDRESS);
+
+      // allQuotes should not have nested allQuotes
+      for (const q of body.allQuotes!) {
+        expect((q as any).allQuotes).toBeUndefined();
+      }
     });
   });
 });

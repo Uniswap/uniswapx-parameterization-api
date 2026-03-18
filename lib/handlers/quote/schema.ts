@@ -53,6 +53,10 @@ export type PostQuoteResponse = {
   quoteId?: string;
 };
 
+export type PostQuoteResponseWithAllQuotes = PostQuoteResponse & {
+  allQuotes?: PostQuoteResponse[];
+};
+
 export const URAResponseJoi = Joi.object({
   chainId: FieldValidator.chainId.required(),
   requestId: FieldValidator.uuid.required(),
@@ -63,6 +67,7 @@ export const URAResponseJoi = Joi.object({
   swapper: FieldValidator.address.required(),
   filler: FieldValidator.address,
   quoteId: FieldValidator.uuid,
+  allQuotes: Joi.array().items(PostQuoteResponseJoi).optional(),
 });
 
 export const RfqResponseJoi = Joi.object({
