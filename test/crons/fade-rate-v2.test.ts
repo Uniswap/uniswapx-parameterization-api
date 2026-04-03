@@ -7,6 +7,7 @@ import {
   FillerTimestamps,
   getFillersNewFades,
   NUM_FADES_MULTIPLIER,
+  UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
 } from '../../lib/cron/fade-rate-v2';
 import { ToUpdateTimestampRow, V2FadesRowType } from '../../lib/repositories';
 
@@ -197,7 +198,7 @@ describe('FadeRateCron test', () => {
           {
             hash: 'filler8',
             lastPostTimestamp: now,
-            blockUntilTimestamp: now,
+            blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
             consecutiveBlocks: 1, // decayed from 2, not reset to 0
           },
         ])
@@ -291,7 +292,7 @@ describe('FadeRateCron test', () => {
       // Cycle 2: Fades again! consecutiveBlocks goes from 1 to 2
       timestamps.set('gamer', {
         lastPostTimestamp: now,
-        blockUntilTimestamp: now, // block expired
+        blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP, // block expired
         consecutiveBlocks: 1,
       });
       result = calculateNewTimestamps(timestamps, { gamer: 1 }, now + 300, logger);
@@ -319,14 +320,18 @@ describe('FadeRateCron test', () => {
       const block1 = result[0].blockUntilTimestamp! - now; // ~15 min
 
       // Cycle 2: Clean (after block expires)
-      timestamps.set('attacker', { lastPostTimestamp: now, blockUntilTimestamp: now, consecutiveBlocks: 1 });
+      timestamps.set('attacker', {
+        lastPostTimestamp: now,
+        blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+        consecutiveBlocks: 1,
+      });
       result = calculateNewTimestamps(timestamps, { attacker: 0 }, now + 1000, logger);
       expect(result[0].consecutiveBlocks).toBe(0); // decayed to 0
 
       // Cycle 3: Fade again
       timestamps.set('attacker', {
         lastPostTimestamp: now + 1000,
-        blockUntilTimestamp: now + 1000,
+        blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
         consecutiveBlocks: 0,
       });
       result = calculateNewTimestamps(timestamps, { attacker: 1 }, now + 2000, logger);
