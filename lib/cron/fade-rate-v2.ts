@@ -27,6 +27,9 @@ export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 export const BASE_BLOCK_SECS = 60 * 15; // 15 minutes
 export const NUM_FADES_MULTIPLIER = 1.2;
 
+/** Sentinel when the filler has no active block (always < now for real unix seconds). Avoids equaling lastPostTimestamp, which could briefly read as blocked under clock skew. */
+export const UNBLOCKED_BLOCK_UNTIL_TIMESTAMP = 0;
+
 const log = Logger.createLogger({
   name: 'FadeRate',
   serializers: Logger.stdSerializers,
@@ -195,7 +198,7 @@ export function calculateNewTimestamps(
       updatedTimestamps.push({
         hash,
         lastPostTimestamp: newPostTimestamp,
-        blockUntilTimestamp: newPostTimestamp,
+        blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
         consecutiveBlocks: decayedBlocks,
       });
     }
