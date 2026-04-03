@@ -475,7 +475,7 @@ describe('QuoteRequest', () => {
   });
 
   it('toLog includes fillerResponseLatencyMs when set', () => {
-    quoteResponse.fillerResponseLatencyMs = 150;
+    quoteResponse.setFillerResponseLatencyMs(150);
     expect(quoteResponse.toLog()).toEqual(
       expect.objectContaining({ fillerResponseLatencyMs: 150 })
     );

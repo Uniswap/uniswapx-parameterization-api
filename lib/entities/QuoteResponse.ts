@@ -47,7 +47,13 @@ interface FromRequestArgs {
 // data class for QuoteRequest helpers and conversions
 export class QuoteResponse implements QuoteResponseData {
   public createdAt: string;
-  public fillerResponseLatencyMs?: number;
+  private fillerResponseLatencyMs?: number;
+
+  // Must be set explicitly by the caller after construction,
+  // since latency is measured externally (e.g. in WebhookQuoter).
+  public setFillerResponseLatencyMs(latencyMs: number): void {
+    this.fillerResponseLatencyMs = latencyMs;
+  }
 
   public static fromRequest(args: FromRequestArgs): QuoteResponse {
     const { request, amountQuoted, metadata, filler } = args;
