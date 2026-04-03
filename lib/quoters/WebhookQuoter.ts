@@ -164,6 +164,7 @@ export class WebhookQuoter implements Quoter {
         type: request.type,
         metadata,
       });
+      response.fillerResponseLatencyMs = rawResponse.latencyMs;
       const validatePermissionedTokensError = await RFQValidator.validatePermissionedTokens(
         request,
         hookResponse.data,
@@ -277,6 +278,7 @@ export class WebhookQuoter implements Quoter {
         !isNonQuote(opposingRequest, opposite, opposingResponse.response) &&
         !opposingResponse.validationError
       ) {
+        opposingResponse.response.fillerResponseLatencyMs = rawResponse.latencyMs;
         this.log.info({
           eventType: 'QuoteResponse',
           body: {

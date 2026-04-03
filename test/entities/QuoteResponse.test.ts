@@ -473,4 +473,11 @@ describe('QuoteRequest', () => {
       tokenOutChainId: CHAIN_ID,
     });
   });
+
+  it('toLog includes fillerResponseLatencyMs when set', () => {
+    quoteResponse.fillerResponseLatencyMs = 150;
+    expect(quoteResponse.toLog()).toEqual(
+      expect.objectContaining({ fillerResponseLatencyMs: 150 })
+    );
+  });
 });

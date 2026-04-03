@@ -265,6 +265,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
         { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
+        { name: 'fillerResponseLatencyMs', dataType: RS_DATA_TYPES.INTEGER },
       ],
     });
 

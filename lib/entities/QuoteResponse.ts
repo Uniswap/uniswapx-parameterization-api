@@ -47,6 +47,7 @@ interface FromRequestArgs {
 // data class for QuoteRequest helpers and conversions
 export class QuoteResponse implements QuoteResponseData {
   public createdAt: string;
+  public fillerResponseLatencyMs?: number;
 
   public static fromRequest(args: FromRequestArgs): QuoteResponse {
     const { request, amountQuoted, metadata, filler } = args;
@@ -154,6 +155,7 @@ export class QuoteResponse implements QuoteResponseData {
       algo_id: this.filler,
       createdAt: this.createdAt,
       createdAtMs: this.createdAtMs,
+      ...(this.fillerResponseLatencyMs !== undefined && { fillerResponseLatencyMs: this.fillerResponseLatencyMs }),
     };
   }
 
