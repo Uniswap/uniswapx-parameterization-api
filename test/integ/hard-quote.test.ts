@@ -164,7 +164,7 @@ describe('Hard Quote endpoint integration test', function () {
       const prebuildOrder = builder
         .input({ token: TOKEN_IN, startAmount: AMOUNT, endAmount: AMOUNT })
         .output({ token: TOKEN_OUT, startAmount: AMOUNT, endAmount: AMOUNT, recipient: SWAPPER_ADDRESS })
-        .nonce(BigNumber.from(100))
+        .nonce(BigNumber.from(Math.floor(Math.random() * 1e15)))
         .cosigner(COSIGNER_ADDR)
         .deadline(now + 1000)
         .swapper(SWAPPER_ADDRESS);
