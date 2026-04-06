@@ -123,7 +123,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       const response = await orderServiceProvider.postOrder({
         order: cosignedOrder,
         signature: request.innerSig,
-        quoteId: bestQuote?.quoteId ?? request.quoteId,
+        quoteId: bestQuote?.quoteId ?? request.quoteId ?? request.requestId,
         requestId: request.requestId,
       });
       if (response.statusCode == 200 || response.statusCode == 201) {
