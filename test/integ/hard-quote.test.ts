@@ -175,6 +175,7 @@ describe('Hard Quote endpoint integration test', function () {
 
       const quoteReq: HardQuoteRequestBody = {
         requestId: REQUEST_ID,
+        quoteId: uuidv4(),
         encodedInnerOrder: v2Order.serialize(),
         innerSig: signature,
         tokenInChainId: SEPOLIA,
