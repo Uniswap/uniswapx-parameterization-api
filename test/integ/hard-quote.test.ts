@@ -186,7 +186,11 @@ describe('Hard Quote endpoint integration test', function () {
       const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
       console.log(data);
       if (status === 400 && data.errorCode === 'TOO_MANY_OPEN_ORDERS') {
-        // Order service limit from prior test runs; not a handler bug
+        // Each run creates an open order that counts against the swapper's limit.
+        // We use a short deadline (60s) so orders expire quickly, but rapid
+        // consecutive runs (e.g. local testing) can still hit the cap before
+        // prior orders expire. This is an order service constraint, not a
+        // handler bug, so we treat it as a pass.
         return;
       }
       expect(status).to.be.oneOf([200, 201]);
