@@ -53,7 +53,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
       if (e instanceof AxiosError) {
         this.log.error({ error: e.response?.data, httpStatus: e.response?.status, code: e.code }, 'Error posting order to UniswapX Service');
         return {
-          statusCode: e.response?.status ?? 500,
+          statusCode: (e.response?.status ?? 500) as ErrorResponse['statusCode'],
           errorCode: e.response?.data?.errorCode ?? ErrorCode.InternalError,
           detail: e.response?.data?.detail ?? e.message,
         };
