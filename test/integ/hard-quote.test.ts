@@ -27,7 +27,10 @@ const UNISWAP_API = checkDefined(
 );
 
 const SEPOLIA = 11155111;
-const SEPOLIA_RPC = 'https://sepolia.infura.io/v3/84842078b09946638c03157f83405213';
+const SEPOLIA_RPC = checkDefined(
+  process.env.RPC_11155111,
+  'Must set RPC_11155111 env variable for integ tests. See README'
+);
 const PARAM_API = `${UNISWAP_API}hard-quote`;
 
 const REQUEST_ID = uuidv4();
@@ -62,18 +65,20 @@ describe('Hard Quote endpoint integration test', function () {
     console.log(`Dynamic test wallet: ${dynamicWallet.address}`);
     console.log(`Dynamic test wallet PK: ${dynamicWallet.privateKey}`);
 
-    // Fund the dynamic wallet with ETH and USDC from the faucet wallet
+    // Fund the dynamic wallet with ETH and USDC from the faucet wallet.
+    // Send sequentially to avoid nonce conflicts with public RPCs.
     const ethTx = await faucetSigner.sendTransaction({
       to: dynamicWallet.address,
       value: ETH_FUND_AMOUNT,
     });
+    await ethTx.wait(1);
     const usdc = new ethers.Contract(TOKEN_IN, [
     'function transfer(address to, uint256 amount) returns (bool)',
     'function approve(address spender, uint256 amount) returns (bool)',
     'function balanceOf(address owner) view returns (uint256)',
   ], faucetSigner);
     const usdcTx = await usdc.transfer(dynamicWallet.address, USDC_FUND_AMOUNT);
-    await Promise.all([ethTx.wait(1), usdcTx.wait(1)]);
+    await usdcTx.wait(1);
 
     // Approve USDC to Permit2 so the order service's onchain validation passes
     const usdcDynamic = new ethers.Contract(TOKEN_IN, [
