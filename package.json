@@ -12,7 +12,7 @@
     "watch": "tsc -w",
     "test": "run-s build test:*",
     "test:unit": "jest --detectOpenHandles --forceExit --testPathIgnorePatterns test/integ dist/",
-    "test:integ": "ts-mocha -p tsconfig.cdk.json -r dotenv/config test/integ/**/*.test.ts --timeout 50000",
+    "test:integ": "ts-mocha -p tsconfig.cdk.json -r dotenv/config test/integ/**/*.test.ts --timeout 120000",
     "fix": "run-s fix:*",
     "fix:prettier": "prettier \"lib/**/*.ts\" --write",
     "fix:prettiertest": "prettier \"test/**/*.ts\" --write",

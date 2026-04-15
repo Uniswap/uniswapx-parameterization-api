@@ -1,3 +1,7 @@
+// Mocha globals not in @types/jest
+declare function before(fn: () => Promise<void>): void;
+declare function after(fn: () => Promise<void>): void;
+
 import { V2DutchOrderBuilder } from '@uniswap/uniswapx-sdk';
 import chai, { expect } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
@@ -59,8 +63,7 @@ let dynamicSwapper: ethers.Wallet;
 let faucetSigner: ethers.Wallet;
 
 describe('Hard Quote endpoint integration test', function () {
-  before(async function () {
-    this.timeout(120000);
+  before(async () => {
     provider = new ethers.providers.JsonRpcProvider(SEPOLIA_RPC, SEPOLIA);
     faucetSigner = faucetWallet.connect(provider);
 
@@ -90,8 +93,7 @@ describe('Hard Quote endpoint integration test', function () {
     console.log(`Funded dynamic wallet (USDC balance: ${balance.toString()})`);
   });
 
-  after(async function () {
-    this.timeout(60000);
+  after(async () => {
     try {
       // Return USDC balance to faucet
       const usdc = new ethers.Contract(TOKEN_IN, ERC20_ABI, dynamicSwapper);
