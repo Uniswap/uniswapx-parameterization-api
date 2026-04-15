@@ -38,13 +38,6 @@ const TOKEN_IN = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'; // USDC on Sepoli
 const TOKEN_OUT = '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14'; // WETH on Sepolia
 const AMOUNT = BigNumber.from('1');
 
-// Minimal ERC20 ABI for transfer, approve, and balanceOf
-const ERC20_ABI = [
-  'function transfer(address to, uint256 amount) returns (bool)',
-  'function approve(address spender, uint256 amount) returns (bool)',
-  'function balanceOf(address owner) view returns (uint256)',
-];
-
 const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3';
 
 // Amount of USDC (6 decimals) and ETH to fund the dynamic wallet
@@ -74,12 +67,20 @@ describe('Hard Quote endpoint integration test', function () {
       to: dynamicWallet.address,
       value: ETH_FUND_AMOUNT,
     });
-    const usdc = new ethers.Contract(TOKEN_IN, ERC20_ABI, faucetSigner);
+    const usdc = new ethers.Contract(TOKEN_IN, [
+    'function transfer(address to, uint256 amount) returns (bool)',
+    'function approve(address spender, uint256 amount) returns (bool)',
+    'function balanceOf(address owner) view returns (uint256)',
+  ], faucetSigner);
     const usdcTx = await usdc.transfer(dynamicWallet.address, USDC_FUND_AMOUNT);
     await Promise.all([ethTx.wait(1), usdcTx.wait(1)]);
 
     // Approve USDC to Permit2 so the order service's onchain validation passes
-    const usdcDynamic = new ethers.Contract(TOKEN_IN, ERC20_ABI, dynamicSwapper);
+    const usdcDynamic = new ethers.Contract(TOKEN_IN, [
+    'function transfer(address to, uint256 amount) returns (bool)',
+    'function approve(address spender, uint256 amount) returns (bool)',
+    'function balanceOf(address owner) view returns (uint256)',
+  ], dynamicSwapper);
     const approveTx = await usdcDynamic.approve(PERMIT2_ADDRESS, ethers.constants.MaxUint256);
     await approveTx.wait(1);
 
@@ -91,7 +92,11 @@ describe('Hard Quote endpoint integration test', function () {
     this.timeout(60000);
     try {
       // Return USDC balance to faucet
-      const usdc = new ethers.Contract(TOKEN_IN, ERC20_ABI, dynamicSwapper);
+      const usdc = new ethers.Contract(TOKEN_IN, [
+    'function transfer(address to, uint256 amount) returns (bool)',
+    'function approve(address spender, uint256 amount) returns (bool)',
+    'function balanceOf(address owner) view returns (uint256)',
+  ], dynamicSwapper);
       const usdcBalance: BigNumber = await usdc.balanceOf(dynamicWallet.address);
       if (usdcBalance.gt(0)) {
         const usdcTx = await usdc.transfer(FAUCET_ADDRESS, usdcBalance);
