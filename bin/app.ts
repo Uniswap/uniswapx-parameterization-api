@@ -225,6 +225,10 @@ export class APIPipeline extends Stack {
             value: cosignerSecret,
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
           },
+          RPC_11155111: {
+            value: 'prod/param-api/rpc-urls:RPC_11155111',
+            type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+          },
         },
       },
       rolePolicyStatements: [
