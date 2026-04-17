@@ -1,7 +1,3 @@
-// Mocha globals not in @types/jest
-declare function before(fn: () => Promise<void>): void;
-declare function after(fn: () => Promise<void>): void;
-
 import { V2DutchOrderBuilder } from '@uniswap/uniswapx-sdk';
 import chai, { expect } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
