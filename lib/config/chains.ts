@@ -6,4 +6,5 @@ export const SUPPORTED_CHAINS: ChainId[] = [
   ChainId.POLYGON,
   ChainId.SEPOLIA,
   ChainId.ARBITRUM_ONE,
+  ChainId.TEMPO,
 ];
