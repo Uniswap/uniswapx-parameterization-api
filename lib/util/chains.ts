@@ -4,11 +4,13 @@ export enum ChainId {
   POLYGON = 137,
   SEPOLIA = 11155111,
   ARBITRUM_ONE = 42161,
+  TEMPO = 4217,
 }
 
 export const supportedChains = [
   ChainId.MAINNET,
   ChainId.ARBITRUM_ONE,
+  ChainId.TEMPO,
 ]
 
 export enum ChainName {
@@ -18,6 +20,7 @@ export enum ChainName {
   POLYGON = 'polygon',
   SEPOLIA = 'sepolia',
   ARBITRUM_ONE = 'arbitrum-mainnet',
+  TEMPO = 'tempo',
 }
 
 export const ID_TO_NETWORK_NAME = (id: number): ChainName => {
@@ -32,6 +35,8 @@ export const ID_TO_NETWORK_NAME = (id: number): ChainName => {
       return ChainName.SEPOLIA;
     case 42161:
       return ChainName.ARBITRUM_ONE;
+    case 4217:
+      return ChainName.TEMPO;
     default:
       throw new Error(`Unknown chain id: ${id}`);
   }

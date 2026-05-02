@@ -307,7 +307,7 @@ describe('Quote handler', () => {
     it('updates decay times reasonably', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const now = Math.floor(Date.now() / 1000);
-      const cosignerData: CosignerData = getCosignerData(new HardQuoteRequest(request, OrderType.Dutch_V2), getQuoteResponse({}), OrderType.Dutch_V2) as CosignerData;
+      const cosignerData: CosignerData = (await getCosignerData(new HardQuoteRequest(request, OrderType.Dutch_V2), getQuoteResponse({}), OrderType.Dutch_V2)) as CosignerData;
       expect(cosignerData.decayStartTime).toBeGreaterThan(now);
       expect(cosignerData.decayStartTime).toBeLessThan(now + 1000);
       expect(cosignerData.decayEndTime).toBeGreaterThan(cosignerData.decayStartTime);
@@ -316,7 +316,7 @@ describe('Quote handler', () => {
 
     it('exact input quote worse, no exclusivity', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
-      const cosignerData = getCosignerData(
+      const cosignerData: any = await getCosignerData(
         new HardQuoteRequest(request, OrderType.Dutch_V2),
         getQuoteResponse({ amountOut: ethers.utils.parseEther('0.8') }),
         OrderType.Dutch_V2
@@ -330,7 +330,7 @@ describe('Quote handler', () => {
     it('exact input quote better, sets exclusivity and updates amounts', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const outputAmount = ethers.utils.parseEther('2');
-      const cosignerData = getCosignerData(
+      const cosignerData: any = await getCosignerData(
         new HardQuoteRequest(request, OrderType.Dutch_V2),
         getQuoteResponse({ amountOut: outputAmount }),
         OrderType.Dutch_V2
@@ -343,7 +343,7 @@ describe('Quote handler', () => {
 
     it('exact output quote worse, no exclusivity', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
-      const cosignerData = getCosignerData(
+      const cosignerData: any = await getCosignerData(
         new HardQuoteRequest(request, OrderType.Dutch_V2),
         getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT),
         OrderType.Dutch_V2
@@ -357,7 +357,7 @@ describe('Quote handler', () => {
     it('exact input quote better, sets exclusivity and updates amounts', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const inputOverride = ethers.utils.parseEther('0.8');
-      const cosignerData = getCosignerData(
+      const cosignerData: any = await getCosignerData(
         new HardQuoteRequest(request, OrderType.Dutch_V2),
         getQuoteResponse({ amountIn: ethers.utils.parseEther('1.2') }, TradeType.EXACT_OUTPUT),
         OrderType.Dutch_V2

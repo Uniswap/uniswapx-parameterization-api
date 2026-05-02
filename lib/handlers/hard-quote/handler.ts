@@ -15,7 +15,7 @@ import {
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
-import { POST_ORDER_ERROR_REASON, V3_BLOCK_BUFFER } from '../../constants';
+import { POST_ORDER_ERROR_REASON, getV3BlockBuffer } from '../../constants';
 import { HardQuoteRequest, Metric, QuoteResponse } from '../../entities';
 import { V2HardQuoteResponse } from '../../entities/V2HardQuoteResponse';
 import { V3HardQuoteResponse } from '../../entities/V3HardQuoteResponse';
@@ -109,7 +109,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     let cosignerData: CosignerData | V3CosignerData;
     if (bestQuote) {
-      cosignerData = getCosignerData(request, bestQuote, orderType);
+      cosignerData = await getCosignerData(request, bestQuote, orderType, provider);
       log.info({ bestQuote: bestQuote }, 'bestQuote');
     } else {
       cosignerData = await getDefaultCosignerData(request, orderType, provider);
@@ -177,11 +177,12 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 }
 
-export function getCosignerData(
+export async function getCosignerData(
   request: HardQuoteRequest,
   quote: QuoteResponse,
-  orderType: OrderType
-): CosignerData | V3CosignerData {
+  orderType: OrderType,
+  provider?: ethers.providers.StaticJsonRpcProvider
+): Promise<CosignerData | V3CosignerData> {
   switch (orderType) {
     case OrderType.Dutch_V2: {
       const decayStartTime = getDecayStartTime(request.tokenInChainId);
@@ -219,7 +220,78 @@ export function getCosignerData(
       return v2Data;
     }
 
-    case OrderType.Dutch_V3: // fallthrough; currently not expecting users to use V3 for RFQ
+    case OrderType.Dutch_V3: {
+      if (!provider) {
+        throw new Error(
+          `No rpc provider found for chain: ${request.tokenInChainId}, which is required for V3 Dutch orders`
+        );
+      }
+      const baseInputStart = request.order.info.input.startAmount;
+      const baseOutputStart = request.order.info.outputs[0].startAmount;
+
+      let filler = ethers.constants.AddressZero;
+      let inputOverride = BigNumber.from(0);
+      const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
+
+      // Mirror V2 RFQ override flow: only apply override if the quote is strictly better for the swapper.
+      // V3 invariants (V3DutchOrderReactor._updateWithCosignerAmounts):
+      //   inputOverride <= baseInput.startAmount
+      //   outputOverride >= baseOutput.startAmount
+      if (request.type === TradeType.EXACT_INPUT) {
+        if (quote.amountOut.gt(request.totalOutputAmountStart)) {
+          const increase = quote.amountOut.sub(request.totalOutputAmountStart);
+          const proposedOutput = baseOutputStart.add(increase);
+          // V3 invariant: outputOverride >= baseOutput.startAmount
+          if (proposedOutput.gte(baseOutputStart)) {
+            outputOverrides[0] = proposedOutput;
+            if (quote.filler) {
+              filler = quote.filler;
+            }
+          }
+        }
+      } else {
+        if (quote.amountIn.lt(request.totalInputAmountStart)) {
+          const proposedInput = quote.amountIn;
+          // V3 invariant: inputOverride <= baseInput.startAmount
+          if (proposedInput.lte(baseInputStart)) {
+            inputOverride = proposedInput;
+            if (quote.filler) {
+              filler = quote.filler;
+            }
+          }
+        }
+      }
+
+      const currentBlock = await provider.getBlockNumber();
+      const decayStartBlock = currentBlock + getV3BlockBuffer(request.tokenInChainId);
+
+      // Tempo: read latest baseFeePerGas for downstream gas-adjustment use.
+      // NOTE: startingBaseFee and adjustmentPerGweiBaseFee live on UnsignedV3DutchOrderInfo
+      // (the swapper-signed payload), not on V3CosignerData. This block exists so the
+      // RFQ branch can observe Tempo's baseFee for logging / future fee-adjustment work
+      // without altering the signed order. The default `adjustmentPerGweiBaseFee=0` is
+      // assumed at order construction.
+      // TODO(TRA2-12): once Tempo gas-adjustment policy is finalized, decide whether to
+      // surface this baseFee in metrics or use it to refuse cosigning when the order's
+      // signed startingBaseFee diverges materially from observed network conditions.
+      if (request.tokenInChainId === ChainId.TEMPO) {
+        const latest = await provider.getBlock('latest');
+        // baseFeePerGas may be null on non-EIP-1559 chains; tolerate that defensively.
+        const _startingBaseFee = latest?.baseFeePerGas ?? BigNumber.from(0);
+        // currently unused beyond observation; reference the var to avoid lint complaints
+        void _startingBaseFee;
+      }
+
+      const v3Data: V3CosignerData = {
+        decayStartBlock,
+        exclusiveFiller: filler,
+        exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+        inputOverride,
+        outputOverrides,
+      };
+      return v3Data;
+    }
+
     default:
       throw new Error('Unsupported order type');
   }
@@ -321,7 +393,7 @@ async function getDefaultV3CosignerData(request: HardQuoteRequest, provider: eth
   const currentBlock = await provider.getBlockNumber();
 
   return {
-    decayStartBlock: currentBlock + V3_BLOCK_BUFFER,
+    decayStartBlock: currentBlock + getV3BlockBuffer(request.tokenInChainId),
     exclusiveFiller: ethers.constants.AddressZero,
     exclusivityOverrideBps: BigNumber.from(0),
     inputOverride: BigNumber.from(0),
