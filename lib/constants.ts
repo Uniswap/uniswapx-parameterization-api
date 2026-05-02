@@ -73,7 +73,7 @@ export function getV3BlockBuffer(chainId: number): number {
   return V3_BLOCK_BUFFER_MAP[chainId] ?? V3_BLOCK_BUFFER_DEFAULT;
 }
 
-// Kept for backwards compatibility. New callers should use getV3BlockBuffer(chainId).
+/** @deprecated use getV3BlockBuffer(chainId) */
 export const V3_BLOCK_BUFFER = V3_BLOCK_BUFFER_DEFAULT;
 
 export const RPC_HEADERS = {

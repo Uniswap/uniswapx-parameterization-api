@@ -226,6 +226,16 @@ export async function getCosignerData(
           `No rpc provider found for chain: ${request.tokenInChainId}, which is required for V3 Dutch orders`
         );
       }
+      // V3 RFQ multi-output is not a validated path: the math below assumes
+      // totalOutputAmountStart == outputs[0].startAmount, which only holds for
+      // single-output orders. V3DutchOrderReactor._updateWithCosignerAmounts
+      // only enforces invariants per-output, not aggregate, so silently
+      // mishandling multi-output here would produce on-chain-valid but
+      // incorrect overrides. Guard explicitly until the multi-output flow is
+      // validated end-to-end.
+      if (request.order.info.outputs.length > 1) {
+        throw new Error('V3 RFQ multi-output orders are not supported');
+      }
       const baseInputStart = request.order.info.input.startAmount;
       const baseOutputStart = request.order.info.outputs[0].startAmount;
 
@@ -237,27 +247,22 @@ export async function getCosignerData(
       // V3 invariants (V3DutchOrderReactor._updateWithCosignerAmounts):
       //   inputOverride <= baseInput.startAmount
       //   outputOverride >= baseOutput.startAmount
+      // The reactor enforces these on-chain, so we don't re-check them here.
       if (request.type === TradeType.EXACT_INPUT) {
         if (quote.amountOut.gt(request.totalOutputAmountStart)) {
           const increase = quote.amountOut.sub(request.totalOutputAmountStart);
           const proposedOutput = baseOutputStart.add(increase);
-          // V3 invariant: outputOverride >= baseOutput.startAmount
-          if (proposedOutput.gte(baseOutputStart)) {
-            outputOverrides[0] = proposedOutput;
-            if (quote.filler) {
-              filler = quote.filler;
-            }
+          outputOverrides[0] = proposedOutput;
+          if (quote.filler) {
+            filler = quote.filler;
           }
         }
       } else {
         if (quote.amountIn.lt(request.totalInputAmountStart)) {
           const proposedInput = quote.amountIn;
-          // V3 invariant: inputOverride <= baseInput.startAmount
-          if (proposedInput.lte(baseInputStart)) {
-            inputOverride = proposedInput;
-            if (quote.filler) {
-              filler = quote.filler;
-            }
+          inputOverride = proposedInput;
+          if (quote.filler) {
+            filler = quote.filler;
           }
         }
       }
@@ -265,21 +270,8 @@ export async function getCosignerData(
       const currentBlock = await provider.getBlockNumber();
       const decayStartBlock = currentBlock + getV3BlockBuffer(request.tokenInChainId);
 
-      // Tempo: read latest baseFeePerGas for downstream gas-adjustment use.
-      // NOTE: startingBaseFee and adjustmentPerGweiBaseFee live on UnsignedV3DutchOrderInfo
-      // (the swapper-signed payload), not on V3CosignerData. This block exists so the
-      // RFQ branch can observe Tempo's baseFee for logging / future fee-adjustment work
-      // without altering the signed order. The default `adjustmentPerGweiBaseFee=0` is
-      // assumed at order construction.
-      // TODO(TRA2-12): once Tempo gas-adjustment policy is finalized, decide whether to
-      // surface this baseFee in metrics or use it to refuse cosigning when the order's
-      // signed startingBaseFee diverges materially from observed network conditions.
       if (request.tokenInChainId === ChainId.TEMPO) {
-        const latest = await provider.getBlock('latest');
-        // baseFeePerGas may be null on non-EIP-1559 chains; tolerate that defensively.
-        const _startingBaseFee = latest?.baseFeePerGas ?? BigNumber.from(0);
-        // currently unused beyond observation; reference the var to avoid lint complaints
-        void _startingBaseFee;
+        // TODO(TRA2-12): observe baseFee here once tripwire policy is decided
       }
 
       const v3Data: V3CosignerData = {
