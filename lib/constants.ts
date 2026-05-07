@@ -41,16 +41,42 @@ export const NOTIFICATION_TIMEOUT_MS = 10;
 // Default decay duration for V3 Dutch orders, in seconds (wallclock time, not blocks).
 export const V3_DEFAULT_DECAY_DURATION_SECS = 30;
 
-// Per-chain block time in seconds.
-// Arbitrum block time per public docs; V2 fade math is time-based so this only affects new V3 helpers
+// Per-chain block time in seconds. Used by V3 helpers (decay block length).
+// V2 fade math is time-based, so block time only matters for V3.
 export function getBlockTimeSecs(chainId: number): number {
   switch (chainId) {
     case 1: // MAINNET
       return 12;
-    case 42161: // ARBITRUM_ONE
-      return 0.25;
+    case 10: // OPTIMISM
+      return 2;
+    case 56: // BNB
+      return 3;
+    case 130: // UNICHAIN
+      return 1;
+    case 137: // POLYGON
+      return 2;
+    case 143: // MONAD
+      return 1;
+    case 196: // XLAYER
+      return 3;
+    case 480: // WORLDCHAIN
+      return 2;
+    case 1868: // SONEIUM
+      return 2;
     case 4217: // TEMPO
       return 0.5;
+    case 7777777: // ZORA
+      return 2;
+    case 8453: // BASE
+      return 2;
+    case 42161: // ARBITRUM_ONE
+      return 0.25;
+    case 42220: // CELO
+      return 5;
+    case 43114: // AVALANCHE
+      return 2;
+    case 81457: // BLAST
+      return 2;
     default:
       return 12;
   }
@@ -62,11 +88,27 @@ export function getDecayBlockLength(chainId: number): number {
 }
 
 // Per-chain V3 decay-start block buffer. Existing chains preserve scalar behavior of 4.
+// Tempo runs at 0.5s blocks so 4 blocks would be ~2s of dead time before decay
+// even starts; 1 block is enough headroom there. All other rollout chains have
+// >=1s block times so the scalar default of 4 is fine.
 const V3_BLOCK_BUFFER_DEFAULT = 4;
 const V3_BLOCK_BUFFER_MAP: Record<number, number> = {
   1: 4, // MAINNET
-  42161: 4, // ARBITRUM_ONE
+  10: 4, // OPTIMISM
+  56: 4, // BNB
+  130: 4, // UNICHAIN
+  137: 4, // POLYGON
+  143: 4, // MONAD
+  196: 4, // XLAYER
+  480: 4, // WORLDCHAIN
+  1868: 4, // SONEIUM
   4217: 1, // TEMPO
+  7777777: 4, // ZORA
+  8453: 4, // BASE
+  42161: 4, // ARBITRUM_ONE
+  42220: 4, // CELO
+  43114: 4, // AVALANCHE
+  81457: 4, // BLAST
 };
 
 export function getV3BlockBuffer(chainId: number): number {
