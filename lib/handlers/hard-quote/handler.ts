@@ -257,10 +257,6 @@ export async function getCosignerData(
       const currentBlock = await provider.getBlockNumber();
       const decayStartBlock = currentBlock + getV3BlockBuffer(request.tokenInChainId);
 
-      if (request.tokenInChainId === ChainId.TEMPO) {
-        // TODO: observe baseFee here once tripwire policy is decided
-      }
-
       const v3Data: V3CosignerData = {
         decayStartBlock,
         exclusiveFiller: filler,
