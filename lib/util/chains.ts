@@ -19,8 +19,7 @@ export enum ChainId {
   BLAST = 81457,
 }
 
-// Chains where the V3 cosigner is enabled. Keep in sync with the V3 multi-chain
-// rollout (ECO-365). Linea / zkSync are deferred and intentionally absent.
+// Chains where the V3 cosigner is enabled.
 export const supportedChains = [
   ChainId.MAINNET,
   ChainId.OPTIMISM,

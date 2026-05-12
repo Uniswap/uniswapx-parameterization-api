@@ -35,9 +35,9 @@ export const POST_ORDER_ERROR_REASON = {
   INSUFFICIENT_FUNDS: 'Onchain validation failed: InsufficientFunds',
 };
 
-// Per-chain webhook (RFQ) timeout. Default is 250 ms so a slow MM can't drag the
-// whole quote-aggregation step on fast chains; Mainnet keeps the historical 500 ms
-// ceiling because MM latency which we'll lower over time.
+// Per-chain webhook (RFQ) timeout. Default 250 ms so a slow MM can't drag the
+// whole quote-aggregation step on fast chains; Mainnet 500 ms to accommodate
+// higher MM latency.
 const WEBHOOK_TIMEOUT_MS_DEFAULT = 250;
 const WEBHOOK_TIMEOUT_MS_MAINNET = 500;
 
@@ -98,10 +98,9 @@ export function getDecayBlockLength(chainId: number): number {
   return Math.ceil(V3_DEFAULT_DECAY_DURATION_SECS / getBlockTimeSecs(chainId));
 }
 
-// Per-chain V3 decay-start block buffer. Existing chains preserve scalar behavior of 4.
-// Tempo runs at 0.5s blocks so 4 blocks would be ~2s of dead time before decay
-// even starts; 1 block is enough headroom there. All other rollout chains have
-// >=1s block times so the scalar default of 4 is fine.
+// Per-chain V3 decay-start block buffer. Tempo runs at 0.5s blocks; 4 blocks
+// would be ~2s of dead time before decay even starts, so 1 is enough headroom.
+// The default of 4 is appropriate for chains with >=1s block times.
 const V3_BLOCK_BUFFER_DEFAULT = 4;
 const V3_BLOCK_BUFFER_MAP: Record<number, number> = {
   1: 4, // MAINNET

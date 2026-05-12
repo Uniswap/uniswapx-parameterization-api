@@ -14,8 +14,8 @@ const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const RAW_AMOUNT = BigNumber.from('1000000000000000000');
 const FILLER = '0x000000000000000000000000000000000000bEEF';
 
-// Build a V3 order directly via the constructor so we can use chains (Mainnet, Tempo)
-// that aren't in the SDK's V3 reactor mapping.
+// Build a V3 order directly via the constructor so we can use chains that
+// aren't in the SDK's V3 reactor mapping.
 const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3';
 function buildV3Order(chainId: number, type: TradeType): UnsignedV3DutchOrder {
   const now = Math.floor(Date.now() / 1000);
@@ -56,9 +56,10 @@ function buildV3Order(chainId: number, type: TradeType): UnsignedV3DutchOrder {
 }
 
 function makeRequest(chainId: number, type: TradeType): HardQuoteRequest {
-  // Stub a HardQuoteRequest for chains where the SDK has no permit2/reactor entry (Mainnet, Tempo).
-  // We bypass HardQuoteRequest.fromHardRequestBody (which would call UnsignedV3DutchOrder.parse →
-  // getPermit2 → MissingConfiguration) and assign order directly.
+  // Stub a HardQuoteRequest for chains where the SDK has no permit2/reactor
+  // entry. We bypass HardQuoteRequest.fromHardRequestBody (which would call
+  // UnsignedV3DutchOrder.parse → getPermit2 → MissingConfiguration) and
+  // assign order directly.
   const order = buildV3Order(chainId, type);
   const req = Object.create(HardQuoteRequest.prototype) as HardQuoteRequest;
   (req as any).order = order;
