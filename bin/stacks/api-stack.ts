@@ -489,7 +489,7 @@ export class APIStack extends cdk.Stack {
         period: Duration.minutes(5),
         statistic: 'p90',
       }),
-      // approx 2x WEBHOOK_TIMEOUT_MS
+      // approx 2x getWebhookTimeoutMs(MAINNET)
       threshold: 3500,
       evaluationPeriods: 3,
     });
@@ -500,7 +500,7 @@ export class APIStack extends cdk.Stack {
         period: Duration.minutes(5),
         statistic: 'p90',
       }),
-      // approx 1.5x WEBHOOK_TIMEOUT_MS
+      // approx 1.5x getWebhookTimeoutMs(MAINNET)
       threshold: 2000,
       evaluationPeriods: 3,
     });

@@ -45,8 +45,6 @@ export function getWebhookTimeoutMs(chainId: number): number {
   return chainId === 1 ? WEBHOOK_TIMEOUT_MS_MAINNET : WEBHOOK_TIMEOUT_MS_DEFAULT;
 }
 
-/** @deprecated use getWebhookTimeoutMs(chainId) */
-export const WEBHOOK_TIMEOUT_MS = WEBHOOK_TIMEOUT_MS_MAINNET;
 export const NOTIFICATION_TIMEOUT_MS = 10;
 
 // Default decay duration for V3 Dutch orders, in seconds (wallclock time, not blocks).
