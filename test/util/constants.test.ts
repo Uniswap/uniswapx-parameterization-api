@@ -39,16 +39,16 @@ describe('V3 chain constants', () => {
   });
 
   describe('getV3BlockBuffer', () => {
-    it('mainnet: ceil(2/12) = 1', () => {
+    it('mainnet: ceil(1/12) = 1', () => {
       expect(getV3BlockBuffer(ChainId.MAINNET)).toEqual(1);
     });
-    it('arbitrum: ceil(2/0.25) = 8', () => {
-      expect(getV3BlockBuffer(ChainId.ARBITRUM_ONE)).toEqual(8);
+    it('arbitrum: ceil(1/0.25) = 4', () => {
+      expect(getV3BlockBuffer(ChainId.ARBITRUM_ONE)).toEqual(4);
     });
-    it('tempo: ceil(2/0.5) = 4', () => {
-      expect(getV3BlockBuffer(ChainId.TEMPO)).toEqual(4);
+    it('tempo: ceil(1/0.5) = 2', () => {
+      expect(getV3BlockBuffer(ChainId.TEMPO)).toEqual(2);
     });
-    it('defaults to ceil(2/12) = 1 for unknown chains', () => {
+    it('defaults to ceil(1/12) = 1 for unknown chains', () => {
       expect(getV3BlockBuffer(99999)).toEqual(1);
     });
   });

@@ -195,7 +195,7 @@ describe('getCosignerData V3 (RFQ)', () => {
     expect(data.decayStartBlock).toEqual(CURRENT_BLOCK + 1);
   });
 
-  it('Tempo: decayStartBlock buffer = ceil(2s / 0.5s blocks) = 4', async () => {
+  it('Tempo: decayStartBlock buffer = ceil(1s / 0.5s blocks) = 2', async () => {
     const req = makeRequest(ChainId.TEMPO, TradeType.EXACT_INPUT);
     const provider = makeProvider({ baseFee: TEMPO_BASE_FEE });
     const data = (await getCosignerData(
@@ -204,7 +204,7 @@ describe('getCosignerData V3 (RFQ)', () => {
       OrderType.Dutch_V3,
       provider
     )) as V3CosignerData;
-    expect(data.decayStartBlock).toEqual(CURRENT_BLOCK + 4);
+    expect(data.decayStartBlock).toEqual(CURRENT_BLOCK + 2);
   });
 
   it('Tempo: EXACT_INPUT better quote raises outputOverride and sets exclusiveFiller', async () => {
@@ -221,7 +221,7 @@ describe('getCosignerData V3 (RFQ)', () => {
     expect(data.outputOverrides[0].gte(req.order.info.outputs[0].startAmount)).toBe(true);
     expect(data.exclusiveFiller.toLowerCase()).toEqual(FILLER.toLowerCase());
     expect(data.inputOverride).toEqual(BigNumber.from(0));
-    expect(data.decayStartBlock).toEqual(CURRENT_BLOCK + 4);
+    expect(data.decayStartBlock).toEqual(CURRENT_BLOCK + 2);
   });
 
   it('multi-output (swapper + fee): EXACT_INPUT increase goes entirely to outputs[0]', async () => {
