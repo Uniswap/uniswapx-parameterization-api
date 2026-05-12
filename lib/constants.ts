@@ -35,7 +35,18 @@ export const POST_ORDER_ERROR_REASON = {
   INSUFFICIENT_FUNDS: 'Onchain validation failed: InsufficientFunds',
 };
 
-export const WEBHOOK_TIMEOUT_MS = 500;
+// Per-chain webhook (RFQ) timeout. Default is 250 ms so a slow MM can't drag the
+// whole quote-aggregation step on fast chains; Mainnet keeps the historical 500 ms
+// ceiling because MM latency which we'll lower over time.
+const WEBHOOK_TIMEOUT_MS_DEFAULT = 250;
+const WEBHOOK_TIMEOUT_MS_MAINNET = 500;
+
+export function getWebhookTimeoutMs(chainId: number): number {
+  return chainId === 1 ? WEBHOOK_TIMEOUT_MS_MAINNET : WEBHOOK_TIMEOUT_MS_DEFAULT;
+}
+
+/** @deprecated use getWebhookTimeoutMs(chainId) */
+export const WEBHOOK_TIMEOUT_MS = WEBHOOK_TIMEOUT_MS_MAINNET;
 export const NOTIFICATION_TIMEOUT_MS = 10;
 
 // Default decay duration for V3 Dutch orders, in seconds (wallclock time, not blocks).

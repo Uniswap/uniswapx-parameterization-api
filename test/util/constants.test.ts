@@ -3,6 +3,7 @@ import {
   getBlockTimeSecs,
   getDecayBlockLength,
   getV3BlockBuffer,
+  getWebhookTimeoutMs,
 } from '../../lib/constants';
 import { ChainId } from '../../lib/util/chains';
 
@@ -49,6 +50,24 @@ describe('V3 chain constants', () => {
     });
     it('defaults to 4 for unknown chains', () => {
       expect(getV3BlockBuffer(99999)).toEqual(4);
+    });
+  });
+
+  describe('getWebhookTimeoutMs', () => {
+    it('keeps mainnet at 500 ms', () => {
+      expect(getWebhookTimeoutMs(ChainId.MAINNET)).toEqual(500);
+    });
+    it('tightens arbitrum to 250 ms', () => {
+      expect(getWebhookTimeoutMs(ChainId.ARBITRUM_ONE)).toEqual(250);
+    });
+    it('tightens tempo to 250 ms', () => {
+      expect(getWebhookTimeoutMs(ChainId.TEMPO)).toEqual(250);
+    });
+    it('tightens base to 250 ms', () => {
+      expect(getWebhookTimeoutMs(ChainId.BASE)).toEqual(250);
+    });
+    it('defaults to 250 ms for unknown chains', () => {
+      expect(getWebhookTimeoutMs(99999)).toEqual(250);
     });
   });
 });
