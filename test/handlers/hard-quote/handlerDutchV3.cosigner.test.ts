@@ -17,8 +17,31 @@ const FILLER = '0x000000000000000000000000000000000000bEEF';
 // Build a V3 order directly via the constructor so we can use chains that
 // aren't in the SDK's V3 reactor mapping.
 const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3';
-function buildV3Order(chainId: number, type: TradeType): UnsignedV3DutchOrder {
+function buildV3Order(
+  chainId: number,
+  type: TradeType,
+  extraOutputs: Array<{ token: string; startAmount: BigNumber; recipient: string }> = []
+): UnsignedV3DutchOrder {
   const now = Math.floor(Date.now() / 1000);
+  const swapperOutput = {
+    token: TOKEN_OUT,
+    startAmount: RAW_AMOUNT,
+    curve:
+      type === TradeType.EXACT_INPUT
+        ? { relativeBlocks: [4], relativeAmounts: [BigInt(4)] }
+        : { relativeBlocks: [], relativeAmounts: [] },
+    recipient: ethers.constants.AddressZero,
+    minAmount: RAW_AMOUNT.sub(4),
+    adjustmentPerGweiBaseFee: BigNumber.from(0),
+  };
+  const feeOutputs = extraOutputs.map((extra) => ({
+    token: extra.token,
+    startAmount: extra.startAmount,
+    curve: { relativeBlocks: [], relativeAmounts: [] },
+    recipient: extra.recipient,
+    minAmount: extra.startAmount,
+    adjustmentPerGweiBaseFee: BigNumber.from(0),
+  }));
   const info = {
     deadline: now + 1000,
     reactor: '0x000000000000000000000000000000000000B274',
@@ -38,29 +61,21 @@ function buildV3Order(chainId: number, type: TradeType): UnsignedV3DutchOrder {
       maxAmount: RAW_AMOUNT,
       adjustmentPerGweiBaseFee: BigNumber.from(0),
     },
-    outputs: [
-      {
-        token: TOKEN_OUT,
-        startAmount: RAW_AMOUNT,
-        curve:
-          type === TradeType.EXACT_INPUT
-            ? { relativeBlocks: [4], relativeAmounts: [BigInt(4)] }
-            : { relativeBlocks: [], relativeAmounts: [] },
-        recipient: ethers.constants.AddressZero,
-        minAmount: RAW_AMOUNT.sub(4),
-        adjustmentPerGweiBaseFee: BigNumber.from(0),
-      },
-    ],
+    outputs: [swapperOutput, ...feeOutputs],
   } as any;
   return new UnsignedV3DutchOrder(info, chainId, PERMIT2);
 }
 
-function makeRequest(chainId: number, type: TradeType): HardQuoteRequest {
+function makeRequest(
+  chainId: number,
+  type: TradeType,
+  extraOutputs: Array<{ token: string; startAmount: BigNumber; recipient: string }> = []
+): HardQuoteRequest {
   // Stub a HardQuoteRequest for chains where the SDK has no permit2/reactor
   // entry. We bypass HardQuoteRequest.fromHardRequestBody (which would call
   // UnsignedV3DutchOrder.parse → getPermit2 → MissingConfiguration) and
   // assign order directly.
-  const order = buildV3Order(chainId, type);
+  const order = buildV3Order(chainId, type, extraOutputs);
   const req = Object.create(HardQuoteRequest.prototype) as HardQuoteRequest;
   (req as any).order = order;
   (req as any).data = {
@@ -207,5 +222,28 @@ describe('getCosignerData V3 (RFQ)', () => {
     expect(data.exclusiveFiller.toLowerCase()).toEqual(FILLER.toLowerCase());
     expect(data.inputOverride).toEqual(BigNumber.from(0));
     expect(data.decayStartBlock).toEqual(CURRENT_BLOCK + 4);
+  });
+
+  it('multi-output (swapper + fee): EXACT_INPUT increase goes entirely to outputs[0]', async () => {
+    const fee = BigNumber.from('1000');
+    const feeRecipient = '0x000000000000000000000000000000000000FEE5';
+    const req = makeRequest(ChainId.MAINNET, TradeType.EXACT_INPUT, [
+      { token: TOKEN_OUT, startAmount: fee, recipient: feeRecipient },
+    ]);
+    // MM quotes 100 more than the total expected output (swapper + fee).
+    const totalOutputStart = RAW_AMOUNT.add(fee);
+    const better = totalOutputStart.add(100);
+    const provider = makeProvider();
+    const data = (await getCosignerData(
+      req,
+      makeQuote(ChainId.MAINNET, TradeType.EXACT_INPUT, { amountOut: better }),
+      OrderType.Dutch_V3,
+      provider
+    )) as V3CosignerData;
+    // outputs[0] receives the full +100 improvement on top of its startAmount.
+    expect(data.outputOverrides[0]).toEqual(RAW_AMOUNT.add(100));
+    // Fee output is left at the sentinel zero — reactor will use baseOutput.
+    expect(data.outputOverrides[1]).toEqual(BigNumber.from(0));
+    expect(data.exclusiveFiller.toLowerCase()).toEqual(FILLER.toLowerCase());
   });
 });

@@ -226,41 +226,28 @@ export async function getCosignerData(
           `No rpc provider found for chain: ${request.tokenInChainId}, which is required for V3 Dutch orders`
         );
       }
-      // V3 RFQ multi-output is not a validated path: the math below assumes
-      // totalOutputAmountStart == outputs[0].startAmount, which only holds for
-      // single-output orders. V3DutchOrderReactor._updateWithCosignerAmounts
-      // only enforces invariants per-output, not aggregate, so silently
-      // mishandling multi-output here would produce on-chain-valid but
-      // incorrect overrides. Guard explicitly until the multi-output flow is
-      // validated end-to-end.
-      if (request.order.info.outputs.length > 1) {
-        throw new Error('V3 RFQ multi-output orders are not supported');
-      }
-      const baseInputStart = request.order.info.input.startAmount;
-      const baseOutputStart = request.order.info.outputs[0].startAmount;
-
       let filler = ethers.constants.AddressZero;
       let inputOverride = BigNumber.from(0);
       const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
 
-      // Mirror V2 RFQ override flow: only apply override if the quote is strictly better for the swapper.
-      // V3 invariants (V3DutchOrderReactor._updateWithCosignerAmounts):
-      //   inputOverride <= baseInput.startAmount
-      //   outputOverride >= baseOutput.startAmount
-      // The reactor enforces these on-chain, so we don't re-check them here.
+      // Mirror V2 RFQ override flow: only apply override if the quote is
+      // strictly better for the swapper. The improvement is applied entirely
+      // to outputs[0] (the swapper-facing output); fee outputs at higher
+      // indexes stay at zero, which the reactor treats as "use baseOutput".
+      // V3DutchOrderReactor._updateWithCosignerAmounts enforces the
+      // per-output invariants (inputOverride <= baseInput.startAmount,
+      // outputOverride >= baseOutput.startAmount) on-chain.
       if (request.type === TradeType.EXACT_INPUT) {
         if (quote.amountOut.gt(request.totalOutputAmountStart)) {
           const increase = quote.amountOut.sub(request.totalOutputAmountStart);
-          const proposedOutput = baseOutputStart.add(increase);
-          outputOverrides[0] = proposedOutput;
+          outputOverrides[0] = request.order.info.outputs[0].startAmount.add(increase);
           if (quote.filler) {
             filler = quote.filler;
           }
         }
       } else {
         if (quote.amountIn.lt(request.totalInputAmountStart)) {
-          const proposedInput = quote.amountIn;
-          inputOverride = proposedInput;
+          inputOverride = quote.amountIn;
           if (quote.filler) {
             filler = quote.filler;
           }
