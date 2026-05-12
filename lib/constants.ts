@@ -96,35 +96,16 @@ export function getDecayBlockLength(chainId: number): number {
   return Math.ceil(V3_DEFAULT_DECAY_DURATION_SECS / getBlockTimeSecs(chainId));
 }
 
-// Per-chain V3 decay-start block buffer. Tempo runs at 0.5s blocks; 4 blocks
-// would be ~2s of dead time before decay even starts, so 1 is enough headroom.
-// The default of 4 is appropriate for chains with >=1s block times.
-const V3_BLOCK_BUFFER_DEFAULT = 4;
-const V3_BLOCK_BUFFER_MAP: Record<number, number> = {
-  1: 4, // MAINNET
-  10: 4, // OPTIMISM
-  56: 4, // BNB
-  130: 4, // UNICHAIN
-  137: 4, // POLYGON
-  143: 4, // MONAD
-  196: 4, // XLAYER
-  480: 4, // WORLDCHAIN
-  1868: 4, // SONEIUM
-  4217: 1, // TEMPO
-  7777777: 4, // ZORA
-  8453: 4, // BASE
-  42161: 4, // ARBITRUM_ONE
-  42220: 4, // CELO
-  43114: 4, // AVALANCHE
-  81457: 4, // BLAST
-};
+// Wallclock target between order receipt and the decay window opening.
+// Cosigners need a small lead so the swapper-signed `decayStartBlock` is
+// reliably in the future when the order is broadcast.
+export const V3_DECAY_START_BUFFER_SECS = 2;
 
+// Number of blocks for the V3 decay-start buffer, derived from wallclock
+// duration / block time.
 export function getV3BlockBuffer(chainId: number): number {
-  return V3_BLOCK_BUFFER_MAP[chainId] ?? V3_BLOCK_BUFFER_DEFAULT;
+  return Math.ceil(V3_DECAY_START_BUFFER_SECS / getBlockTimeSecs(chainId));
 }
-
-/** @deprecated use getV3BlockBuffer(chainId) */
-export const V3_BLOCK_BUFFER = V3_BLOCK_BUFFER_DEFAULT;
 
 export const RPC_HEADERS = {
   'x-uni-service-id': 'x_parameterization_api',
