@@ -119,6 +119,9 @@ export class APIPipeline extends Stack {
     });
 
     const jsonRpcProviders = {} as {[chainKey: string]: string};
+    // Shared prefix the Lambda's getRpcUrl appends the chainId to. Per-chain
+    // RPC_<chainId> entries below override it where set.
+    jsonRpcProviders['RPC_PREFIX_URL'] = rpcUrls.secretValueFromJson('RPC_PREFIX_URL').toString();
     supportedChains.forEach(
       (chainId: ChainId) => {
         const mapKey = `RPC_${chainId}`;
@@ -275,6 +278,7 @@ envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
 const jsonRpcProviders = {} as {[chainKey: string]: string};
+jsonRpcProviders['RPC_PREFIX_URL'] = process.env['RPC_PREFIX_URL'] || '';
 supportedChains.forEach(
   (chainId: ChainId) => {
     const mapKey = `RPC_${chainId}`;
