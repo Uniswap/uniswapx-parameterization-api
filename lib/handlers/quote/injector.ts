@@ -24,9 +24,8 @@ import { DynamoFillerAddressRepository } from '../../repositories/filler-address
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
-import { ChainId, supportedChains } from '../../util/chains';
+import { ChainId, getRpcUrl, supportedChains } from '../../util/chains';
 import { ethers } from 'ethers';
-import { checkDefined } from '../../preconditions/preconditions';
 
 export interface ContainerInjected {
   quoters: Quoter[];
@@ -78,12 +77,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const chainIdRpcMap = new Map<ChainId, ethers.providers.StaticJsonRpcProvider>();
     supportedChains.forEach(
       chainId => {
-        const rpcUrl = checkDefined(
-          process.env[`RPC_${chainId}`],
-          `RPC_${chainId} is not defined`
-        );
         const provider = new ethers.providers.StaticJsonRpcProvider({
-          url: rpcUrl,
+          url: getRpcUrl(chainId),
           headers: RPC_HEADERS
         }, chainId)
         chainIdRpcMap.set(chainId, provider);
