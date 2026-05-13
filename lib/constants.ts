@@ -1,3 +1,5 @@
+import { ChainId } from './util/chains';
+
 export const COMPLIANCE_CONFIG_BUCKET = 'compliance-config';
 export const WEBHOOK_CONFIG_BUCKET = 'rfq-config';
 export const SYNTH_SWITCH_BUCKET = 'synth-config';
@@ -42,7 +44,7 @@ const WEBHOOK_TIMEOUT_MS_DEFAULT = 250;
 const WEBHOOK_TIMEOUT_MS_MAINNET = 500;
 
 export function getWebhookTimeoutMs(chainId: number): number {
-  return chainId === 1 ? WEBHOOK_TIMEOUT_MS_MAINNET : WEBHOOK_TIMEOUT_MS_DEFAULT;
+  return chainId === ChainId.MAINNET ? WEBHOOK_TIMEOUT_MS_MAINNET : WEBHOOK_TIMEOUT_MS_DEFAULT;
 }
 
 export const NOTIFICATION_TIMEOUT_MS = 10;
@@ -87,7 +89,7 @@ export function getBlockTimeSecs(chainId: number): number {
     case 81457: // BLAST
       return 2;
     default:
-      return 12;
+      throw new Error(`getBlockTimeSecs: unsupported chainId ${chainId}; register it in lib/constants.ts before use`);
   }
 }
 

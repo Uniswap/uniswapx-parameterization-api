@@ -18,8 +18,8 @@ describe('V3 chain constants', () => {
     it('returns 0.5s for tempo', () => {
       expect(getBlockTimeSecs(ChainId.TEMPO)).toEqual(0.5);
     });
-    it('defaults to 12s for unknown chains', () => {
-      expect(getBlockTimeSecs(99999)).toEqual(12);
+    it('throws on unknown chainId', () => {
+      expect(() => getBlockTimeSecs(99999)).toThrow(/unsupported chainId 99999/);
     });
   });
 
@@ -48,8 +48,8 @@ describe('V3 chain constants', () => {
     it('tempo: ceil(1/0.5) = 2', () => {
       expect(getV3BlockBuffer(ChainId.TEMPO)).toEqual(2);
     });
-    it('defaults to ceil(1/12) = 1 for unknown chains', () => {
-      expect(getV3BlockBuffer(99999)).toEqual(1);
+    it('throws on unknown chainId (propagated from getBlockTimeSecs)', () => {
+      expect(() => getV3BlockBuffer(99999)).toThrow(/unsupported chainId 99999/);
     });
   });
 

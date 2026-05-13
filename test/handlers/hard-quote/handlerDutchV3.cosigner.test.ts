@@ -183,7 +183,7 @@ describe('getCosignerData V3 (RFQ)', () => {
     expect(data.exclusiveFiller).toEqual(ethers.constants.AddressZero);
   });
 
-  it('Mainnet: decayStartBlock buffer = ceil(2s / 12s blocks) = 1', async () => {
+  it('Mainnet: decayStartBlock buffer = ceil(1s / 12s blocks) = 1', async () => {
     const req = makeRequest(ChainId.MAINNET, TradeType.EXACT_INPUT);
     const provider = makeProvider();
     const data = (await getCosignerData(
