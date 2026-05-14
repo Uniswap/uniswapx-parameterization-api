@@ -209,9 +209,12 @@ export async function getCosignerData(
         }
       }
 
+      const decayEndTime = getDecayEndTime(request.tokenInChainId, decayStartTime);
+      assertV2DecayWithinDeadline(decayEndTime, request.order.info.deadline);
+
       const v2Data: CosignerData = {
         decayStartTime,
-        decayEndTime: getDecayEndTime(request.tokenInChainId, decayStartTime),
+        decayEndTime,
         exclusiveFiller: filler,
         exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
         inputOverride,
@@ -220,6 +223,10 @@ export async function getCosignerData(
       return v2Data;
     }
 
+    // Note: on Dutch_V3 we allow decayEndBlock to land after the order's
+    // deadline. The reactor enforces the deadline on-chain; an order filled
+    // before deadline simply takes whatever portion of the decay curve has
+    // elapsed (partial decay).
     case OrderType.Dutch_V3: {
       if (!provider) {
         throw new Error(
@@ -341,6 +348,9 @@ async function createCosignedOrder(
 
 function getDefaultV2CosignerData(request: HardQuoteRequest): CosignerData {
   const decayStartTime = getDecayStartTime(request.tokenInChainId);
+  const decayEndTime = getDecayEndTime(request.tokenInChainId, decayStartTime);
+  assertV2DecayWithinDeadline(decayEndTime, request.order.info.deadline);
+
   const filler = ethers.constants.AddressZero;
   let inputOverride = BigNumber.from(0);
   const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
@@ -351,13 +361,33 @@ function getDefaultV2CosignerData(request: HardQuoteRequest): CosignerData {
   }
 
   return {
-    decayStartTime: decayStartTime,
-    decayEndTime: getDecayEndTime(request.tokenInChainId, decayStartTime),
+    decayStartTime,
+    decayEndTime,
     exclusiveFiller: filler,
     exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
     inputOverride: inputOverride,
     outputOverrides: outputOverrides,
   };
+}
+
+/**
+ * V2 orders must complete their decay window before the order's deadline,
+ * otherwise the resolved output the swapper signed for becomes meaningless —
+ * fills past `decayEndTime` lock in the end-amount, but if `decayEndTime`
+ * is itself past the deadline, the reactor reverts the fill on the
+ * deadline check and the swapper loses the order's exclusivity window
+ * (and the cosigner's exclusivity grant) for nothing.
+ *
+ * V3 orders allow partial decay — fills that happen before
+ * `decayEndBlock` simply interpolate, so this check is V2-only.
+ */
+function assertV2DecayWithinDeadline(decayEndTime: number, deadline: number): void {
+  if (decayEndTime > deadline) {
+    throw new Error(
+      `V2 decayEndTime (${decayEndTime}) is after order deadline (${deadline}); ` +
+        'cosigning refused. Extend the order deadline or shorten the decay window.'
+    );
+  }
 }
 
 async function getDefaultV3CosignerData(request: HardQuoteRequest, provider: ethers.providers.StaticJsonRpcProvider | undefined): Promise<V3CosignerData> {
