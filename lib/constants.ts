@@ -57,16 +57,16 @@ export function getBlockTimeSecs(chainId: number): number {
       return 12;
     case 10: // OPTIMISM
       return 2;
-    case 56: // BNB
-      return 3;
+    case 56: // BNB (post-Maxwell hardfork)
+      return 0.5;
     case 130: // UNICHAIN
       return 1;
     case 137: // POLYGON
       return 2;
     case 143: // MONAD
-      return 1;
+      return 0.5;
     case 196: // XLAYER
-      return 3;
+      return 1;
     case 480: // WORLDCHAIN
       return 2;
     case 1868: // SONEIUM
@@ -80,7 +80,7 @@ export function getBlockTimeSecs(chainId: number): number {
     case 42161: // ARBITRUM_ONE
       return 0.25;
     case 42220: // CELO
-      return 5;
+      return 1;
     case 43114: // AVALANCHE
       return 2;
     case 81457: // BLAST
