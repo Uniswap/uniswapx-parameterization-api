@@ -49,11 +49,8 @@ export function getWebhookTimeoutMs(chainId: number): number {
 
 export const NOTIFICATION_TIMEOUT_MS = 10;
 
-// Default decay duration for V3 Dutch orders, in seconds (wallclock time, not blocks).
-export const V3_DEFAULT_DECAY_DURATION_SECS = 30;
-
-// Per-chain block time in seconds. Used by V3 helpers (decay block length).
-// V2 fade math is time-based, so block time only matters for V3.
+// Per-chain block time in seconds. Used by getV3BlockBuffer to derive the
+// V3 decay-start buffer in blocks from V3_DECAY_START_BUFFER_SECS.
 export function getBlockTimeSecs(chainId: number): number {
   switch (chainId) {
     case 1: // MAINNET
@@ -91,11 +88,6 @@ export function getBlockTimeSecs(chainId: number): number {
     default:
       throw new Error(`getBlockTimeSecs: unsupported chainId ${chainId}; register it in lib/constants.ts before use`);
   }
-}
-
-// Number of blocks for the V3 decay window, derived from wallclock duration / block time.
-export function getDecayBlockLength(chainId: number): number {
-  return Math.ceil(V3_DEFAULT_DECAY_DURATION_SECS / getBlockTimeSecs(chainId));
 }
 
 // Wallclock target between order receipt and the decay window opening.

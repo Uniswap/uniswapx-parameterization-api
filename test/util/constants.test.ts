@@ -1,7 +1,5 @@
 import {
-  V3_DEFAULT_DECAY_DURATION_SECS,
   getBlockTimeSecs,
-  getDecayBlockLength,
   getV3BlockBuffer,
   getWebhookTimeoutMs,
 } from '../../lib/constants';
@@ -20,21 +18,6 @@ describe('V3 chain constants', () => {
     });
     it('throws on unknown chainId', () => {
       expect(() => getBlockTimeSecs(99999)).toThrow(/unsupported chainId 99999/);
-    });
-  });
-
-  describe('getDecayBlockLength', () => {
-    it(`uses ${V3_DEFAULT_DECAY_DURATION_SECS}s as the V3 decay duration default`, () => {
-      expect(V3_DEFAULT_DECAY_DURATION_SECS).toEqual(30);
-    });
-    it('mainnet: ceil(30/12) = 3', () => {
-      expect(getDecayBlockLength(ChainId.MAINNET)).toEqual(3);
-    });
-    it('arbitrum: ceil(30/0.25) = 120', () => {
-      expect(getDecayBlockLength(ChainId.ARBITRUM_ONE)).toEqual(120);
-    });
-    it('tempo: ceil(30/0.5) = 60', () => {
-      expect(getDecayBlockLength(ChainId.TEMPO)).toEqual(60);
     });
   });
 
