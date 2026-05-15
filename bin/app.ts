@@ -11,7 +11,7 @@ import dotenv from 'dotenv';
 import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
-import { ChainId, supportedChains } from '../lib/util/chains';
+import { ChainId, SUPPORTED_CHAINS } from '../lib/util/chains';
 
 dotenv.config();
 
@@ -118,18 +118,12 @@ export class APIPipeline extends Stack {
         'arn:aws:secretsmanager:us-east-2:644039819003:secret:prod/param-api/rpc-urls-HJyniu',
     });
 
-    const jsonRpcProviders = {} as {[chainKey: string]: string};
-    // Shared prefix the Lambda's getRpcUrl appends the chainId to. Per-chain
-    // RPC_<chainId> entries below override it where set.
-    jsonRpcProviders['RPC_PREFIX_URL'] = rpcUrls.secretValueFromJson('RPC_PREFIX_URL').toString();
-    supportedChains.forEach(
-      (chainId: ChainId) => {
-        const mapKey = `RPC_${chainId}`;
-        jsonRpcProviders[mapKey] = rpcUrls
-          .secretValueFromJson(mapKey)
-          .toString();
-      }
-    );
+    // The Lambda's getRpcUrl reads RPC_PREFIX_URL at runtime and appends the
+    // chainId. Per-chain `RPC_<chainId>` overrides are intentionally not set
+    // here — add an explicit line below if a chain needs a different provider.
+    const jsonRpcProviders = {
+      RPC_PREFIX_URL: rpcUrls.secretValueFromJson('RPC_PREFIX_URL').toString(),
+    } as {[chainKey: string]: string};
 
     // Beta us-east-2
     const betaUsEast2Stage = new APIStage(this, 'beta-us-east-2', {
@@ -277,14 +271,17 @@ envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
-const jsonRpcProviders = {} as {[chainKey: string]: string};
-jsonRpcProviders['RPC_PREFIX_URL'] = process.env['RPC_PREFIX_URL'] || '';
-supportedChains.forEach(
-  (chainId: ChainId) => {
-    const mapKey = `RPC_${chainId}`;
-    jsonRpcProviders[mapKey] = process.env[mapKey] || '';
+// Local dev: Lambda runtime reads RPC_PREFIX_URL via getRpcUrl. Any per-chain
+// `RPC_<chainId>` overrides exported in the shell are picked up automatically.
+const jsonRpcProviders: {[chainKey: string]: string} = {
+  RPC_PREFIX_URL: process.env['RPC_PREFIX_URL'] || '',
+};
+SUPPORTED_CHAINS.forEach((chainId: ChainId) => {
+  const override = process.env[`RPC_${chainId}`];
+  if (override) {
+    jsonRpcProviders[`RPC_${chainId}`] = override;
   }
-);
+});
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {

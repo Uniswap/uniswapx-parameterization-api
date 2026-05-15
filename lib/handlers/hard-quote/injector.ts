@@ -18,7 +18,7 @@ import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { HardQuoteRequestBody } from './schema';
 import { ethers } from 'ethers';
-import { ChainId, getRpcUrl, supportedChains } from '../../util/chains';
+import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
 
 export interface ContainerInjected {
   quoters: Quoter[];
@@ -75,7 +75,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     ];
 
     const chainIdRpcMap = new Map<ChainId, ethers.providers.StaticJsonRpcProvider>();
-    supportedChains.forEach(chainId => {
+    SUPPORTED_CHAINS.forEach(chainId => {
       const provider = new ethers.providers.StaticJsonRpcProvider(
         { url: getRpcUrl(chainId), headers: RPC_HEADERS },
         chainId

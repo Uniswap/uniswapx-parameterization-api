@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
+import { CosignerData, OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 
 import { HardQuoteRequest, QuoteResponse } from '../../../lib/entities';
@@ -80,7 +80,7 @@ describe('V2 cosigner: decayEndTime vs deadline', () => {
   it('passes when order deadline comfortably exceeds decay end', async () => {
     const now = Math.floor(Date.now() / 1000);
     const req = makeRequest(now + 1000);
-    const data = await getCosignerData(req, makeQuote(), OrderType.Dutch_V2);
+    const data = (await getCosignerData(req, makeQuote(), OrderType.Dutch_V2)) as CosignerData;
     expect(data.decayEndTime).toBeLessThanOrEqual(req.order.info.deadline);
   });
 });

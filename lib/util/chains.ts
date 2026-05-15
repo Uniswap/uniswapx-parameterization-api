@@ -1,23 +1,38 @@
-export enum ChainId {
-  MAINNET = 1,
-  GÖRLI = 5,
-  OPTIMISM = 10,
-  BNB = 56,
-  UNICHAIN = 130,
-  POLYGON = 137,
-  MONAD = 143,
-  XLAYER = 196,
-  WORLDCHAIN = 480,
-  SONEIUM = 1868,
-  TEMPO = 4217,
-  ZORA = 7777777,
-  BASE = 8453,
-  SEPOLIA = 11155111,
-  ARBITRUM_ONE = 42161,
-  CELO = 42220,
-  AVALANCHE = 43114,
-  BLAST = 81457,
-}
+import { ChainId } from '@uniswap/sdk-core';
+
+export { ChainId };
+
+/**
+ * Mainnet chains we accept orders on and provision Lambda RPC providers for.
+ * Single source of truth — used by both the soft/hard-quote injectors and the
+ * Joi `chainId` validator (the latter additionally allows TESTNET_CHAINS for
+ * integ tests).
+ */
+export const SUPPORTED_CHAINS: ChainId[] = [
+  ChainId.MAINNET,
+  ChainId.OPTIMISM,
+  ChainId.BNB,
+  ChainId.UNICHAIN,
+  ChainId.POLYGON,
+  ChainId.MONAD,
+  ChainId.XLAYER,
+  ChainId.WORLDCHAIN,
+  ChainId.SONEIUM,
+  ChainId.TEMPO,
+  ChainId.ZORA,
+  ChainId.BASE,
+  ChainId.ARBITRUM_ONE,
+  ChainId.CELO,
+  ChainId.AVALANCHE,
+  ChainId.BLAST,
+];
+
+/**
+ * Testnets accepted by the Joi `chainId` validator only — used by integ tests
+ * on Sepolia and the legacy Görli routing fallback. Not provisioned with a
+ * Lambda RPC provider.
+ */
+export const TESTNET_CHAINS: ChainId[] = [ChainId.GOERLI, ChainId.SEPOLIA];
 
 /**
  * Resolve the RPC URL for a given chainId. Per-chain `RPC_<chainId>` env
@@ -36,23 +51,3 @@ export const getRpcUrl = (chainId: number): string => {
   }
   return `${prefix.replace(/\/$/, '')}/${chainId}`;
 };
-
-// Chains where the V3 cosigner is enabled.
-export const supportedChains = [
-  ChainId.MAINNET,
-  ChainId.OPTIMISM,
-  ChainId.BNB,
-  ChainId.UNICHAIN,
-  ChainId.POLYGON,
-  ChainId.MONAD,
-  ChainId.XLAYER,
-  ChainId.WORLDCHAIN,
-  ChainId.SONEIUM,
-  ChainId.TEMPO,
-  ChainId.ZORA,
-  ChainId.BASE,
-  ChainId.ARBITRUM_ONE,
-  ChainId.CELO,
-  ChainId.AVALANCHE,
-  ChainId.BLAST,
-];
