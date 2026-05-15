@@ -1,26 +1,10 @@
 import {
-  getBlockTimeSecs,
   getV3BlockBuffer,
   getWebhookTimeoutMs,
 } from '../../lib/constants';
 import { ChainId } from '../../lib/util/chains';
 
 describe('V3 chain constants', () => {
-  describe('getBlockTimeSecs', () => {
-    it('returns 12s for mainnet', () => {
-      expect(getBlockTimeSecs(ChainId.MAINNET)).toEqual(12);
-    });
-    it('returns 0.25s for arbitrum', () => {
-      expect(getBlockTimeSecs(ChainId.ARBITRUM_ONE)).toEqual(0.25);
-    });
-    it('returns 0.5s for tempo', () => {
-      expect(getBlockTimeSecs(ChainId.TEMPO)).toEqual(0.5);
-    });
-    it('throws on unknown chainId', () => {
-      expect(() => getBlockTimeSecs(99999)).toThrow(/unsupported chainId 99999/);
-    });
-  });
-
   describe('getV3BlockBuffer', () => {
     it('mainnet: ceil(1/12) = 1', () => {
       expect(getV3BlockBuffer(ChainId.MAINNET)).toEqual(1);
@@ -31,7 +15,7 @@ describe('V3 chain constants', () => {
     it('tempo: ceil(1/0.5) = 2', () => {
       expect(getV3BlockBuffer(ChainId.TEMPO)).toEqual(2);
     });
-    it('throws on unknown chainId (propagated from getBlockTimeSecs)', () => {
+    it('throws on unknown chainId (propagated from sdk-core)', () => {
       expect(() => getV3BlockBuffer(99999)).toThrow(/unsupported chainId 99999/);
     });
   });

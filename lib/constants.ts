@@ -1,3 +1,4 @@
+import { secondsToBlocks } from '@uniswap/sdk-core';
 import { ChainId } from './util/chains';
 
 export const COMPLIANCE_CONFIG_BUCKET = 'compliance-config';
@@ -49,56 +50,15 @@ export function getWebhookTimeoutMs(chainId: number): number {
 
 export const NOTIFICATION_TIMEOUT_MS = 10;
 
-// Per-chain block time in seconds. Used by getV3BlockBuffer to derive the
-// V3 decay-start buffer in blocks from V3_DECAY_START_BUFFER_SECS.
-export function getBlockTimeSecs(chainId: number): number {
-  switch (chainId) {
-    case 1: // MAINNET
-      return 12;
-    case 10: // OPTIMISM
-      return 2;
-    case 56: // BNB (post-Maxwell hardfork)
-      return 0.45;
-    case 130: // UNICHAIN
-      return 1;
-    case 137: // POLYGON
-      return 1.75;
-    case 143: // MONAD
-      return 0.4;
-    case 196: // XLAYER
-      return 1;
-    case 480: // WORLDCHAIN
-      return 2;
-    case 1868: // SONEIUM
-      return 2;
-    case 4217: // TEMPO
-      return 0.5;
-    case 7777777: // ZORA
-      return 2;
-    case 8453: // BASE
-      return 2;
-    case 42161: // ARBITRUM_ONE
-      return 0.25;
-    case 42220: // CELO
-      return 1;
-    case 43114: // AVALANCHE
-      return 1;
-    case 81457: // BLAST
-      return 2;
-    default:
-      throw new Error(`getBlockTimeSecs: unsupported chainId ${chainId}; register it in lib/constants.ts before use`);
-  }
-}
-
 // Wallclock target between order receipt and the decay window opening.
 // Cosigners need a small lead so the swapper-signed `decayStartBlock` is
 // reliably in the future when the order is broadcast.
 export const V3_DECAY_START_BUFFER_SECS = 1;
 
 // Number of blocks for the V3 decay-start buffer, derived from wallclock
-// duration / block time.
+// duration / per-chain block time (sourced from @uniswap/sdk-core).
 export function getV3BlockBuffer(chainId: number): number {
-  return Math.ceil(V3_DECAY_START_BUFFER_SECS / getBlockTimeSecs(chainId));
+  return secondsToBlocks(V3_DECAY_START_BUFFER_SECS, chainId);
 }
 
 export const RPC_HEADERS = {
