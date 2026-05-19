@@ -1,7 +1,7 @@
 import { BigNumber, ethers } from 'ethers';
 import Joi, { CustomHelpers } from 'joi';
 
-import { SUPPORTED_CHAINS } from '../config/chains';
+import { SUPPORTED_CHAINS, TESTNET_CHAINS } from './chains';
 import { ProtocolVersion } from '../providers';
 
 export class FieldValidator {
@@ -29,7 +29,7 @@ export class FieldValidator {
 
   public static readonly chainId = Joi.number()
     .integer()
-    .valid(...SUPPORTED_CHAINS);
+    .valid(...SUPPORTED_CHAINS, ...TESTNET_CHAINS);
 
   public static readonly requestId = Joi.string().guid({ version: 'uuidv4' });
 

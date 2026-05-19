@@ -6,7 +6,7 @@ import { ChainId } from '../util/chains';
 export const DEFAULT_ROUTING_CONFIG_BY_CHAIN = (chainId: ChainId): AlphaRouterConfig => {
   switch (chainId) {
     case ChainId.MAINNET:
-    case ChainId.GÖRLI:
+    case ChainId.GOERLI:
     default:
       return {
         v2PoolSelection: {

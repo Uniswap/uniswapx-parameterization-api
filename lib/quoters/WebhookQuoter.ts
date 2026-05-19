@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ethers } from 'ethers';
 
 import { Quoter, QuoterType } from '.';
-import { NOTIFICATION_TIMEOUT_MS, WEBHOOK_TIMEOUT_MS } from '../constants';
+import { getWebhookTimeoutMs, NOTIFICATION_TIMEOUT_MS } from '../constants';
 import {
   AnalyticsEvent,
   AnalyticsEventType,
@@ -115,7 +115,7 @@ export class WebhookQuoter implements Quoter {
     const timeoutOverride = config.overrides?.timeout;
 
     const axiosConfig = {
-      timeout: timeoutOverride ? Number(timeoutOverride) : WEBHOOK_TIMEOUT_MS,
+      timeout: timeoutOverride ? Number(timeoutOverride) : getWebhookTimeoutMs(request.tokenInChainId),
       ...(!!headers && { headers }),
     };
 

@@ -11,7 +11,6 @@ import dotenv from 'dotenv';
 import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
-import { ChainId, supportedChains } from '../lib/util/chains';
 
 dotenv.config();
 
@@ -118,15 +117,11 @@ export class APIPipeline extends Stack {
         'arn:aws:secretsmanager:us-east-2:644039819003:secret:prod/param-api/rpc-urls-HJyniu',
     });
 
-    const jsonRpcProviders = {} as {[chainKey: string]: string};
-    supportedChains.forEach(
-      (chainId: ChainId) => {
-        const mapKey = `RPC_${chainId}`;
-        jsonRpcProviders[mapKey] = rpcUrls
-          .secretValueFromJson(mapKey)
-          .toString();
-      }
-    );
+    // The Lambda's getRpcUrl reads RPC_PREFIX_URL at runtime and appends the
+    // chainId to form per-chain RPC URLs.
+    const jsonRpcProviders = {
+      RPC_PREFIX_URL: rpcUrls.secretValueFromJson('RPC_PREFIX_URL').toString(),
+    } as {[chainKey: string]: string};
 
     // Beta us-east-2
     const betaUsEast2Stage = new APIStage(this, 'beta-us-east-2', {
@@ -225,8 +220,8 @@ export class APIPipeline extends Stack {
             value: cosignerSecret,
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
           },
-          RPC_11155111: {
-            value: 'prod/param-api/rpc-urls:RPC_11155111',
+          RPC_PREFIX_URL: {
+            value: 'prod/param-api/rpc-urls:RPC_PREFIX_URL',
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
           },
         },
@@ -274,13 +269,10 @@ envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
-const jsonRpcProviders = {} as {[chainKey: string]: string};
-supportedChains.forEach(
-  (chainId: ChainId) => {
-    const mapKey = `RPC_${chainId}`;
-    jsonRpcProviders[mapKey] = process.env[mapKey] || '';
-  }
-);
+// Local dev: Lambda runtime reads RPC_PREFIX_URL via getRpcUrl.
+const jsonRpcProviders: {[chainKey: string]: string} = {
+  RPC_PREFIX_URL: process.env['RPC_PREFIX_URL'] || '',
+};
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {
