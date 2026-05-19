@@ -27,10 +27,11 @@ const UNISWAP_API = checkDefined(
 );
 
 const SEPOLIA = 11155111;
-const SEPOLIA_RPC = checkDefined(
-  process.env.RPC_11155111,
-  'Must set RPC_11155111 env variable for integ tests. See README'
+const RPC_PREFIX_URL = checkDefined(
+  process.env.RPC_PREFIX_URL,
+  'Must set RPC_PREFIX_URL env variable for integ tests. See README'
 );
+const SEPOLIA_RPC = `${RPC_PREFIX_URL.replace(/\/$/, '')}/${SEPOLIA}`;
 const PARAM_API = `${UNISWAP_API}hard-quote`;
 
 const REQUEST_ID = uuidv4();

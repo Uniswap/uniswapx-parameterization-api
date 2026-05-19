@@ -11,7 +11,6 @@ import dotenv from 'dotenv';
 import { STAGE } from '../lib/util/stage';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
-import { ChainId, SUPPORTED_CHAINS } from '../lib/util/chains';
 
 dotenv.config();
 
@@ -119,8 +118,7 @@ export class APIPipeline extends Stack {
     });
 
     // The Lambda's getRpcUrl reads RPC_PREFIX_URL at runtime and appends the
-    // chainId. Per-chain `RPC_<chainId>` overrides are intentionally not set
-    // here — add an explicit line below if a chain needs a different provider.
+    // chainId to form per-chain RPC URLs.
     const jsonRpcProviders = {
       RPC_PREFIX_URL: rpcUrls.secretValueFromJson('RPC_PREFIX_URL').toString(),
     } as {[chainKey: string]: string};
@@ -222,8 +220,8 @@ export class APIPipeline extends Stack {
             value: cosignerSecret,
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
           },
-          RPC_11155111: {
-            value: 'prod/param-api/rpc-urls:RPC_11155111',
+          RPC_PREFIX_URL: {
+            value: 'prod/param-api/rpc-urls:RPC_PREFIX_URL',
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
           },
         },
@@ -271,17 +269,10 @@ envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
-// Local dev: Lambda runtime reads RPC_PREFIX_URL via getRpcUrl. Any per-chain
-// `RPC_<chainId>` overrides exported in the shell are picked up automatically.
+// Local dev: Lambda runtime reads RPC_PREFIX_URL via getRpcUrl.
 const jsonRpcProviders: {[chainKey: string]: string} = {
   RPC_PREFIX_URL: process.env['RPC_PREFIX_URL'] || '',
 };
-SUPPORTED_CHAINS.forEach((chainId: ChainId) => {
-  const override = process.env[`RPC_${chainId}`];
-  if (override) {
-    jsonRpcProviders[`RPC_${chainId}`] = override;
-  }
-});
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
   env: {
