@@ -1,38 +1,47 @@
-export enum ChainId {
-  MAINNET = 1,
-  GÖRLI = 5,
-  POLYGON = 137,
-  SEPOLIA = 11155111,
-  ARBITRUM_ONE = 42161,
-}
+import { ChainId } from '@uniswap/sdk-core';
 
-export const supportedChains = [
+export { ChainId };
+
+/**
+ * Mainnet chains we accept orders on and provision Lambda RPC providers for.
+ * Single source of truth — used by both the soft/hard-quote injectors and the
+ * Joi `chainId` validator (the latter additionally allows TESTNET_CHAINS for
+ * integ tests).
+ */
+export const SUPPORTED_CHAINS: ChainId[] = [
   ChainId.MAINNET,
+  ChainId.OPTIMISM,
+  ChainId.BNB,
+  ChainId.UNICHAIN,
+  ChainId.POLYGON,
+  ChainId.MONAD,
+  ChainId.XLAYER,
+  ChainId.WORLDCHAIN,
+  ChainId.SONEIUM,
+  ChainId.TEMPO,
+  ChainId.ZORA,
+  ChainId.BASE,
   ChainId.ARBITRUM_ONE,
-]
+  ChainId.CELO,
+  ChainId.AVALANCHE,
+  ChainId.BLAST,
+];
 
-export enum ChainName {
-  // ChainNames match infura network strings
-  MAINNET = 'mainnet',
-  GÖRLI = 'goerli',
-  POLYGON = 'polygon',
-  SEPOLIA = 'sepolia',
-  ARBITRUM_ONE = 'arbitrum-mainnet',
-}
+/**
+ * Testnets accepted by the Joi `chainId` validator only — used by integ tests
+ * on Sepolia and the legacy Görli routing fallback. Not provisioned with a
+ * Lambda RPC provider.
+ */
+export const TESTNET_CHAINS: ChainId[] = [ChainId.GOERLI, ChainId.SEPOLIA];
 
-export const ID_TO_NETWORK_NAME = (id: number): ChainName => {
-  switch (id) {
-    case 1:
-      return ChainName.MAINNET;
-    case 5:
-      return ChainName.GÖRLI;
-    case 137:
-      return ChainName.POLYGON;
-    case 11155111:
-      return ChainName.SEPOLIA;
-    case 42161:
-      return ChainName.ARBITRUM_ONE;
-    default:
-      throw new Error(`Unknown chain id: ${id}`);
+/**
+ * Resolve the RPC URL for a given chainId by appending it to RPC_PREFIX_URL.
+ * Throws if the prefix is not set.
+ */
+export const getRpcUrl = (chainId: number): string => {
+  const prefix = process.env.RPC_PREFIX_URL;
+  if (!prefix) {
+    throw new Error(`No RPC for chain ${chainId}: set RPC_PREFIX_URL`);
   }
+  return `${prefix.replace(/\/$/, '')}/${chainId}`;
 };

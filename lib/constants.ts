@@ -1,3 +1,6 @@
+import { secondsToBlocks } from '@uniswap/sdk-core';
+import { ChainId } from './util/chains';
+
 export const COMPLIANCE_CONFIG_BUCKET = 'compliance-config';
 export const WEBHOOK_CONFIG_BUCKET = 'rfq-config';
 export const SYNTH_SWITCH_BUCKET = 'synth-config';
@@ -35,9 +38,28 @@ export const POST_ORDER_ERROR_REASON = {
   INSUFFICIENT_FUNDS: 'Onchain validation failed: InsufficientFunds',
 };
 
-export const WEBHOOK_TIMEOUT_MS = 500;
+// Per-chain webhook (RFQ) timeout. Default 250 ms so a slow MM can't drag the
+// whole quote-aggregation step on fast chains; Mainnet 500 ms to accommodate
+// higher MM latency.
+const WEBHOOK_TIMEOUT_MS_DEFAULT = 250;
+const WEBHOOK_TIMEOUT_MS_MAINNET = 500;
+
+export function getWebhookTimeoutMs(chainId: number): number {
+  return chainId === ChainId.MAINNET ? WEBHOOK_TIMEOUT_MS_MAINNET : WEBHOOK_TIMEOUT_MS_DEFAULT;
+}
+
 export const NOTIFICATION_TIMEOUT_MS = 10;
-export const V3_BLOCK_BUFFER = 4;
+
+// Wallclock target between order receipt and the decay window opening.
+// Cosigners need a small lead so the swapper-signed `decayStartBlock` is
+// reliably in the future when the order is broadcast.
+export const V3_DECAY_START_BUFFER_SECS = 1;
+
+// Number of blocks for the V3 decay-start buffer, derived from wallclock
+// duration / per-chain block time (sourced from @uniswap/sdk-core).
+export function getV3BlockBuffer(chainId: number): number {
+  return secondsToBlocks(V3_DECAY_START_BUFFER_SECS, chainId);
+}
 
 export const RPC_HEADERS = {
   'x-uni-service-id': 'x_parameterization_api',

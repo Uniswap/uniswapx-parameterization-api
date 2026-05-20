@@ -15,7 +15,7 @@ import {
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
-import { POST_ORDER_ERROR_REASON, V3_BLOCK_BUFFER } from '../../constants';
+import { POST_ORDER_ERROR_REASON, getV3BlockBuffer } from '../../constants';
 import { HardQuoteRequest, Metric, QuoteResponse } from '../../entities';
 import { V2HardQuoteResponse } from '../../entities/V2HardQuoteResponse';
 import { V3HardQuoteResponse } from '../../entities/V3HardQuoteResponse';
@@ -109,7 +109,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     let cosignerData: CosignerData | V3CosignerData;
     if (bestQuote) {
-      cosignerData = getCosignerData(request, bestQuote, orderType);
+      cosignerData = await getCosignerData(request, bestQuote, orderType, provider);
       log.info({ bestQuote: bestQuote }, 'bestQuote');
     } else {
       cosignerData = await getDefaultCosignerData(request, orderType, provider);
@@ -177,11 +177,12 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 }
 
-export function getCosignerData(
+export async function getCosignerData(
   request: HardQuoteRequest,
   quote: QuoteResponse,
-  orderType: OrderType
-): CosignerData | V3CosignerData {
+  orderType: OrderType,
+  provider?: ethers.providers.StaticJsonRpcProvider
+): Promise<CosignerData | V3CosignerData> {
   switch (orderType) {
     case OrderType.Dutch_V2: {
       const decayStartTime = getDecayStartTime(request.tokenInChainId);
@@ -208,9 +209,12 @@ export function getCosignerData(
         }
       }
 
+      const decayEndTime = getDecayEndTime(request.tokenInChainId, decayStartTime);
+      assertV2DecayWithinDeadline(decayEndTime, request.order.info.deadline);
+
       const v2Data: CosignerData = {
         decayStartTime,
-        decayEndTime: getDecayEndTime(request.tokenInChainId, decayStartTime),
+        decayEndTime,
         exclusiveFiller: filler,
         exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
         inputOverride,
@@ -219,7 +223,57 @@ export function getCosignerData(
       return v2Data;
     }
 
-    case OrderType.Dutch_V3: // fallthrough; currently not expecting users to use V3 for RFQ
+    // Note: on Dutch_V3 we allow decayEndBlock to land after the order's
+    // deadline. The reactor enforces the deadline on-chain; an order filled
+    // before deadline simply takes whatever portion of the decay curve has
+    // elapsed (partial decay).
+    case OrderType.Dutch_V3: {
+      if (!provider) {
+        throw new Error(
+          `No rpc provider found for chain: ${request.tokenInChainId}, which is required for V3 Dutch orders`
+        );
+      }
+      let filler = ethers.constants.AddressZero;
+      let inputOverride = BigNumber.from(0);
+      const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
+
+      // Mirror V2 RFQ override flow: only apply override if the quote is
+      // strictly better for the swapper. The improvement is applied entirely
+      // to outputs[0] (the swapper-facing output); fee outputs at higher
+      // indexes stay at zero, which the reactor treats as "use baseOutput".
+      // V3DutchOrderReactor._updateWithCosignerAmounts enforces the
+      // per-output invariants (inputOverride <= baseInput.startAmount,
+      // outputOverride >= baseOutput.startAmount) on-chain.
+      if (request.type === TradeType.EXACT_INPUT) {
+        if (quote.amountOut.gt(request.totalOutputAmountStart)) {
+          const increase = quote.amountOut.sub(request.totalOutputAmountStart);
+          outputOverrides[0] = request.order.info.outputs[0].startAmount.add(increase);
+          if (quote.filler) {
+            filler = quote.filler;
+          }
+        }
+      } else {
+        if (quote.amountIn.lt(request.totalInputAmountStart)) {
+          inputOverride = quote.amountIn;
+          if (quote.filler) {
+            filler = quote.filler;
+          }
+        }
+      }
+
+      const currentBlock = await provider.getBlockNumber();
+      const decayStartBlock = currentBlock + getV3BlockBuffer(request.tokenInChainId);
+
+      const v3Data: V3CosignerData = {
+        decayStartBlock,
+        exclusiveFiller: filler,
+        exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+        inputOverride,
+        outputOverrides,
+      };
+      return v3Data;
+    }
+
     default:
       throw new Error('Unsupported order type');
   }
@@ -294,6 +348,9 @@ async function createCosignedOrder(
 
 function getDefaultV2CosignerData(request: HardQuoteRequest): CosignerData {
   const decayStartTime = getDecayStartTime(request.tokenInChainId);
+  const decayEndTime = getDecayEndTime(request.tokenInChainId, decayStartTime);
+  assertV2DecayWithinDeadline(decayEndTime, request.order.info.deadline);
+
   const filler = ethers.constants.AddressZero;
   let inputOverride = BigNumber.from(0);
   const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
@@ -304,13 +361,33 @@ function getDefaultV2CosignerData(request: HardQuoteRequest): CosignerData {
   }
 
   return {
-    decayStartTime: decayStartTime,
-    decayEndTime: getDecayEndTime(request.tokenInChainId, decayStartTime),
+    decayStartTime,
+    decayEndTime,
     exclusiveFiller: filler,
     exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
     inputOverride: inputOverride,
     outputOverrides: outputOverrides,
   };
+}
+
+/**
+ * V2 orders must complete their decay window before the order's deadline,
+ * otherwise the resolved output the swapper signed for becomes meaningless —
+ * fills past `decayEndTime` lock in the end-amount, but if `decayEndTime`
+ * is itself past the deadline, the reactor reverts the fill on the
+ * deadline check and the swapper loses the order's exclusivity window
+ * (and the cosigner's exclusivity grant) for nothing.
+ *
+ * V3 orders allow partial decay — fills that happen before
+ * `decayEndBlock` simply interpolate, so this check is V2-only.
+ */
+function assertV2DecayWithinDeadline(decayEndTime: number, deadline: number): void {
+  if (decayEndTime > deadline) {
+    throw new Error(
+      `V2 decayEndTime (${decayEndTime}) is after order deadline (${deadline}); ` +
+        'cosigning refused. Extend the order deadline or shorten the decay window.'
+    );
+  }
 }
 
 async function getDefaultV3CosignerData(request: HardQuoteRequest, provider: ethers.providers.StaticJsonRpcProvider | undefined): Promise<V3CosignerData> {
@@ -321,7 +398,7 @@ async function getDefaultV3CosignerData(request: HardQuoteRequest, provider: eth
   const currentBlock = await provider.getBlockNumber();
 
   return {
-    decayStartBlock: currentBlock + V3_BLOCK_BUFFER,
+    decayStartBlock: currentBlock + getV3BlockBuffer(request.tokenInChainId),
     exclusiveFiller: ethers.constants.AddressZero,
     exclusivityOverrideBps: BigNumber.from(0),
     inputOverride: BigNumber.from(0),
