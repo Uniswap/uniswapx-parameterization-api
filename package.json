@@ -101,5 +101,8 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "resolutions": {
+    "elliptic": "6.6.1"
   }
 }
