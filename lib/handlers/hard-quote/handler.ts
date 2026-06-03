@@ -35,7 +35,7 @@ import {
 } from './schema';
 
 const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(100); // non-exclusive fillers must override price by this much (V2)
-const V3_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(25); // 0.25% — tighter than V2 to fit V3's short, block-paced decay window
+const V3_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(25);
 const RESPONSE_LOG_TYPE = 'HardResponse';
 export class QuoteHandler extends APIGLambdaHandler<
   ContainerInjected,
