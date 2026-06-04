@@ -197,7 +197,15 @@ export abstract class APIGLambdaHandler<
           } catch (err) {
             if (err instanceof CustomError) {
               const errorJson = err.toJSON(id);
-              log.error({ errorJson }, 'Unexpected error in handler');
+              if (errorJson.statusCode >= 400 && errorJson.statusCode < 500) {
+                // Expected client error (e.g. expired deadline) — don't log at
+                // error level or it inflates error dashboards / trips alerts.
+                metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
+                log.info({ errorJson }, 'Client validation error');
+              } else {
+                metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
+                log.error({ errorJson }, 'Unexpected error in handler');
+              }
               return errorJson;
             }
             log.error({ err }, 'Unexpected error in handler');
