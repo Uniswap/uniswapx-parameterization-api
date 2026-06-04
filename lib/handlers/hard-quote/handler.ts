@@ -390,7 +390,7 @@ function assertV2DecayWithinDeadline(decayEndTime: number, deadline: number): vo
     // request will never succeed as-is, so the customer should not retry it.
     throw new OrderDeadlineExpired(
       `Order deadline is too close or has already expired (decayEndTime ${decayEndTime} > deadline ${deadline}); ` +
-        'the order can no longer be filled. Resubmit the order with a later deadline.'
+        'the order can no longer be filled. Recreate the order with a later deadline.'
     );
   }
 }

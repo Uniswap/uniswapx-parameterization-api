@@ -54,7 +54,7 @@ export class OrderPostError extends CustomError {
 
 export class OrderDeadlineExpired extends CustomError {
   private static MESSAGE =
-    'Order deadline is too close or has already expired; the order can no longer be filled. Resubmit the order with a later deadline.';
+    'Order deadline is too close or has already expired; the order can no longer be filled. Recreate the order with a later deadline.';
 
   constructor(message?: string) {
     super(message ?? OrderDeadlineExpired.MESSAGE);
