@@ -21,7 +21,7 @@ import { V2HardQuoteResponse } from '../../entities/V2HardQuoteResponse';
 import { V3HardQuoteResponse } from '../../entities/V3HardQuoteResponse';
 import { checkDefined } from '../../preconditions/preconditions';
 import { ChainId } from '../../util/chains';
-import { NoQuotesAvailable, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
+import { NoQuotesAvailable, OrderDeadlineExpired, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
@@ -384,9 +384,13 @@ function getDefaultV2CosignerData(request: HardQuoteRequest): CosignerData {
  */
 function assertV2DecayWithinDeadline(decayEndTime: number, deadline: number): void {
   if (decayEndTime > deadline) {
-    throw new Error(
-      `V2 decayEndTime (${decayEndTime}) is after order deadline (${deadline}); ` +
-        'cosigning refused. Extend the order deadline or shorten the decay window.'
+    // This is a client error (the submitted order's deadline is too close or
+    // already expired), not a transient server failure. Throw a CustomError so
+    // the base handler returns a final 400 rather than a retryable 5xx — the
+    // request will never succeed as-is, so the customer should not retry it.
+    throw new OrderDeadlineExpired(
+      `Order deadline is too close or has already expired (decayEndTime ${decayEndTime} > deadline ${deadline}); ` +
+        'the order can no longer be filled. Resubmit the order with a later deadline.'
     );
   }
 }

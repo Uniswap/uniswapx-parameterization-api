@@ -52,6 +52,28 @@ export class OrderPostError extends CustomError {
   }
 }
 
+export class OrderDeadlineExpired extends CustomError {
+  private static MESSAGE =
+    'Order deadline is too close or has already expired; the order can no longer be filled. Resubmit the order with a later deadline.';
+
+  constructor(message?: string) {
+    super(message ?? OrderDeadlineExpired.MESSAGE);
+    // Set the prototype explicitly.
+    Object.setPrototypeOf(this, OrderDeadlineExpired.prototype);
+  }
+
+  toJSON(id?: string): APIGatewayProxyResult {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({
+        errorCode: ErrorCode.ValidationError,
+        detail: this.message,
+        id,
+      }),
+    };
+  }
+}
+
 export class UnknownOrderCosignerError extends CustomError {
   private static MESSAGE = 'Unknown cosigner';
 
