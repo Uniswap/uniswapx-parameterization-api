@@ -4,6 +4,7 @@ import { BigNumber, ethers } from 'ethers';
 
 import { HardQuoteRequest, QuoteResponse } from '../../../lib/entities';
 import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
+import { OrderDeadlineExpired } from '../../../lib/util/errors';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'b83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -67,14 +68,17 @@ function makeQuote(): QuoteResponse {
 }
 
 describe('V2 cosigner: decayEndTime vs deadline', () => {
-  it('throws when getDecayEndTime > order deadline (chainId 1: decay ends now+84)', async () => {
+  it('throws OrderDeadlineExpired when getDecayEndTime > order deadline (chainId 1: decay ends now+84)', async () => {
     // Mainnet: getDecayStartTime = now+24, getDecayEndTime = start+60 = now+84.
     // Set deadline to now+30 — decay would end 54s after deadline.
     const now = Math.floor(Date.now() / 1000);
     const req = makeRequest(now + 30);
-    await expect(getCosignerData(req, makeQuote(), OrderType.Dutch_V2)).rejects.toThrow(
-      /decayEndTime.*after order deadline/
+    // EXE-28: this must be a typed client error (-> HTTP 400), not a plain
+    // Error that the base handler surfaces as a retryable 5xx.
+    await expect(getCosignerData(req, makeQuote(), OrderType.Dutch_V2)).rejects.toBeInstanceOf(
+      OrderDeadlineExpired
     );
+    await expect(getCosignerData(req, makeQuote(), OrderType.Dutch_V2)).rejects.toThrow(/deadline/);
   });
 
   it('passes when order deadline comfortably exceeds decay end', async () => {
