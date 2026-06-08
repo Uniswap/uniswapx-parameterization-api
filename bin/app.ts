@@ -118,9 +118,12 @@ export class APIPipeline extends Stack {
     });
 
     // The Lambda's getRpcUrl reads RPC_PREFIX_URL at runtime and appends the
-    // chainId to form per-chain RPC URLs.
+    // chainId to form per-chain RPC URLs. RPC_HEADER_SECRET authenticates those
+    // outbound requests via the `x-internal-service-secret` header (see
+    // RPC_HEADERS in lib/constants.ts).
     const jsonRpcProviders = {
       RPC_PREFIX_URL: rpcUrls.secretValueFromJson('RPC_PREFIX_URL').toString(),
+      RPC_HEADER_SECRET: rpcUrls.secretValueFromJson('RPC_HEADER_SECRET').toString(),
     } as {[chainKey: string]: string};
 
     // Beta us-east-2
@@ -224,6 +227,10 @@ export class APIPipeline extends Stack {
             value: 'prod/param-api/rpc-urls:RPC_PREFIX_URL',
             type: BuildEnvironmentVariableType.SECRETS_MANAGER,
           },
+          RPC_HEADER_SECRET: {
+            value: 'prod/param-api/rpc-urls:RPC_HEADER_SECRET',
+            type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+          },
         },
       },
       rolePolicyStatements: [
@@ -269,9 +276,11 @@ envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
-// Local dev: Lambda runtime reads RPC_PREFIX_URL via getRpcUrl.
+// Local dev: Lambda runtime reads RPC_PREFIX_URL via getRpcUrl. RPC_HEADER_SECRET
+// is optional locally and omitted from RPC_HEADERS when unset.
 const jsonRpcProviders: {[chainKey: string]: string} = {
   RPC_PREFIX_URL: process.env['RPC_PREFIX_URL'] || '',
+  RPC_HEADER_SECRET: process.env['RPC_HEADER_SECRET'] || '',
 };
 
 new APIStack(app, `${SERVICE_NAME}Stack`, {
