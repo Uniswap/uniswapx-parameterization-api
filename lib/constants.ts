@@ -61,6 +61,10 @@ export function getV3BlockBuffer(chainId: number): number {
   return secondsToBlocks(V3_DECAY_START_BUFFER_SECS, chainId);
 }
 
-export const RPC_HEADERS = {
+export const RPC_HEADERS: { [key: string]: string } = {
   'x-uni-service-id': 'x_parameterization_api',
-} as const
+  // Authenticate RPC requests against internal providers. The value is provided
+  // via the RPC_HEADER_SECRET env var (sourced from Secrets Manager); omitted
+  // when unset (e.g. local dev / unit tests).
+  ...(process.env.RPC_HEADER_SECRET ? { 'x-internal-service-secret': process.env.RPC_HEADER_SECRET } : {}),
+}
