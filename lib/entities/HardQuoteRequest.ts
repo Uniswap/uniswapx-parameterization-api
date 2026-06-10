@@ -10,6 +10,7 @@ import { ProtocolVersion } from '../providers';
 export class HardQuoteRequest {
   public order: UnsignedV2DutchOrder | UnsignedV3DutchOrder;
   private data: HardQuoteRequestBody;
+  private readonly _protocol: ProtocolVersion;
 
   public static fromHardRequestBody(body: HardQuoteRequestBody, orderType: OrderType): HardQuoteRequest {
     return new HardQuoteRequest(body, orderType);
@@ -22,8 +23,10 @@ export class HardQuoteRequest {
     };
     if (orderType === OrderType.Dutch_V2) {
       this.order = UnsignedV2DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
+      this._protocol = ProtocolVersion.V2;
     } else if (orderType === OrderType.Dutch_V3) {
       this.order = UnsignedV3DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
+      this._protocol = ProtocolVersion.V3;
     } else {
       throw new Error('Unsupported order type');
     }
@@ -138,13 +141,7 @@ export class HardQuoteRequest {
   }
 
   public get protocol(): ProtocolVersion {
-    if (this.order instanceof UnsignedV2DutchOrder) {
-      return ProtocolVersion.V2;
-    } else if (this.order instanceof UnsignedV3DutchOrder) {
-      return ProtocolVersion.V3;
-    } else {
-      throw new Error('Unsupported order type');
-    }
+    return this._protocol;
   }
 
   public get cosigner(): string {
