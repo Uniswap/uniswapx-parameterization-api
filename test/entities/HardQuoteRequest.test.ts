@@ -1,5 +1,11 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { OrderType, UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
+import {
+  OrderType,
+  UnsignedV2DutchOrder,
+  UnsignedV2DutchOrderInfo,
+  UnsignedV3DutchOrder,
+  V3DutchOrderBuilder,
+} from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 
 import { HardQuoteRequest } from '../../lib/entities';
@@ -43,21 +49,59 @@ export const getOrderInfo = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV
   );
 };
 
-const makeRequest = (data: Partial<HardQuoteRequestBody>): HardQuoteRequest => {
+const makeRequest = (
+  data: Partial<HardQuoteRequestBody>,
+  orderType: OrderType = OrderType.Dutch_V2,
+  chainId: number = CHAIN_ID
+): HardQuoteRequest => {
   return new HardQuoteRequest(
     Object.assign(
       {
         requestId: REQUEST_ID,
         quoteId: QUOTE_ID,
-        tokenInChainId: CHAIN_ID,
-        tokenOutChainId: CHAIN_ID,
+        tokenInChainId: chainId,
+        tokenOutChainId: chainId,
         encodedInnerOrder: '0x',
         innerSig: '0x',
       },
       data
     ),
-    OrderType.Dutch_V2
+    orderType
   );
+};
+
+const V3_CHAIN_ID = 42161;
+
+const getV3Order = (swapper: string): UnsignedV3DutchOrder => {
+  const now = Math.floor(new Date().getTime() / 1000);
+  return new V3DutchOrderBuilder(V3_CHAIN_ID)
+    .cosigner(ethers.constants.AddressZero)
+    .deadline(now + 1000)
+    .swapper(swapper)
+    .nonce(BigNumber.from(100))
+    .startingBaseFee(BigNumber.from(0))
+    .input({
+      token: TOKEN_IN,
+      startAmount: RAW_AMOUNT,
+      curve: {
+        relativeBlocks: [],
+        relativeAmounts: [],
+      },
+      maxAmount: RAW_AMOUNT,
+      adjustmentPerGweiBaseFee: BigNumber.from(0),
+    })
+    .output({
+      token: TOKEN_OUT,
+      startAmount: RAW_AMOUNT,
+      curve: {
+        relativeBlocks: [4],
+        relativeAmounts: [BigInt(4)],
+      },
+      recipient: ethers.constants.AddressZero,
+      minAmount: RAW_AMOUNT.sub(4),
+      adjustmentPerGweiBaseFee: BigNumber.from(0),
+    })
+    .buildPartial();
 };
 
 describe('QuoteRequest', () => {
@@ -124,6 +168,71 @@ describe('QuoteRequest', () => {
       type: 'EXACT_OUTPUT',
       numOutputs: 1,
       protocol: ProtocolVersion.V2,
+    });
+  });
+
+  it('exposes protocol v2 for Dutch_V2 orders', () => {
+    const order = new UnsignedV2DutchOrder(
+      getOrderInfo({
+        swapper: SWAPPER,
+      }),
+      CHAIN_ID
+    );
+    const request = makeRequest({ encodedInnerOrder: order.serialize(), innerSig: '0x' });
+    expect(request.protocol).toEqual(ProtocolVersion.V2);
+  });
+
+  it('exposes protocol v3 for Dutch_V3 orders', () => {
+    const order = getV3Order(SWAPPER);
+    const request = makeRequest(
+      { encodedInnerOrder: order.serialize(), innerSig: '0x' },
+      OrderType.Dutch_V3,
+      V3_CHAIN_ID
+    );
+    expect(request.protocol).toEqual(ProtocolVersion.V3);
+  });
+
+  it('toCleanJSON sets protocol v3 for Dutch_V3 orders', () => {
+    const order = getV3Order(SWAPPER);
+    const request = makeRequest(
+      { encodedInnerOrder: order.serialize(), innerSig: '0x' },
+      OrderType.Dutch_V3,
+      V3_CHAIN_ID
+    );
+    expect(request.toCleanJSON()).toEqual({
+      tokenInChainId: V3_CHAIN_ID,
+      tokenOutChainId: V3_CHAIN_ID,
+      requestId: REQUEST_ID,
+      quoteId: QUOTE_ID,
+      tokenIn: TOKEN_IN,
+      tokenOut: TOKEN_OUT,
+      amount: RAW_AMOUNT.toString(),
+      swapper: ethers.constants.AddressZero,
+      type: 'EXACT_INPUT',
+      numOutputs: 1,
+      protocol: ProtocolVersion.V3,
+    });
+  });
+
+  it('toOpposingCleanJSON sets protocol v3 for Dutch_V3 orders', () => {
+    const order = getV3Order(SWAPPER);
+    const request = makeRequest(
+      { encodedInnerOrder: order.serialize(), innerSig: '0x' },
+      OrderType.Dutch_V3,
+      V3_CHAIN_ID
+    );
+    expect(request.toOpposingCleanJSON()).toEqual({
+      tokenInChainId: V3_CHAIN_ID,
+      tokenOutChainId: V3_CHAIN_ID,
+      requestId: REQUEST_ID,
+      quoteId: QUOTE_ID,
+      tokenIn: TOKEN_OUT,
+      tokenOut: TOKEN_IN,
+      amount: RAW_AMOUNT.toString(),
+      swapper: ethers.constants.AddressZero,
+      type: 'EXACT_OUTPUT',
+      numOutputs: 1,
+      protocol: ProtocolVersion.V3,
     });
   });
 });

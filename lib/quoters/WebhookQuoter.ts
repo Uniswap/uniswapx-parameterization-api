@@ -370,7 +370,7 @@ function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedRe
 
 export function getEndpointSupportedProtocols(e: WebhookConfiguration) {
   if (!e.supportedVersions || e.supportedVersions.length == 0) {
-    return [ProtocolVersion.V2];
+    return [ProtocolVersion.V2, ProtocolVersion.V3];
   }
   return e.supportedVersions;
 }
