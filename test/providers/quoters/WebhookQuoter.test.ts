@@ -424,7 +424,7 @@ describe('WebhookQuoter tests', () => {
         endpoint: WEBHOOK_URL,
         headers: {},
         hash: '0xuni',
-        supportedVersions: [ProtocolVersion.V1, ProtocolVersion.V2],
+        supportedVersions: [ProtocolVersion.V1, ProtocolVersion.V2, ProtocolVersion.V3],
       },
       { name: '1inch', endpoint: WEBHOOK_URL_ONEINCH, headers: {}, hash: '0x1inch' },
       {
@@ -523,6 +523,49 @@ describe('WebhookQuoter tests', () => {
       );
       // empty config defaults to v2 only
       expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_FOO,
+        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          headers: {},
+          timeout: 500,
+        }
+      );
+    });
+
+    it('v3 quote request only sent to fillers supporting v3', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: quote,
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: request.tokenOut,
+              tokenOut: request.tokenIn,
+            },
+          });
+        });
+
+      const request = makeQuoteRequest({ protocol: ProtocolVersion.V3 });
+      await webhookQuoter.quote(request);
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL,
+        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { headers: {}, timeout: 500 }
+      );
+      expect(mockedAxios.post).not.toBeCalledWith(
+        WEBHOOK_URL_SEARCHER,
+        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        {
+          headers: {},
+          timeout: 500,
+        }
+      );
+      // empty config defaults to v2 only
+      expect(mockedAxios.post).not.toBeCalledWith(
         WEBHOOK_URL_FOO,
         { quoteId: expect.any(String), ...request.toCleanJSON() },
         {

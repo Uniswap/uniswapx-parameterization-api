@@ -41,7 +41,7 @@ export class HardQuoteRequest {
       type: TradeType[this.type],
       numOutputs: this.numOutputs,
       ...(this.quoteId && { quoteId: this.quoteId }),
-      protocol: ProtocolVersion.V2,
+      protocol: this.protocol,
     };
   }
 
@@ -135,6 +135,16 @@ export class HardQuoteRequest {
 
   public get numOutputs(): number {
     return this.order.info.outputs.length;
+  }
+
+  public get protocol(): ProtocolVersion {
+    if (this.order instanceof UnsignedV2DutchOrder) {
+      return ProtocolVersion.V2;
+    } else if (this.order instanceof UnsignedV3DutchOrder) {
+      return ProtocolVersion.V3;
+    } else {
+      throw new Error('Unsupported order type');
+    }
   }
 
   public get cosigner(): string {
