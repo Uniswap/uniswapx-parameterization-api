@@ -482,7 +482,7 @@ describe('WebhookQuoter tests', () => {
         headers: {},
         timeout: 500,
       });
-      // empty supportedVersions defaults to v2 only
+      // empty supportedVersions defaults to v2 and v3
       expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL_FOO, request.toCleanJSON(), {
         headers: {},
         timeout: 500,
@@ -521,7 +521,7 @@ describe('WebhookQuoter tests', () => {
           timeout: 500,
         }
       );
-      // empty config defaults to v2 only
+      // empty config defaults to v2 and v3
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_FOO,
         { quoteId: expect.any(String), ...request.toCleanJSON() },
@@ -564,8 +564,8 @@ describe('WebhookQuoter tests', () => {
           timeout: 500,
         }
       );
-      // empty config defaults to v2 only
-      expect(mockedAxios.post).not.toBeCalledWith(
+      // empty config defaults to v2 and v3
+      expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_FOO,
         { quoteId: expect.any(String), ...request.toCleanJSON() },
         {
