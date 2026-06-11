@@ -24,17 +24,17 @@ describe('V3 chain constants', () => {
     it('keeps mainnet at 500 ms', () => {
       expect(getWebhookTimeoutMs(ChainId.MAINNET)).toEqual(500);
     });
-    it('tightens arbitrum to 250 ms', () => {
-      expect(getWebhookTimeoutMs(ChainId.ARBITRUM_ONE)).toEqual(250);
+    it('uses 500 ms on arbitrum', () => {
+      expect(getWebhookTimeoutMs(ChainId.ARBITRUM_ONE)).toEqual(500);
     });
-    it('tightens tempo to 250 ms', () => {
-      expect(getWebhookTimeoutMs(ChainId.TEMPO)).toEqual(250);
+    it('uses 500 ms on tempo', () => {
+      expect(getWebhookTimeoutMs(ChainId.TEMPO)).toEqual(500);
     });
-    it('tightens base to 250 ms', () => {
-      expect(getWebhookTimeoutMs(ChainId.BASE)).toEqual(250);
+    it('uses 500 ms on base', () => {
+      expect(getWebhookTimeoutMs(ChainId.BASE)).toEqual(500);
     });
-    it('defaults to 250 ms for unknown chains', () => {
-      expect(getWebhookTimeoutMs(99999)).toEqual(250);
+    it('defaults to 500 ms for unknown chains', () => {
+      expect(getWebhookTimeoutMs(99999)).toEqual(500);
     });
   });
 });
