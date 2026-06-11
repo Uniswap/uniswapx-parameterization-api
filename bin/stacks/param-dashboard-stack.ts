@@ -10,6 +10,7 @@ import {
   Metric,
   SoftQuoteMetricDimension,
 } from '../../lib/entities';
+import { ChainId, SUPPORTED_CHAINS } from '../../lib/util/chains';
 
 export const NAMESPACE = 'Uniswap';
 
@@ -49,6 +50,8 @@ export type LambdaWidget = {
 };
 
 const RFQ_SERVICES = [SoftQuoteMetricDimension, HardQuoteMetricDimension];
+
+const chainLabel = (chainId: ChainId): string => `${ChainId[chainId]} (${chainId})`;
 
 const LatencyWidget = (region: string): LambdaWidget[] =>
   RFQ_SERVICES.map((service) => {
@@ -114,6 +117,101 @@ const QuotesRequestedWidget = (region: string): LambdaWidget[] =>
         period: 300,
         stacked: false,
         title: `${service.Service} Quotes Requested | 5 minutes`,
+      },
+    };
+  });
+
+const LatencyByChainWidget = (region: string): LambdaWidget[] =>
+  RFQ_SERVICES.map((service) => {
+    return {
+      height: 11,
+      width: 12,
+      type: 'metric',
+      properties: {
+        metrics: SUPPORTED_CHAINS.map((chainId) => [
+          'Uniswap',
+          'QUOTE_LATENCY',
+          'Service',
+          service.Service,
+          'ChainId',
+          chainId.toString(),
+          { stat: 'p90', label: chainLabel(chainId) },
+        ]),
+        view: 'timeSeries',
+        stacked: false,
+        region,
+        period: 300,
+        title: `${service.Service} Quote Latency p90 by Chain | 5 minutes`,
+      },
+    };
+  });
+
+const QuotesRequestedByChainWidget = (region: string): LambdaWidget[] =>
+  RFQ_SERVICES.map((service) => {
+    return {
+      height: 11,
+      width: 12,
+      type: 'metric',
+      properties: {
+        metrics: SUPPORTED_CHAINS.map((chainId) => [
+          'Uniswap',
+          'QUOTE_REQUESTED',
+          'Service',
+          service.Service,
+          'ChainId',
+          chainId.toString(),
+          { label: chainLabel(chainId) },
+        ]),
+        view: 'timeSeries',
+        stacked: false,
+        region,
+        stat: 'Sum',
+        period: 300,
+        title: `${service.Service} Quotes Requested by Chain | 5 minutes`,
+      },
+    };
+  });
+
+const ErrorRatesByChainWidget = (region: string): LambdaWidget[] =>
+  RFQ_SERVICES.map((service) => {
+    return {
+      height: 10,
+      width: 12,
+      type: 'metric',
+      properties: {
+        metrics: SUPPORTED_CHAINS.flatMap((chainId, i) => [
+          [{ expression: `100*(notfound${i}/requested${i})`, label: chainLabel(chainId), id: `e${i}`, region }],
+          [
+            'Uniswap',
+            'QUOTE_404',
+            'Service',
+            service.Service,
+            'ChainId',
+            chainId.toString(),
+            { id: `notfound${i}`, visible: false },
+          ],
+          [
+            'Uniswap',
+            'QUOTE_REQUESTED',
+            'Service',
+            service.Service,
+            'ChainId',
+            chainId.toString(),
+            { id: `requested${i}`, visible: false },
+          ],
+        ]),
+        view: 'timeSeries',
+        stacked: false,
+        region,
+        stat: 'Sum',
+        period: 300,
+        title: `${service.Service} 404 Rates by Chain`,
+        yAxis: {
+          left: {
+            label: 'Percent',
+            showUnits: false,
+          },
+        },
       },
     };
   });
@@ -308,6 +406,9 @@ export class ParamDashboardStack extends cdk.NestedStack {
           RFQLatencyWidget(region, RFQ_PROVIDERS),
           QuotesRequestedWidget(region),
           ErrorRatesWidget(region),
+          LatencyByChainWidget(region),
+          QuotesRequestedByChainWidget(region),
+          ErrorRatesByChainWidget(region),
           RFQFailRatesWidget(region, RFQ_PROVIDERS),
           LambdaErrorRatesWidget(region, scope),
           FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupArn),

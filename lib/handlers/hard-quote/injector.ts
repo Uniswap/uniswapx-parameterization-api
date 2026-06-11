@@ -111,6 +111,11 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     metricsLogger.setNamespace('Uniswap');
     metricsLogger.setDimensions(HardQuoteMetricDimension);
+    // additional dimension set so every metric is also queryable per-chain
+    metricsLogger.putDimensions({
+      ...HardQuoteMetricDimension,
+      ChainId: requestBody.tokenInChainId.toString(),
+    });
     const metric = new AWSMetricsLogger(metricsLogger);
     setGlobalMetric(metric);
 
