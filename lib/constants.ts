@@ -53,7 +53,7 @@ export const NOTIFICATION_TIMEOUT_MS = 10;
 // Wallclock target between order receipt and the decay window opening.
 // Cosigners need a small lead so the swapper-signed `decayStartBlock` is
 // reliably in the future when the order is broadcast.
-export const V3_DECAY_START_BUFFER_SECS = 1;
+export const V3_DECAY_START_BUFFER_SECS = 5;
 
 // Number of blocks for the V3 decay-start buffer, derived from wallclock
 // duration / per-chain block time (sourced from @uniswap/sdk-core).
