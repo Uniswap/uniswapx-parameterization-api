@@ -3921,10 +3921,10 @@
     "@uniswap/v3-sdk" "^3.25.2"
     "@uniswap/v4-sdk" "^1.21.2"
 
-"@uniswap/sdk-core@^7.13.0":
-  version "7.13.0"
-  resolved "https://registry.yarnpkg.com/@uniswap/sdk-core/-/sdk-core-7.13.0.tgz#b2ee5d12f5b64104451a010482bbfae010ee9f3b"
-  integrity sha512-rfRruH0vu4hdG1iV8E7XbpqXB4ffMWAfjQ1zEUExirSnOaxe3DtGlBjoiD/uufb3ZbYcKdfKrqcheqK/OhxMpQ==
+"@uniswap/sdk-core@^7.14.0":
+  version "7.14.0"
+  resolved "https://registry.yarnpkg.com/@uniswap/sdk-core/-/sdk-core-7.14.0.tgz#be134de267352be14c61a8ec982ca9657f1beb44"
+  integrity sha512-uJe0YmufRXFBKj5qDRS9Nfzo0O3GrhxpIDS9OMJqRUG5yzYtXL+HdUv8kr/byJfWoGyAJUsURte4NAT/04w0zA==
   dependencies:
     "@ethersproject/address" "^5.0.2"
     "@ethersproject/bignumber" "^5.5.0"
@@ -3938,10 +3938,10 @@
     toformat "^2.0.0"
     tslib "^2.3.0"
 
-"@uniswap/sdk-core@^7.14.0":
-  version "7.14.0"
-  resolved "https://registry.yarnpkg.com/@uniswap/sdk-core/-/sdk-core-7.14.0.tgz#be134de267352be14c61a8ec982ca9657f1beb44"
-  integrity sha512-uJe0YmufRXFBKj5qDRS9Nfzo0O3GrhxpIDS9OMJqRUG5yzYtXL+HdUv8kr/byJfWoGyAJUsURte4NAT/04w0zA==
+"@uniswap/sdk-core@^7.17.0":
+  version "7.17.0"
+  resolved "https://registry.yarnpkg.com/@uniswap/sdk-core/-/sdk-core-7.17.0.tgz#7be02563c1fb9e8fe45b934a55783aea71d6e8de"
+  integrity sha512-5maoaZMcGpvxfg6ZG4hpG8eJYakrFh8y75NhDKB40xenQAnSQt/xz1JMbY6+GGkXMvY+z3pT5mmKYxjGU0S5Bw==
   dependencies:
     "@ethersproject/address" "^5.0.2"
     "@ethersproject/bignumber" "^5.5.0"
@@ -4028,16 +4028,16 @@
   resolved "https://registry.npmjs.org/@uniswap/token-lists/-/token-lists-1.0.0-beta.34.tgz#879461f5d4009327a24259bbab797e0f22db58c8"
   integrity sha512-Hc3TfrFaupg0M84e/Zv7BoF+fmMWDV15mZ5s8ZQt2qZxUcNw2GQW+L6L/2k74who31G+p1m3GRYbJpAo7d1pqA==
 
-"@uniswap/uniswapx-sdk@3.0.3":
-  version "3.0.3"
-  resolved "https://registry.yarnpkg.com/@uniswap/uniswapx-sdk/-/uniswapx-sdk-3.0.3.tgz#15b4f7ad11e56e97eac0650f31f1aab3559d963c"
-  integrity sha512-Ws1IC0WUNCH4B8Oa/1zjp7/sbPYsnQ70SqmLCiZmyPK+jWp9w9h6fr25cQRytzBLoK45fPO1pKsMqE+ftoi0Lw==
+"@uniswap/uniswapx-sdk@3.0.8":
+  version "3.0.8"
+  resolved "https://registry.yarnpkg.com/@uniswap/uniswapx-sdk/-/uniswapx-sdk-3.0.8.tgz#32e3ff23288f2e6ec15fd197dd06d59527d68160"
+  integrity sha512-/e4jgppX5YMcfw8UGdFgaayVMXAKdXjKXiugdL9ouP0db5DSXa3w5PYsOwDxVnm7w3AnQDGg05VaoOEXNgbBWw==
   dependencies:
     "@ethersproject/abi" "^5.5.0"
     "@ethersproject/bytes" "^5.7.0"
     "@ethersproject/providers" "^5.7.0"
     "@uniswap/permit2-sdk" "^1.4.0"
-    "@uniswap/sdk-core" "^7.13.0"
+    "@uniswap/sdk-core" "^7.17.0"
     ethers "^5.7.0"
     tiny-invariant "^1.1.0"
 
