@@ -3,7 +3,7 @@ import { ErrorResponse } from '../../handlers/base';
 
 export interface UniswapXServiceResponse {
   statusCode: number;
-  data: string;
+  data: unknown;
 }
 
 export interface PostOrderArgs {
