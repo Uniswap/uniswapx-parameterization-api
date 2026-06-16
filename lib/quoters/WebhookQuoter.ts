@@ -95,16 +95,20 @@ export class WebhookQuoter implements Quoter {
     provider?: ethers.providers.StaticJsonRpcProvider
   ): Promise<QuoteResponse | null> {
     const { name, endpoint, headers } = config;
+    // Child logger so every log line in this RFQ attempt carries the request id.
+    // quoteId is added once it's generated below (it's per-RFQ, so it doesn't exist
+    // for the config-mismatch early returns that bail before any RFQ is sent).
+    let log = this.log.child({ requestId: request.requestId });
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
-      this.log.debug(
-        { requestId: request.requestId, configuredChainIds: config.chainIds, chainId: request.tokenInChainId },
+      log.debug(
+        { configuredChainIds: config.chainIds, chainId: request.tokenInChainId },
         `chainId not configured for ${endpoint}`
       );
       return null;
     }
     if (!getEndpointSupportedProtocols(config).includes(request.protocol)) {
-      this.log.debug(
-        { requestId: request.requestId, config: config, requestdProtocol: request.protocol },
+      log.debug(
+        { config: config, requestdProtocol: request.protocol },
         `endpoint doesn't support the requested protocol`
       );
       return null;
@@ -118,8 +122,8 @@ export class WebhookQuoter implements Quoter {
     const opposingCleanRequest = request.toOpposingCleanJSON();
     opposingCleanRequest.quoteId = uuidv4();
 
-    // Child logger so every log line in this RFQ attempt carries the request and quote ids.
-    const log = this.log.child({ requestId: cleanRequest.requestId, quoteId: cleanRequest.quoteId });
+    // Enrich the logger with the now-generated quoteId so all subsequent logs carry both ids.
+    log = log.child({ quoteId: cleanRequest.quoteId });
 
     log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
     log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);

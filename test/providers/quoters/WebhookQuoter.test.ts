@@ -706,9 +706,10 @@ describe('WebhookQuoter tests', () => {
 
     expect(response.length).toEqual(0);
 
+    // requestId is bound on the child logger (asserted via logger.child elsewhere), not on the log object.
+    expect(logger.child).toHaveBeenCalledWith({ requestId: request.requestId });
     expect(logger.debug).toHaveBeenCalledWith(
       {
-        requestId: request.requestId,
         configuredChainIds: [4, 5, 6],
         chainId: request.tokenInChainId,
       },
@@ -833,11 +834,9 @@ describe('WebhookQuoter tests', () => {
       });
     });
     const response = await webhookQuoter.quote(request);
-    // logs in fetchQuote go through a child logger bound with the request + quote ids
-    expect(logger.child).toHaveBeenCalledWith({
-      requestId: request.requestId,
-      quoteId: expect.any(String),
-    });
+    // logs in fetchQuote go through a child logger bound with the request id, then enriched with the quote id
+    expect(logger.child).toHaveBeenCalledWith({ requestId: request.requestId });
+    expect(logger.child).toHaveBeenCalledWith({ quoteId: expect.any(String) });
     expect(logger.info).toHaveBeenCalledWith(
       {
         response: '',
