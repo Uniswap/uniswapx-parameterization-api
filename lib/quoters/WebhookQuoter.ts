@@ -2,9 +2,10 @@ import { TradeType } from '@uniswap/sdk-core';
 import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
-import { v4 as uuidv4 } from 'uuid';
 import { ethers } from 'ethers';
+import { v4 as uuidv4 } from 'uuid';
 
+import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
 import { Quoter, QuoterType } from '.';
 import { getWebhookTimeoutMs, NOTIFICATION_TIMEOUT_MS } from '../constants';
 import {
@@ -22,9 +23,8 @@ import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
 import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { FillerAddressRepository } from '../repositories/filler-address-repository';
-import { timestampInMstoISOString } from '../util/time';
-import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
 import { RFQValidator } from '../util/rfqValidator';
+import { timestampInMstoISOString } from '../util/time';
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
@@ -42,13 +42,19 @@ export class WebhookQuoter implements Quoter {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
 
-  public async quote(request: QuoteRequest, provider?: ethers.providers.StaticJsonRpcProvider): Promise<QuoteResponse[]> {
+  public async quote(
+    request: QuoteRequest,
+    provider?: ethers.providers.StaticJsonRpcProvider
+  ): Promise<QuoteResponse[]> {
     const statuses = await this.getEndpointStatuses();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
     // Ignore endpoint status if token is permissioned
-    const isPermissionedToken = PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId) 
-    || PermissionedTokenValidator.isPermissionedToken(request.tokenOut, request.tokenOutChainId);
-    const baseFillerSet = isPermissionedToken ? statuses.enabled.concat(statuses.disabled.map(e => e.webhook)) : statuses.enabled;
+    const isPermissionedToken =
+      PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId) ||
+      PermissionedTokenValidator.isPermissionedToken(request.tokenOut, request.tokenOutChainId);
+    const baseFillerSet = isPermissionedToken
+      ? statuses.enabled.concat(statuses.disabled.map((e) => e.webhook))
+      : statuses.enabled;
     const enabledEndpoints = baseFillerSet.filter(
       (e) =>
         passFillerCompliance(e, endpointToAddrsMap, request.swapper) &&
@@ -58,7 +64,7 @@ export class WebhookQuoter implements Quoter {
     const disabledEndpoints = statuses.disabled;
 
     this.log.info(
-      { enabled: enabledEndpoints, disabled: disabledEndpoints },
+      { requestId: request.requestId, enabled: enabledEndpoints, disabled: disabledEndpoints },
       `Fetching quotes from ${enabledEndpoints.length} endpoints and notifying disabled endpoints`
     );
 
@@ -67,7 +73,7 @@ export class WebhookQuoter implements Quoter {
     // should not await and block
     if (!isPermissionedToken) {
       Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
-        this.log.info({ results }, 'Notified disabled endpoints');
+        this.log.info({ requestId: request.requestId, results }, 'Notified disabled endpoints');
       });
     }
 
@@ -83,18 +89,22 @@ export class WebhookQuoter implements Quoter {
     return this.circuitBreakerProvider.getEndpointStatuses(endpoints);
   }
 
-  private async fetchQuote(config: WebhookConfiguration, request: QuoteRequest, provider?: ethers.providers.StaticJsonRpcProvider): Promise<QuoteResponse | null> {
+  private async fetchQuote(
+    config: WebhookConfiguration,
+    request: QuoteRequest,
+    provider?: ethers.providers.StaticJsonRpcProvider
+  ): Promise<QuoteResponse | null> {
     const { name, endpoint, headers } = config;
     if (config.chainIds !== undefined && !config.chainIds.includes(request.tokenInChainId)) {
       this.log.debug(
-        { configuredChainIds: config.chainIds, chainId: request.tokenInChainId },
+        { requestId: request.requestId, configuredChainIds: config.chainIds, chainId: request.tokenInChainId },
         `chainId not configured for ${endpoint}`
       );
       return null;
     }
     if (!getEndpointSupportedProtocols(config).includes(request.protocol)) {
       this.log.debug(
-        { config: config, requestdProtocol: request.protocol },
+        { requestId: request.requestId, config: config, requestdProtocol: request.protocol },
         `endpoint doesn't support the requested protocol`
       );
       return null;
@@ -108,8 +118,11 @@ export class WebhookQuoter implements Quoter {
     const opposingCleanRequest = request.toOpposingCleanJSON();
     opposingCleanRequest.quoteId = uuidv4();
 
-    this.log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
-    this.log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
+    // Child logger so every log line in this RFQ attempt carries the request and quote ids.
+    const log = this.log.child({ requestId: cleanRequest.requestId, quoteId: cleanRequest.quoteId });
+
+    log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
+    log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
 
     const before = Date.now();
     const timeoutOverride = config.overrides?.timeout;
@@ -141,10 +154,7 @@ export class WebhookQuoter implements Quoter {
         MetricLoggerUnit.Milliseconds
       );
 
-      this.log.info(
-        { response: hookResponse.data, status: hookResponse.status },
-        `Raw webhook response from: ${endpoint}`
-      );
+      log.info({ response: hookResponse.data, status: hookResponse.status }, `Raw webhook response from: ${endpoint}`);
       const rawResponse = {
         status: hookResponse.status,
         data: hookResponse.data,
@@ -171,14 +181,14 @@ export class WebhookQuoter implements Quoter {
         request.amount,
         response.amountOut,
         provider,
-        this.log
+        log
       );
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
         metric.putMetric(Metric.RFQ_NON_QUOTE, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
-        this.log.info(
+        log.info(
           {
             response: hookResponse.data,
             responseStatus: hookResponse.status,
@@ -200,7 +210,7 @@ export class WebhookQuoter implements Quoter {
         const error = validationError || validatePermissionedTokensError;
         metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
-        this.log.error(
+        log.error(
           {
             error,
             response,
@@ -222,7 +232,7 @@ export class WebhookQuoter implements Quoter {
       if (response.requestId !== request.requestId) {
         metric.putMetric(Metric.RFQ_FAIL_REQUEST_MATCH, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_REQUEST_MATCH, name), 1, MetricLoggerUnit.Count);
-        this.log.error(
+        log.error(
           {
             requestId: request.requestId,
             responseRequestId: response.requestId,
@@ -244,7 +254,7 @@ export class WebhookQuoter implements Quoter {
 
       metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
-      this.log.info(
+      log.info(
         {
           response: response.toLog(),
           endpoint: endpoint,
@@ -279,7 +289,7 @@ export class WebhookQuoter implements Quoter {
         !opposingResponse.validationError
       ) {
         opposingResponse.response.setFillerResponseLatencyMs(rawResponse.latencyMs);
-        this.log.info({
+        log.info({
           eventType: 'QuoteResponse',
           body: {
             ...opposingResponse.response.toLog(),
@@ -300,7 +310,7 @@ export class WebhookQuoter implements Quoter {
         latencyMs: Date.now() - before,
       };
       if (e instanceof AxiosError) {
-        this.log.error(
+        log.error(
           { endpoint, status: e.response?.status?.toString() },
           `Axios error fetching quote from ${endpoint}: ${e}`
         );
@@ -317,7 +327,7 @@ export class WebhookQuoter implements Quoter {
           })
         );
       } else {
-        this.log.error({ endpoint }, `Error fetching quote from ${endpoint}: ${e}`);
+        log.error({ endpoint }, `Error fetching quote from ${endpoint}: ${e}`);
         this.firehose.sendAnalyticsEvent(
           new AnalyticsEvent(AnalyticsEventType.WEBHOOK_RESPONSE, {
             ...requestContext,
