@@ -67,10 +67,9 @@ export class FadesRepository extends BaseRedshiftRepository {
 }
 
 /**
- * Computes per-filler fade signals for the circuit breaker. Despite the "V2"
- * name (kept for backwards compatibility), this covers both Dutch_V2 (time-based
- * decay) and Dutch_V3 (block-based decay) orders. Fades are aggregated per filler
- * across all order types and all production chains.
+ * Computes per-filler fade signals for the circuit breaker. Covers both
+ * Dutch_V2 (time-based decay) and Dutch_V3 (block-based decay) orders. Fades are
+ * aggregated per filler across all order types and all production chains.
  */
 export class V2FadesRepository extends BaseRedshiftRepository {
   static log: Logger;
