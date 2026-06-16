@@ -1,7 +1,7 @@
 import { GetStatementResultCommand, RedshiftDataClient } from '@aws-sdk/client-redshift-data';
 import Logger from 'bunyan';
 
-import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
+import { OrderType, PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { BaseRedshiftRepository, SharedConfigs } from './base';
 
 // Number of recent orders to evaluate per filler for fade rate calculation
@@ -178,7 +178,7 @@ CREATE OR REPLACE VIEW latestRfqsV2
 AS (
 WITH latestOrdersV2 AS (
   SELECT * FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype IN ('Dutch_V2', 'Dutch_V3')
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype IN ('${OrderType.Dutch_V2}', '${OrderType.Dutch_V3}')
   )
   WHERE row_num <= ${ORDERS_PER_FILLER_LIMIT}
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
@@ -214,9 +214,9 @@ SELECT
       WHEN fillTimestamp IS NULL THEN 1
       -- Dutch_V3 decays by block, not by time: a fill at a block on or after
       -- the cosigned decayStartBlock means the price had begun decaying => fade.
-      WHEN orderType = 'Dutch_V3' AND fillBlock >= decayStartBlock THEN 1
+      WHEN orderType = '${OrderType.Dutch_V3}' AND fillBlock >= decayStartBlock THEN 1
       -- Dutch_V2 (time-based decay): filled after decay start => fade.
-      WHEN orderType = 'Dutch_V2' AND decayStartTime < fillTimestamp THEN 1
+      WHEN orderType = '${OrderType.Dutch_V2}' AND decayStartTime < fillTimestamp THEN 1
       ELSE 0
     END AS faded
 FROM latestRfqsV2
