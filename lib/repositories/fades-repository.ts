@@ -66,6 +66,12 @@ export class FadesRepository extends BaseRedshiftRepository {
   }
 }
 
+/**
+ * Computes per-filler fade signals for the circuit breaker. Despite the "V2"
+ * name (kept for backwards compatibility), this covers both Dutch_V2 (time-based
+ * decay) and Dutch_V3 (block-based decay) orders. Fades are aggregated per filler
+ * across all order types and all production chains.
+ */
 export class V2FadesRepository extends BaseRedshiftRepository {
   static log: Logger;
 
@@ -172,14 +178,14 @@ CREATE OR REPLACE VIEW latestRfqsV2
 AS (
 WITH latestOrdersV2 AS (
   SELECT * FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype = 'Dutch_V2'
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype IN ('Dutch_V2', 'Dutch_V3')
   )
   WHERE row_num <= ${ORDERS_PER_FILLER_LIMIT}
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
   LIMIT 5000
 )
 SELECT
-    latestOrdersV2.chainid as chainId, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
+    latestOrdersV2.chainid as chainId, latestOrdersV2.ordertype as orderType, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.startBlock as decayStartBlock, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedorders.blockNumber as fillBlock, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
     CASE
       WHEN latestOrdersV2.inputstartamount = latestOrdersV2.inputendamount THEN 'EXACT_INPUT'
       ELSE 'EXACT_OUTPUT'
@@ -203,10 +209,15 @@ SELECT
     rfqFiller,
     postTimestamp,
     deadline,
-    CASE 
+    CASE
+      -- Never filled (any order type) => fade.
       WHEN fillTimestamp IS NULL THEN 1
-      WHEN decayStartTime < fillTimestamp THEN 1
-      ELSE 0 
+      -- Dutch_V3 decays by block, not by time: a fill at a block on or after
+      -- the cosigned decayStartBlock means the price had begun decaying => fade.
+      WHEN orderType = 'Dutch_V3' AND fillBlock >= decayStartBlock THEN 1
+      -- Dutch_V2 (time-based decay): filled after decay start => fade.
+      WHEN orderType = 'Dutch_V2' AND decayStartTime < fillTimestamp THEN 1
+      ELSE 0
     END AS faded
 FROM latestRfqsV2
 WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
