@@ -315,6 +315,9 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'gasUsed', dataType: RS_DATA_TYPES.UINT256 },
         { name: 'gasCostInETH', dataType: RS_DATA_TYPES.UnitInETH },
         { name: 'logTime', dataType: RS_DATA_TYPES.TIMESTAMP },
+        // Blocks between the order's decay start and the fill (fillBlock - decayStartBlock),
+        // emitted by x-service. Consumed by the RFQ circuit breaker for Dutch_V3 fade detection.
+        { name: 'fillTimeBlocks', dataType: RS_DATA_TYPES.INTEGER },
       ],
     });
 
