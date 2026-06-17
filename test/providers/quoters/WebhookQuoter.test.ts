@@ -2,6 +2,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import axios from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
+import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { NOTIFICATION_TIMEOUT_MS } from '../../../lib/constants';
 import { AnalyticsEventType, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
@@ -16,7 +17,6 @@ import {
   WEBHOOK_URL_ONEINCH,
   WEBHOOK_URL_SEARCHER,
 } from '../../fixtures';
-import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 
 jest.mock('axios');
 jest.mock('../../../lib/providers/analytics');
@@ -62,7 +62,7 @@ describe('WebhookQuoter tests', () => {
     },
   ]);
 
-  const logger = { child: () => logger, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
+  const logger = { child: jest.fn(() => logger), info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
   const webhookQuoter = new WebhookQuoter(
     logger,
@@ -306,7 +306,7 @@ describe('WebhookQuoter tests', () => {
             },
           });
         });
-      
+
       const permissionedTokenRequest = makeQuoteRequest({
         tokenIn: PERMISSIONED_TOKENS[0].address,
         protocol: ProtocolVersion.V2,
@@ -349,7 +349,7 @@ describe('WebhookQuoter tests', () => {
             },
           });
         });
-      
+
       const permissionedTokenRequest = makeQuoteRequest({
         tokenOut: PERMISSIONED_TOKENS[0].address,
         protocol: ProtocolVersion.V2,
@@ -392,7 +392,7 @@ describe('WebhookQuoter tests', () => {
             },
           });
         });
-      
+
       const permissionedTokenRequest = makeQuoteRequest({
         tokenIn: PERMISSIONED_TOKENS[0].address,
         protocol: ProtocolVersion.V1, // 1Inch only supports v2
@@ -706,6 +706,8 @@ describe('WebhookQuoter tests', () => {
 
     expect(response.length).toEqual(0);
 
+    // requestId is bound on the child logger (asserted via logger.child elsewhere), not on the log object.
+    expect(logger.child).toHaveBeenCalledWith({ requestId: request.requestId });
     expect(logger.debug).toHaveBeenCalledWith(
       {
         configuredChainIds: [4, 5, 6],
@@ -832,6 +834,9 @@ describe('WebhookQuoter tests', () => {
       });
     });
     const response = await webhookQuoter.quote(request);
+    // logs in fetchQuote go through a child logger bound with the request id, then enriched with the quote id
+    expect(logger.child).toHaveBeenCalledWith({ requestId: request.requestId });
+    expect(logger.child).toHaveBeenCalledWith({ quoteId: expect.any(String) });
     expect(logger.info).toHaveBeenCalledWith(
       {
         response: '',
