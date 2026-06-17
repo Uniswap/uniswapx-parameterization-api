@@ -34,11 +34,11 @@ export const BASE_BLOCK_SECS = 60 * 15; // 15 minutes
 
 // Laplace (additive) smoothing applied to each filler's fade rate so a few fades on a
 // small sample don't trip the breaker. Equivalent to seeding every filler with ALPHA
-// pretend-fades and BETA pretend-clean-fills. Prior mean = ALPHA/(ALPHA+BETA) ≈ 4.8%.
+// pretend-fades and BETA pretend-clean-fills. Prior mean = ALPHA/(ALPHA+BETA) = 1/20 = 5%.
 export const LAPLACE_ALPHA = 1;
-export const LAPLACE_BETA = 20;
+export const LAPLACE_BETA = 19;
 // Block a filler once their smoothed fade rate exceeds this. MUST be greater than the
-// prior mean (~4.8%), otherwise the prior alone would block every filler.
+// prior mean (5%), otherwise the prior alone would block every filler.
 // At this threshold a filler needs e.g. ~3 fades in 10 orders, ~4 in 20, ~8 in 50.
 export const FADE_RATE_BLOCK_THRESHOLD = 0.12;
 

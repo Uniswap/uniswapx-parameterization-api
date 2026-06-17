@@ -32,20 +32,20 @@ const order = (fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRo
 describe('FadeRateV2 cron', () => {
   describe('laplaceSmoothedFadeRate', () => {
     it('returns the prior mean for an empty sample', () => {
-      // (0 + 1) / (0 + 1 + 20) = 1/21 ≈ 0.0476
+      // (0 + 1) / (0 + 1 + 19) = 1/20 = 0.05
       expect(laplaceSmoothedFadeRate(0, 0)).toBeCloseTo(LAPLACE_ALPHA / (LAPLACE_ALPHA + LAPLACE_BETA), 6);
-      expect(laplaceSmoothedFadeRate(0, 0)).toBeCloseTo(0.0476, 4);
+      expect(laplaceSmoothedFadeRate(0, 0)).toBeCloseTo(0.05, 4);
     });
 
     it('pulls small samples toward the prior', () => {
-      // raw 50% (1/2) -> (1+1)/(2+21) ≈ 0.087, well under the 12% threshold
-      expect(laplaceSmoothedFadeRate(1, 2)).toBeCloseTo(2 / 23, 6);
+      // raw 50% (1/2) -> (1+1)/(2+20) ≈ 0.091, well under the 12% threshold
+      expect(laplaceSmoothedFadeRate(1, 2)).toBeCloseTo(2 / 22, 6);
       expect(laplaceSmoothedFadeRate(1, 2)).toBeLessThan(FADE_RATE_BLOCK_THRESHOLD);
     });
 
     it('converges to the empirical rate with volume', () => {
       // sustained 50% on 50 samples -> clearly over threshold
-      expect(laplaceSmoothedFadeRate(25, 50)).toBeCloseTo(26 / 71, 6);
+      expect(laplaceSmoothedFadeRate(25, 50)).toBeCloseTo(26 / 70, 6);
       expect(laplaceSmoothedFadeRate(25, 50)).toBeGreaterThan(FADE_RATE_BLOCK_THRESHOLD);
       // high volume, low rate stays safe
       expect(laplaceSmoothedFadeRate(3, 500)).toBeLessThan(FADE_RATE_BLOCK_THRESHOLD);
@@ -70,8 +70,8 @@ describe('FadeRateV2 cron', () => {
           .map(() => order('0x0000000000000000000000000000000000000001', 0, now - 50)),
       ];
       const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), logger);
-      // window = all 10 orders (no prior block), rate = (3+1)/(10+21) = 4/31
-      expect(stats['fillerA'].fadeRate).toBeCloseTo(4 / 31, 6);
+      // window = all 10 orders (no prior block), rate = (3+1)/(10+20) = 4/30
+      expect(stats['fillerA'].fadeRate).toBeCloseTo(4 / 30, 6);
       // no timestamp => every fade counts as new
       expect(stats['fillerA'].newFades).toEqual(3);
     });
@@ -92,8 +92,8 @@ describe('FadeRateV2 cron', () => {
           .map(() => order('0x0000000000000000000000000000000000000002', 0, now - 100)),
       ];
       const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, fillerTimestamps, logger);
-      // window = 5 post-block orders, 1 faded => (1+1)/(5+21) = 2/26
-      expect(stats['fillerB'].fadeRate).toBeCloseTo(2 / 26, 6);
+      // window = 5 post-block orders, 1 faded => (1+1)/(5+20) = 2/25
+      expect(stats['fillerB'].fadeRate).toBeCloseTo(2 / 25, 6);
       // only the post-block fade is newer than lastPostTimestamp
       expect(stats['fillerB'].newFades).toEqual(1);
     });
@@ -106,8 +106,8 @@ describe('FadeRateV2 cron', () => {
         order('0x0000000000000000000000000000000000000004', 0, now - 40),
       ];
       const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), logger);
-      // combined: 2 faded / 4 total => (2+1)/(4+21) = 3/25 = 0.12
-      expect(stats['fillerC'].fadeRate).toBeCloseTo(3 / 25, 6);
+      // combined: 2 faded / 4 total => (2+1)/(4+20) = 3/24 = 0.125
+      expect(stats['fillerC'].fadeRate).toBeCloseTo(3 / 24, 6);
       expect(stats['fillerC'].newFades).toEqual(2);
     });
 
@@ -127,8 +127,8 @@ describe('FadeRateV2 cron', () => {
           .map(() => order('0x0000000000000000000000000000000000000001', 0, now - 50)),
       ];
       const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, fillerTimestamps, logger);
-      // all 10 orders counted: (4+1)/(10+21) = 5/31 ≈ 0.161 > threshold
-      expect(stats['fillerA'].fadeRate).toBeCloseTo(5 / 31, 6);
+      // all 10 orders counted: (4+1)/(10+20) = 5/30 ≈ 0.167 > threshold
+      expect(stats['fillerA'].fadeRate).toBeCloseTo(5 / 30, 6);
       expect(stats['fillerA'].fadeRate).toBeGreaterThan(FADE_RATE_BLOCK_THRESHOLD);
       expect(stats['fillerA'].newFades).toEqual(4);
     });
