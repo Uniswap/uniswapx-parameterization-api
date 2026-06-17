@@ -184,7 +184,7 @@ WITH latestOrdersV2 AS (
   LIMIT 5000
 )
 SELECT
-    latestOrdersV2.chainid as chainId, latestOrdersV2.ordertype as orderType, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.startBlock as decayStartBlock, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedorders.blockNumber as fillBlock, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
+    latestOrdersV2.chainid as chainId, latestOrdersV2.ordertype as orderType, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedorders.fillTimeBlocks as fillTimeBlocks, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
     CASE
       WHEN latestOrdersV2.inputstartamount = latestOrdersV2.inputendamount THEN 'EXACT_INPUT'
       ELSE 'EXACT_OUTPUT'
@@ -211,9 +211,11 @@ SELECT
     CASE
       -- Never filled (any order type) => fade.
       WHEN fillTimestamp IS NULL THEN 1
-      -- Dutch_V3 decays by block, not by time: a fill at a block on or after
-      -- the cosigned decayStartBlock means the price had begun decaying => fade.
-      WHEN orderType = '${OrderType.Dutch_V3}' AND fillBlock >= decayStartBlock THEN 1
+      -- Dutch_V3 decays by block, not by time. fillTimeBlocks is computed
+      -- upstream as (fillBlock - decayStartBlock), so >= 0 means the fill landed
+      -- on or after the cosigned decayStartBlock i.e. the price had begun
+      -- decaying => fade.
+      WHEN orderType = '${OrderType.Dutch_V3}' AND fillTimeBlocks >= 0 THEN 1
       -- Dutch_V2 (time-based decay): filled after decay start => fade.
       WHEN orderType = '${OrderType.Dutch_V2}' AND decayStartTime < fillTimestamp THEN 1
       ELSE 0
