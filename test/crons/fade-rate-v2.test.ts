@@ -110,6 +110,28 @@ describe('FadeRateV2 cron', () => {
       expect(stats['fillerC'].fadeRate).toBeCloseTo(3 / 25, 6);
       expect(stats['fillerC'].newFades).toEqual(2);
     });
+
+    it('treats a non-finite (NaN) stored timestamp as unset, not silently zeroing the window', () => {
+      // A corrupted/missing Dynamo attribute parses to NaN. `deadline > NaN` is always
+      // false, so without the guard windowTotal would stay 0 and the filler could never
+      // be blocked. With the guard, NaN behaves like "unset" (floor 0) => all orders count.
+      const fillerTimestamps: FillerTimestamps = new Map([
+        ['fillerA', { lastPostTimestamp: NaN, blockUntilTimestamp: NaN, consecutiveBlocks: NaN }],
+      ]);
+      const rows: V2FadesRowType[] = [
+        ...Array(4)
+          .fill(0)
+          .map(() => order('0x0000000000000000000000000000000000000001', 1, now - 50)),
+        ...Array(6)
+          .fill(0)
+          .map(() => order('0x0000000000000000000000000000000000000001', 0, now - 50)),
+      ];
+      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, fillerTimestamps, logger);
+      // all 10 orders counted: (4+1)/(10+21) = 5/31 ≈ 0.161 > threshold
+      expect(stats['fillerA'].fadeRate).toBeCloseTo(5 / 31, 6);
+      expect(stats['fillerA'].fadeRate).toBeGreaterThan(FADE_RATE_BLOCK_THRESHOLD);
+      expect(stats['fillerA'].newFades).toEqual(4);
+    });
   });
 
   describe('calculateBlockUntilTimestamp', () => {
@@ -132,6 +154,18 @@ describe('FadeRateV2 cron', () => {
         blockUntilTimestamp: now + BASE_BLOCK_SECS, // 2^0
         consecutiveBlocks: 1,
       });
+    });
+
+    it('does not re-persist a non-finite (NaN) blockUntilTimestamp in the decay branch', () => {
+      const timestamps: FillerTimestamps = new Map([
+        ['corrupt', { lastPostTimestamp: NaN, blockUntilTimestamp: NaN, consecutiveBlocks: NaN }],
+      ]);
+      const stats: FillerFadeStatsMap = { corrupt: { fadeRate: 0.04, newFades: 0 } };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      // NaN floor is normalized back to the unblocked sentinel, not written back as NaN
+      expect(row.blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
+      expect(Number.isNaN(row.blockUntilTimestamp)).toBe(false);
+      expect(row.consecutiveBlocks).toEqual(0);
     });
 
     it('does not block a filler under the threshold', () => {

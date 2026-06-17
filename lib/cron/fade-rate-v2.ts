@@ -121,6 +121,14 @@ async function main(metrics: MetricsLogger) {
   }
 }
 
+// parseInt on a missing/malformed Dynamo attribute yields NaN. A NaN timestamp must not
+// be treated as a real value: e.g. `deadline > NaN` is always false, which would silently
+// zero out the fade-rate window and make a filler permanently unblockable. Coerce any
+// non-finite stored timestamp back to the "unset" sentinel.
+function finiteOr(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) ? (value as number) : fallback;
+}
+
 function newConsecutiveBlocks(consecutiveBlocks?: number): number {
   if (!consecutiveBlocks) {
     return 1;
@@ -213,7 +221,7 @@ export function calculateNewTimestamps(
       updatedTimestamps.push({
         hash,
         lastPostTimestamp: newPostTimestamp,
-        blockUntilTimestamp: fillerTimestamp?.blockUntilTimestamp ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+        blockUntilTimestamp: finiteOr(fillerTimestamp?.blockUntilTimestamp, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP),
         consecutiveBlocks: decayedBlocks,
       });
     }
@@ -274,13 +282,14 @@ export function getFillersFadeStats(
       tallies[fillerHash] = { windowFades: 0, windowTotal: 0, newFades: 0 };
     }
     // Rate window: orders completed after the filler's last block ended (clean slate).
-    const windowStart = fillerTimestamp?.blockUntilTimestamp ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP;
+    const windowStart = finiteOr(fillerTimestamp?.blockUntilTimestamp, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
     if (row.deadline > windowStart) {
       tallies[fillerHash].windowTotal += 1;
       tallies[fillerHash].windowFades += row.faded;
     }
     // New fades since the last cron run (deadline-based; catches in-flight orders).
-    if (!fillerTimestamp || row.deadline > fillerTimestamp.lastPostTimestamp) {
+    const lastPostTimestamp = finiteOr(fillerTimestamp?.lastPostTimestamp, 0);
+    if (!fillerTimestamp || row.deadline > lastPostTimestamp) {
       tallies[fillerHash].newFades += row.faded;
     }
   });
