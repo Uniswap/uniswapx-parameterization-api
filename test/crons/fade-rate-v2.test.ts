@@ -2,437 +2,231 @@ import Logger from 'bunyan';
 
 import {
   BASE_BLOCK_SECS,
+  calculateBlockUntilTimestamp,
   calculateNewTimestamps,
-  FillerFades,
+  FADE_RATE_BLOCK_THRESHOLD,
+  FillerFadeStatsMap,
   FillerTimestamps,
-  getFillersNewFades,
-  NUM_FADES_MULTIPLIER,
+  getFillersFadeStats,
+  laplaceSmoothedFadeRate,
+  LAPLACE_ALPHA,
+  LAPLACE_BETA,
   UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
 } from '../../lib/cron/fade-rate-v2';
 import { ToUpdateTimestampRow, V2FadesRowType } from '../../lib/repositories';
 
 const now = Math.floor(Date.now() / 1000);
 
-// Note: deadline = postTimestamp + 20 (simulating 20-second order lifetime)
-// Orders are counted as "new" if deadline > lastPostTimestamp (not postTimestamp!)
-const FADES_ROWS: V2FadesRowType[] = [
-  // filler1 - lastPostTimestamp: now - 150, all orders have deadline > now - 150, so all counted
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000001',
-    faded: 1,
-    postTimestamp: now - 100,
-    deadline: now - 80,
-  },
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000001',
-    faded: 0,
-    postTimestamp: now - 90,
-    deadline: now - 70,
-  },
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000001',
-    faded: 1,
-    postTimestamp: now - 80,
-    deadline: now - 60,
-  },
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000002',
-    faded: 1,
-    postTimestamp: now - 80,
-    deadline: now - 60,
-  },
-  // filler2 - lastPostTimestamp: now - 75
-  // Order at now - 100 has deadline now - 80 which is NOT > now - 75, so NOT counted
-  // Order at now - 70 has deadline now - 50 which IS > now - 75, so counted
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000003',
-    faded: 1,
-    postTimestamp: now - 70,
-    deadline: now - 50,
-  },
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000003',
-    faded: 1,
-    postTimestamp: now - 100,
-    deadline: now - 80,
-  },
-  // filler3 - lastPostTimestamp: now - 101, deadline now - 80 > now - 101, so counted
-  // filler3 is BLOCKED (blockUntilTimestamp: now + 1000) and has a fade!
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000004',
-    faded: 1,
-    postTimestamp: now - 100,
-    deadline: now - 80,
-  },
-  // filler4 - lastPostTimestamp: now - 150, deadline now - 80 > now - 150, so counted
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000005',
-    faded: 0,
-    postTimestamp: now - 100,
-    deadline: now - 80,
-  },
-  // filler5 - lastPostTimestamp: now - 150, deadline now - 80 > now - 150, so counted
-  // filler5 is BLOCKED (blockUntilTimestamp: now + 100) but has NO fade
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000006',
-    faded: 0,
-    postTimestamp: now - 100,
-    deadline: now - 80,
-  },
-  // filler6 - not in FILLER_TIMESTAMPS, so all counted
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000007',
-    faded: 1,
-    postTimestamp: now - 100,
-    deadline: now - 80,
-  },
-  // filler7 - lastPostTimestamp: now - 150, deadline now - 80 > now - 150, so counted
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000008',
-    faded: 1,
-    postTimestamp: now - 100,
-    deadline: now - 80,
-  },
-  // filler8 - lastPostTimestamp: now - 150, deadline now - 80 > now - 150, so counted
-  {
-    fillerAddress: '0x0000000000000000000000000000000000000009',
-    faded: 0,
-    postTimestamp: now - 100,
-    deadline: now - 80,
-  },
-];
-
-const ADDRESS_TO_FILLER = new Map<string, string>([
-  ['0x0000000000000000000000000000000000000001', 'filler1'],
-  ['0x0000000000000000000000000000000000000002', 'filler1'],
-  ['0x0000000000000000000000000000000000000003', 'filler2'],
-  ['0x0000000000000000000000000000000000000004', 'filler3'],
-  ['0x0000000000000000000000000000000000000005', 'filler4'],
-  ['0x0000000000000000000000000000000000000006', 'filler5'],
-  ['0x0000000000000000000000000000000000000007', 'filler6'],
-  ['0x0000000000000000000000000000000000000008', 'filler7'],
-  ['0x0000000000000000000000000000000000000009', 'filler8'],
-]);
-
-const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
-  ['filler1', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN, consecutiveBlocks: NaN }],
-  ['filler2', { lastPostTimestamp: now - 75, blockUntilTimestamp: now - 50, consecutiveBlocks: 0 }],
-  ['filler3', { lastPostTimestamp: now - 101, blockUntilTimestamp: now + 1000, consecutiveBlocks: 0 }],
-  ['filler4', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN, consecutiveBlocks: 0 }],
-  ['filler5', { lastPostTimestamp: now - 150, blockUntilTimestamp: now + 100, consecutiveBlocks: 0 }],
-  ['filler7', { lastPostTimestamp: now - 150, blockUntilTimestamp: now - 50, consecutiveBlocks: 2 }],
-  ['filler8', { lastPostTimestamp: now - 150, blockUntilTimestamp: now - 50, consecutiveBlocks: 2 }],
-]);
-
 // silent logger in tests
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
-describe('FadeRateCron test', () => {
-  let newFades: FillerFades;
-  beforeAll(() => {
-    newFades = getFillersNewFades(FADES_ROWS, ADDRESS_TO_FILLER, FILLER_TIMESTAMPS, logger);
+// helper to build a faded/non-faded order row
+const order = (fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRowType => ({
+  fillerAddress,
+  faded,
+  postTimestamp: deadline - 20,
+  deadline,
+});
+
+describe('FadeRateV2 cron', () => {
+  describe('laplaceSmoothedFadeRate', () => {
+    it('returns the prior mean for an empty sample', () => {
+      // (0 + 1) / (0 + 1 + 20) = 1/21 ≈ 0.0476
+      expect(laplaceSmoothedFadeRate(0, 0)).toBeCloseTo(LAPLACE_ALPHA / (LAPLACE_ALPHA + LAPLACE_BETA), 6);
+      expect(laplaceSmoothedFadeRate(0, 0)).toBeCloseTo(0.0476, 4);
+    });
+
+    it('pulls small samples toward the prior', () => {
+      // raw 50% (1/2) -> (1+1)/(2+21) ≈ 0.087, well under the 12% threshold
+      expect(laplaceSmoothedFadeRate(1, 2)).toBeCloseTo(2 / 23, 6);
+      expect(laplaceSmoothedFadeRate(1, 2)).toBeLessThan(FADE_RATE_BLOCK_THRESHOLD);
+    });
+
+    it('converges to the empirical rate with volume', () => {
+      // sustained 50% on 50 samples -> clearly over threshold
+      expect(laplaceSmoothedFadeRate(25, 50)).toBeCloseTo(26 / 71, 6);
+      expect(laplaceSmoothedFadeRate(25, 50)).toBeGreaterThan(FADE_RATE_BLOCK_THRESHOLD);
+      // high volume, low rate stays safe
+      expect(laplaceSmoothedFadeRate(3, 500)).toBeLessThan(FADE_RATE_BLOCK_THRESHOLD);
+    });
   });
 
-  describe('getFillersNewFades', () => {
-    it('takes into account multiple filler addresses of the same filler', () => {
-      expect(newFades).toEqual({
-        filler1: 3, // count all fades in FADES_ROWS
-        filler2: 1, // only count postTimestamp == now - 70
-        filler3: 1,
-        filler4: 0,
-        filler5: 0,
-        filler6: 1,
-        filler7: 1,
-        filler8: 0,
-      });
+  describe('getFillersFadeStats', () => {
+    const ADDRESS_TO_FILLER = new Map<string, string>([
+      ['0x0000000000000000000000000000000000000001', 'fillerA'],
+      ['0x0000000000000000000000000000000000000002', 'fillerB'],
+      ['0x0000000000000000000000000000000000000003', 'fillerC'],
+      ['0x0000000000000000000000000000000000000004', 'fillerC'],
+    ]);
+
+    it('computes the smoothed rate and new fades for a filler with no prior timestamp', () => {
+      const rows: V2FadesRowType[] = [
+        ...Array(3)
+          .fill(0)
+          .map(() => order('0x0000000000000000000000000000000000000001', 1, now - 50)),
+        ...Array(7)
+          .fill(0)
+          .map(() => order('0x0000000000000000000000000000000000000001', 0, now - 50)),
+      ];
+      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), logger);
+      // window = all 10 orders (no prior block), rate = (3+1)/(10+21) = 4/31
+      expect(stats['fillerA'].fadeRate).toBeCloseTo(4 / 31, 6);
+      // no timestamp => every fade counts as new
+      expect(stats['fillerA'].newFades).toEqual(3);
+    });
+
+    it('excludes pre-block orders from the rate window and new fades', () => {
+      const fillerTimestamps: FillerTimestamps = new Map([
+        ['fillerB', { lastPostTimestamp: now - 150, blockUntilTimestamp: now - 200, consecutiveBlocks: 1 }],
+      ]);
+      const rows: V2FadesRowType[] = [
+        // pre-block fades (deadline now-300, before block end now-200): excluded from window;
+        // also before lastPostTimestamp (now-150) so excluded from newFades
+        order('0x0000000000000000000000000000000000000002', 1, now - 300),
+        order('0x0000000000000000000000000000000000000002', 1, now - 300),
+        // post-block orders (deadline now-100): 1 faded + 4 clean
+        order('0x0000000000000000000000000000000000000002', 1, now - 100),
+        ...Array(4)
+          .fill(0)
+          .map(() => order('0x0000000000000000000000000000000000000002', 0, now - 100)),
+      ];
+      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, fillerTimestamps, logger);
+      // window = 5 post-block orders, 1 faded => (1+1)/(5+21) = 2/26
+      expect(stats['fillerB'].fadeRate).toBeCloseTo(2 / 26, 6);
+      // only the post-block fade is newer than lastPostTimestamp
+      expect(stats['fillerB'].newFades).toEqual(1);
+    });
+
+    it('aggregates multiple addresses belonging to the same filler', () => {
+      const rows: V2FadesRowType[] = [
+        order('0x0000000000000000000000000000000000000003', 1, now - 40),
+        order('0x0000000000000000000000000000000000000004', 1, now - 40),
+        order('0x0000000000000000000000000000000000000004', 0, now - 40),
+        order('0x0000000000000000000000000000000000000004', 0, now - 40),
+      ];
+      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), logger);
+      // combined: 2 faded / 4 total => (2+1)/(4+21) = 3/25 = 0.12
+      expect(stats['fillerC'].fadeRate).toBeCloseTo(3 / 25, 6);
+      expect(stats['fillerC'].newFades).toEqual(2);
+    });
+  });
+
+  describe('calculateBlockUntilTimestamp', () => {
+    it('escalates only on consecutive blocks (no per-fade multiplier)', () => {
+      expect(calculateBlockUntilTimestamp(now, 0)).toEqual(now + BASE_BLOCK_SECS);
+      expect(calculateBlockUntilTimestamp(now, 1)).toEqual(now + BASE_BLOCK_SECS * 2);
+      expect(calculateBlockUntilTimestamp(now, 2)).toEqual(now + BASE_BLOCK_SECS * 4);
+      expect(calculateBlockUntilTimestamp(now, undefined)).toEqual(now + BASE_BLOCK_SECS);
     });
   });
 
   describe('calculateNewTimestamps', () => {
-    let newTimestamps: ToUpdateTimestampRow[];
-
-    beforeAll(() => {
-      newTimestamps = calculateNewTimestamps(FILLER_TIMESTAMPS, newFades, now, logger);
+    it('blocks a filler whose fade rate exceeds the threshold', () => {
+      const timestamps: FillerTimestamps = new Map();
+      const stats: FillerFadeStatsMap = { newBad: { fadeRate: 0.2, newFades: 3 } };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row).toEqual({
+        hash: 'newBad',
+        lastPostTimestamp: now,
+        blockUntilTimestamp: now + BASE_BLOCK_SECS, // 2^0
+        consecutiveBlocks: 1,
+      });
     });
 
-    it('calculates blockUntilTimestamp for each filler', () => {
-      expect(newTimestamps).toEqual(
-        expect.arrayContaining([
-          {
-            hash: 'filler1',
-            lastPostTimestamp: now,
-            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 2)),
-            consecutiveBlocks: 1,
-          },
-          {
-            hash: 'filler2',
-            lastPostTimestamp: now,
-            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
-            consecutiveBlocks: 1,
-          },
-          // filler3 is blocked AND has a fade → EXTEND block from current blockUntil
-          // Block extended from (now + 1000) by BASE_BLOCK_SECS * 1.2^0 * 2^0 = 15 min
-          {
-            hash: 'filler3',
-            lastPostTimestamp: now,
-            blockUntilTimestamp: now + 1000 + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
-            consecutiveBlocks: 1, // incremented from 0
-          },
-          // filler5 is blocked but has NO fade → keeps existing block
-          {
-            hash: 'filler5',
-            lastPostTimestamp: now,
-            blockUntilTimestamp: now + 100,
-            consecutiveBlocks: 0,
-          },
-          // test exponential backoff
-          {
-            hash: 'filler7',
-            lastPostTimestamp: now,
-            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0) * Math.pow(2, 2)),
-            consecutiveBlocks: 3,
-          },
-          // consecutiveBlocks DECAY instead of reset
-          // filler8 had consecutiveBlocks: 2, no fades → decays to 1
-          {
-            hash: 'filler8',
-            lastPostTimestamp: now,
-            blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
-            consecutiveBlocks: 1, // decayed from 2, not reset to 0
-          },
-        ])
-      );
+    it('does not block a filler under the threshold', () => {
+      const timestamps: FillerTimestamps = new Map();
+      const stats: FillerFadeStatsMap = { ok: { fadeRate: 0.05, newFades: 0 } };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row.blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
+      expect(row.consecutiveBlocks).toEqual(0);
     });
 
-    it('notices new fillers not already in fillerTimestamps', () => {
-      // filler6 one fade, no existing consecutiveBlocks
-      expect(newTimestamps).toEqual(
-        expect.arrayContaining([
-          {
-            hash: 'filler6',
-            lastPostTimestamp: now,
-            blockUntilTimestamp: now + Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 0)),
-            consecutiveBlocks: 1,
-          },
-        ])
-      );
+    it('uses consecutiveBlocks for backoff when re-blocking', () => {
+      // previously blocked twice, block now expired (past), breaches again
+      const timestamps: FillerTimestamps = new Map([
+        ['repeat', { lastPostTimestamp: now - 100, blockUntilTimestamp: now - 10, consecutiveBlocks: 2 }],
+      ]);
+      const stats: FillerFadeStatsMap = { repeat: { fadeRate: 0.3, newFades: 1 } };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row.blockUntilTimestamp).toEqual(now + BASE_BLOCK_SECS * 4); // 2^2 (old consecutive)
+      expect(row.consecutiveBlocks).toEqual(3);
     });
 
-    it('keep old blockUntilTimestamp if no new fades', () => {
-      expect(newTimestamps).not.toContain([['filler4', expect.anything(), expect.anything()]]);
+    it('preserves the past blockUntilTimestamp as the clean-slate floor while decaying', () => {
+      const timestamps: FillerTimestamps = new Map([
+        ['recovering', { lastPostTimestamp: now - 100, blockUntilTimestamp: now - 500, consecutiveBlocks: 2 }],
+      ]);
+      const stats: FillerFadeStatsMap = { recovering: { fadeRate: 0.05, newFades: 0 } };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      // block end is kept (not reset to 0) so the rate window stays scoped to post-block orders
+      expect(row.blockUntilTimestamp).toEqual(now - 500);
+      expect(row.consecutiveBlocks).toEqual(1); // decayed 2 -> 1
     });
 
-    it('decays consecutiveBlocks instead of resetting to 0', () => {
-      // filler8 had consecutiveBlocks: 2 and no new fades
-      // decay to 1
-      const filler8 = newTimestamps.find((t) => t.hash === 'filler8');
-      expect(filler8?.consecutiveBlocks).toBe(1); // decayed, not reset
+    it('extends the block when a blocked filler fades again on in-flight orders', () => {
+      const timestamps: FillerTimestamps = new Map([
+        ['blockedFader', { lastPostTimestamp: now - 100, blockUntilTimestamp: now + 500, consecutiveBlocks: 1 }],
+      ]);
+      // rate is near the prior (blocked => empty window), but new in-flight fades arrived
+      const stats: FillerFadeStatsMap = { blockedFader: { fadeRate: 0.05, newFades: 2 } };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row.blockUntilTimestamp).toEqual(now + 500 + BASE_BLOCK_SECS * 2); // extend from current end, 2^1
+      expect(row.consecutiveBlocks).toEqual(2);
     });
 
-    it('extends block when filler fades while blocked', () => {
-      // filler3 was blocked until now + 1000, and had 1 fade
-      // extend to now + 1000 + penalty
-      const filler3 = newTimestamps.find((t) => t.hash === 'filler3');
-      expect(filler3?.blockUntilTimestamp).toBeGreaterThan(now + 1000);
-      expect(filler3?.consecutiveBlocks).toBe(1); // incremented from 0
+    it('keeps an active block (no extend, no decay) when a blocked filler has no new fades', () => {
+      const timestamps: FillerTimestamps = new Map([
+        ['blockedClean', { lastPostTimestamp: now - 100, blockUntilTimestamp: now + 300, consecutiveBlocks: 1 }],
+      ]);
+      // even a high rate must not extend while blocked without new fades
+      const stats: FillerFadeStatsMap = { blockedClean: { fadeRate: 0.9, newFades: 0 } };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row.blockUntilTimestamp).toEqual(now + 300);
+      expect(row.consecutiveBlocks).toEqual(1);
     });
 
-    it('keeps block but does not decay when blocked with no fades', () => {
-      // filler5 was blocked until now + 100, and had 0 fades
-      // Should keep existing block without decaying consecutiveBlocks
-      const filler5 = newTimestamps.find((t) => t.hash === 'filler5');
-      expect(filler5?.blockUntilTimestamp).toBe(now + 100);
-      expect(filler5?.consecutiveBlocks).toBe(0); // unchanged, not decayed
-    });
-  });
-
-  describe('Alternating fade/clean cycle gaming', () => {
-    it('requires multiple clean cycles to fully reset consecutiveBlocks', () => {
-      // Simulate: Filler built up consecutiveBlocks: 3, now has a clean cycle
+    it('requires multiple clean cycles to fully decay consecutiveBlocks (anti-gaming)', () => {
       const timestamps: FillerTimestamps = new Map([
         ['gamer', { lastPostTimestamp: now - 100, blockUntilTimestamp: now - 50, consecutiveBlocks: 3 }],
       ]);
+      const clean: FillerFadeStatsMap = { gamer: { fadeRate: 0.04, newFades: 0 } };
 
-      // Cycle 1: Clean (no fades)
-      let result = calculateNewTimestamps(timestamps, { gamer: 0 }, now, logger);
-      expect(result[0].consecutiveBlocks).toBe(2); // 3 → 2
+      let row = calculateNewTimestamps(timestamps, clean, now, logger)[0];
+      expect(row.consecutiveBlocks).toEqual(2);
 
-      // Cycle 2: Clean again
       timestamps.set('gamer', {
-        lastPostTimestamp: result[0].lastPostTimestamp,
-        blockUntilTimestamp: result[0].blockUntilTimestamp ?? now + 300,
-        consecutiveBlocks: result[0].consecutiveBlocks,
+        lastPostTimestamp: row.lastPostTimestamp,
+        blockUntilTimestamp: row.blockUntilTimestamp ?? now - 50,
+        consecutiveBlocks: row.consecutiveBlocks,
       });
-      result = calculateNewTimestamps(timestamps, { gamer: 0 }, now + 300, logger);
-      expect(result[0].consecutiveBlocks).toBe(1); // 2 → 1
+      row = calculateNewTimestamps(timestamps, clean, now + 300, logger)[0];
+      expect(row.consecutiveBlocks).toEqual(1);
 
-      // Cycle 3: Clean again
       timestamps.set('gamer', {
-        lastPostTimestamp: result[0].lastPostTimestamp,
-        blockUntilTimestamp: result[0].blockUntilTimestamp ?? now + 600,
-        consecutiveBlocks: result[0].consecutiveBlocks,
+        lastPostTimestamp: row.lastPostTimestamp,
+        blockUntilTimestamp: row.blockUntilTimestamp ?? now - 50,
+        consecutiveBlocks: row.consecutiveBlocks,
       });
-      result = calculateNewTimestamps(timestamps, { gamer: 0 }, now + 600, logger);
-      expect(result[0].consecutiveBlocks).toBe(0); // 1 → 0
-
-      // Takes 3 clean cycles, not 1!
+      row = calculateNewTimestamps(timestamps, clean, now + 600, logger)[0];
+      expect(row.consecutiveBlocks).toEqual(0);
     });
 
-    it('escalates penalty when filler fades after only partial decay', () => {
-      // Simulate: Filler has consecutiveBlocks: 2, does 1 clean cycle, then fades again
-      const timestamps: FillerTimestamps = new Map([
-        ['gamer', { lastPostTimestamp: now - 100, blockUntilTimestamp: now - 50, consecutiveBlocks: 2 }],
-      ]);
-
-      // Cycle 1: Clean - decays from 2 to 1
-      let result = calculateNewTimestamps(timestamps, { gamer: 0 }, now, logger);
-      expect(result[0].consecutiveBlocks).toBe(1);
-
-      // Cycle 2: Fades again! consecutiveBlocks goes from 1 to 2
-      timestamps.set('gamer', {
-        lastPostTimestamp: now,
-        blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP, // block expired
-        consecutiveBlocks: 1,
-      });
-      result = calculateNewTimestamps(timestamps, { gamer: 1 }, now + 300, logger);
-      expect(result[0].consecutiveBlocks).toBe(2); // back up!
-
-      // Penalty should be: BASE_BLOCK_SECS * 1.2^0 * 2^1 = 30 minutes
-      const expectedBlock = now + 300 + Math.floor(BASE_BLOCK_SECS * Math.pow(2, 1));
-      expect(result[0].blockUntilTimestamp).toBe(expectedBlock);
-    });
-
-    it('OLD EXPLOIT: would have allowed indefinite 15-min penalties', () => {
-      // This test documents what the OLD behavior would have allowed:
-      // Filler fades, gets blocked 15 min, waits, does 1 clean cycle, fades again
-      // Result: Always gets minimum 15-min penalty, never escalates
-
-      // With NEW behavior, even alternating pattern eventually accumulates
-      const timestamps: FillerTimestamps = new Map([
-        ['attacker', { lastPostTimestamp: now - 100, blockUntilTimestamp: now - 50, consecutiveBlocks: 0 }],
-      ]);
-
-      // Pattern: fade, clean, fade, clean, fade...
-      // Cycle 1: Fade
-      let result = calculateNewTimestamps(timestamps, { attacker: 1 }, now, logger);
-      expect(result[0].consecutiveBlocks).toBe(1);
-      const block1 = result[0].blockUntilTimestamp! - now; // ~15 min
-
-      // Cycle 2: Clean (after block expires)
-      timestamps.set('attacker', {
-        lastPostTimestamp: now,
-        blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
-        consecutiveBlocks: 1,
-      });
-      result = calculateNewTimestamps(timestamps, { attacker: 0 }, now + 1000, logger);
-      expect(result[0].consecutiveBlocks).toBe(0); // decayed to 0
-
-      // Cycle 3: Fade again
-      timestamps.set('attacker', {
-        lastPostTimestamp: now + 1000,
-        blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
-        consecutiveBlocks: 0,
-      });
-      result = calculateNewTimestamps(timestamps, { attacker: 1 }, now + 2000, logger);
-      expect(result[0].consecutiveBlocks).toBe(1);
-      const block3 = result[0].blockUntilTimestamp! - (now + 2000);
-
-      // Both penalties are the same (15 min) - this is still possible with alternating
-      // But at least they can't game it with a SINGLE clean cycle after building up blocks
-      expect(block1).toBe(block3);
-    });
-  });
-
-  /**
-   * EXPLOIT #2 PREVENTION TESTS
-   *
-   * Attack vector: Orders assigned before a block can fade during the block period,
-   * but those fades weren't being counted due to postTimestamp comparison.
-   * Also: Fading while blocked didn't extend the block or increment consecutiveBlocks.
-   *
-   * Old behavior: Fades during block were ignored
-   * New behavior: Block is extended and consecutiveBlocks incremented
-   */
-  describe('Exploit #2 Prevention: Fading while blocked', () => {
-    it('extends block when filler fades during existing block', () => {
+    it('processes a mix of fillers in one pass', () => {
       const timestamps: FillerTimestamps = new Map([
         ['blocked', { lastPostTimestamp: now - 100, blockUntilTimestamp: now + 500, consecutiveBlocks: 1 }],
       ]);
-
-      // Filler is blocked until now + 500, but has 2 fades from pre-block orders
-      const result = calculateNewTimestamps(timestamps, { blocked: 2 }, now, logger);
-      const blocked = result[0];
-
-      // Block should be EXTENDED from now + 500, not kept as-is
-      expect(blocked.blockUntilTimestamp).toBeGreaterThan(now + 500);
-
-      // consecutiveBlocks should increment
-      expect(blocked.consecutiveBlocks).toBe(2);
-
-      // Verify the extension amount: BASE_BLOCK_SECS * 1.2^(2-1) * 2^1
-      const expectedExtension = Math.floor(BASE_BLOCK_SECS * Math.pow(NUM_FADES_MULTIPLIER, 1) * Math.pow(2, 1));
-      expect(blocked.blockUntilTimestamp).toBe(now + 500 + expectedExtension);
-    });
-
-    it('counts orders by deadline, not postTimestamp (in-flight order fix)', () => {
-      // Scenario: Order posted at T=-100, deadline at T=-50
-      // lastPostTimestamp was T=-60 (set by previous cron run)
-      //
-      // OLD: postTimestamp (-100) > lastPostTimestamp (-60)? NO → not counted
-      // NEW: deadline (-50) > lastPostTimestamp (-60)? YES → counted
-
-      const timestamps: FillerTimestamps = new Map([
-        ['filler', { lastPostTimestamp: now - 60, blockUntilTimestamp: now - 100, consecutiveBlocks: 0 }],
-      ]);
-      const addressMap = new Map([['0x0000000000000000000000000000000000000001', 'filler']]);
-
-      // Order posted before lastPostTimestamp, but deadline after
-      const rows: V2FadesRowType[] = [
-        {
-          fillerAddress: '0x0000000000000000000000000000000000000001',
-          faded: 1,
-          postTimestamp: now - 100, // Before lastPostTimestamp
-          deadline: now - 50, // After lastPostTimestamp
-        },
-      ];
-
-      const fades = getFillersNewFades(rows, addressMap, timestamps, logger);
-
-      // With deadline-based check, this fade IS counted
-      expect(fades['filler']).toBe(1);
-    });
-
-    it('OLD EXPLOIT: fading while blocked had no consequences', () => {
-      // Document what OLD behavior would have done
-      const timestamps: FillerTimestamps = new Map([
-        ['badActor', { lastPostTimestamp: now - 100, blockUntilTimestamp: now + 1000, consecutiveBlocks: 2 }],
-      ]);
-
-      // With OLD behavior, this would have kept blockUntilTimestamp at now + 1000
-      // and consecutiveBlocks at 2 (no change)
-
-      // With NEW behavior:
-      const result = calculateNewTimestamps(timestamps, { badActor: 3 }, now, logger);
-
-      // Block is extended significantly
-      expect(result[0].blockUntilTimestamp).toBeGreaterThan(now + 1000);
-
-      // consecutiveBlocks increased
-      expect(result[0].consecutiveBlocks).toBe(3);
-    });
-
-    it('does not decay consecutiveBlocks while actively blocked', () => {
-      // If blocked with no new fades, should keep consecutiveBlocks (not decay)
-      const timestamps: FillerTimestamps = new Map([
-        ['blocked', { lastPostTimestamp: now - 100, blockUntilTimestamp: now + 500, consecutiveBlocks: 3 }],
-      ]);
-
-      const result = calculateNewTimestamps(timestamps, { blocked: 0 }, now, logger);
-
-      // No decay while blocked - they're serving their time
-      expect(result[0].consecutiveBlocks).toBe(3);
-      expect(result[0].blockUntilTimestamp).toBe(now + 500);
+      const stats: FillerFadeStatsMap = {
+        breach: { fadeRate: 0.25, newFades: 2 },
+        clean: { fadeRate: 0.03, newFades: 0 },
+        blocked: { fadeRate: 0.05, newFades: 0 },
+      };
+      const rows: ToUpdateTimestampRow[] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(rows).toHaveLength(3);
+      const byHash = Object.fromEntries(rows.map((r) => [r.hash, r]));
+      expect(byHash['breach'].blockUntilTimestamp).toBeGreaterThan(now);
+      expect(byHash['clean'].blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
+      expect(byHash['blocked'].blockUntilTimestamp).toEqual(now + 500); // unchanged
     });
   });
 });
