@@ -85,8 +85,9 @@ describe('UniswapXServiceProvider postOrder', () => {
 
     expect(response.statusCode).toEqual(500);
     expect(response.errorCode).toEqual(ErrorCode.InternalError);
-    // The order may still be live, so the caller gets the hash to reconcile.
-    expect(response.orderHash).toEqual(ORDER_HASH);
+    // The order may still be live, so the caller gets the hash to reconcile,
+    // in the same { hash } shape as a success response.
+    expect(response.data).toEqual({ hash: ORDER_HASH });
   });
 
   it('returns a 500 with the order hash when the reconcile request itself fails', async () => {
@@ -97,10 +98,10 @@ describe('UniswapXServiceProvider postOrder', () => {
 
     expect(response.statusCode).toEqual(500);
     expect(response.errorCode).toEqual(ErrorCode.InternalError);
-    expect(response.orderHash).toEqual(ORDER_HASH);
+    expect(response.data).toEqual({ hash: ORDER_HASH });
   });
 
-  it('does not attach an order hash to a genuine rejection', async () => {
+  it('does not attach order data to a genuine rejection', async () => {
     const error = new AxiosError('Request failed with status code 400');
     error.response = {
       status: 400,
@@ -111,6 +112,6 @@ describe('UniswapXServiceProvider postOrder', () => {
     const response = (await provider.postOrder({ order: buildOrderStub(), signature: '0xsig' })) as ErrorResponse;
 
     expect(response.statusCode).toEqual(400);
-    expect(response.orderHash).toBeUndefined();
+    expect(response.data).toBeUndefined();
   });
 });

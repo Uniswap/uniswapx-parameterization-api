@@ -136,7 +136,6 @@ describe('Quote handler order post error mapping', () => {
     errorCode?: ErrorCode;
     detail?: string;
     data?: unknown;
-    orderHash?: string;
   }): Promise<APIGatewayProxyResult> => {
     const orderServiceProvider = { postOrder: jest.fn().mockResolvedValue(postResponse) };
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
@@ -165,14 +164,15 @@ describe('Quote handler order post error mapping', () => {
       statusCode: 500,
       errorCode: ErrorCode.InternalError,
       detail: 'Timed out posting order to UniswapX Service; order acceptance could not be confirmed',
-      orderHash: '0xabc',
+      data: { hash: '0xabc' },
     });
     expect(response.statusCode).toEqual(500);
     // The hash must survive the handler spread + base-handler serialization so
-    // the client can reconcile a possibly-live order (SWAP-2839).
+    // the client can reconcile a possibly-live order (SWAP-2839). Same { hash }
+    // shape as a success response.
     expect(JSON.parse(response.body)).toMatchObject({
       errorCode: ErrorCode.InternalError,
-      orderHash: '0xabc',
+      data: { hash: '0xabc' },
     });
   });
 });

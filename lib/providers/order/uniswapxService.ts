@@ -77,13 +77,14 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
           }
           this.log.error({ orderHash, error: e.message }, 'Order post timed out and order was not found');
           // Status is genuinely unknown: the order may still be accepted and
-          // filled. Return the hash so the caller can reconcile it rather than
-          // treat the order as rejected (SWAP-2839).
+          // filled. Return the hash (same { hash } shape as a success) so the
+          // caller can reconcile it rather than treat the order as rejected
+          // (SWAP-2839).
           return {
             statusCode: 500,
             errorCode: ErrorCode.InternalError,
             detail: 'Timed out posting order to UniswapX Service; order acceptance could not be confirmed',
-            orderHash,
+            data: { hash: orderHash },
           };
         }
         this.log.error({ error: e.response?.data, httpStatus: e.response?.status, code: e.code }, 'Error posting order to UniswapX Service');
