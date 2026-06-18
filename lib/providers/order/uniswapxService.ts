@@ -20,6 +20,12 @@ const ORDER_TYPE_MAP = new Map<Function, string>([
   [CosignedV3DutchOrder, OrderType.Dutch_V3]
 ]);
 
+// Shape of the order service's GET /dutch-auction/orders response; we only need
+// to know whether any order matched during reconciliation.
+interface GetOrdersResponse {
+  orders?: unknown[];
+}
+
 export class UniswapXServiceProvider implements OrderServiceProvider {
   private log: Logger;
 
@@ -108,7 +114,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
     try {
       // Give the order service's in-flight request a moment to persist.
       await new Promise((resolve) => setTimeout(resolve, ORDER_RECONCILE_DELAY_MS));
-      const response = await axios.get(`${this.uniswapxServiceUrl}dutch-auction/orders`, {
+      const response = await axios.get<GetOrdersResponse>(`${this.uniswapxServiceUrl}dutch-auction/orders`, {
         params: { chainId, orderHash },
         timeout: ORDER_RECONCILE_TIMEOUT_MS,
       });
