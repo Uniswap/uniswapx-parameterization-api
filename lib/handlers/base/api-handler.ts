@@ -51,6 +51,11 @@ export type ErrorResponse = {
   statusCode: 400 | 403 | 404 | 408 | 409 | 500;
   errorCode?: ErrorCode;
   detail?: string;
+  // Set when an error is returned but an order may nonetheless be live (e.g. an
+  // order-post timeout whose acceptance we couldn't confirm). Mirrors the
+  // success shape ({ hash }) so the caller can reconcile by hash instead of
+  // treating the order as rejected (SWAP-2839).
+  data?: { hash: string };
 };
 
 export abstract class ApiInjector<CInj, RInj extends ApiRInj, ReqBody, ReqQueryParams> extends BaseInjector<CInj> {
@@ -182,8 +187,11 @@ export abstract class APIGLambdaHandler<
 
             if (this.isError(handleRequestResult)) {
               log.info({ handleRequestResult }, 'Handler did not return a 200');
-              const { statusCode, detail, errorCode } = handleRequestResult;
-              const response = JSON.stringify({ detail, errorCode, id });
+              const { statusCode, detail, errorCode, data } = handleRequestResult;
+              // data is omitted from the body when undefined, so non-order
+              // handlers are unaffected; for an indeterminate order post it
+              // carries { hash } so the client can reconcile (SWAP-2839).
+              const response = JSON.stringify({ detail, errorCode, data, id });
 
               log.info({ statusCode, response }, `Request ended. ${statusCode}`);
               return {

@@ -154,10 +154,22 @@ export class QuoteHandler extends APIGLambdaHandler<
         if (error.detail != POST_ORDER_ERROR_REASON.INSUFFICIENT_FUNDS) {
           metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
         }
-        metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
+        // Only a 4xx from the order service is a genuine rejection of the
+        // order. Anything else (timeouts, 5xx) is indeterminate — the order
+        // service may have accepted the order after we stopped waiting — and
+        // rewriting it to 400 makes clients treat a live, fillable order as
+        // rejected (SWAP-2839).
+        if (error.statusCode >= 400 && error.statusCode < 500) {
+          metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
+          return {
+            ...error,
+            statusCode: 400,
+          };
+        }
+        metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
         return {
-          ...response,
-          statusCode: 400,
+          ...error,
+          statusCode: 500,
         };
       }
     } catch (e) {
