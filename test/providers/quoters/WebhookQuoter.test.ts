@@ -40,7 +40,14 @@ const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([
 const repository = new MockFillerAddressRepository();
 
 describe('WebhookQuoter tests', () => {
+  beforeEach(() => {
+    // Dispatch order is randomized in WebhookQuoter; pin it so the positional axios mocks
+    // below (real response first, opposing second) line up deterministically.
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+  });
+
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
@@ -136,6 +143,87 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
     expect(response[0].fillerName).toEqual('uniswap');
     expect(response[0].endpoint).toEqual(WEBHOOK_URL);
+  });
+
+  describe('opposing request obfuscation', () => {
+    it('sends the opposing request with a requestId distinct from the real request', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({ data: quote });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: { ...quote, tokenIn: request.tokenOut, tokenOut: request.tokenIn },
+          });
+        });
+
+      await webhookQuoter.quote(request);
+
+      const uniswapBodies = mockedAxios.post.mock.calls
+        .filter((call) => call[0] === WEBHOOK_URL)
+        .map((call) => call[1] as any);
+      const realBody = uniswapBodies.find((body) => body.tokenIn === request.tokenIn);
+      const opposingBody = uniswapBodies.find((body) => body.tokenIn === request.tokenOut);
+
+      expect(realBody.requestId).toEqual(request.requestId);
+      expect(opposingBody.requestId).toEqual(expect.any(String));
+      expect(opposingBody.requestId).not.toEqual(request.requestId);
+      // each side still gets its own randomized quoteId
+      expect(opposingBody.quoteId).not.toEqual(realBody.quoteId);
+    });
+
+    it('selects the real response even when the opposing request is dispatched first', async () => {
+      // realRequestFirst = false: the opposing request is dispatched before the real one
+      (Math.random as jest.Mock).mockReturnValue(0.9);
+
+      mockedAxios.post
+        // first dispatched call is the opposing request -> opposing-shaped data
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: { ...quote, tokenIn: request.tokenOut, tokenOut: request.tokenIn },
+          });
+        })
+        // second dispatched call is the real request -> real-shaped data
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({ data: quote });
+        });
+
+      const response = await webhookQuoter.quote(request);
+
+      expect(response.length).toEqual(1);
+      expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
+      expect(response[0].endpoint).toEqual(WEBHOOK_URL);
+    });
+
+    it('logs both request legs under the shared real requestId for correlation', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({ data: quote });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: { ...quote, tokenIn: request.tokenOut, tokenOut: request.tokenIn },
+          });
+        });
+
+      await webhookQuoter.quote(request);
+
+      // real leg: real tokenIn + real requestId
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          request: expect.objectContaining({ requestId: request.requestId, tokenIn: request.tokenIn }),
+        }),
+        expect.stringContaining('Webhook request to:')
+      );
+      // opposing leg: swapped tokenIn, but the SAME (real) requestId so the two legs correlate
+      // in our logs even though the filler received a distinct requestId on the wire
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          request: expect.objectContaining({ requestId: request.requestId, tokenIn: request.tokenOut }),
+        }),
+        expect.stringContaining('Webhook request to:')
+      );
+    });
   });
 
   it('adds filler metadata to response', async () => {
@@ -598,7 +686,8 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].toResponseJSON()).toEqual({ ...quote, swapper: request.swapper, quoteId: expect.any(String) });
     expect(mockedAxios.post).toBeCalledWith(
       WEBHOOK_URL,
-      { quoteId: expect.any(String), ...request.toOpposingCleanJSON() },
+      // opposing request carries a distinct, randomized requestId (obfuscation)
+      { quoteId: expect.any(String), ...request.toOpposingCleanJSON(), requestId: expect.any(String) },
       { headers: {}, timeout: 500 }
     );
     expect(mockedAxios.post).toBeCalledWith(

@@ -146,10 +146,22 @@ export class WebhookQuoter implements Quoter {
     };
 
     try {
-      const [hookResponse, opposite] = await Promise.all([
-        axios.post(endpoint, cleanRequest, axiosConfig),
-        axios.post(endpoint, opposingCleanRequest, axiosConfig),
-      ]);
+      // The opposing request is sent on the wire with a DISTINCT requestId so a market maker
+      // cannot link it to the real request. Our logs keep the shared real requestId (via the
+      // child logger above) so the two legs stay correlated for debugging.
+      const opposingWireRequest = { ...opposingCleanRequest, requestId: uuidv4() };
+      // Randomize which side is dispatched first so the genuine request isn't deterministically
+      // sent ahead of the obfuscation request. The mapping back to real vs. opposing is tracked
+      // explicitly, so quote selection and spread logging are unaffected.
+      const realRequestFirst = Math.random() < 0.5;
+      const orderedRequests = realRequestFirst
+        ? [cleanRequest, opposingWireRequest]
+        : [opposingWireRequest, cleanRequest];
+      const [firstResponse, secondResponse] = await Promise.all(
+        orderedRequests.map((req) => axios.post(endpoint, req, axiosConfig))
+      );
+      const hookResponse = realRequestFirst ? firstResponse : secondResponse;
+      const opposite = realRequestFirst ? secondResponse : firstResponse;
 
       metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);
       metric.putMetric(
@@ -297,6 +309,9 @@ export class WebhookQuoter implements Quoter {
           eventType: 'QuoteResponse',
           body: {
             ...opposingResponse.response.toLog(),
+            // Correlate the opposing (bid/ask) log to the genuine request internally, even
+            // though the opposing request was sent to the filler with a distinct requestId.
+            requestId: request.requestId,
             offerer: opposingResponse.response.swapper,
             endpoint: endpoint,
             fillerName: config.name,

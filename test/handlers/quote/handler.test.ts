@@ -94,7 +94,14 @@ describe('Quote handler', () => {
     protocol,
   });
 
+  beforeEach(() => {
+    // WebhookQuoter randomizes which side (real vs. opposing) is dispatched first; pin it
+    // so the positional axios mocks in these tests (real request first) stay deterministic.
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+  });
+
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
