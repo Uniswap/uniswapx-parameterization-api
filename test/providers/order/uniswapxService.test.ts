@@ -85,10 +85,11 @@ describe('UniswapXServiceProvider postOrder', () => {
 
     expect(response.statusCode).toEqual(500);
     expect(response.errorCode).toEqual(ErrorCode.InternalError);
-    expect(response.detail).toContain('status unknown');
+    // The order may still be live, so the caller gets the hash to reconcile.
+    expect(response.orderHash).toEqual(ORDER_HASH);
   });
 
-  it('returns a 500 when the reconcile request itself fails', async () => {
+  it('returns a 500 with the order hash when the reconcile request itself fails', async () => {
     mockedAxios.post.mockRejectedValueOnce(buildTimeoutError());
     mockedAxios.get.mockRejectedValueOnce(new Error('network down'));
 
@@ -96,5 +97,20 @@ describe('UniswapXServiceProvider postOrder', () => {
 
     expect(response.statusCode).toEqual(500);
     expect(response.errorCode).toEqual(ErrorCode.InternalError);
+    expect(response.orderHash).toEqual(ORDER_HASH);
+  });
+
+  it('does not attach an order hash to a genuine rejection', async () => {
+    const error = new AxiosError('Request failed with status code 400');
+    error.response = {
+      status: 400,
+      data: { errorCode: 'VALIDATION_ERROR', detail: 'Order expired' },
+    } as never;
+    mockedAxios.post.mockRejectedValueOnce(error);
+
+    const response = (await provider.postOrder({ order: buildOrderStub(), signature: '0xsig' })) as ErrorResponse;
+
+    expect(response.statusCode).toEqual(400);
+    expect(response.orderHash).toBeUndefined();
   });
 });
