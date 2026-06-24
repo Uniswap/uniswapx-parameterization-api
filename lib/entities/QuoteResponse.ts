@@ -111,6 +111,9 @@ export class QuoteResponse implements QuoteResponseData {
       response: new QuoteResponse(
         {
           ...data,
+          // use the requestId from the request, not the echoed one: the market maker is sent an
+          // obfuscated requestId on the wire, so the echoed value must not leak into the response
+          requestId: request.requestId,
           quoteId: data.quoteId ?? uuidv4(),
           swapper: request.swapper,
           amountIn,
@@ -171,12 +174,6 @@ export class QuoteResponse implements QuoteResponseData {
 
   public get requestId(): string {
     return this.data.requestId;
-  }
-
-  // Allows restoring the original requestId after a market maker echoes back the obfuscated
-  // wire requestId (see WebhookQuoter), so the caller and downstream logs see the real id.
-  public set requestId(requestId: string) {
-    this.data.requestId = requestId;
   }
 
   public get chainId(): number {
