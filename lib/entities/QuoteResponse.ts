@@ -173,6 +173,12 @@ export class QuoteResponse implements QuoteResponseData {
     return this.data.requestId;
   }
 
+  // Allows restoring the original requestId after a market maker echoes back the obfuscated
+  // wire requestId (see WebhookQuoter), so the caller and downstream logs see the real id.
+  public set requestId(requestId: string) {
+    this.data.requestId = requestId;
+  }
+
   public get chainId(): number {
     return this.data.chainId;
   }

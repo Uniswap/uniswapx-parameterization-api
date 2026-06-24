@@ -254,7 +254,7 @@ describe('Quote handler', () => {
           return Promise.resolve({
             data: {
               amountOut: amountIn.mul(2).toString(),
-              requestId: request.requestId,
+              requestId: (_req as any).requestId,
               tokenIn: request.tokenIn,
               tokenOut: request.tokenOut,
               amountIn: request.amount,
@@ -268,7 +268,7 @@ describe('Quote handler', () => {
           return Promise.resolve({
             data: {
               amountOut: amountIn.mul(3).toString(),
-              requestId: request.requestId,
+              requestId: (_req as any).requestId,
               tokenIn: request.tokenOut,
               tokenOut: request.tokenIn,
               amountIn: request.amount,
@@ -282,7 +282,7 @@ describe('Quote handler', () => {
           return Promise.resolve({
             data: {
               amountOut: amountIn.mul(1).toString(),
-              requestId: request.requestId,
+              requestId: (_req as any).requestId,
               tokenIn: request.tokenIn,
               tokenOut: request.tokenOut,
               amountIn: request.amount,
@@ -296,7 +296,7 @@ describe('Quote handler', () => {
           return Promise.resolve({
             data: {
               amountOut: amountIn.mul(1).toString(),
-              requestId: request.requestId,
+              requestId: (_req as any).requestId,
               tokenIn: request.tokenOut,
               tokenOut: request.tokenIn,
               amountIn: request.amount,
@@ -360,6 +360,7 @@ describe('Quote handler', () => {
           return Promise.resolve({
             data: {
               ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
+              requestId: (_req as any).requestId,
             },
           });
         })
@@ -378,7 +379,7 @@ describe('Quote handler', () => {
           return Promise.resolve({
             data: {
               amountOut: amountIn.mul(1).toString(),
-              requestId: request.requestId,
+              requestId: (_req as any).requestId,
               tokenIn: request.tokenIn,
               tokenOut: request.tokenOut,
               amountIn: request.amount,
@@ -547,7 +548,7 @@ describe('Quote handler', () => {
               amountIn: request.amount,
               swapper: request.swapper,
               chainId: request.tokenInChainId,
-              requestId: request.requestId,
+              requestId: (_req as any).requestId,
               quoteId: QUOTE_ID,
             },
           });
@@ -561,7 +562,7 @@ describe('Quote handler', () => {
               amountIn: request.amount,
               swapper: request.swapper,
               chainId: request.tokenInChainId,
-              requestId: request.requestId,
+              requestId: (_req as any).requestId,
               quoteId: QUOTE_ID,
             },
           });
