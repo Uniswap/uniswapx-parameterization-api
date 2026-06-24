@@ -15,6 +15,12 @@ describe('V3 chain constants', () => {
     it('tempo: ceil(5/0.5) = 10', () => {
       expect(getV3BlockBuffer(ChainId.TEMPO)).toEqual(10);
     });
+    it('arc: ceil(5/0.48) = 11', () => {
+      expect(getV3BlockBuffer(ChainId.ARC)).toEqual(11);
+    });
+    it('robinhood: ceil(5/0.1) = 50', () => {
+      expect(getV3BlockBuffer(ChainId.ROBINHOOD)).toEqual(50);
+    });
     it('throws on unknown chainId (propagated from sdk-core)', () => {
       expect(() => getV3BlockBuffer(99999)).toThrow(/unsupported chainId 99999/);
     });
