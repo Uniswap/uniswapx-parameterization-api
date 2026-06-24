@@ -25,6 +25,8 @@ export const SUPPORTED_CHAINS: ChainId[] = [
   ChainId.CELO,
   ChainId.AVALANCHE,
   ChainId.BLAST,
+  ChainId.ROBINHOOD,
+  ChainId.ARC,
 ];
 
 /**
