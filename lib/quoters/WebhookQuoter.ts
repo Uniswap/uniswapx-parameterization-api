@@ -122,11 +122,25 @@ export class WebhookQuoter implements Quoter {
     const opposingCleanRequest = request.toOpposingCleanJSON();
     opposingCleanRequest.quoteId = uuidv4();
 
+    // Obfuscate the requestId on the wire for BOTH the real and opposing requests so a market
+    // maker cannot (a) tell which of the two sides is the genuine quote, nor (b) correlate the
+    // genuine request across market makers by a shared requestId. The original requestId stays
+    // internal: it's what we log here and what QuoteResponse.fromRFQ puts on the response. We
+    // also log the obfuscated id we actually sent so a requestId a partner reports can be traced.
+    const realWireRequest = { ...cleanRequest, requestId: uuidv4() };
+    const opposingWireRequest = { ...opposingCleanRequest, requestId: uuidv4() };
+
     // Enrich the logger with the now-generated quoteId so all subsequent logs carry both ids.
     log = log.child({ quoteId: cleanRequest.quoteId });
 
-    log.info({ request: cleanRequest, headers }, `Webhook request to: ${endpoint}`);
-    log.info({ request: opposingCleanRequest, headers }, `Webhook request to: ${endpoint}`);
+    log.info(
+      { request: cleanRequest, obfuscatedRequestId: realWireRequest.requestId, headers },
+      `Webhook request to: ${endpoint}`
+    );
+    log.info(
+      { request: opposingCleanRequest, obfuscatedRequestId: opposingWireRequest.requestId, headers },
+      `Webhook request to: ${endpoint}`
+    );
 
     const before = Date.now();
     const timeoutOverride = config.overrides?.timeout;
@@ -146,10 +160,18 @@ export class WebhookQuoter implements Quoter {
     };
 
     try {
-      const [hookResponse, opposite] = await Promise.all([
-        axios.post(endpoint, cleanRequest, axiosConfig),
-        axios.post(endpoint, opposingCleanRequest, axiosConfig),
-      ]);
+      // Randomize which side is dispatched first so the genuine request isn't deterministically
+      // sent ahead of the obfuscation request. The mapping back to real vs. opposing is tracked
+      // explicitly, so quote selection and spread logging are unaffected.
+      const realRequestFirst = Math.random() < 0.5;
+      const orderedRequests = realRequestFirst
+        ? [realWireRequest, opposingWireRequest]
+        : [opposingWireRequest, realWireRequest];
+      const [firstResponse, secondResponse] = await Promise.all(
+        orderedRequests.map((req) => axios.post(endpoint, req, axiosConfig))
+      );
+      const hookResponse = realRequestFirst ? firstResponse : secondResponse;
+      const opposite = realRequestFirst ? secondResponse : firstResponse;
 
       metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);
       metric.putMetric(
@@ -233,13 +255,18 @@ export class WebhookQuoter implements Quoter {
         return null;
       }
 
-      if (response.requestId !== request.requestId) {
+      // Verify the market maker echoed back the obfuscated requestId we sent on the wire. The
+      // response already carries the original requestId (QuoteResponse.fromRFQ uses the request's
+      // id, not the echoed one), so the caller and downstream logs see the real id with no
+      // post-hoc fixup needed.
+      if (hookResponse.data?.requestId !== realWireRequest.requestId) {
         metric.putMetric(Metric.RFQ_FAIL_REQUEST_MATCH, 1, MetricLoggerUnit.Count);
         metric.putMetric(metricContext(Metric.RFQ_FAIL_REQUEST_MATCH, name), 1, MetricLoggerUnit.Count);
         log.error(
           {
             requestId: request.requestId,
-            responseRequestId: response.requestId,
+            obfuscatedRequestId: realWireRequest.requestId,
+            responseRequestId: hookResponse.data?.requestId,
           },
           `Webhook ResponseId does not match request`
         );
@@ -248,7 +275,7 @@ export class WebhookQuoter implements Quoter {
             ...requestContext,
             ...rawResponse,
             responseType: WebhookResponseType.REQUEST_ID_MISMATCH,
-            mismatchedRequestId: response.requestId,
+            mismatchedRequestId: hookResponse.data?.requestId,
           })
         );
         return null;
@@ -261,6 +288,7 @@ export class WebhookQuoter implements Quoter {
       log.info(
         {
           response: response.toLog(),
+          obfuscatedRequestId: realWireRequest.requestId,
           endpoint: endpoint,
         },
         `WebhookQuoter: request ${
@@ -297,6 +325,9 @@ export class WebhookQuoter implements Quoter {
           eventType: 'QuoteResponse',
           body: {
             ...opposingResponse.response.toLog(),
+            // toLog() already carries the original requestId; also record the obfuscated id we
+            // sent the filler so a partner-reported requestId can be traced back to the original.
+            obfuscatedRequestId: opposingWireRequest.requestId,
             offerer: opposingResponse.response.swapper,
             endpoint: endpoint,
             fillerName: config.name,

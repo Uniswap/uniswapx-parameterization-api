@@ -40,7 +40,14 @@ const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([
 const repository = new MockFillerAddressRepository();
 
 describe('WebhookQuoter tests', () => {
+  beforeEach(() => {
+    // Dispatch order is randomized in WebhookQuoter; pin it so the positional axios mocks
+    // below (real response first, opposing second) line up deterministically.
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+  });
+
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
@@ -118,7 +125,7 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
-          data: quote,
+          data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -138,11 +145,94 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].endpoint).toEqual(WEBHOOK_URL);
   });
 
+  describe('opposing request obfuscation', () => {
+    // Market makers echo back the requestId they received; mirror that so the real-leg
+    // requestId check (which validates the echo against the obfuscated id we sent) passes.
+    const echoReal = (req: any) => Promise.resolve({ data: { ...quote, requestId: req.requestId } });
+    const echoOpposing = (req: any) =>
+      Promise.resolve({
+        data: { ...quote, tokenIn: request.tokenOut, tokenOut: request.tokenIn, requestId: req.requestId },
+      });
+
+    it('sends both the real and opposing requests with distinct, obfuscated requestIds', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req))
+        .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req));
+
+      await webhookQuoter.quote(request);
+
+      const uniswapBodies = mockedAxios.post.mock.calls
+        .filter((call) => call[0] === WEBHOOK_URL)
+        .map((call) => call[1] as any);
+      const realBody = uniswapBodies.find((body) => body.tokenIn === request.tokenIn);
+      const opposingBody = uniswapBodies.find((body) => body.tokenIn === request.tokenOut);
+
+      // both wire requestIds are obfuscated: distinct from the original and from each other
+      expect(realBody.requestId).toEqual(expect.any(String));
+      expect(realBody.requestId).not.toEqual(request.requestId);
+      expect(opposingBody.requestId).not.toEqual(request.requestId);
+      expect(opposingBody.requestId).not.toEqual(realBody.requestId);
+      // each side still gets its own randomized quoteId
+      expect(opposingBody.quoteId).not.toEqual(realBody.quoteId);
+    });
+
+    it('restores the original requestId on the response returned to the caller', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req))
+        .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req));
+
+      const response = await webhookQuoter.quote(request);
+
+      expect(response.length).toEqual(1);
+      // the filler echoed the obfuscated wire id, but the caller sees the original requestId
+      expect(response[0].requestId).toEqual(request.requestId);
+      expect(response[0].toResponseJSON().requestId).toEqual(request.requestId);
+    });
+
+    it('selects the real response even when the opposing request is dispatched first', async () => {
+      // realRequestFirst = false: the opposing request is dispatched before the real one
+      (Math.random as jest.Mock).mockReturnValue(0.9);
+
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req))
+        .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req));
+
+      const response = await webhookQuoter.quote(request);
+
+      expect(response.length).toEqual(1);
+      expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
+      expect(response[0].endpoint).toEqual(WEBHOOK_URL);
+    });
+
+    it('logs both the original and obfuscated requestId for each leg', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req))
+        .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req));
+
+      await webhookQuoter.quote(request);
+
+      const requestLogs = (logger.info as jest.Mock).mock.calls.filter(
+        (call) => typeof call[1] === 'string' && call[1].startsWith('Webhook request to:')
+      );
+      const realLog = requestLogs.find((call) => call[0].request.tokenIn === request.tokenIn);
+      const opposingLog = requestLogs.find((call) => call[0].request.tokenIn === request.tokenOut);
+
+      // each leg logs the original requestId (for correlation) and the obfuscated wire id
+      // (so a requestId a partner reports can be traced back to the original)
+      expect(realLog[0].request.requestId).toEqual(request.requestId);
+      expect(realLog[0].obfuscatedRequestId).toEqual(expect.any(String));
+      expect(realLog[0].obfuscatedRequestId).not.toEqual(request.requestId);
+      expect(opposingLog[0].request.requestId).toEqual(request.requestId);
+      expect(opposingLog[0].obfuscatedRequestId).not.toEqual(request.requestId);
+      expect(opposingLog[0].obfuscatedRequestId).not.toEqual(realLog[0].obfuscatedRequestId);
+    });
+  });
+
   it('adds filler metadata to response', async () => {
     mockedAxios.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
-          data: quote,
+          data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -156,7 +246,7 @@ describe('WebhookQuoter tests', () => {
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
-          data: quote,
+          data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -180,7 +270,7 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
-          data: quote,
+          data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -220,7 +310,7 @@ describe('WebhookQuoter tests', () => {
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
-            data: quote,
+            data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -236,12 +326,12 @@ describe('WebhookQuoter tests', () => {
 
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).not.toBeCalledWith(
@@ -261,7 +351,7 @@ describe('WebhookQuoter tests', () => {
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
-            data: quote,
+            data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -315,17 +405,17 @@ describe('WebhookQuoter tests', () => {
 
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
-        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
-        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
     });
@@ -358,17 +448,17 @@ describe('WebhookQuoter tests', () => {
 
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
-        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
-        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
     });
@@ -401,17 +491,17 @@ describe('WebhookQuoter tests', () => {
 
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
-        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).not.toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
-        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON() },
+        { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
     });
@@ -453,7 +543,7 @@ describe('WebhookQuoter tests', () => {
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
-            data: quote,
+            data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -475,7 +565,7 @@ describe('WebhookQuoter tests', () => {
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), {
@@ -493,7 +583,7 @@ describe('WebhookQuoter tests', () => {
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
-            data: quote,
+            data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -510,12 +600,12 @@ describe('WebhookQuoter tests', () => {
       await webhookQuoter.quote(request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
           headers: {},
           timeout: 500,
@@ -524,7 +614,7 @@ describe('WebhookQuoter tests', () => {
       // empty config defaults to v2 and v3
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_FOO,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
           headers: {},
           timeout: 500,
@@ -536,7 +626,7 @@ describe('WebhookQuoter tests', () => {
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
-            data: quote,
+            data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -553,12 +643,12 @@ describe('WebhookQuoter tests', () => {
       await webhookQuoter.quote(request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
       expect(mockedAxios.post).not.toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
           headers: {},
           timeout: 500,
@@ -567,7 +657,7 @@ describe('WebhookQuoter tests', () => {
       // empty config defaults to v2 and v3
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_FOO,
-        { quoteId: expect.any(String), ...request.toCleanJSON() },
+        { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
           headers: {},
           timeout: 500,
@@ -580,7 +670,7 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
-          data: quote,
+          data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -598,12 +688,13 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].toResponseJSON()).toEqual({ ...quote, swapper: request.swapper, quoteId: expect.any(String) });
     expect(mockedAxios.post).toBeCalledWith(
       WEBHOOK_URL,
-      { quoteId: expect.any(String), ...request.toOpposingCleanJSON() },
+      // opposing request carries a distinct, randomized requestId (obfuscation)
+      { quoteId: expect.any(String), ...request.toOpposingCleanJSON(), requestId: expect.any(String) },
       { headers: {}, timeout: 500 }
     );
     expect(mockedAxios.post).toBeCalledWith(
       WEBHOOK_URL,
-      { quoteId: expect.any(String), ...request.toCleanJSON() },
+      { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
       { headers: {}, timeout: 500 }
     );
   });
@@ -624,7 +715,7 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
-          data: quote,
+          data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -670,7 +761,7 @@ describe('WebhookQuoter tests', () => {
     mockedAxios.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
-          data: quote,
+          data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -806,6 +897,7 @@ describe('WebhookQuoter tests', () => {
     expect(logger.error).toHaveBeenCalledWith(
       {
         requestId: request.requestId,
+        obfuscatedRequestId: expect.any(String),
         responseRequestId: quote.requestId,
       },
       'Webhook ResponseId does not match request'

@@ -111,6 +111,9 @@ export class QuoteResponse implements QuoteResponseData {
       response: new QuoteResponse(
         {
           ...data,
+          // use the requestId from the request, not the echoed one: the market maker is sent an
+          // obfuscated requestId on the wire, so the echoed value must not leak into the response
+          requestId: request.requestId,
           quoteId: data.quoteId ?? uuidv4(),
           swapper: request.swapper,
           amountIn,
