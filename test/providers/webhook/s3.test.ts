@@ -10,13 +10,11 @@ const mockEndpoints = [
     headers: {
       'x-api-key': '1234',
     },
-    addresses: ['google.com'],
     hash: '0xgoogle',
   },
   {
     name: 'meta',
     endpoint: 'https://meta.com',
-    addresses: ['facebook.com', 'meta.com'],
     hash: '0xmeta',
   },
 ];
@@ -57,15 +55,6 @@ describe('S3WebhookConfigurationProvider', () => {
     expect(endpoints).toEqual(mockEndpoints);
     endpoints = await provider.getEndpoints();
     expect(endpoints).toEqual(mockEndpoints);
-  });
-
-  it('Generates filler endpoint to filler map', async () => {
-    applyMock(mockEndpoints);
-    const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-    const map = await provider.addressToFillerHash();
-    expect(map.get('google.com')).toEqual('0xgoogle');
-    expect(map.get('facebook.com')).toEqual('0xmeta');
-    expect(map.get('meta.com')).toEqual('0xmeta');
   });
 
   it('Refetches after cache expires', async () => {
