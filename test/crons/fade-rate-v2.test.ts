@@ -50,6 +50,25 @@ describe('FadeRateV2 cron', () => {
       // high volume, low rate stays safe
       expect(laplaceSmoothedFadeRate(3, 500)).toBeLessThan(FADE_RATE_BLOCK_THRESHOLD);
     });
+
+    it('catches the evasion scenarios under the 24h / latest-100 window', () => {
+      // These pin the window parameters (24h view window, ORDERS_PER_FILLER_LIMIT=100)
+      // to the scenarios they were chosen for — see PR #454 review discussion.
+
+      // Low-volume filler fading every order (e.g. 1 order/hr): the 24h window
+      // accumulates their orders, so 2 fades already trips the threshold.
+      expect(laplaceSmoothedFadeRate(2, 2)).toBeCloseTo(3 / 22, 6);
+      expect(laplaceSmoothedFadeRate(2, 2)).toBeGreaterThan(FADE_RATE_BLOCK_THRESHOLD);
+
+      // High-volume chronic ~14% fader (e.g. 7 fades per 50 orders/hr): the latest-100
+      // cap holds ~14 fades -> 15/120 = 12.5% > 12%. (With the old 1h/latest-50 window
+      // this filler sat at 8/70 = 11.4% and was never blocked.)
+      expect(laplaceSmoothedFadeRate(14, 100)).toBeCloseTo(15 / 120, 6);
+      expect(laplaceSmoothedFadeRate(14, 100)).toBeGreaterThan(FADE_RATE_BLOCK_THRESHOLD);
+
+      // A legitimate sustained ~10% filler at the same volume stays clear.
+      expect(laplaceSmoothedFadeRate(10, 100)).toBeLessThan(FADE_RATE_BLOCK_THRESHOLD);
+    });
   });
 
   describe('getFillersFadeStats', () => {

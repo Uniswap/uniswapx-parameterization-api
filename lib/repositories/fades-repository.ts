@@ -4,8 +4,14 @@ import Logger from 'bunyan';
 import { OrderType, PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { BaseRedshiftRepository, SharedConfigs } from './base';
 
-// Number of recent orders to evaluate per filler for fade rate calculation
-export const ORDERS_PER_FILLER_LIMIT = 50;
+// Cap on the most-recent orders per filler evaluated for the fade rate. Together with the
+// 24-hour view window this makes the lookback adaptive: a high-volume filler is judged on
+// its latest ORDERS_PER_FILLER_LIMIT orders (fast reaction to an acute fade spike),
+// while a low-volume filler is judged on up to 24 hours of orders (catches chronic fading
+// that a short window would never accumulate enough samples to see).
+// At 100 with the 12% smoothed threshold, a sustained raw fade rate of ~14%+ trips the
+// breaker regardless of volume; a fresh 100%-fader trips after ~2 orders.
+export const ORDERS_PER_FILLER_LIMIT = 100;
 
 export type FadesRowType = {
   fillerAddress: string;
@@ -91,7 +97,7 @@ export class V2FadesRepository extends BaseRedshiftRepository {
     await this.executeStatement(V2_CREATE_VIEW_SQL, V2FadesRepository.log, { waitTimeMs: 2_000 });
   }
 
-  //get latest 20 orders for each filler address, and whether they are faded or not
+  // get each filler address's recent orders (24h window, capped at ORDERS_PER_FILLER_LIMIT) and whether they faded
   async getFades(): Promise<V2FadesRowType[]> {
     const stmtId = await this.executeStatement(V2_FADE_RATE_SQL, V2FadesRepository.log, { waitTimeMs: 2_000 });
     const response = await this.client.send(new GetStatementResultCommand({ Id: stmtId }));
@@ -197,7 +203,7 @@ AND latestOrdersV2.quoteId IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND chainId NOT IN (5,8001,420,421613) -- exclude mainnet goerli, polygon goerli, optimism goerli and arbitrum goerli testnets 
 AND
-    deadline >= extract(epoch from (GETDATE() - INTERVAL '1 HOUR')) -- 1-hour rolling window based on order completion time
+    deadline >= extract(epoch from (GETDATE() - INTERVAL '24 HOURS')) -- 24-hour rolling window based on order completion time; catches chronic low-volume fading
 )
 ORDER BY rfqFiller, deadline DESC
 LIMIT 5000 

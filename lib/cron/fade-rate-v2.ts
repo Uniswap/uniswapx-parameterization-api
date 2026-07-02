@@ -23,6 +23,9 @@ import { STAGE } from '../util/stage';
 
 export type FillerFadeStats = {
   // Laplace-smoothed fade rate over the filler's post-block window (see getFillersFadeStats).
+  // The underlying query bounds the window to 24 hours OR the latest ORDERS_PER_FILLER_LIMIT
+  // orders, whichever is smaller — so high-volume fillers are judged on recent orders (fast
+  // acute response) and low-volume fillers on up to a full day (catches chronic fading).
   fadeRate: number;
   // Orders that faded since the last cron run; used to stack penalties while already blocked.
   newFades: number;
@@ -39,7 +42,10 @@ export const LAPLACE_ALPHA = 1;
 export const LAPLACE_BETA = 19;
 // Block a filler once their smoothed fade rate exceeds this. MUST be greater than the
 // prior mean (5%), otherwise the prior alone would block every filler.
-// At this threshold a filler needs e.g. ~3 fades in 10 orders, ~4 in 20, ~8 in 50.
+// At this threshold a filler needs e.g. ~2 fades in 2 orders, ~3 in 10, ~8 in 50, ~14 in 100.
+// With the 24h/latest-100 window this catches both a low-volume filler fading every order
+// (2 fades => 3/22 ≈ 13.6%) and a high-volume filler chronically fading ~14%+ of orders
+// (14 fades in latest 100 => 15/120 = 12.5%), while a sustained ~10% filler stays clear.
 export const FADE_RATE_BLOCK_THRESHOLD = 0.12;
 
 /** Sentinel when the filler has no active block (always < now for real unix seconds). Avoids equaling lastPostTimestamp, which could briefly read as blocked under clock skew. */
