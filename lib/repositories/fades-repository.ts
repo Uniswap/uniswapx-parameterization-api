@@ -183,10 +183,11 @@ CREATE OR REPLACE VIEW latestRfqsV2
 AS (
 WITH latestOrdersV2 AS (
   SELECT * FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype IN ('${OrderType.Dutch_V2}', '${OrderType.Dutch_V3}')
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders
+    WHERE ordertype IN ('${OrderType.Dutch_V2}', '${OrderType.Dutch_V3}')
+    AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- completed orders only, BEFORE numbering: in-flight orders must not consume latest-N slots
   )
   WHERE row_num <= ${ORDERS_PER_FILLER_LIMIT}
-  AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
   LIMIT 5000
 )
 SELECT
