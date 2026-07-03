@@ -27,8 +27,12 @@ export type FillerFadeStats = {
   // orders, whichever is smaller — so high-volume fillers are judged on recent orders (fast
   // acute response) and low-volume fillers on up to a full day (catches chronic fading).
   fadeRate: number;
-  // Orders that faded since the last cron run; used to stack penalties while already blocked.
-  newFades: number;
+  // Laplace-smoothed fade rate over orders that completed since the last cron run with a
+  // deadline on/before the filler's block end — i.e. orders in flight during a block.
+  // Used to extend an active block (or re-block right after expiry). Rate-based so clean
+  // in-flight fills offset stray fades: extending a block is volume-neutral, just like
+  // tripping one.
+  duringBlockRate: number;
 };
 export type FillerFadeStatsMap = Record<string, FillerFadeStats>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
@@ -101,10 +105,10 @@ async function main(metrics: MetricsLogger) {
     const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerEndpoints);
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
 
-    // compute each filler's Laplace-smoothed fade rate (and new fades since last run):
-    //  | hash     |  fadeRate  |  newFades  |
-    //  |---- foo -|---- 0.18 --|---- 3 -----|
-    //  |---- bar -|---- 0.05 --|---- 0 -----|
+    // compute each filler's Laplace-smoothed fade rates (post-block window + during-block cohort):
+    //  | hash     |  fadeRate  |  duringBlockRate  |
+    //  |---- foo -|---- 0.18 --|------ 0.05 -------|
+    //  |---- bar -|---- 0.05 --|------ 0.20 -------|
     const fillerFadeStats = getFillersFadeStats(result, addressToFillerMap, fillerTimestamps, log);
 
     //  | hash        |lastPostTimestamp|blockUntilTimestamp|
@@ -147,12 +151,14 @@ function newConsecutiveBlocks(consecutiveBlocks?: number): number {
 
 /* compute blockUntil timestamp for each filler
   If currently blocked:
-    - With new fades (in-flight orders that faded while blocked): EXTEND the block from
-      current blockUntil and increment consecutiveBlocks
-    - Without new fades: keep existing block (don't decay while blocked)
+    - In-flight orders faded at over the threshold rate while blocked: EXTEND the block
+      from current blockUntil and increment consecutiveBlocks
+    - Otherwise: keep existing block (don't decay while blocked)
   If not blocked:
-    - Fade rate over threshold: block, increment consecutiveBlocks
-    - Fade rate under threshold: decay consecutiveBlocks by 1, and KEEP the (now past)
+    - Post-block fade rate over threshold — or the during-block cohort over threshold
+      (late in-flight fades from a block that expired between cron runs): block,
+      increment consecutiveBlocks
+    - Otherwise: decay consecutiveBlocks by 1, and KEEP the (now past)
       blockUntilTimestamp so it remains the clean-slate floor for the rate window
 */
 export function calculateNewTimestamps(
@@ -164,13 +170,15 @@ export function calculateNewTimestamps(
 ): ToUpdateTimestampRow[] {
   const updatedTimestamps: ToUpdateTimestampRow[] = [];
   Object.entries(fillerFadeStats).forEach(([hash, stats]) => {
-    const { fadeRate, newFades } = stats;
+    const { fadeRate, duringBlockRate } = stats;
     const fillerTimestamp = fillerTimestamps.get(hash);
     const isCurrentlyBlocked = fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp;
 
-    if (isCurrentlyBlocked && newFades > 0) {
-      // Faded again on in-flight orders while blocked: stack the penalty.
-      // Extend the block from current blockUntil, not from now.
+    if (isCurrentlyBlocked && duringBlockRate > FADE_RATE_BLOCK_THRESHOLD) {
+      // In-flight orders faded at over the threshold rate while blocked: stack the penalty.
+      // Extend the block from current blockUntil, not from now. Rate-based (not count-based)
+      // so a high-volume filler's stray in-flight fade, offset by clean in-flight fills,
+      // does not extend the block.
       const extendedBlockUntil = calculateBlockUntilTimestamp(
         fillerTimestamp.blockUntilTimestamp, // Extend from when current block ends
         fillerTimestamp.consecutiveBlocks
@@ -178,7 +186,7 @@ export function calculateNewTimestamps(
       const consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp.consecutiveBlocks);
 
       log?.info(
-        { hash, currentBlockUntil: fillerTimestamp.blockUntilTimestamp, extendedBlockUntil, newFades },
+        { hash, currentBlockUntil: fillerTimestamp.blockUntilTimestamp, extendedBlockUntil, duringBlockRate },
         'Extending block for filler who faded while blocked'
       );
       metrics?.putMetric(
@@ -201,11 +209,23 @@ export function calculateNewTimestamps(
         blockUntilTimestamp: fillerTimestamp.blockUntilTimestamp,
         consecutiveBlocks: fillerTimestamp.consecutiveBlocks,
       });
-    } else if (fadeRate > FADE_RATE_BLOCK_THRESHOLD) {
+    } else if (fadeRate > FADE_RATE_BLOCK_THRESHOLD || duringBlockRate > FADE_RATE_BLOCK_THRESHOLD) {
+      // duringBlockRate here covers in-flight fades that landed near the end of a block that
+      // expired between cron runs — they sit below the clean-slate floor, so without this
+      // check they would never be scored by either path.
+      //
+      // NOTE(review): because the rate window is a rolling 24h, clean orders can age out
+      // while fades remain, so fadeRate can cross the threshold on a run where the filler
+      // completed nothing new ("blocked while idle"). We accept this rather than gating on
+      // new completions: the gate would just move the surprise to right after a completed
+      // (possibly cleanly filled) order, which is stranger UX for the filler.
       const blockUntilTimestamp = calculateBlockUntilTimestamp(newPostTimestamp, fillerTimestamp?.consecutiveBlocks);
       const consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp?.consecutiveBlocks);
 
-      log?.info({ hash, fadeRate, blockUntilTimestamp }, 'Blocking filler for exceeding fade rate threshold');
+      log?.info(
+        { hash, fadeRate, duringBlockRate, blockUntilTimestamp },
+        'Blocking filler for exceeding fade rate threshold'
+      );
       metrics?.putMetric(
         metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, hash),
         consecutiveBlocks,
@@ -243,20 +263,24 @@ export function laplaceSmoothedFadeRate(fades: number, total: number): number {
   return (fades + LAPLACE_ALPHA) / (total + LAPLACE_ALPHA + LAPLACE_BETA);
 }
 
-/* Compute, per filler, the Laplace-smoothed fade rate and the number of fades since
-   the last cron run.
+/* Compute, per filler, Laplace-smoothed fade rates over two disjoint cohorts.
    @param rows: info about individual orders: filler address, faded or not, deadline (completion time)
    @param fillerTimestamps: last checked timestamp and block until timestamp for each filler
    @param addressToFillerMap: map of address to filler hash
 
-   The fade rate is computed over the filler's "post-block window" — orders whose deadline
-   is after their last blockUntilTimestamp. This is the clean-slate mechanism: a filler who
-   served a block is scored only on orders completed after the block ended, not on the
-   pre-block fades that are still inside the query's rolling window. While a filler is
-   currently blocked the floor is in the future, so windowTotal is ~0 and the rate sits at
-   the prior — only newFades (used by calculateNewTimestamps) can extend an active block.
+   - fadeRate: orders whose deadline is after the filler's last blockUntilTimestamp
+     ("post-block window"). This is the clean-slate mechanism: a filler who served a block
+     is scored only on orders completed after the block ended, not on the pre-block fades
+     that are still inside the query's rolling window. While a filler is currently blocked
+     the floor is in the future, so this window is ~empty and the rate sits at the prior.
+   - duringBlockRate: orders completed since the last cron run with deadline on/before the
+     block end — i.e. orders that were in flight during a block. calculateNewTimestamps uses
+     this to extend an active block, or to re-block right after expiry so late in-flight
+     fades can't slip between two cron runs. Scored per cron-run slice: a blocked filler
+     trickling isolated fades (each slice under threshold) won't extend the block, but those
+     orders never enter the post-block window either — they still serve the full bench.
 
-   NOTE: We use `deadline` (order completion time) instead of `postTimestamp` for newFades.
+   NOTE: cohort membership uses `deadline` (order completion time) instead of `postTimestamp`.
    This ensures orders posted before the last cron run but completed after are still counted,
    preventing the "in-flight orders" exploit.
 */
@@ -275,7 +299,8 @@ export function getFillersFadeStats(
     'getFillersFadeStats'
   );
   // filler hash -> tallies used to derive the stats below
-  const tallies: Record<string, { windowFades: number; windowTotal: number; newFades: number }> = {};
+  const tallies: Record<string, { windowFades: number; windowTotal: number; blockFades: number; blockTotal: number }> =
+    {};
   rows.forEach((row) => {
     const fillerAddr = ethers.utils.getAddress(row.fillerAddress);
     const fillerHash = addressToFillerMap.get(fillerAddr);
@@ -285,18 +310,20 @@ export function getFillersFadeStats(
     }
     const fillerTimestamp = fillerTimestamps.get(fillerHash);
     if (!tallies[fillerHash]) {
-      tallies[fillerHash] = { windowFades: 0, windowTotal: 0, newFades: 0 };
+      tallies[fillerHash] = { windowFades: 0, windowTotal: 0, blockFades: 0, blockTotal: 0 };
     }
-    // Rate window: orders completed after the filler's last block ended (clean slate).
     const windowStart = finiteOr(fillerTimestamp?.blockUntilTimestamp, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
+    const lastPostTimestamp = finiteOr(fillerTimestamp?.lastPostTimestamp, 0);
     if (row.deadline > windowStart) {
+      // Rate window: orders completed after the filler's last block ended (clean slate).
       tallies[fillerHash].windowTotal += 1;
       tallies[fillerHash].windowFades += row.faded;
-    }
-    // New fades since the last cron run (deadline-based; catches in-flight orders).
-    const lastPostTimestamp = finiteOr(fillerTimestamp?.lastPostTimestamp, 0);
-    if (!fillerTimestamp || row.deadline > lastPostTimestamp) {
-      tallies[fillerHash].newFades += row.faded;
+    } else if (row.deadline > lastPostTimestamp) {
+      // During-block cohort: completed since the last cron run but on/before the block end,
+      // i.e. in flight during the block. Never overlaps the rate window (deadline <= floor),
+      // so during-block orders stay excluded from the post-block clean slate.
+      tallies[fillerHash].blockTotal += 1;
+      tallies[fillerHash].blockFades += row.faded;
     }
   });
 
@@ -304,10 +331,10 @@ export function getFillersFadeStats(
   Object.entries(tallies).forEach(([hash, t]) => {
     stats[hash] = {
       fadeRate: laplaceSmoothedFadeRate(t.windowFades, t.windowTotal),
-      newFades: t.newFades,
+      duringBlockRate: laplaceSmoothedFadeRate(t.blockFades, t.blockTotal),
     };
   });
-  log?.info({ stats }, 'fade stats by filler');
+  log?.info({ tallies, stats }, 'fade stats by filler');
   return stats;
 }
 
