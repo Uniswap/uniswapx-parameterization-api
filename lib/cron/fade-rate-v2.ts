@@ -18,8 +18,12 @@ import {
   V2FadesRowType,
 } from '../repositories';
 import { DynamoFillerAddressRepository } from '../repositories/filler-address-repository';
-import { TimestampRepository } from '../repositories/timestamp-repository';
+import { TimestampRepository, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
+
+// Re-exported for existing importers; the sentinel lives with the repository that owns the
+// stored value's parse/write semantics.
+export { UNBLOCKED_BLOCK_UNTIL_TIMESTAMP };
 
 export type FillerFadeStats = {
   // Laplace-smoothed fade rate over the filler's post-block window (see getFillersFadeStats).
@@ -51,19 +55,6 @@ export const LAPLACE_BETA = 19;
 // (2 fades => 3/22 ≈ 13.6%) and a high-volume filler chronically fading ~14%+ of orders
 // (14 fades in latest 100 => 15/120 = 12.5%), while a sustained ~10% filler stays clear.
 export const FADE_RATE_BLOCK_THRESHOLD = 0.12;
-
-/**
- * Sentinel for a filler that has NEVER been blocked (or whose stored state is unset/corrupt).
- * Always < now for real unix seconds; also avoids equaling lastPostTimestamp, which could
- * briefly read as blocked under clock skew.
- *
- * NOTE: this is deliberately NOT written for fillers coming off a block. The decay branch
- * preserves their expired blockUntilTimestamp because it doubles as the clean-slate floor of
- * the fade-rate window (only orders completed after it are scored). Overwriting it with this
- * sentinel would erase that floor and re-score the filler's entire 24h history — including
- * the pre-block fades that got them blocked in the first place.
- */
-export const UNBLOCKED_BLOCK_UNTIL_TIMESTAMP = 0;
 
 const log = Logger.createLogger({
   name: 'FadeRate',
@@ -141,10 +132,10 @@ async function main(metrics: MetricsLogger) {
   }
 }
 
-// parseInt on a missing/malformed Dynamo attribute yields NaN. A NaN timestamp must not
-// be treated as a real value: e.g. `deadline > NaN` is always false, which would silently
-// zero out the fade-rate window and make a filler permanently unblockable. Coerce any
-// non-finite stored timestamp back to the "unset" sentinel.
+// TimestampRepository coerces NaN at the parse boundary, so stored rows should already be
+// finite. Kept as defense-in-depth for timestamps arriving from other sources: a NaN here
+// would poison comparisons (`deadline > NaN` is always false), silently zeroing the
+// fade-rate window and making a filler permanently unblockable.
 function finiteOr(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) ? (value as number) : fallback;
 }

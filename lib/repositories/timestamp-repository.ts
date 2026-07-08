@@ -9,6 +9,28 @@ export type BatchGetResponse = {
   tableName: string;
 };
 
+/**
+ * Sentinel for a filler that has NEVER been blocked (or whose stored state is unset/corrupt).
+ * Always < now for real unix seconds; also avoids equaling lastPostTimestamp, which could
+ * briefly read as blocked under clock skew.
+ *
+ * NOTE: this is deliberately NOT written for fillers coming off a block. The fade-rate cron's
+ * decay branch preserves their expired blockUntilTimestamp because it doubles as the
+ * clean-slate floor of the fade-rate window (only orders completed after it are scored).
+ * Overwriting it with this sentinel would erase that floor and re-score the filler's entire
+ * 24h history — including the pre-block fades that got them blocked in the first place.
+ */
+export const UNBLOCKED_BLOCK_UNTIL_TIMESTAMP = 0;
+
+// Rows are written with optional attributes (e.g. blockUntilTimestamp: undefined), and
+// parseInt on a missing/malformed attribute yields NaN. NaN poisons downstream comparisons
+// (`x > NaN` is always false), which reads as fail-open for the circuit breaker. Coerce at
+// the parse boundary so consumers always see finite numbers.
+function parseFiniteInt(value: string | undefined, fallback: number): number {
+  const parsed = parseInt(value as string);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export class TimestampRepository implements BaseTimestampRepository {
   static log: Logger;
   static PARTITION_KEY = 'hash';
@@ -73,9 +95,9 @@ export class TimestampRepository implements BaseTimestampRepository {
     );
     return {
       hash: Item?.hash,
-      lastPostTimestamp: parseInt(Item?.lastPostTimestamp),
-      blockUntilTimestamp: parseInt(Item?.blockUntilTimestamp),
-      consecutiveBlocks: parseInt(Item?.consecutiveBlocks),
+      lastPostTimestamp: parseFiniteInt(Item?.lastPostTimestamp, 0),
+      blockUntilTimestamp: parseFiniteInt(Item?.blockUntilTimestamp, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP),
+      consecutiveBlocks: parseFiniteInt(Item?.consecutiveBlocks, 0),
     };
   }
 
@@ -94,9 +116,9 @@ export class TimestampRepository implements BaseTimestampRepository {
     return items[DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS].map((row: DynamoTimestampRepoRow) => {
       return {
         hash: row.hash,
-        lastPostTimestamp: parseInt(row.lastPostTimestamp),
-        blockUntilTimestamp: parseInt(row.blockUntilTimestamp),
-        consecutiveBlocks: parseInt(row.consecutiveBlocks),
+        lastPostTimestamp: parseFiniteInt(row.lastPostTimestamp, 0),
+        blockUntilTimestamp: parseFiniteInt(row.blockUntilTimestamp, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP),
+        consecutiveBlocks: parseFiniteInt(row.consecutiveBlocks, 0),
       };
     });
   }

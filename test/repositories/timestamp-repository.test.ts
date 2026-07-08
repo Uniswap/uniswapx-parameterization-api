@@ -2,7 +2,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { ToUpdateTimestampRow } from '../../lib/repositories';
-import { TimestampRepository } from '../../lib/repositories/timestamp-repository';
+import { TimestampRepository, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../../lib/repositories/timestamp-repository';
 import { DYNAMO_CONFIG } from './shared';
 
 const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient(DYNAMO_CONFIG), {
@@ -44,7 +44,8 @@ describe('Dynamo TimestampRepo tests', () => {
     let row = await repo.getFillerTimestamps('0x1');
     expect(row).toBeDefined();
     expect(row?.lastPostTimestamp).toBe(1);
-    expect(row?.blockUntilTimestamp).toBe(NaN);
+    // missing attribute coerces to the unblocked sentinel at the parse boundary, not NaN
+    expect(row?.blockUntilTimestamp).toBe(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
     expect(row?.consecutiveBlocks).toBe(0);
 
     row = await repo.getFillerTimestamps('0x2');
@@ -68,7 +69,7 @@ describe('Dynamo TimestampRepo tests', () => {
         {
           hash: '0x1',
           lastPostTimestamp: 1,
-          blockUntilTimestamp: NaN,
+          blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
           consecutiveBlocks: 0,
         },
         {
