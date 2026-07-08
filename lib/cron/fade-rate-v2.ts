@@ -52,7 +52,17 @@ export const LAPLACE_BETA = 19;
 // (14 fades in latest 100 => 15/120 = 12.5%), while a sustained ~10% filler stays clear.
 export const FADE_RATE_BLOCK_THRESHOLD = 0.12;
 
-/** Sentinel when the filler has no active block (always < now for real unix seconds). Avoids equaling lastPostTimestamp, which could briefly read as blocked under clock skew. */
+/**
+ * Sentinel for a filler that has NEVER been blocked (or whose stored state is unset/corrupt).
+ * Always < now for real unix seconds; also avoids equaling lastPostTimestamp, which could
+ * briefly read as blocked under clock skew.
+ *
+ * NOTE: this is deliberately NOT written for fillers coming off a block. The decay branch
+ * preserves their expired blockUntilTimestamp because it doubles as the clean-slate floor of
+ * the fade-rate window (only orders completed after it are scored). Overwriting it with this
+ * sentinel would erase that floor and re-score the filler's entire 24h history — including
+ * the pre-block fades that got them blocked in the first place.
+ */
 export const UNBLOCKED_BLOCK_UNTIL_TIMESTAMP = 0;
 
 const log = Logger.createLogger({
