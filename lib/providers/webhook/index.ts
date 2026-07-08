@@ -20,7 +20,6 @@ export interface WebhookConfiguration {
   // the chainids the endpoint should receive webhooks for
   // if null, send for all chains
   chainIds?: number[];
-  addresses?: string[];
   supportedVersions?: ProtocolVersion[];
 }
 
