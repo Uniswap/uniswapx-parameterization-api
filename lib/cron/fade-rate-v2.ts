@@ -37,6 +37,10 @@ export type FillerFadeStats = {
   // in-flight fills offset stray fades: extending a block is volume-neutral, just like
   // tripping one.
   duringBlockRate: number;
+  // Orders completed since the last cron run (any cohort). Gates consecutiveBlocks decay:
+  // working off escalation requires demonstrated activity, not just going idle while stale
+  // rows linger in the 24h view.
+  newCompletions: number;
 };
 export type FillerFadeStatsMap = Record<string, FillerFadeStats>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
@@ -159,8 +163,9 @@ function newConsecutiveBlocks(consecutiveBlocks?: number): number {
     - Post-block fade rate over threshold — or the during-block cohort over threshold
       (late in-flight fades from a block that expired between cron runs): block,
       increment consecutiveBlocks
-    - Otherwise: decay consecutiveBlocks by 1, and KEEP the (now past)
-      blockUntilTimestamp so it remains the clean-slate floor for the rate window
+    - Otherwise: decay consecutiveBlocks by 1 — but only if the filler completed new
+      orders since the last run (idling must not work off escalation) — and KEEP the
+      (now past) blockUntilTimestamp so it remains the clean-slate floor for the rate window
 */
 export function calculateNewTimestamps(
   fillerTimestamps: FillerTimestamps,
@@ -171,7 +176,7 @@ export function calculateNewTimestamps(
 ): ToUpdateTimestampRow[] {
   const updatedTimestamps: ToUpdateTimestampRow[] = [];
   Object.entries(fillerFadeStats).forEach(([hash, stats]) => {
-    const { fadeRate, duringBlockRate } = stats;
+    const { fadeRate, duringBlockRate, newCompletions } = stats;
     const fillerTimestamp = fillerTimestamps.get(hash);
     const isCurrentlyBlocked = fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp;
 
@@ -241,10 +246,14 @@ export function calculateNewTimestamps(
       });
     } else {
       // Under threshold: decay consecutiveBlocks gradually instead of resetting (prevents
-      // gaming via alternating fade/clean cycles). Preserve the existing (now past)
-      // blockUntilTimestamp: it's the clean-slate floor so a returning filler is scored
-      // only on orders completed after their last block ended.
-      const decayedBlocks = Math.max(0, (fillerTimestamp?.consecutiveBlocks || 0) - 1);
+      // gaming via alternating fade/clean cycles). Decay only when the filler completed new
+      // orders since the last run — without this gate, stale rows lingering in the 24h view
+      // would decay escalation every 10-minute run while the filler simply idles (raised in
+      // review). Working off escalation requires demonstrated clean activity.
+      // Preserve the existing (now past) blockUntilTimestamp: it's the clean-slate floor so
+      // a returning filler is scored only on orders completed after their last block ended.
+      const currentBlocks = fillerTimestamp?.consecutiveBlocks || 0;
+      const decayedBlocks = newCompletions > 0 ? Math.max(0, currentBlocks - 1) : currentBlocks;
       updatedTimestamps.push({
         hash,
         lastPostTimestamp: newPostTimestamp,
@@ -300,8 +309,10 @@ export function getFillersFadeStats(
     'getFillersFadeStats'
   );
   // filler hash -> tallies used to derive the stats below
-  const tallies: Record<string, { windowFades: number; windowTotal: number; blockFades: number; blockTotal: number }> =
-    {};
+  const tallies: Record<
+    string,
+    { windowFades: number; windowTotal: number; blockFades: number; blockTotal: number; newCompletions: number }
+  > = {};
   rows.forEach((row) => {
     const fillerAddr = ethers.utils.getAddress(row.fillerAddress);
     const fillerHash = addressToFillerMap.get(fillerAddr);
@@ -311,10 +322,13 @@ export function getFillersFadeStats(
     }
     const fillerTimestamp = fillerTimestamps.get(fillerHash);
     if (!tallies[fillerHash]) {
-      tallies[fillerHash] = { windowFades: 0, windowTotal: 0, blockFades: 0, blockTotal: 0 };
+      tallies[fillerHash] = { windowFades: 0, windowTotal: 0, blockFades: 0, blockTotal: 0, newCompletions: 0 };
     }
     const windowStart = finiteOr(fillerTimestamp?.blockUntilTimestamp, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
     const lastPostTimestamp = finiteOr(fillerTimestamp?.lastPostTimestamp, 0);
+    if (row.deadline > lastPostTimestamp) {
+      tallies[fillerHash].newCompletions += 1;
+    }
     if (row.deadline > windowStart) {
       // Rate window: orders completed after the filler's last block ended (clean slate).
       tallies[fillerHash].windowTotal += 1;
@@ -333,6 +347,7 @@ export function getFillersFadeStats(
     stats[hash] = {
       fadeRate: laplaceSmoothedFadeRate(t.windowFades, t.windowTotal),
       duringBlockRate: laplaceSmoothedFadeRate(t.blockFades, t.blockTotal),
+      newCompletions: t.newCompletions,
     };
   });
   log?.info({ tallies, stats }, 'fade stats by filler');
