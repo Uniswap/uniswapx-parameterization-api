@@ -4,6 +4,7 @@ import {
   BASE_BLOCK_SECS,
   calculateBlockUntilTimestamp,
   calculateNewTimestamps,
+  countActiveBlocks,
   FADE_RATE_BLOCK_THRESHOLD,
   FillerFadeStatsMap,
   FillerTimestamps,
@@ -13,6 +14,7 @@ import {
   LAPLACE_BETA,
   UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
 } from '../../lib/cron/fade-rate-v2';
+import { Metric, metricContext } from '../../lib/entities';
 import { ToUpdateTimestampRow, V2FadesRowType } from '../../lib/repositories';
 
 const now = Math.floor(Date.now() / 1000);
@@ -393,6 +395,94 @@ describe('FadeRateV2 cron', () => {
       expect(byHash['breach'].blockUntilTimestamp).toBeGreaterThan(now);
       expect(byHash['clean'].blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
       expect(byHash['blocked'].blockUntilTimestamp).toEqual(now + 500); // unchanged
+    });
+
+    it('emits per-filler fade rates and new/extended block counters', () => {
+      const metrics = { putMetric: jest.fn() } as any;
+      const timestamps: FillerTimestamps = new Map([
+        [
+          'extendMe',
+          {
+            lastExaminedTimestamp: now - 100,
+            blockUntilTimestamp: now + 500,
+            fadeWindowStart: now + 500,
+            consecutiveBlocks: 1,
+          },
+        ],
+      ]);
+      const stats: FillerFadeStatsMap = {
+        breach: { fadeRate: 0.25, duringBlockRate: 0.05, newCompletions: 1 }, // trips a new block
+        clean: { fadeRate: 0.03, duringBlockRate: 0.05, newCompletions: 1 }, // decays
+        extendMe: { fadeRate: 0.05, duringBlockRate: 0.2, newCompletions: 1 }, // extends an active block
+      };
+      calculateNewTimestamps(timestamps, stats, now, logger, metrics);
+
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_FADE_RATE, 'breach'),
+        0.25,
+        expect.anything()
+      );
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_FADE_RATE, 'clean'),
+        0.03,
+        expect.anything()
+      );
+      expect(metrics.putMetric).toHaveBeenCalledWith(Metric.CIRCUIT_BREAKER_V2_NEW_BLOCKS, 1, expect.anything());
+      expect(metrics.putMetric).toHaveBeenCalledWith(Metric.CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS, 1, expect.anything());
+    });
+  });
+
+  describe('countActiveBlocks', () => {
+    it('counts benched fillers across stored and updated state, updates taking precedence', () => {
+      const timestamps: FillerTimestamps = new Map([
+        // benched with no completions this run: no update row, still active
+        [
+          'benchedIdle',
+          {
+            lastExaminedTimestamp: now - 100,
+            blockUntilTimestamp: now + 500,
+            fadeWindowStart: now + 500,
+            consecutiveBlocks: 1,
+          },
+        ],
+        // recovered: past block, no update
+        [
+          'recovered',
+          { lastExaminedTimestamp: now - 100, blockUntilTimestamp: 0, fadeWindowStart: now - 50, consecutiveBlocks: 0 },
+        ],
+        // stored state says unblocked, but this run blocks them
+        [
+          'justBlocked',
+          { lastExaminedTimestamp: now - 100, blockUntilTimestamp: 0, fadeWindowStart: now - 50, consecutiveBlocks: 0 },
+        ],
+      ]);
+      const updated: ToUpdateTimestampRow[] = [
+        {
+          hash: 'justBlocked',
+          lastExaminedTimestamp: now,
+          blockUntilTimestamp: now + 900,
+          fadeWindowStart: now + 900,
+          consecutiveBlocks: 1,
+        },
+        {
+          hash: 'newClean',
+          lastExaminedTimestamp: now,
+          blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+          fadeWindowStart: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+          consecutiveBlocks: 0,
+        },
+      ];
+      expect(countActiveBlocks(timestamps, updated, now)).toEqual(2); // benchedIdle + justBlocked
+    });
+
+    it('treats an unset (0 / undefined) blockUntilTimestamp as unblocked', () => {
+      const timestamps: FillerTimestamps = new Map([
+        ['unsetRow', { lastExaminedTimestamp: 1, blockUntilTimestamp: 0, fadeWindowStart: 0, consecutiveBlocks: 0 }],
+      ]);
+      const updated: ToUpdateTimestampRow[] = [
+        { hash: 'undefRow', lastExaminedTimestamp: now, blockUntilTimestamp: undefined, consecutiveBlocks: 0 },
+      ];
+      expect(countActiveBlocks(timestamps, updated, now)).toEqual(0);
     });
   });
 });
