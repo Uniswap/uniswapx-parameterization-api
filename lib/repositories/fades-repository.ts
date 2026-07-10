@@ -13,6 +13,13 @@ import { BaseRedshiftRepository, SharedConfigs } from './base';
 // breaker regardless of volume; a fresh 100%-fader trips after ~2 orders.
 export const ORDERS_PER_FILLER_LIMIT = 100;
 
+// Row cap on the fade view/query. The view emits up to ORDERS_PER_FILLER_LIMIT rows per
+// filler address, so total rows ~= (distinct filler addresses in 24h) * 100. At 20000 that
+// is ~200 addresses of headroom (vs ~50 at the old 5000, which the 1h->24h widening blew
+// past). If this is ever hit, rows are silently truncated and some fillers escape scoring —
+// the CIRCUIT_BREAKER_V2_FILLERS_EVALUATED metric alarm is the tripwire for that.
+export const FADE_QUERY_ROW_LIMIT = 20000;
+
 export type FadesRowType = {
   fillerAddress: string;
   totalQuotes: number;
@@ -188,7 +195,7 @@ WITH latestOrdersV2 AS (
     AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- completed orders only, BEFORE numbering: in-flight orders must not consume latest-N slots
   )
   WHERE row_num <= ${ORDERS_PER_FILLER_LIMIT}
-  LIMIT 5000
+  LIMIT ${FADE_QUERY_ROW_LIMIT}
 )
 SELECT
     latestOrdersV2.chainid as chainId, latestOrdersV2.ordertype as orderType, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedorders.fillTimeBlocks as fillTimeBlocks, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
@@ -207,7 +214,7 @@ AND
     deadline >= extract(epoch from (GETDATE() - INTERVAL '24 HOURS')) -- 24-hour rolling window based on order completion time; catches chronic low-volume fading
 )
 ORDER BY rfqFiller, deadline DESC
-LIMIT 5000 
+LIMIT ${FADE_QUERY_ROW_LIMIT} 
 `;
 
 const V2_FADE_RATE_SQL = `
@@ -231,5 +238,5 @@ FROM latestRfqsV2
 WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
 AND LOWER(tokenOut) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
 ORDER BY rfqFiller, deadline DESC
-LIMIT 5000
+LIMIT ${FADE_QUERY_ROW_LIMIT}
 `;
