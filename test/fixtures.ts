@@ -10,7 +10,23 @@ export const WEBHOOK_URL_FOO = 'https://foo.com';
 export const MOCK_V2_CB_PROVIDER = new MockV2CircuitBreakerConfigurationProvider(
   [WEBHOOK_URL, WEBHOOK_URL_ONEINCH, WEBHOOK_URL_SEARCHER],
   new Map([
-    [WEBHOOK_URL_ONEINCH, { blockUntilTimestamp: now + 100000, lastPostTimestamp: now - 10, consecutiveBlocks: 0 }],
-    [WEBHOOK_URL_SEARCHER, { blockUntilTimestamp: now - 10, lastPostTimestamp: now - 100, consecutiveBlocks: NaN }],
+    [
+      WEBHOOK_URL_ONEINCH,
+      {
+        blockUntilTimestamp: now + 100000,
+        fadeWindowStart: now + 100000,
+        lastExaminedTimestamp: now - 10,
+        consecutiveBlocks: 0,
+      },
+    ],
+    [
+      WEBHOOK_URL_SEARCHER,
+      {
+        blockUntilTimestamp: now - 10,
+        fadeWindowStart: now - 10,
+        lastExaminedTimestamp: now - 100,
+        consecutiveBlocks: NaN,
+      },
+    ],
   ])
 );

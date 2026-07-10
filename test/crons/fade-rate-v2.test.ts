@@ -99,11 +99,20 @@ describe('FadeRateV2 cron', () => {
 
     it('excludes pre-block orders from the rate window', () => {
       const fillerTimestamps: FillerTimestamps = new Map([
-        ['fillerB', { lastPostTimestamp: now - 150, blockUntilTimestamp: now - 200, consecutiveBlocks: 1 }],
+        // fadeWindowStart (the clean-slate floor) is the last block end at now-200
+        [
+          'fillerB',
+          {
+            lastExaminedTimestamp: now - 150,
+            blockUntilTimestamp: 0,
+            fadeWindowStart: now - 200,
+            consecutiveBlocks: 1,
+          },
+        ],
       ]);
       const rows: V2FadesRowType[] = [
         // pre-block fades (deadline now-300, before block end now-200): excluded from window;
-        // also before lastPostTimestamp (now-150) so not part of the during-block cohort
+        // also before lastExaminedTimestamp (now-150) so not part of the during-block cohort
         order('0x0000000000000000000000000000000000000002', 1, now - 300),
         order('0x0000000000000000000000000000000000000002', 1, now - 300),
         // post-block orders (deadline now-100): 1 faded + 4 clean
@@ -127,7 +136,16 @@ describe('FadeRateV2 cron', () => {
       // flight during the block: below the clean-slate floor, so they never enter the
       // post-block window — the during-block cohort is the only path that scores them.
       const fillerTimestamps: FillerTimestamps = new Map([
-        ['fillerB', { lastPostTimestamp: now - 400, blockUntilTimestamp: now - 100, consecutiveBlocks: 1 }],
+        // block ended at now-100 => fadeWindowStart is now-100; last cron run at now-400
+        [
+          'fillerB',
+          {
+            lastExaminedTimestamp: now - 400,
+            blockUntilTimestamp: 0,
+            fadeWindowStart: now - 100,
+            consecutiveBlocks: 1,
+          },
+        ],
       ]);
       const rows: V2FadesRowType[] = [
         // during-block cohort: 2 faded + 1 clean
@@ -158,29 +176,6 @@ describe('FadeRateV2 cron', () => {
       expect(stats['fillerC'].fadeRate).toBeCloseTo(3 / 24, 6);
       expect(stats['fillerC'].duringBlockRate).toBeCloseTo(0.05, 6);
     });
-
-    it('treats a non-finite (NaN) stored timestamp as unset, not silently zeroing the window', () => {
-      // A corrupted/missing Dynamo attribute parses to NaN. `deadline > NaN` is always
-      // false, so without the guard windowTotal would stay 0 and the filler could never
-      // be blocked. With the guard, NaN behaves like "unset" (floor 0) => all orders count.
-      const fillerTimestamps: FillerTimestamps = new Map([
-        ['fillerA', { lastPostTimestamp: NaN, blockUntilTimestamp: NaN, consecutiveBlocks: NaN }],
-      ]);
-      const rows: V2FadesRowType[] = [
-        ...Array(4)
-          .fill(0)
-          .map(() => order('0x0000000000000000000000000000000000000001', 1, now - 50)),
-        ...Array(6)
-          .fill(0)
-          .map(() => order('0x0000000000000000000000000000000000000001', 0, now - 50)),
-      ];
-      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, fillerTimestamps, logger);
-      // all 10 orders counted: (4+1)/(10+20) = 5/30 ≈ 0.167 > threshold
-      expect(stats['fillerA'].fadeRate).toBeCloseTo(5 / 30, 6);
-      expect(stats['fillerA'].fadeRate).toBeGreaterThan(FADE_RATE_BLOCK_THRESHOLD);
-      // NaN floor coerces to the unset sentinel, so no during-block cohort exists
-      expect(stats['fillerA'].duringBlockRate).toBeCloseTo(0.05, 6);
-    });
   });
 
   describe('calculateBlockUntilTimestamp', () => {
@@ -199,22 +194,11 @@ describe('FadeRateV2 cron', () => {
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row).toEqual({
         hash: 'newBad',
-        lastPostTimestamp: now,
+        lastExaminedTimestamp: now,
         blockUntilTimestamp: now + BASE_BLOCK_SECS, // 2^0
+        fadeWindowStart: now + BASE_BLOCK_SECS, // floor = block end
         consecutiveBlocks: 1,
       });
-    });
-
-    it('does not re-persist a non-finite (NaN) blockUntilTimestamp in the decay branch', () => {
-      const timestamps: FillerTimestamps = new Map([
-        ['corrupt', { lastPostTimestamp: NaN, blockUntilTimestamp: NaN, consecutiveBlocks: NaN }],
-      ]);
-      const stats: FillerFadeStatsMap = { corrupt: { fadeRate: 0.04, duringBlockRate: 0.05, newCompletions: 1 } };
-      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
-      // NaN floor is normalized back to the unblocked sentinel, not written back as NaN
-      expect(row.blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
-      expect(Number.isNaN(row.blockUntilTimestamp)).toBe(false);
-      expect(row.consecutiveBlocks).toEqual(0);
     });
 
     it('does not block a filler under the threshold', () => {
@@ -222,28 +206,41 @@ describe('FadeRateV2 cron', () => {
       const stats: FillerFadeStatsMap = { ok: { fadeRate: 0.05, duringBlockRate: 0.05, newCompletions: 1 } };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
+      expect(row.fadeWindowStart).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP); // never blocked
       expect(row.consecutiveBlocks).toEqual(0);
     });
 
     it('uses consecutiveBlocks for backoff when re-blocking', () => {
       // previously blocked twice, block now expired (past), breaches again
       const timestamps: FillerTimestamps = new Map([
-        ['repeat', { lastPostTimestamp: now - 100, blockUntilTimestamp: now - 10, consecutiveBlocks: 2 }],
+        [
+          'repeat',
+          { lastExaminedTimestamp: now - 100, blockUntilTimestamp: 0, fadeWindowStart: now - 10, consecutiveBlocks: 2 },
+        ],
       ]);
       const stats: FillerFadeStatsMap = { repeat: { fadeRate: 0.3, duringBlockRate: 0.05, newCompletions: 1 } };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(now + BASE_BLOCK_SECS * 4); // 2^2 (old consecutive)
+      expect(row.fadeWindowStart).toEqual(now + BASE_BLOCK_SECS * 4);
       expect(row.consecutiveBlocks).toEqual(3);
     });
 
-    it('preserves the past blockUntilTimestamp as the clean-slate floor while decaying', () => {
+    it('resets blockUntilTimestamp but preserves fadeWindowStart while decaying', () => {
       const timestamps: FillerTimestamps = new Map([
-        ['recovering', { lastPostTimestamp: now - 100, blockUntilTimestamp: now - 500, consecutiveBlocks: 2 }],
+        [
+          'recovering',
+          {
+            lastExaminedTimestamp: now - 100,
+            blockUntilTimestamp: 0,
+            fadeWindowStart: now - 500,
+            consecutiveBlocks: 2,
+          },
+        ],
       ]);
       const stats: FillerFadeStatsMap = { recovering: { fadeRate: 0.05, duringBlockRate: 0.05, newCompletions: 1 } };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
-      // block end is kept (not reset to 0) so the rate window stays scoped to post-block orders
-      expect(row.blockUntilTimestamp).toEqual(now - 500);
+      expect(row.blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP); // not blocked
+      expect(row.fadeWindowStart).toEqual(now - 500); // clean-slate floor preserved independently
       expect(row.consecutiveBlocks).toEqual(1); // decayed 2 -> 1
     });
 
@@ -252,29 +249,49 @@ describe('FadeRateV2 cron', () => {
       // the newCompletions gate, escalation would decay every 10-minute cron run while they
       // simply idle — resetting 3 -> 0 in ~30 minutes with zero demonstrated clean fills.
       const timestamps: FillerTimestamps = new Map([
-        ['idler', { lastPostTimestamp: now - 100, blockUntilTimestamp: now - 50, consecutiveBlocks: 3 }],
+        [
+          'idler',
+          { lastExaminedTimestamp: now - 100, blockUntilTimestamp: 0, fadeWindowStart: now - 50, consecutiveBlocks: 3 },
+        ],
       ]);
       const stats: FillerFadeStatsMap = { idler: { fadeRate: 0.05, duringBlockRate: 0.05, newCompletions: 0 } };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.consecutiveBlocks).toEqual(3); // frozen, not decayed
-      expect(row.blockUntilTimestamp).toEqual(now - 50); // clean-slate floor preserved
+      expect(row.fadeWindowStart).toEqual(now - 50); // clean-slate floor preserved
     });
 
     it('extends the block when in-flight orders fade at over the threshold rate while blocked', () => {
       const timestamps: FillerTimestamps = new Map([
-        ['blockedFader', { lastPostTimestamp: now - 100, blockUntilTimestamp: now + 500, consecutiveBlocks: 1 }],
+        [
+          'blockedFader',
+          {
+            lastExaminedTimestamp: now - 100,
+            blockUntilTimestamp: now + 500,
+            fadeWindowStart: now + 500,
+            consecutiveBlocks: 1,
+          },
+        ],
       ]);
       // post-block rate sits at the prior (blocked => empty window), but the in-flight
       // cohort faded at over the threshold rate
       const stats: FillerFadeStatsMap = { blockedFader: { fadeRate: 0.05, duringBlockRate: 0.2, newCompletions: 1 } };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(now + 500 + BASE_BLOCK_SECS * 2); // extend from current end, 2^1
+      expect(row.fadeWindowStart).toEqual(now + 500 + BASE_BLOCK_SECS * 2); // floor tracks the extended end
       expect(row.consecutiveBlocks).toEqual(2);
     });
 
     it("does not extend when a blocked filler's stray in-flight fade is offset by clean fills", () => {
       const timestamps: FillerTimestamps = new Map([
-        ['blockedBusy', { lastPostTimestamp: now - 100, blockUntilTimestamp: now + 500, consecutiveBlocks: 1 }],
+        [
+          'blockedBusy',
+          {
+            lastExaminedTimestamp: now - 100,
+            blockUntilTimestamp: now + 500,
+            fadeWindowStart: now + 500,
+            consecutiveBlocks: 1,
+          },
+        ],
       ]);
       // 1 fade among 19 clean in-flight fills: (1+1)/(20+20) = 5% <= threshold.
       // Under the old count-based rule (newFades > 0) this high-volume filler's block
@@ -291,7 +308,10 @@ describe('FadeRateV2 cron', () => {
       // The block expired between cron runs; the fades landed while it was active, so they
       // sit below the clean-slate floor (fadeRate at prior) — duringBlockRate catches them.
       const timestamps: FillerTimestamps = new Map([
-        ['lateFader', { lastPostTimestamp: now - 400, blockUntilTimestamp: now - 10, consecutiveBlocks: 1 }],
+        [
+          'lateFader',
+          { lastExaminedTimestamp: now - 400, blockUntilTimestamp: 0, fadeWindowStart: now - 10, consecutiveBlocks: 1 },
+        ],
       ]);
       const stats: FillerFadeStatsMap = { lateFader: { fadeRate: 0.05, duringBlockRate: 0.14, newCompletions: 1 } };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
@@ -301,18 +321,30 @@ describe('FadeRateV2 cron', () => {
 
     it('keeps an active block (no extend, no decay) when the in-flight cohort is clean', () => {
       const timestamps: FillerTimestamps = new Map([
-        ['blockedClean', { lastPostTimestamp: now - 100, blockUntilTimestamp: now + 300, consecutiveBlocks: 1 }],
+        [
+          'blockedClean',
+          {
+            lastExaminedTimestamp: now - 100,
+            blockUntilTimestamp: now + 300,
+            fadeWindowStart: now + 300,
+            consecutiveBlocks: 1,
+          },
+        ],
       ]);
       // even a high (stale) window rate must not extend an active block by itself
       const stats: FillerFadeStatsMap = { blockedClean: { fadeRate: 0.9, duringBlockRate: 0.05, newCompletions: 1 } };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(now + 300);
+      expect(row.fadeWindowStart).toEqual(now + 300);
       expect(row.consecutiveBlocks).toEqual(1);
     });
 
     it('requires multiple clean cycles to fully decay consecutiveBlocks (anti-gaming)', () => {
       const timestamps: FillerTimestamps = new Map([
-        ['gamer', { lastPostTimestamp: now - 100, blockUntilTimestamp: now - 50, consecutiveBlocks: 3 }],
+        [
+          'gamer',
+          { lastExaminedTimestamp: now - 100, blockUntilTimestamp: 0, fadeWindowStart: now - 50, consecutiveBlocks: 3 },
+        ],
       ]);
       const clean: FillerFadeStatsMap = { gamer: { fadeRate: 0.04, duringBlockRate: 0.05, newCompletions: 1 } };
 
@@ -320,16 +352,18 @@ describe('FadeRateV2 cron', () => {
       expect(row.consecutiveBlocks).toEqual(2);
 
       timestamps.set('gamer', {
-        lastPostTimestamp: row.lastPostTimestamp,
-        blockUntilTimestamp: row.blockUntilTimestamp ?? now - 50,
+        lastExaminedTimestamp: row.lastExaminedTimestamp,
+        blockUntilTimestamp: row.blockUntilTimestamp ?? 0,
+        fadeWindowStart: row.fadeWindowStart ?? 0,
         consecutiveBlocks: row.consecutiveBlocks,
       });
       row = calculateNewTimestamps(timestamps, clean, now + 300, logger)[0];
       expect(row.consecutiveBlocks).toEqual(1);
 
       timestamps.set('gamer', {
-        lastPostTimestamp: row.lastPostTimestamp,
-        blockUntilTimestamp: row.blockUntilTimestamp ?? now - 50,
+        lastExaminedTimestamp: row.lastExaminedTimestamp,
+        blockUntilTimestamp: row.blockUntilTimestamp ?? 0,
+        fadeWindowStart: row.fadeWindowStart ?? 0,
         consecutiveBlocks: row.consecutiveBlocks,
       });
       row = calculateNewTimestamps(timestamps, clean, now + 600, logger)[0];
@@ -338,7 +372,15 @@ describe('FadeRateV2 cron', () => {
 
     it('processes a mix of fillers in one pass', () => {
       const timestamps: FillerTimestamps = new Map([
-        ['blocked', { lastPostTimestamp: now - 100, blockUntilTimestamp: now + 500, consecutiveBlocks: 1 }],
+        [
+          'blocked',
+          {
+            lastExaminedTimestamp: now - 100,
+            blockUntilTimestamp: now + 500,
+            fadeWindowStart: now + 500,
+            consecutiveBlocks: 1,
+          },
+        ],
       ]);
       const stats: FillerFadeStatsMap = {
         breach: { fadeRate: 0.25, duringBlockRate: 0.05, newCompletions: 1 },

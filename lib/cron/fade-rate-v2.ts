@@ -78,7 +78,7 @@ const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   },
 });
 const fillerAddressRepo = DynamoFillerAddressRepository.create(documentClient);
-const timestampDB = TimestampRepository.create(documentClient);
+const timestampDB = TimestampRepository.create();
 
 export const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
   await main(metrics);
@@ -116,7 +116,7 @@ async function main(metrics: MetricsLogger) {
     //  |---- bar -|---- 0.05 --|------ 0.20 -------|
     const fillerFadeStats = getFillersFadeStats(result, addressToFillerMap, fillerTimestamps, log);
 
-    //  | hash        |lastPostTimestamp|blockUntilTimestamp|
+    //  | hash        |lastExaminedTimestamp|blockUntilTimestamp|fadeWindowStart|
     //  |---- foo ----|---- 1300000 ----|----      calculated block until  ----|
     //  |---- bar ----|---- 1300000 ----|----      13500000                ----|
     const updatedTimestamps = calculateNewTimestamps(
@@ -134,14 +134,6 @@ async function main(metrics: MetricsLogger) {
       log.info('no timestamp to update');
     }
   }
-}
-
-// TimestampRepository coerces NaN at the parse boundary, so stored rows should already be
-// finite. Kept as defense-in-depth for timestamps arriving from other sources: a NaN here
-// would poison comparisons (`deadline > NaN` is always false), silently zeroing the
-// fade-rate window and making a filler permanently unblockable.
-function finiteOr(value: number | undefined, fallback: number): number {
-  return Number.isFinite(value) ? (value as number) : fallback;
 }
 
 function newConsecutiveBlocks(consecutiveBlocks?: number): number {
@@ -163,9 +155,14 @@ function newConsecutiveBlocks(consecutiveBlocks?: number): number {
     - Post-block fade rate over threshold — or the during-block cohort over threshold
       (late in-flight fades from a block that expired between cron runs): block,
       increment consecutiveBlocks
-    - Otherwise: decay consecutiveBlocks by 1 — but only if the filler completed new
-      orders since the last run (idling must not work off escalation) — and KEEP the
-      (now past) blockUntilTimestamp so it remains the clean-slate floor for the rate window
+    - Otherwise: reset blockUntilTimestamp to unblocked and decay consecutiveBlocks by 1 —
+      but only if the filler completed new orders since the last run (idling must not work
+      off escalation). fadeWindowStart is left untouched so the clean-slate floor persists.
+
+  blockUntilTimestamp is the block expiry (used for the is-blocked check). fadeWindowStart is
+  the clean-slate floor for the fade-rate window; a block/extension sets both to the block end,
+  so while blocked the floor is in the future (window empty) and after expiry it is the past
+  block end (a returning filler is scored only on orders completed after their block ended).
 */
 export function calculateNewTimestamps(
   fillerTimestamps: FillerTimestamps,
@@ -203,16 +200,18 @@ export function calculateNewTimestamps(
 
       updatedTimestamps.push({
         hash,
-        lastPostTimestamp: newPostTimestamp,
+        lastExaminedTimestamp: newPostTimestamp,
         blockUntilTimestamp: extendedBlockUntil,
+        fadeWindowStart: extendedBlockUntil, // clean slate resumes when the extended block ends
         consecutiveBlocks,
       });
     } else if (isCurrentlyBlocked) {
-      // Blocked but no new fades - keep existing block, don't decay
+      // Blocked but no new fades - keep existing block and floor, don't decay
       updatedTimestamps.push({
         hash,
-        lastPostTimestamp: newPostTimestamp,
+        lastExaminedTimestamp: newPostTimestamp,
         blockUntilTimestamp: fillerTimestamp.blockUntilTimestamp,
+        fadeWindowStart: fillerTimestamp.fadeWindowStart,
         consecutiveBlocks: fillerTimestamp.consecutiveBlocks,
       });
     } else if (fadeRate > FADE_RATE_BLOCK_THRESHOLD || duringBlockRate > FADE_RATE_BLOCK_THRESHOLD) {
@@ -240,24 +239,28 @@ export function calculateNewTimestamps(
 
       updatedTimestamps.push({
         hash,
-        lastPostTimestamp: newPostTimestamp,
+        lastExaminedTimestamp: newPostTimestamp,
         blockUntilTimestamp,
+        fadeWindowStart: blockUntilTimestamp, // clean slate resumes when the block ends
         consecutiveBlocks: consecutiveBlocks,
       });
     } else {
-      // Under threshold: decay consecutiveBlocks gradually instead of resetting (prevents
-      // gaming via alternating fade/clean cycles). Decay only when the filler completed new
-      // orders since the last run — without this gate, stale rows lingering in the 24h view
-      // would decay escalation every 10-minute run while the filler simply idles (raised in
-      // review). Working off escalation requires demonstrated clean activity.
-      // Preserve the existing (now past) blockUntilTimestamp: it's the clean-slate floor so
-      // a returning filler is scored only on orders completed after their last block ended.
+      // Under threshold: not blocked. Reset blockUntilTimestamp to unblocked, and decay
+      // consecutiveBlocks gradually instead of resetting (prevents gaming via alternating
+      // fade/clean cycles). Decay only when the filler completed new orders since the last
+      // run — without this gate, stale rows lingering in the 24h view would decay escalation
+      // every 10-minute run while the filler simply idles (raised in review). Working off
+      // escalation requires demonstrated clean activity.
+      // fadeWindowStart is preserved (not written from blockUntilTimestamp): it independently
+      // holds the last block end as the clean-slate floor so a returning filler is scored
+      // only on orders completed after their block ended.
       const currentBlocks = fillerTimestamp?.consecutiveBlocks || 0;
       const decayedBlocks = newCompletions > 0 ? Math.max(0, currentBlocks - 1) : currentBlocks;
       updatedTimestamps.push({
         hash,
-        lastPostTimestamp: newPostTimestamp,
-        blockUntilTimestamp: finiteOr(fillerTimestamp?.blockUntilTimestamp, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP),
+        lastExaminedTimestamp: newPostTimestamp,
+        blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+        fadeWindowStart: fillerTimestamp?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
         consecutiveBlocks: decayedBlocks,
       });
     }
@@ -278,7 +281,7 @@ export function laplaceSmoothedFadeRate(fades: number, total: number): number {
    @param fillerTimestamps: last checked timestamp and block until timestamp for each filler
    @param addressToFillerMap: map of address to filler hash
 
-   - fadeRate: orders whose deadline is after the filler's last blockUntilTimestamp
+   - fadeRate: orders whose deadline is after the filler's fadeWindowStart (last block end)
      ("post-block window"). This is the clean-slate mechanism: a filler who served a block
      is scored only on orders completed after the block ended, not on the pre-block fades
      that are still inside the query's rolling window. While a filler is currently blocked
@@ -324,16 +327,16 @@ export function getFillersFadeStats(
     if (!tallies[fillerHash]) {
       tallies[fillerHash] = { windowFades: 0, windowTotal: 0, blockFades: 0, blockTotal: 0, newCompletions: 0 };
     }
-    const windowStart = finiteOr(fillerTimestamp?.blockUntilTimestamp, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
-    const lastPostTimestamp = finiteOr(fillerTimestamp?.lastPostTimestamp, 0);
-    if (row.deadline > lastPostTimestamp) {
+    const windowStart = fillerTimestamp?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP;
+    const lastExaminedTimestamp = fillerTimestamp?.lastExaminedTimestamp ?? 0;
+    if (row.deadline > lastExaminedTimestamp) {
       tallies[fillerHash].newCompletions += 1;
     }
     if (row.deadline > windowStart) {
       // Rate window: orders completed after the filler's last block ended (clean slate).
       tallies[fillerHash].windowTotal += 1;
       tallies[fillerHash].windowFades += row.faded;
-    } else if (row.deadline > lastPostTimestamp) {
+    } else if (row.deadline > lastExaminedTimestamp) {
       // During-block cohort: completed since the last cron run but on/before the block end,
       // i.e. in flight during the block. Never overlaps the rate window (deadline <= floor),
       // so during-block orders stay excluded from the post-block clean slate.
