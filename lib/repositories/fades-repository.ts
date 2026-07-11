@@ -203,7 +203,8 @@ ORDER BY rfqFiller, deadline DESC
 LIMIT 5000 
 `;
 
-const V2_FADE_RATE_SQL = `
+// Exported for testing.
+export const V2_FADE_RATE_SQL = `
 SELECT 
     rfqFiller,
     postTimestamp,
@@ -212,10 +213,11 @@ SELECT
       -- Never filled (any order type) => fade.
       WHEN fillTimestamp IS NULL THEN 1
       -- Dutch_V3 decays by block, not by time. fillTimeBlocks is computed
-      -- upstream as (fillBlock - decayStartBlock), so >= 0 means the fill landed
-      -- on or after the cosigned decayStartBlock i.e. the price had begun
-      -- decaying => fade.
-      WHEN orderType = '${OrderType.Dutch_V3}' AND fillTimeBlocks >= 0 THEN 1
+      -- upstream as (fillBlock - decayStartBlock). A fill AT decayStartBlock
+      -- (fillTimeBlocks = 0) is still within the exclusive filler's window and
+      -- pays the full undecayed price on-chain, so only fills strictly after
+      -- decayStartBlock count as fades (matching the Dutch_V2 rule below).
+      WHEN orderType = '${OrderType.Dutch_V3}' AND fillTimeBlocks > 0 THEN 1
       -- Dutch_V2 (time-based decay): filled after decay start => fade.
       WHEN orderType = '${OrderType.Dutch_V2}' AND decayStartTime < fillTimestamp THEN 1
       ELSE 0
