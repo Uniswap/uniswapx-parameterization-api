@@ -7,6 +7,7 @@ import { ProtocolVersion } from '../../../lib/providers';
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const FILLER = '0x1234567890123456789012345678901234567890';
 const REQUEST_ID = uuidv4();
 const QUOTE_ID = uuidv4();
 
@@ -298,6 +299,7 @@ describe('Schema tests', () => {
         amountIn: '1000',
         amountOut: '1000000000000000000',
         quoteId: QUOTE_ID,
+        filler: FILLER,
       };
       const validated = RfqResponseJoi.validate(body);
       expect(validated.error).toBeUndefined();
@@ -309,7 +311,22 @@ describe('Schema tests', () => {
         amountIn: '1000',
         amountOut: '1000000000000000000',
         quoteId: QUOTE_ID,
+        filler: FILLER,
       });
+    });
+
+    it('requires filler to be defined', () => {
+      const body = {
+        chainId: 1,
+        requestId: REQUEST_ID,
+        tokenIn: USDC,
+        tokenOut: WETH,
+        amountIn: '1000',
+        amountOut: '1000000000000000000',
+        quoteId: QUOTE_ID,
+      };
+      const validated = RfqResponseJoi.validate(body);
+      expect(validated.error?.message).toEqual('"filler" is required');
     });
 
     it('requires requestId to be defined', () => {
@@ -387,6 +404,7 @@ describe('Schema tests', () => {
         amountOut: '1000000000000000000',
         swapper: SWAPPER,
         quoteId: QUOTE_ID,
+        filler: FILLER,
       };
       const validated = RfqResponseJoi.validate(body, {
         allowUnknown: true,
@@ -401,6 +419,7 @@ describe('Schema tests', () => {
         amountIn: '1000000000000000000',
         amountOut: '1000000000000000000',
         quoteId: QUOTE_ID,
+        filler: FILLER,
       });
     });
 
@@ -414,6 +433,7 @@ describe('Schema tests', () => {
         amountOut: '1000000000000000000',
         swapper: null,
         quoteId: QUOTE_ID,
+        filler: FILLER,
       };
       const validated = RfqResponseJoi.validate(body, {
         allowUnknown: true,
@@ -428,6 +448,7 @@ describe('Schema tests', () => {
         amountIn: '1000000000000000000',
         amountOut: '1000000000000000000',
         quoteId: QUOTE_ID,
+        filler: FILLER,
       });
     });
   });

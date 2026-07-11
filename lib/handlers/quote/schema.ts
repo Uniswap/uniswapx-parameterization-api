@@ -77,7 +77,10 @@ export const RfqResponseJoi = Joi.object({
   amountIn: FieldValidator.amount.required(),
   tokenOut: Joi.string().required(),
   amountOut: FieldValidator.amount.required(),
-  filler: FieldValidator.address.optional(),
+  // Required: the filler's settlement address. It's the circuit breaker's attribution key,
+  // so a response without it (which would post with no exclusive filler and escape the fade
+  // view) is rejected as a validation error.
+  filler: FieldValidator.address.required(),
   quoteId: FieldValidator.uuid,
 });
 
@@ -89,5 +92,5 @@ export type RfqResponse = {
   tokenOut: string;
   amountOut: string;
   quoteId: string;
-  filler?: string;
+  filler: string;
 };
