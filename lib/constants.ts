@@ -17,10 +17,9 @@ export const DYNAMO_TABLE_NAME = {
   SYNTHETIC_SWITCH_TABLE: 'SyntheticSwitchTable',
   FILLER_ADDRESS: 'FillerAddress',
   FILLER_CB_TIMESTAMPS: 'FillerCBTimestamps',
-  // V2 circuit-breaker state table. Introduced as a separate table (not a rename of the
-  // above) so the rate-based breaker can be rolled back cleanly: the old code keeps writing
-  // FillerCBTimestamps, the new code writes only here, and neither contaminates the other.
-  // State is derived (recomputed each cron run from Redshift), so this starts empty.
+  // V2 circuit-breaker state table, separate from FILLER_CB_TIMESTAMPS so the rate-based
+  // breaker's state is isolated for independent rollout/rollback. State is derived
+  // (recomputed each cron run from Redshift), so it starts empty.
   FILLER_CB_TIMESTAMPS_V2: 'FillerCBTimestampsV2',
 };
 

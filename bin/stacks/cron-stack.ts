@@ -200,9 +200,8 @@ export class CronStack extends cdk.NestedStack {
     });
     this.alarmsPerTable(fillerCBTimestampsTable, DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS, chatbotTopic);
 
-    // V2 circuit-breaker state table, created alongside (not replacing) the V1 table above so
-    // the rate-based breaker can be rolled back cleanly. Same key schema; state is derived and
-    // starts empty. Remove the V1 table in a follow-up once V2 is confirmed stable.
+    // V2 circuit-breaker state table, separate from the V1 table so the rate-based breaker's
+    // state is isolated for independent rollout/rollback. State is derived and starts empty.
     const fillerCBTimestampsV2Table = new aws_dynamo.Table(this, `${SERVICE_NAME}FillerCBTimestampsV2Table`, {
       tableName: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS_V2,
       partitionKey: {

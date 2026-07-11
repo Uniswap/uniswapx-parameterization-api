@@ -52,12 +52,10 @@ export const BASE_BLOCK_SECS = 60 * 15; // 15 minutes
 // pretend-fades and BETA pretend-clean-fills. Prior mean = ALPHA/(ALPHA+BETA) = 1/20 = 5%.
 export const LAPLACE_ALPHA = 1;
 export const LAPLACE_BETA = 19;
-// Block a filler once their smoothed fade rate exceeds this. MUST be greater than the
-// prior mean (5%), otherwise the prior alone would block every filler.
-// At this threshold a filler needs e.g. ~2 fades in 2 orders, ~3 in 10, ~8 in 50, ~14 in 100.
-// With the 24h/latest-100 window this catches both a low-volume filler fading every order
-// (2 fades => 3/22 ≈ 13.6%) and a high-volume filler chronically fading ~14%+ of orders
-// (14 fades in latest 100 => 15/120 = 12.5%), while a sustained ~10% filler stays clear.
+// Block a filler once their smoothed fade rate exceeds this. Must be greater than the prior
+// mean (5%), else the prior alone would block every filler. At 12% a filler trips at roughly
+// a sustained ~14%+ raw fade rate (e.g. ~3 fades in 10, ~14 in 100), or ~2 fades at very low
+// volume.
 export const FADE_RATE_BLOCK_THRESHOLD = 0.12;
 
 const log = Logger.createLogger({
@@ -178,10 +176,9 @@ export function calculateNewTimestamps(
     const isCurrentlyBlocked = fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp;
 
     if (isCurrentlyBlocked && duringBlockRate > FADE_RATE_BLOCK_THRESHOLD) {
-      // In-flight orders faded at over the threshold rate while blocked: stack the penalty.
-      // Extend the block from current blockUntil, not from now. Rate-based (not count-based)
-      // so a high-volume filler's stray in-flight fade, offset by clean in-flight fills,
-      // does not extend the block.
+      // In-flight orders faded at over the threshold rate while blocked: stack the penalty,
+      // extending from the current block end. Rate-based, so a high-volume filler's stray
+      // in-flight fade offset by clean in-flight fills does not extend the block.
       const extendedBlockUntil = calculateBlockUntilTimestamp(
         fillerTimestamp.blockUntilTimestamp, // Extend from when current block ends
         fillerTimestamp.consecutiveBlocks
@@ -215,15 +212,11 @@ export function calculateNewTimestamps(
         consecutiveBlocks: fillerTimestamp.consecutiveBlocks,
       });
     } else if (fadeRate > FADE_RATE_BLOCK_THRESHOLD || duringBlockRate > FADE_RATE_BLOCK_THRESHOLD) {
-      // duringBlockRate here covers in-flight fades that landed near the end of a block that
-      // expired between cron runs — they sit below the clean-slate floor, so without this
-      // check they would never be scored by either path.
-      //
-      // NOTE(review): because the rate window is a rolling 24h, clean orders can age out
-      // while fades remain, so fadeRate can cross the threshold on a run where the filler
-      // completed nothing new ("blocked while idle"). We accept this rather than gating on
-      // new completions: the gate would just move the surprise to right after a completed
-      // (possibly cleanly filled) order, which is stranger UX for the filler.
+      // duringBlockRate covers in-flight fades that landed near the end of a block that
+      // expired between cron runs: they sit below the clean-slate floor, so this is the only
+      // path that scores them. Over the rolling 24h window a filler can also cross the
+      // threshold on a run with no new completions ("blocked while idle") as clean orders age
+      // out; that is accepted behavior.
       const blockUntilTimestamp = calculateBlockUntilTimestamp(newPostTimestamp, fillerTimestamp?.consecutiveBlocks);
       const consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp?.consecutiveBlocks);
 
@@ -245,15 +238,12 @@ export function calculateNewTimestamps(
         consecutiveBlocks: consecutiveBlocks,
       });
     } else {
-      // Under threshold: not blocked. Reset blockUntilTimestamp to unblocked, and decay
-      // consecutiveBlocks gradually instead of resetting (prevents gaming via alternating
-      // fade/clean cycles). Decay only when the filler completed new orders since the last
-      // run — without this gate, stale rows lingering in the 24h view would decay escalation
-      // every 10-minute run while the filler simply idles (raised in review). Working off
-      // escalation requires demonstrated clean activity.
-      // fadeWindowStart is preserved (not written from blockUntilTimestamp): it independently
-      // holds the last block end as the clean-slate floor so a returning filler is scored
-      // only on orders completed after their block ended.
+      // Under threshold: not blocked. Reset blockUntilTimestamp to unblocked and decay
+      // consecutiveBlocks by 1 (gradual decay resists gaming via alternating fade/clean
+      // cycles). Decay only when the filler completed new orders this run, so working off
+      // escalation requires demonstrated clean activity rather than idling. fadeWindowStart
+      // is left as-is: it holds the last block end as the clean-slate floor, so a returning
+      // filler is scored only on orders completed after their block ended.
       const currentBlocks = fillerTimestamp?.consecutiveBlocks || 0;
       const decayedBlocks = newCompletions > 0 ? Math.max(0, currentBlocks - 1) : currentBlocks;
       updatedTimestamps.push({

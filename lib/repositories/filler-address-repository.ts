@@ -10,11 +10,9 @@ export type DynamoFillerToAddressRow = {
   addresses: string[];
 };
 
-// Max distinct on-chain addresses a single filler (webhook endpoint) may register. Bounds
-// Sybil breadth: without a cap a filler could register unbounded addresses to spread fades or
-// inflate the circuit-breaker's row set. Rejected registrations are a safe no-op (the order
-// still quotes/fills; the address just isn't attributed), so this can't break quoting.
-// NOTE: tune against the real per-endpoint address distribution before tightening.
+// Max distinct on-chain addresses a single filler (webhook endpoint) may register, bounding
+// Sybil breadth. Registrations beyond the cap are a safe no-op — the order still quotes and
+// fills, the address just isn't attributed — so this can't break quoting.
 export const MAX_FILLER_ADDRESSES = 3;
 
 export interface FillerAddressRepository {

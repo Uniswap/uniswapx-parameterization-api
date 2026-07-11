@@ -4,20 +4,14 @@ import Logger from 'bunyan';
 import { OrderType, PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { BaseRedshiftRepository, SharedConfigs } from './base';
 
-// Cap on the most-recent orders per filler evaluated for the fade rate. Together with the
-// 24-hour view window this makes the lookback adaptive: a high-volume filler is judged on
-// its latest ORDERS_PER_FILLER_LIMIT orders (fast reaction to an acute fade spike),
-// while a low-volume filler is judged on up to 24 hours of orders (catches chronic fading
-// that a short window would never accumulate enough samples to see).
-// At 100 with the 12% smoothed threshold, a sustained raw fade rate of ~14%+ trips the
-// breaker regardless of volume; a fresh 100%-fader trips after ~2 orders.
+// Most-recent orders per filler evaluated for the fade rate. With the 24h view window the
+// lookback is adaptive: a high-volume filler is judged on its latest N orders (fast reaction),
+// a low-volume filler on up to 24h of orders (catches chronic fading).
 export const ORDERS_PER_FILLER_LIMIT = 100;
 
-// Row cap on the fade view/query. The view emits up to ORDERS_PER_FILLER_LIMIT rows per
-// filler address, so total rows ~= (distinct filler addresses in 24h) * 100. At 20000 that
-// is ~200 addresses of headroom (vs ~50 at the old 5000, which the 1h->24h widening blew
-// past). If this is ever hit, rows are silently truncated and some fillers escape scoring —
-// the CIRCUIT_BREAKER_V2_FILLERS_EVALUATED metric alarm is the tripwire for that.
+// Row cap on the fade view/query. The view emits up to ORDERS_PER_FILLER_LIMIT rows per filler
+// address, so total rows ~= (distinct filler addresses in 24h) * ORDERS_PER_FILLER_LIMIT.
+// Above the cap, rows are truncated and some fillers escape scoring.
 export const FADE_QUERY_ROW_LIMIT = 20000;
 
 export type FadesRowType = {
