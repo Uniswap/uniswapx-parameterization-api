@@ -170,17 +170,21 @@ FROM ORDERS_CTE
 WHERE totalQuotes >= 10;
 `;
 
-const V2_CREATE_VIEW_SQL = `
+// Exported for testing.
+export const V2_CREATE_VIEW_SQL = `
 DROP VIEW IF EXISTS latestRfqsV2;
 
-CREATE OR REPLACE VIEW latestRfqsV2 
+CREATE OR REPLACE VIEW latestRfqsV2
 AS (
 WITH latestOrdersV2 AS (
   SELECT * FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders WHERE ordertype IN ('${OrderType.Dutch_V2}', '${OrderType.Dutch_V3}')
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders
+    WHERE ordertype IN ('${OrderType.Dutch_V2}', '${OrderType.Dutch_V3}')
+    AND deadline >= EXTRACT(EPOCH FROM (GETDATE() - INTERVAL '1 HOUR')) -- bound the row set to the 1-hour lookback window BEFORE any LIMIT truncation
   )
   WHERE row_num <= ${ORDERS_PER_FILLER_LIMIT}
   AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
+  ORDER BY deadline DESC, quoteid -- deterministic truncation if the safety LIMIT below is ever hit
   LIMIT 5000
 )
 SELECT
