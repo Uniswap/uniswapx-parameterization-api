@@ -22,10 +22,15 @@ import { TimestampRepository } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
 
 export type FillerFades = Record<string, number>;
+export type FillerFadedOrderHashes = Record<string, string[]>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
 export const BASE_BLOCK_SECS = 60 * 15; // 15 minutes
 export const NUM_FADES_MULTIPLIER = 1.2;
+
+/** Bound on the faded order hashes persisted per block entry (most recent kept), so
+    repeatedly extended blocks can't grow the Dynamo item without limit. */
+export const MAX_FADED_ORDER_HASHES = 50;
 
 /** Sentinel when the filler has no active block (always < now for real unix seconds). Avoids equaling lastPostTimestamp, which could briefly read as blocked under clock skew. */
 export const UNBLOCKED_BLOCK_UNTIL_TIMESTAMP = 0;
@@ -85,6 +90,8 @@ async function main(metrics: MetricsLogger) {
     //  |---- foo -|---- 3 ----|---- 12345678 ----|
     //  |---- bar -|---- 1 ----|---- 12222222 ----|
     const fillersNewFades = getFillersNewFades(result, addressToFillerMap, fillerTimestamps, log);
+    // the hashes of those faded orders, so block entries can carry the reason for the block
+    const fillersFadedOrderHashes = getFillersNewFadedOrderHashes(result, addressToFillerMap, fillerTimestamps);
 
     //  | hash        |lastPostTimestamp|blockUntilTimestamp|
     //  |---- foo ----|---- 1300000 ----|----      calculated block until  ----|
@@ -94,7 +101,8 @@ async function main(metrics: MetricsLogger) {
       fillersNewFades,
       Math.floor(Date.now() / 1000),
       log,
-      metrics
+      metrics,
+      fillersFadedOrderHashes
     );
     log.info({ updatedTimestamps }, 'filler for which to update timestamp');
     metrics.putMetric(Metric.CIRCUIT_BREAKER_V2_BLOCKED, updatedTimestamps.length, Unit.Count);
@@ -129,7 +137,8 @@ export function calculateNewTimestamps(
   fillersNewFades: FillerFades,
   newPostTimestamp: number,
   log?: Logger,
-  metrics?: MetricsLogger
+  metrics?: MetricsLogger,
+  fillersFadedOrderHashes?: FillerFadedOrderHashes
 ): ToUpdateTimestampRow[] {
   const updatedTimestamps: ToUpdateTimestampRow[] = [];
   Object.entries(fillersNewFades).forEach((row) => {
@@ -137,6 +146,7 @@ export function calculateNewTimestamps(
     const fades = row[1];
     const fillerTimestamp = fillerTimestamps.get(hash);
     const isCurrentlyBlocked = fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp;
+    const newFadedOrderHashes = fillersFadedOrderHashes?.[hash] ?? [];
 
     if (isCurrentlyBlocked && fades) {
       // Stack penalties while blocked
@@ -163,6 +173,8 @@ export function calculateNewTimestamps(
         lastPostTimestamp: newPostTimestamp,
         blockUntilTimestamp: extendedBlockUntil,
         consecutiveBlocks,
+        // the extended block was caused by the previously stored fades plus the new ones
+        fadedOrderHashes: mergeFadedOrderHashes(fillerTimestamp.fadedOrderHashes, newFadedOrderHashes),
       });
     } else if (isCurrentlyBlocked) {
       // Blocked but no new fades - keep existing block, don't decay
@@ -171,6 +183,8 @@ export function calculateNewTimestamps(
         lastPostTimestamp: newPostTimestamp,
         blockUntilTimestamp: fillerTimestamp.blockUntilTimestamp,
         consecutiveBlocks: fillerTimestamp.consecutiveBlocks,
+        // carry forward the fades that caused the still-active block
+        fadedOrderHashes: fillerTimestamp.fadedOrderHashes,
       });
     } else if (fades) {
       const blockUntilTimestamp = calculateBlockUntilTimestamp(
@@ -190,6 +204,7 @@ export function calculateNewTimestamps(
         lastPostTimestamp: newPostTimestamp,
         blockUntilTimestamp,
         consecutiveBlocks: consecutiveBlocks,
+        fadedOrderHashes: mergeFadedOrderHashes(undefined, newFadedOrderHashes),
       });
     } else {
       // no new fades, decay consecutive blocks gradually instead of resetting
@@ -237,12 +252,7 @@ export function getFillersNewFades(
     const fillerHash = addressToFillerMap.get(fillerAddr);
     if (!fillerHash) {
       log?.info({ fillerAddr }, 'filler address not found dynamo mapping');
-    } else if (
-      // Use deadline (completion time) instead of postTimestamp to catch orders
-      // that were posted before lastPostTimestamp but completed after
-      (fillerTimestamps.has(fillerHash) && row.deadline > fillerTimestamps.get(fillerHash)!.lastPostTimestamp) ||
-      !fillerTimestamps.has(fillerHash)
-    ) {
+    } else if (isNewRow(row, fillerHash, fillerTimestamps)) {
       if (!newFadesMap[fillerHash]) {
         newFadesMap[fillerHash] = row.faded;
       } else {
@@ -252,6 +262,45 @@ export function getFillersNewFades(
   });
   log?.info({ newFadesMap }, '# of new fades by filler');
   return newFadesMap;
+}
+
+/* collect the hashes of each filler entity's new faded orders since the last time
+   this cron was run; same "new order" semantics as getFillersNewFades */
+export function getFillersNewFadedOrderHashes(
+  rows: V2FadesRowType[],
+  addressToFillerMap: Map<string, string>,
+  fillerTimestamps: FillerTimestamps
+): FillerFadedOrderHashes {
+  const fadedOrderHashesMap: FillerFadedOrderHashes = {}; // filler hash -> hashes of new faded orders
+  rows.forEach((row) => {
+    const fillerAddr = ethers.utils.getAddress(row.fillerAddress);
+    const fillerHash = addressToFillerMap.get(fillerAddr);
+    if (fillerHash && row.faded && row.orderHash && isNewRow(row, fillerHash, fillerTimestamps)) {
+      if (!fadedOrderHashesMap[fillerHash]) {
+        fadedOrderHashesMap[fillerHash] = [];
+      }
+      fadedOrderHashesMap[fillerHash].push(row.orderHash);
+    }
+  });
+  return fadedOrderHashesMap;
+}
+
+/* returns true if the order completed after the filler's last checked timestamp.
+   Use deadline (completion time) instead of postTimestamp to catch orders
+   that were posted before lastPostTimestamp but completed after */
+function isNewRow(row: V2FadesRowType, fillerHash: string, fillerTimestamps: FillerTimestamps): boolean {
+  return (
+    (fillerTimestamps.has(fillerHash) && row.deadline > fillerTimestamps.get(fillerHash)!.lastPostTimestamp) ||
+    !fillerTimestamps.has(fillerHash)
+  );
+}
+
+/* combine the faded order hashes already stored on a block entry with the new window's,
+   deduped and capped to the most recent MAX_FADED_ORDER_HASHES.
+   Returns undefined when there are none, so no attribute is written to the entry. */
+function mergeFadedOrderHashes(existing: string[] | undefined, incoming: string[]): string[] | undefined {
+  const merged = Array.from(new Set([...(existing ?? []), ...incoming]));
+  return merged.length > 0 ? merged.slice(-MAX_FADED_ORDER_HASHES) : undefined;
 }
 
 /*

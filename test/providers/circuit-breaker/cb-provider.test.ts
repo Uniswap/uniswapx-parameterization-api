@@ -6,7 +6,15 @@ const now = Math.floor(Date.now() / 1000);
 const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
   ['filler1', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN, consecutiveBlocks: NaN }],
   ['filler2', { lastPostTimestamp: now - 75, blockUntilTimestamp: now - 50, consecutiveBlocks: 0 }],
-  ['filler3', { lastPostTimestamp: now - 101, blockUntilTimestamp: now + 1000, consecutiveBlocks: 0 }],
+  [
+    'filler3',
+    {
+      lastPostTimestamp: now - 101,
+      blockUntilTimestamp: now + 1000,
+      consecutiveBlocks: 0,
+      fadedOrderHashes: ['0xfaded1', '0xfaded2'],
+    },
+  ],
   ['filler4', { lastPostTimestamp: now - 150, blockUntilTimestamp: NaN, consecutiveBlocks: 0 }],
   ['filler5', { lastPostTimestamp: now - 150, blockUntilTimestamp: now + 100, consecutiveBlocks: 1 }],
 ]);
@@ -69,6 +77,7 @@ describe('V2CircuitBreakerProvider', () => {
             hash: '0xfiller3',
           },
           blockUntil: now + 1000,
+          fadedOrderHashes: ['0xfaded1', '0xfaded2'],
         },
         {
           webhook: {
@@ -76,6 +85,7 @@ describe('V2CircuitBreakerProvider', () => {
             endpoint: 'filler5',
             hash: '0xfiller5',
           },
+          // no fadedOrderHashes: legacy block entry written before hashes were persisted
           blockUntil: now + 100,
         },
       ],

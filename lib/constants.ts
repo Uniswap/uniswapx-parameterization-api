@@ -32,6 +32,7 @@ export const DYNAMO_TABLE_KEY = {
   LAST_POST_TIMESTAMP: 'lastPostTimestamp',
   FADED: 'faded',
   CONSECUTIVE_BLOCKS: 'consecutiveBlocks',
+  FADED_ORDER_HASHES: 'fadedOrderHashes',
 };
 
 export const POST_ORDER_ERROR_REASON = {

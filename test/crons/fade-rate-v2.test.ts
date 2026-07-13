@@ -5,7 +5,9 @@ import {
   calculateNewTimestamps,
   FillerFades,
   FillerTimestamps,
+  getFillersNewFadedOrderHashes,
   getFillersNewFades,
+  MAX_FADED_ORDER_HASHES,
   NUM_FADES_MULTIPLIER,
   UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
 } from '../../lib/cron/fade-rate-v2';
@@ -22,24 +24,28 @@ const FADES_ROWS: V2FadesRowType[] = [
     faded: 1,
     postTimestamp: now - 100,
     deadline: now - 80,
+    orderHash: '0xfade1a',
   },
   {
     fillerAddress: '0x0000000000000000000000000000000000000001',
     faded: 0,
     postTimestamp: now - 90,
     deadline: now - 70,
+    orderHash: '0xok1',
   },
   {
     fillerAddress: '0x0000000000000000000000000000000000000001',
     faded: 1,
     postTimestamp: now - 80,
     deadline: now - 60,
+    orderHash: '0xfade1b',
   },
   {
     fillerAddress: '0x0000000000000000000000000000000000000002',
     faded: 1,
     postTimestamp: now - 80,
     deadline: now - 60,
+    orderHash: '0xfade1c',
   },
   // filler2 - lastPostTimestamp: now - 75
   // Order at now - 100 has deadline now - 80 which is NOT > now - 75, so NOT counted
@@ -49,12 +55,14 @@ const FADES_ROWS: V2FadesRowType[] = [
     faded: 1,
     postTimestamp: now - 70,
     deadline: now - 50,
+    orderHash: '0xfade2a',
   },
   {
     fillerAddress: '0x0000000000000000000000000000000000000003',
     faded: 1,
     postTimestamp: now - 100,
     deadline: now - 80,
+    orderHash: '0xfade2old',
   },
   // filler3 - lastPostTimestamp: now - 101, deadline now - 80 > now - 101, so counted
   // filler3 is BLOCKED (blockUntilTimestamp: now + 1000) and has a fade!
@@ -63,6 +71,7 @@ const FADES_ROWS: V2FadesRowType[] = [
     faded: 1,
     postTimestamp: now - 100,
     deadline: now - 80,
+    orderHash: '0xfade3a',
   },
   // filler4 - lastPostTimestamp: now - 150, deadline now - 80 > now - 150, so counted
   {
@@ -70,6 +79,7 @@ const FADES_ROWS: V2FadesRowType[] = [
     faded: 0,
     postTimestamp: now - 100,
     deadline: now - 80,
+    orderHash: '0xok4',
   },
   // filler5 - lastPostTimestamp: now - 150, deadline now - 80 > now - 150, so counted
   // filler5 is BLOCKED (blockUntilTimestamp: now + 100) but has NO fade
@@ -78,6 +88,7 @@ const FADES_ROWS: V2FadesRowType[] = [
     faded: 0,
     postTimestamp: now - 100,
     deadline: now - 80,
+    orderHash: '0xok5',
   },
   // filler6 - not in FILLER_TIMESTAMPS, so all counted
   {
@@ -85,6 +96,7 @@ const FADES_ROWS: V2FadesRowType[] = [
     faded: 1,
     postTimestamp: now - 100,
     deadline: now - 80,
+    orderHash: '0xfade6a',
   },
   // filler7 - lastPostTimestamp: now - 150, deadline now - 80 > now - 150, so counted
   {
@@ -92,6 +104,7 @@ const FADES_ROWS: V2FadesRowType[] = [
     faded: 1,
     postTimestamp: now - 100,
     deadline: now - 80,
+    orderHash: '0xfade7a',
   },
   // filler8 - lastPostTimestamp: now - 150, deadline now - 80 > now - 150, so counted
   {
@@ -99,6 +112,7 @@ const FADES_ROWS: V2FadesRowType[] = [
     faded: 0,
     postTimestamp: now - 100,
     deadline: now - 80,
+    orderHash: '0xok8',
   },
 ];
 
@@ -145,6 +159,19 @@ describe('FadeRateCron test', () => {
         filler6: 1,
         filler7: 1,
         filler8: 0,
+      });
+    });
+  });
+
+  describe('getFillersNewFadedOrderHashes', () => {
+    it('collects the hashes of new faded orders per filler, across filler addresses', () => {
+      expect(getFillersNewFadedOrderHashes(FADES_ROWS, ADDRESS_TO_FILLER, FILLER_TIMESTAMPS)).toEqual({
+        filler1: ['0xfade1a', '0xfade1b', '0xfade1c'],
+        filler2: ['0xfade2a'], // '0xfade2old' completed before filler2's lastPostTimestamp
+        filler3: ['0xfade3a'],
+        filler6: ['0xfade6a'],
+        filler7: ['0xfade7a'],
+        // fillers with no new fades (filler4, filler5, filler8) have no entry
       });
     });
   });
@@ -244,6 +271,94 @@ describe('FadeRateCron test', () => {
       const filler5 = newTimestamps.find((t) => t.hash === 'filler5');
       expect(filler5?.blockUntilTimestamp).toBe(now + 100);
       expect(filler5?.consecutiveBlocks).toBe(0); // unchanged, not decayed
+    });
+  });
+
+  describe('fadedOrderHashes persistence', () => {
+    it('stores the hashes of the faded orders that caused a new block', () => {
+      const fadedOrderHashes = getFillersNewFadedOrderHashes(FADES_ROWS, ADDRESS_TO_FILLER, FILLER_TIMESTAMPS);
+      const result = calculateNewTimestamps(FILLER_TIMESTAMPS, newFades, now, logger, undefined, fadedOrderHashes);
+
+      const filler1 = result.find((t) => t.hash === 'filler1');
+      expect(filler1?.fadedOrderHashes).toEqual(['0xfade1a', '0xfade1b', '0xfade1c']);
+    });
+
+    it('appends new faded order hashes to the stored ones when extending a block', () => {
+      const timestamps: FillerTimestamps = new Map([
+        [
+          'blocked',
+          {
+            lastPostTimestamp: now - 100,
+            blockUntilTimestamp: now + 500,
+            consecutiveBlocks: 1,
+            fadedOrderHashes: ['0xold'],
+          },
+        ],
+      ]);
+
+      const result = calculateNewTimestamps(timestamps, { blocked: 1 }, now, logger, undefined, {
+        blocked: ['0xnew'],
+      });
+      expect(result[0].fadedOrderHashes).toEqual(['0xold', '0xnew']);
+    });
+
+    it('carries stored hashes forward when blocked with no new fades', () => {
+      const timestamps: FillerTimestamps = new Map([
+        [
+          'blocked',
+          {
+            lastPostTimestamp: now - 100,
+            blockUntilTimestamp: now + 500,
+            consecutiveBlocks: 1,
+            fadedOrderHashes: ['0xold'],
+          },
+        ],
+      ]);
+
+      const result = calculateNewTimestamps(timestamps, { blocked: 0 }, now, logger);
+      expect(result[0].fadedOrderHashes).toEqual(['0xold']);
+    });
+
+    it('clears stored hashes when the block expires with no new fades', () => {
+      const timestamps: FillerTimestamps = new Map([
+        [
+          'unblocked',
+          {
+            lastPostTimestamp: now - 100,
+            blockUntilTimestamp: now - 50,
+            consecutiveBlocks: 1,
+            fadedOrderHashes: ['0xold'],
+          },
+        ],
+      ]);
+
+      const result = calculateNewTimestamps(timestamps, { unblocked: 0 }, now, logger);
+      expect(result[0].blockUntilTimestamp).toBe(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
+      expect(result[0].fadedOrderHashes).toBeUndefined();
+    });
+
+    it('dedupes and caps stored hashes at MAX_FADED_ORDER_HASHES, keeping the most recent', () => {
+      const existing = Array.from({ length: MAX_FADED_ORDER_HASHES }, (_, i) => `0x${i}`);
+      const timestamps: FillerTimestamps = new Map([
+        [
+          'blocked',
+          {
+            lastPostTimestamp: now - 100,
+            blockUntilTimestamp: now + 500,
+            consecutiveBlocks: 1,
+            fadedOrderHashes: existing,
+          },
+        ],
+      ]);
+
+      const result = calculateNewTimestamps(timestamps, { blocked: 2 }, now, logger, undefined, {
+        blocked: ['0x1', '0xnew'], // '0x1' is already stored
+      });
+      const hashes = result[0].fadedOrderHashes!;
+      expect(hashes.length).toBe(MAX_FADED_ORDER_HASHES);
+      expect(hashes[hashes.length - 1]).toBe('0xnew');
+      expect(hashes).not.toContain('0x0'); // oldest dropped
+      expect(hashes.filter((h) => h === '0x1').length).toBe(1); // deduped
     });
   });
 
@@ -394,6 +509,7 @@ describe('FadeRateCron test', () => {
           faded: 1,
           postTimestamp: now - 100, // Before lastPostTimestamp
           deadline: now - 50, // After lastPostTimestamp
+          orderHash: '0xinflight',
         },
       ];
 

@@ -33,12 +33,16 @@ export type TimestampRepoRow = {
   lastPostTimestamp: number;
   blockUntilTimestamp: number;
   consecutiveBlocks: number;
+  // hashes of the faded orders that caused the current block;
+  // absent on rows written before this field existed
+  fadedOrderHashes?: string[];
 };
 
 export type DynamoTimestampRepoRow = Exclude<TimestampRepoRow, 'lastPostTimestamp' | 'blockUntilTimestamp'> & {
   lastPostTimestamp: string;
   blockUntilTimestamp: string;
   consecutiveBlocks: string;
+  fadedOrderHashes?: string[];
 };
 
 export type ToUpdateTimestampRow = Omit<TimestampRepoRow, 'blockUntilTimestamp'> & {

@@ -7,10 +7,12 @@ import { NOTIFICATION_TIMEOUT_MS } from '../../../lib/constants';
 import { AnalyticsEventType, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
+import { MockV2CircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { WebhookQuoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import {
+  FADED_ORDER_HASHES,
   MOCK_V2_CB_PROVIDER,
   WEBHOOK_URL,
   WEBHOOK_URL_FOO,
@@ -24,7 +26,7 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const ORDER_HASH = '0x1111111111111111111111111111111111111111111111111111111111111111';
+const now = Math.floor(Date.now() / 1000);
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
@@ -365,13 +367,14 @@ describe('WebhookQuoter tests', () => {
           });
         });
 
-      // soft quote: no signed order exists yet, so the notification falls back to requestId
+      // exact payload match: the notification names the faded orders that caused
+      // the block and carries no requestId
       await webhookQuoter.quote(request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         {
           blockUntilTimestamp: expect.any(Number),
-          requestId: REQUEST_ID,
+          orderHashes: FADED_ORDER_HASHES,
         },
         {
           headers: {},
@@ -380,7 +383,7 @@ describe('WebhookQuoter tests', () => {
       );
     });
 
-    it('includes the triggering order hash and quoteId in block notification when present', async () => {
+    it('includes the quoteId in block notification when the request carries one', async () => {
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
@@ -397,16 +400,48 @@ describe('WebhookQuoter tests', () => {
           });
         });
 
-      // hard quote requests carry the signed order's hash and quoteId
-      const hardQuoteRequest = makeQuoteRequest({ orderHash: ORDER_HASH, quoteId: QUOTE_ID });
+      // hard quote requests carry the order's quoteId
+      const hardQuoteRequest = makeQuoteRequest({ quoteId: QUOTE_ID });
       await webhookQuoter.quote(hardQuoteRequest);
-      // exact payload match: requestId must not be included when the order hash is present
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         {
           blockUntilTimestamp: expect.any(Number),
-          orderHash: ORDER_HASH,
+          orderHashes: FADED_ORDER_HASHES,
           quoteId: QUOTE_ID,
+        },
+        {
+          headers: {},
+          timeout: NOTIFICATION_TIMEOUT_MS,
+        }
+      );
+    });
+
+    it('omits orderHashes for legacy block entries without persisted faded order hashes', async () => {
+      const legacyCbProvider = new MockV2CircuitBreakerConfigurationProvider(
+        [WEBHOOK_URL, WEBHOOK_URL_ONEINCH],
+        new Map([
+          // written before fadedOrderHashes existed
+          [
+            WEBHOOK_URL_ONEINCH,
+            { blockUntilTimestamp: now + 100000, lastPostTimestamp: now - 10, consecutiveBlocks: 0 },
+          ],
+        ])
+      );
+      const legacyWebhookQuoter = new WebhookQuoter(
+        logger,
+        mockFirehoseLogger,
+        webhookProvider,
+        legacyCbProvider,
+        emptyMockComplianceProvider,
+        repository
+      );
+
+      await legacyWebhookQuoter.quote(request);
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_ONEINCH,
+        {
+          blockUntilTimestamp: expect.any(Number),
         },
         {
           headers: {},
@@ -598,7 +633,7 @@ describe('WebhookQuoter tests', () => {
       // blocked
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
-        { blockUntilTimestamp: expect.any(Number), requestId: REQUEST_ID },
+        { blockUntilTimestamp: expect.any(Number), orderHashes: FADED_ORDER_HASHES },
         { headers: {}, timeout: NOTIFICATION_TIMEOUT_MS }
       );
       expect(mockedAxios.post).toBeCalledWith(

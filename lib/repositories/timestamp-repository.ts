@@ -34,6 +34,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         [`${DYNAMO_TABLE_KEY.LAST_POST_TIMESTAMP}`]: { type: 'string' },
         [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: { type: 'string' },
         [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: { type: 'string' },
+        [`${DYNAMO_TABLE_KEY.FADED_ORDER_HASHES}`]: { type: 'list' },
       },
       table: table,
       autoExecute: true,
@@ -56,6 +57,7 @@ export class TimestampRepository implements BaseTimestampRepository {
           [`${DYNAMO_TABLE_KEY.LAST_POST_TIMESTAMP}`]: row.lastPostTimestamp,
           [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: row.blockUntilTimestamp,
           [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: row.consecutiveBlocks,
+          ...(row.fadedOrderHashes && { [`${DYNAMO_TABLE_KEY.FADED_ORDER_HASHES}`]: row.fadedOrderHashes }),
         });
       }),
       {
@@ -76,6 +78,8 @@ export class TimestampRepository implements BaseTimestampRepository {
       lastPostTimestamp: parseInt(Item?.lastPostTimestamp),
       blockUntilTimestamp: parseInt(Item?.blockUntilTimestamp),
       consecutiveBlocks: parseInt(Item?.consecutiveBlocks),
+      // absent on rows written before this attribute existed
+      fadedOrderHashes: Item?.fadedOrderHashes,
     };
   }
 
@@ -97,6 +101,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         lastPostTimestamp: parseInt(row.lastPostTimestamp),
         blockUntilTimestamp: parseInt(row.blockUntilTimestamp),
         consecutiveBlocks: parseInt(row.consecutiveBlocks),
+        fadedOrderHashes: row.fadedOrderHashes,
       };
     });
   }
@@ -109,6 +114,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         lastPostTimestamp: row.lastPostTimestamp,
         blockUntilTimestamp: row.blockUntilTimestamp,
         consecutiveBlocks: row.consecutiveBlocks,
+        fadedOrderHashes: row.fadedOrderHashes,
       });
     });
     return res;

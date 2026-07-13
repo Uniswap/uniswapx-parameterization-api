@@ -36,6 +36,7 @@ describe('Dynamo TimestampRepo tests', () => {
         lastPostTimestamp: 3,
         blockUntilTimestamp: 6,
         consecutiveBlocks: 1,
+        fadedOrderHashes: ['0xfaded1', '0xfaded2'],
       },
     ];
 
@@ -46,6 +47,8 @@ describe('Dynamo TimestampRepo tests', () => {
     expect(row?.lastPostTimestamp).toBe(1);
     expect(row?.blockUntilTimestamp).toBe(NaN);
     expect(row?.consecutiveBlocks).toBe(0);
+    // written without fadedOrderHashes (legacy shape) — reads back as undefined
+    expect(row?.fadedOrderHashes).toBeUndefined();
 
     row = await repo.getFillerTimestamps('0x2');
     expect(row).toBeDefined();
@@ -58,6 +61,7 @@ describe('Dynamo TimestampRepo tests', () => {
     expect(row?.lastPostTimestamp).toBe(3);
     expect(row?.blockUntilTimestamp).toBe(6);
     expect(row?.consecutiveBlocks).toBe(1);
+    expect(row?.fadedOrderHashes).toEqual(['0xfaded1', '0xfaded2']);
   });
 
   it('should batch get timestamps', async () => {
@@ -82,6 +86,7 @@ describe('Dynamo TimestampRepo tests', () => {
           lastPostTimestamp: 3,
           blockUntilTimestamp: 6,
           consecutiveBlocks: 1,
+          fadedOrderHashes: ['0xfaded1', '0xfaded2'],
         },
       ])
     );
