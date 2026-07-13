@@ -369,6 +369,41 @@ describe('WebhookQuoter tests', () => {
         WEBHOOK_URL_ONEINCH,
         {
           blockUntilTimestamp: expect.any(Number),
+          requestId: REQUEST_ID,
+        },
+        {
+          headers: {},
+          timeout: NOTIFICATION_TIMEOUT_MS,
+        }
+      );
+    });
+
+    it('includes the triggering order quoteId in block notification when present', async () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: { ...quote, requestId: (_req as any).requestId },
+          });
+        })
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: {
+              ...quote,
+              tokenIn: request.tokenOut,
+              tokenOut: request.tokenIn,
+            },
+          });
+        });
+
+      // hard quote requests carry the order's quoteId
+      const requestWithQuoteId = makeQuoteRequest({ quoteId: QUOTE_ID });
+      await webhookQuoter.quote(requestWithQuoteId);
+      expect(mockedAxios.post).toBeCalledWith(
+        WEBHOOK_URL_ONEINCH,
+        {
+          blockUntilTimestamp: expect.any(Number),
+          requestId: REQUEST_ID,
+          quoteId: QUOTE_ID,
         },
         {
           headers: {},
@@ -560,7 +595,7 @@ describe('WebhookQuoter tests', () => {
       // blocked
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
-        { blockUntilTimestamp: expect.any(Number) },
+        { blockUntilTimestamp: expect.any(Number), requestId: REQUEST_ID },
         { headers: {}, timeout: NOTIFICATION_TIMEOUT_MS }
       );
       expect(mockedAxios.post).toBeCalledWith(

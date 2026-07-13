@@ -72,7 +72,7 @@ export class WebhookQuoter implements Quoter {
 
     // should not await and block
     if (!isPermissionedToken) {
-      Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
+      Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e, request))).then((results) => {
         this.log.info({ requestId: request.requestId, results }, 'Notified disabled endpoints');
       });
     }
@@ -376,7 +376,10 @@ export class WebhookQuoter implements Quoter {
     }
   }
 
-  private async notifyBlock(status: { webhook: WebhookConfiguration; blockUntil: number }): Promise<void> {
+  private async notifyBlock(
+    status: { webhook: WebhookConfiguration; blockUntil: number },
+    request: QuoteRequest
+  ): Promise<void> {
     const axiosConfig = {
       timeout: NOTIFICATION_TIMEOUT_MS,
       ...(!!status.webhook.headers && { headers: status.webhook.headers }),
@@ -386,6 +389,10 @@ export class WebhookQuoter implements Quoter {
         status.webhook.endpoint,
         {
           blockUntilTimestamp: status.blockUntil,
+          // Identify the order that triggered this notification so blocked fillers
+          // can tell which order they were excluded from quoting.
+          requestId: request.requestId,
+          ...(request.quoteId && { quoteId: request.quoteId }),
         },
         axiosConfig
       )
