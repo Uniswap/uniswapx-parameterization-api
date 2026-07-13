@@ -70,6 +70,7 @@ export class HardQuoteRequest {
       swapper: this.swapper,
       amount: this.amount,
       type: this.type,
+      orderHash: this.order.hash(),
     });
   }
 

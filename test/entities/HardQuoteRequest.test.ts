@@ -171,6 +171,22 @@ describe('QuoteRequest', () => {
     });
   });
 
+  it('toQuoteRequest carries the order hash', async () => {
+    const order = new UnsignedV2DutchOrder(
+      getOrderInfo({
+        swapper: SWAPPER,
+      }),
+      CHAIN_ID
+    );
+    const request = makeRequest({ encodedInnerOrder: order.serialize(), innerSig: '0x' });
+    const quoteRequest = request.toQuoteRequest();
+    expect(quoteRequest.orderHash).toEqual(order.hash());
+    expect(quoteRequest.quoteId).toEqual(QUOTE_ID);
+    // the order hash is internal only — it must not leak into the wire payloads
+    expect(quoteRequest.toJSON()).not.toHaveProperty('orderHash');
+    expect(quoteRequest.toCleanJSON()).not.toHaveProperty('orderHash');
+  });
+
   it('exposes protocol v2 for Dutch_V2 orders', () => {
     const order = new UnsignedV2DutchOrder(
       getOrderInfo({

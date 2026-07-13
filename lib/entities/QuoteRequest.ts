@@ -17,6 +17,9 @@ export interface QuoteRequestData {
   numOutputs: number;
   protocol: ProtocolVersion;
   quoteId?: string;
+  // hash of the signed order (hard quotes only; soft quotes have no order yet).
+  // Kept internal — deliberately excluded from the toJSON/toCleanJSON wire payloads.
+  orderHash?: string;
 }
 
 export interface QuoteRequestDataJSON extends Omit<QuoteRequestData, 'amount' | 'type'> {
@@ -151,5 +154,9 @@ export class QuoteRequest {
 
   public set quoteId(quoteId: string | undefined) {
     this.data.quoteId = quoteId;
+  }
+
+  public get orderHash(): string | undefined {
+    return this.data.orderHash;
   }
 }

@@ -390,8 +390,10 @@ export class WebhookQuoter implements Quoter {
         {
           blockUntilTimestamp: status.blockUntil,
           // Identify the order that triggered this notification so blocked fillers
-          // can tell which order they were excluded from quoting.
-          requestId: request.requestId,
+          // can tell which order they were excluded from quoting. Soft quotes carry
+          // no signed order (so no order hash); fall back to the requestId there so
+          // the notification still carries an identifier.
+          ...(request.orderHash ? { orderHash: request.orderHash } : { requestId: request.requestId }),
           ...(request.quoteId && { quoteId: request.quoteId }),
         },
         axiosConfig
