@@ -117,15 +117,16 @@ async function main(metrics: MetricsLogger) {
     //  | hash        |lastExaminedTimestamp|blockUntilTimestamp|fadeWindowStart|
     //  |---- foo ----|---- 1300000 ----|----      calculated block until  ----|
     //  |---- bar ----|---- 1300000 ----|----      13500000                ----|
-    const updatedTimestamps = calculateNewTimestamps(
-      fillerTimestamps,
-      fillerFadeStats,
-      Math.floor(Date.now() / 1000),
-      log,
-      metrics
-    );
+    const now = Math.floor(Date.now() / 1000);
+    const updatedTimestamps = calculateNewTimestamps(fillerTimestamps, fillerFadeStats, now, log, metrics);
     log.info({ updatedTimestamps }, 'filler for which to update timestamp');
     metrics.putMetric(Metric.CIRCUIT_BREAKER_V2_BLOCKED, updatedTimestamps.length, Unit.Count);
+    metrics.putMetric(
+      Metric.CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS,
+      countActiveBlocks(fillerTimestamps, updatedTimestamps, now),
+      Unit.Count
+    );
+    metrics.putMetric(Metric.CIRCUIT_BREAKER_V2_FILLERS_EVALUATED, Object.keys(fillerFadeStats).length, Unit.Count);
     if (updatedTimestamps.length > 0) {
       await timestampDB.updateTimestampsBatch(updatedTimestamps);
     } else {
@@ -170,10 +171,26 @@ export function calculateNewTimestamps(
   metrics?: MetricsLogger
 ): ToUpdateTimestampRow[] {
   const updatedTimestamps: ToUpdateTimestampRow[] = [];
+  let newBlocks = 0;
+  let extendedBlocks = 0;
   Object.entries(fillerFadeStats).forEach(([hash, stats]) => {
     const { fadeRate, duringBlockRate, newCompletions } = stats;
     const fillerTimestamp = fillerTimestamps.get(hash);
     const isCurrentlyBlocked = fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp;
+    const previousBlocks = fillerTimestamp?.consecutiveBlocks || 0;
+
+    // Per-filler rate so the distribution can be charted against FADE_RATE_BLOCK_THRESHOLD. While
+    // blocked, fadeRate sits at the prior (post-block window is empty), so also emit the
+    // during-block rate — the signal that actually drives extend/re-block — to chart benched
+    // fillers against the same threshold.
+    metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_FADE_RATE, hash), fadeRate, Unit.None);
+    if (isCurrentlyBlocked) {
+      metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE, hash), duringBlockRate, Unit.None);
+    }
+
+    // Resulting escalation level for this filler, emitted once below so the dashboard can chart
+    // climbs, plateaus, and decay back to 0 (not just the block/extend steps).
+    let consecutiveBlocks: number;
 
     if (isCurrentlyBlocked && duringBlockRate > FADE_RATE_BLOCK_THRESHOLD) {
       // In-flight orders faded at over the threshold rate while blocked: stack the penalty,
@@ -183,16 +200,12 @@ export function calculateNewTimestamps(
         fillerTimestamp.blockUntilTimestamp, // Extend from when current block ends
         fillerTimestamp.consecutiveBlocks
       );
-      const consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp.consecutiveBlocks);
+      consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp.consecutiveBlocks);
 
+      extendedBlocks++;
       log?.info(
         { hash, currentBlockUntil: fillerTimestamp.blockUntilTimestamp, extendedBlockUntil, duringBlockRate },
         'Extending block for filler who faded while blocked'
-      );
-      metrics?.putMetric(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, hash),
-        consecutiveBlocks,
-        Unit.Count
       );
 
       updatedTimestamps.push({
@@ -204,12 +217,13 @@ export function calculateNewTimestamps(
       });
     } else if (isCurrentlyBlocked) {
       // Blocked but no new fades - keep existing block and floor, don't decay
+      consecutiveBlocks = fillerTimestamp.consecutiveBlocks;
       updatedTimestamps.push({
         hash,
         lastExaminedTimestamp: newPostTimestamp,
         blockUntilTimestamp: fillerTimestamp.blockUntilTimestamp,
         fadeWindowStart: fillerTimestamp.fadeWindowStart,
-        consecutiveBlocks: fillerTimestamp.consecutiveBlocks,
+        consecutiveBlocks,
       });
     } else if (fadeRate > FADE_RATE_BLOCK_THRESHOLD || duringBlockRate > FADE_RATE_BLOCK_THRESHOLD) {
       // duringBlockRate covers in-flight fades that landed near the end of a block that
@@ -218,16 +232,12 @@ export function calculateNewTimestamps(
       // threshold on a run with no new completions ("blocked while idle") as clean orders age
       // out; that is accepted behavior.
       const blockUntilTimestamp = calculateBlockUntilTimestamp(newPostTimestamp, fillerTimestamp?.consecutiveBlocks);
-      const consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp?.consecutiveBlocks);
+      consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp?.consecutiveBlocks);
 
+      newBlocks++;
       log?.info(
         { hash, fadeRate, duringBlockRate, blockUntilTimestamp },
         'Blocking filler for exceeding fade rate threshold'
-      );
-      metrics?.putMetric(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, hash),
-        consecutiveBlocks,
-        Unit.Count
       );
 
       updatedTimestamps.push({
@@ -235,7 +245,7 @@ export function calculateNewTimestamps(
         lastExaminedTimestamp: newPostTimestamp,
         blockUntilTimestamp,
         fadeWindowStart: blockUntilTimestamp, // clean slate resumes when the block ends
-        consecutiveBlocks: consecutiveBlocks,
+        consecutiveBlocks,
       });
     } else {
       // Under threshold: not blocked. Reset blockUntilTimestamp to unblocked and decay
@@ -244,19 +254,45 @@ export function calculateNewTimestamps(
       // escalation requires demonstrated clean activity rather than idling. fadeWindowStart
       // is left as-is: it holds the last block end as the clean-slate floor, so a returning
       // filler is scored only on orders completed after their block ended.
-      const currentBlocks = fillerTimestamp?.consecutiveBlocks || 0;
-      const decayedBlocks = newCompletions > 0 ? Math.max(0, currentBlocks - 1) : currentBlocks;
+      consecutiveBlocks = newCompletions > 0 ? Math.max(0, previousBlocks - 1) : previousBlocks;
       updatedTimestamps.push({
         hash,
         lastExaminedTimestamp: newPostTimestamp,
         blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
         fadeWindowStart: fillerTimestamp?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
-        consecutiveBlocks: decayedBlocks,
+        consecutiveBlocks,
       });
     }
+
+    // Emit the escalation level whenever the filler is or was escalated, so the chart steps
+    // down through decay and plots the 0 when a filler fully recovers. Skip never-blocked
+    // fillers (0 -> 0) to avoid a flat-zero series per filler.
+    if (consecutiveBlocks > 0 || previousBlocks > 0) {
+      metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, hash), consecutiveBlocks, Unit.Count);
+    }
   });
-  log?.info({ updatedTimestamps }, 'updated timestamps');
+  metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_NEW_BLOCKS, newBlocks, Unit.Count);
+  metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS, extendedBlocks, Unit.Count);
+  log?.info({ updatedTimestamps, newBlocks, extendedBlocks }, 'updated timestamps');
   return updatedTimestamps;
+}
+
+/* Number of fillers benched (blockUntilTimestamp in the future) after applying this run's
+   updates on top of stored state. Includes benched fillers with no completions this run —
+   they produce no stats row, but their stored block is still active. */
+export function countActiveBlocks(
+  fillerTimestamps: FillerTimestamps,
+  updatedTimestamps: ToUpdateTimestampRow[],
+  now: number
+): number {
+  const effectiveBlockUntil = new Map<string, number>();
+  fillerTimestamps.forEach((row, hash) =>
+    effectiveBlockUntil.set(hash, row.blockUntilTimestamp ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP)
+  );
+  updatedTimestamps.forEach((row) =>
+    effectiveBlockUntil.set(row.hash, row.blockUntilTimestamp ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP)
+  );
+  return [...effectiveBlockUntil.values()].filter((blockUntil) => blockUntil > now).length;
 }
 
 /* Laplace-smoothed fade rate: pretend we've already seen LAPLACE_ALPHA fades and
