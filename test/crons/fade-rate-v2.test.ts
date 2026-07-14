@@ -429,6 +429,58 @@ describe('FadeRateV2 cron', () => {
       );
       expect(metrics.putMetric).toHaveBeenCalledWith(Metric.CIRCUIT_BREAKER_V2_NEW_BLOCKS, 1, expect.anything());
       expect(metrics.putMetric).toHaveBeenCalledWith(Metric.CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS, 1, expect.anything());
+
+      // during-block rate is charted only for the currently-blocked filler (its post-block
+      // fadeRate sits at the prior while benched)
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE, 'extendMe'),
+        0.2,
+        expect.anything()
+      );
+      expect(metrics.putMetric).not.toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE, 'breach'),
+        expect.anything(),
+        expect.anything()
+      );
+
+      // escalation level emitted for blocked/blocking fillers; never-blocked 'clean' (0 -> 0)
+      // emits nothing
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'breach'),
+        1,
+        expect.anything()
+      );
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'extendMe'),
+        2,
+        expect.anything()
+      );
+      expect(metrics.putMetric).not.toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'clean'),
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    it('emits the decayed escalation level so recovery is visible (steps down to 0)', () => {
+      const metrics = { putMetric: jest.fn() } as any;
+      const timestamps: FillerTimestamps = new Map([
+        [
+          'recovering',
+          { lastExaminedTimestamp: now - 100, blockUntilTimestamp: 0, fadeWindowStart: now - 50, consecutiveBlocks: 1 },
+        ],
+      ]);
+      const stats: FillerFadeStatsMap = {
+        recovering: { fadeRate: 0.03, duringBlockRate: 0.05, newCompletions: 5 }, // clean run, decays 1 -> 0
+      };
+      calculateNewTimestamps(timestamps, stats, now, logger, metrics);
+
+      // the step down to 0 is emitted (previousBlocks was 1), not silently dropped
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'recovering'),
+        0,
+        expect.anything()
+      );
     });
   });
 

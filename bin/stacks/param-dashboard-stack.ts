@@ -395,7 +395,9 @@ const CircuitBreakerWidgets = (region: string): LambdaWidget[] => [
     },
   },
   // Per-filler smoothed fade rates against the block threshold: healthy fillers should sit
-  // near the 5% prior; anyone trending toward the 12% line is about to be benched.
+  // near the 5% prior; anyone trending toward the 12% line is about to be benched. The
+  // during-block rate is charted alongside because a benched filler's post-block fade rate
+  // sits at the prior — the during-block rate is what shows them above the threshold.
   {
     height: 8,
     width: 12,
@@ -406,6 +408,13 @@ const CircuitBreakerWidgets = (region: string): LambdaWidget[] => [
           {
             expression: `SEARCH('{Uniswap,Service} Service="${CircuitBreakerMetricDimension.Service}" ${Metric.CIRCUIT_BREAKER_V2_FADE_RATE}_', 'Average', 600)`,
             id: 'fadeRates',
+            region,
+          },
+        ],
+        [
+          {
+            expression: `SEARCH('{Uniswap,Service} Service="${CircuitBreakerMetricDimension.Service}" ${Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE}_', 'Average', 600)`,
+            id: 'duringBlockRates',
             region,
           },
         ],
