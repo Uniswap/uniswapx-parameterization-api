@@ -17,6 +17,10 @@ export const DYNAMO_TABLE_NAME = {
   SYNTHETIC_SWITCH_TABLE: 'SyntheticSwitchTable',
   FILLER_ADDRESS: 'FillerAddress',
   FILLER_CB_TIMESTAMPS: 'FillerCBTimestamps',
+  // V2 circuit-breaker state table, separate from FILLER_CB_TIMESTAMPS so the rate-based
+  // breaker's state is isolated for independent rollout/rollback. State is derived
+  // (recomputed each cron run from Redshift), so it starts empty.
+  FILLER_CB_TIMESTAMPS_V2: 'FillerCBTimestampsV2',
 };
 
 export const DYNAMO_TABLE_KEY = {
@@ -29,7 +33,8 @@ export const DYNAMO_TABLE_KEY = {
   LOWER: 'lower',
   ENABLED: 'enabled',
   BLOCK_UNTIL_TIMESTAMP: 'blockUntilTimestamp',
-  LAST_POST_TIMESTAMP: 'lastPostTimestamp',
+  LAST_EXAMINED_TIMESTAMP: 'lastExaminedTimestamp',
+  FADE_WINDOW_START: 'fadeWindowStart',
   FADED: 'faded',
   CONSECUTIVE_BLOCKS: 'consecutiveBlocks',
 };
@@ -67,4 +72,4 @@ export const RPC_HEADERS: { [key: string]: string } = {
   // via the RPC_HEADER_SECRET env var (sourced from Secrets Manager); omitted
   // when unset (e.g. local dev / unit tests).
   ...(process.env.RPC_HEADER_SECRET ? { 'x-internal-service-secret': process.env.RPC_HEADER_SECRET } : {}),
-}
+};

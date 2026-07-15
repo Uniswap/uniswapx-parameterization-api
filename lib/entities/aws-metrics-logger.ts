@@ -27,7 +27,7 @@ export const HardQuoteMetricDimension = {
 
 export class AWSMetricsLogger implements IMetric {
   constructor(private awsMetricLogger: AWSEmbeddedMetricsLogger) {}
-  
+
   public setProperty(key: string, value: unknown): void {
     this.awsMetricLogger.setProperty(key, value);
   }
@@ -88,6 +88,21 @@ export enum Metric {
   CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS = 'CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS',
   CIRCUIT_BREAKER_V2_BLOCKED = 'CIRCUIT_BREAKER_V2_BLOCKED',
   CIRCUIT_BREAKER_TRIGGERED = 'CIRCUIT_BREAKER_TRIGGERED',
+  // Per-filler Laplace-smoothed fade rate over the post-block window (compare to FADE_RATE_BLOCK_THRESHOLD)
+  CIRCUIT_BREAKER_V2_FADE_RATE = 'CIRCUIT_BREAKER_V2_FADE_RATE',
+  // Per-filler Laplace-smoothed fade rate over the in-flight-during-block cohort, emitted while
+  // a filler is benched. This is the rate that drives extend/re-block decisions, so it (not the
+  // post-block FADE_RATE, which sits at the prior while blocked) is what shows a benched filler
+  // above the threshold. Compare to FADE_RATE_BLOCK_THRESHOLD.
+  CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE = 'CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE',
+  // Fillers newly blocked in a cron run (unblocked -> blocked)
+  CIRCUIT_BREAKER_V2_NEW_BLOCKS = 'CIRCUIT_BREAKER_V2_NEW_BLOCKS',
+  // Active blocks extended in a cron run (in-flight cohort faded over threshold while blocked)
+  CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS = 'CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS',
+  // Fillers currently benched (blockUntilTimestamp in the future) after a cron run
+  CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS = 'CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS',
+  // Fillers with fade stats evaluated in a cron run (sample-health denominator)
+  CIRCUIT_BREAKER_V2_FILLERS_EVALUATED = 'CIRCUIT_BREAKER_V2_FILLERS_EVALUATED',
 }
 
 type MetricNeedingContext =
@@ -104,7 +119,9 @@ type MetricNeedingContext =
   | Metric.SYNTH_PAIR_DISABLED
   | Metric.SYNTH_ORDERS_POSITIVE_OUTCOME
   | Metric.SYNTH_ORDERS_NEGATIVE_OUTCOME
-  | Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS;
+  | Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS
+  | Metric.CIRCUIT_BREAKER_V2_FADE_RATE
+  | Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE;
 
 export function metricContext(metric: MetricNeedingContext, context: string): string {
   return `${metric}_${context}`;

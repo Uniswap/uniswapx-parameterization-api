@@ -1,8 +1,8 @@
-import Logger from "bunyan";
-import { ethers, BigNumber } from "ethers";
-import { QuoteRequestData } from "../entities";
-import { RfqResponse } from "../handlers/quote";
-import { PermissionedTokenValidator } from "@uniswap/uniswapx-sdk";
+import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
+import Logger from 'bunyan';
+import { BigNumber, ethers } from 'ethers';
+import { QuoteRequestData } from '../entities';
+import { PostQuoteResponse } from '../handlers/quote';
 
 export class RFQValidator {
   static ProviderRequiredError = class extends Error {
@@ -45,13 +45,7 @@ export class RFQValidator {
       return new RFQValidator.ProviderRequiredError(tokenAddress, chainId).message;
     }
 
-    const isValid = await PermissionedTokenValidator.preTransferCheck(
-      provider,
-      tokenAddress,
-      from,
-      to,
-      amount
-    );
+    const isValid = await PermissionedTokenValidator.preTransferCheck(provider, tokenAddress, from, to, amount);
 
     if (!isValid) {
       return new RFQValidator.PreTransferCheckError(tokenAddress, from, to, amount).message;
@@ -74,13 +68,12 @@ export class RFQValidator {
    */
   public static async validatePermissionedTokens(
     request: QuoteRequestData,
-    data: RfqResponse,
+    data: PostQuoteResponse,
     amountIn: BigNumber,
     amountOut: BigNumber,
     provider?: ethers.providers.StaticJsonRpcProvider,
     log?: Logger
   ): Promise<string | undefined> {
-    
     if (!data.filler) {
       return undefined;
     }
@@ -102,7 +95,7 @@ export class RFQValidator {
           request.swapper,
           amountOut.toString(),
           provider
-        )
+        ),
       ]);
 
       if (tokenInError) return tokenInError;
