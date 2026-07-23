@@ -4,8 +4,15 @@ import Logger from 'bunyan';
 import { OrderType, PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { BaseRedshiftRepository, SharedConfigs } from './base';
 
-// Number of recent orders to evaluate per filler for fade rate calculation
-export const ORDERS_PER_FILLER_LIMIT = 50;
+// Most-recent orders per filler evaluated for the fade rate. With the 24h view window the
+// lookback is adaptive: a high-volume filler is judged on its latest N orders (fast reaction),
+// a low-volume filler on up to 24h of orders (catches chronic fading).
+export const ORDERS_PER_FILLER_LIMIT = 100;
+
+// Row cap on the fade view/query. The view emits up to ORDERS_PER_FILLER_LIMIT rows per filler
+// address, so total rows ~= (distinct filler addresses in 24h) * ORDERS_PER_FILLER_LIMIT.
+// Above the cap, rows are truncated and some fillers escape scoring.
+export const FADE_QUERY_ROW_LIMIT = 20000;
 
 export type FadesRowType = {
   fillerAddress: string;
@@ -91,7 +98,7 @@ export class V2FadesRepository extends BaseRedshiftRepository {
     await this.executeStatement(V2_CREATE_VIEW_SQL, V2FadesRepository.log, { waitTimeMs: 2_000 });
   }
 
-  //get latest 20 orders for each filler address, and whether they are faded or not
+  // get each filler address's recent orders (24h window, capped at ORDERS_PER_FILLER_LIMIT) and whether they faded
   async getFades(): Promise<V2FadesRowType[]> {
     const stmtId = await this.executeStatement(V2_FADE_RATE_SQL, V2FadesRepository.log, { waitTimeMs: 2_000 });
     const response = await this.client.send(new GetStatementResultCommand({ Id: stmtId }));
@@ -180,12 +187,12 @@ WITH latestOrdersV2 AS (
   SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders
     WHERE ordertype IN ('${OrderType.Dutch_V2}', '${OrderType.Dutch_V3}')
-    AND deadline >= EXTRACT(EPOCH FROM (GETDATE() - INTERVAL '1 HOUR')) -- bound the row set to the 1-hour lookback window BEFORE any LIMIT truncation
+    AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- completed orders only, BEFORE numbering: in-flight orders must not consume latest-N slots
+    AND deadline >= EXTRACT(EPOCH FROM (GETDATE() - INTERVAL '24 HOURS')) -- bound the row set to the 24-hour lookback window BEFORE any LIMIT truncation
   )
   WHERE row_num <= ${ORDERS_PER_FILLER_LIMIT}
-  AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- exclude orders that can still be filled
   ORDER BY deadline DESC, quoteid -- deterministic truncation if the safety LIMIT below is ever hit
-  LIMIT 5000
+  LIMIT ${FADE_QUERY_ROW_LIMIT}
 )
 SELECT
     latestOrdersV2.chainid as chainId, latestOrdersV2.ordertype as orderType, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedorders.fillTimeBlocks as fillTimeBlocks, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
@@ -201,10 +208,10 @@ AND latestOrdersV2.quoteId IS NOT NULL
 AND rfqFiller != '0x0000000000000000000000000000000000000000'
 AND chainId NOT IN (5,8001,420,421613) -- exclude mainnet goerli, polygon goerli, optimism goerli and arbitrum goerli testnets 
 AND
-    deadline >= extract(epoch from (GETDATE() - INTERVAL '1 HOUR')) -- 1-hour rolling window based on order completion time
+    deadline >= extract(epoch from (GETDATE() - INTERVAL '24 HOURS')) -- 24-hour rolling window based on order completion time; catches chronic low-volume fading
 )
 ORDER BY rfqFiller, deadline DESC
-LIMIT 5000 
+LIMIT ${FADE_QUERY_ROW_LIMIT} 
 `;
 
 // Exported for testing.
@@ -230,5 +237,5 @@ FROM latestRfqsV2
 WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
 AND LOWER(tokenOut) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
 ORDER BY rfqFiller, deadline DESC
-LIMIT 5000
+LIMIT ${FADE_QUERY_ROW_LIMIT}
 `;

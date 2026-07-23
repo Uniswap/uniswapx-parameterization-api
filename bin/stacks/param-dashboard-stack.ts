@@ -10,6 +10,7 @@ import {
   Metric,
   SoftQuoteMetricDimension,
 } from '../../lib/entities';
+import { FADE_RATE_BLOCK_THRESHOLD } from '../../lib/cron/fade-rate-v2';
 import { ChainId, SUPPORTED_CHAINS } from '../../lib/util/chains';
 
 export const NAMESPACE = 'Uniswap';
@@ -45,6 +46,12 @@ export type LambdaWidget = {
         label: string;
         showUnits: boolean;
       };
+    };
+    annotations?: {
+      horizontal: {
+        label?: string;
+        value: number;
+      }[];
     };
   };
 };
@@ -290,7 +297,7 @@ const FailingRFQLogsWidget = (region: string, logGroup: string): LambdaWidget =>
     width: 24,
     height: 6,
     properties: {
-      query: `SOURCE '${logGroup}' | fields @timestamp, msg\n| filter quoter = 'WebhookQuoter' and msg like \"Error fetching quote\"\n| sort @timestamp desc\n| limit 20`,
+      query: `SOURCE '${logGroup}' | fields @timestamp, msg\n| filter quoter = 'WebhookQuoter' and msg like "Error fetching quote"\n| sort @timestamp desc\n| limit 20`,
       region,
       stacked: false,
       view: 'table',
@@ -360,29 +367,97 @@ const RFQFailRatesWidget = (region: string, rfqProviders: string[]): LambdaWidge
     };
   });
 
-const CircuitBreakerV2Widget = (region: string): LambdaWidget => {
-  return {
-    height: 11,
-    width: 11,
+const CircuitBreakerWidgets = (region: string): LambdaWidget[] => [
+  // How often the breaker fires: new blocks / extensions per run, fillers currently benched,
+  // and how many fillers were evaluated (sample-health denominator).
+  {
+    height: 8,
+    width: 12,
     type: 'metric',
     properties: {
       metrics: [
         [
           'Uniswap',
-          Metric.CIRCUIT_BREAKER_V2_BLOCKED,
+          Metric.CIRCUIT_BREAKER_V2_NEW_BLOCKS,
           'Service',
           CircuitBreakerMetricDimension.Service,
-          { stat: 'Average', label: 'avg' },
+          { stat: 'Sum', label: 'new blocks' },
+        ],
+        ['.', Metric.CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS, '.', '.', { stat: 'Sum', label: 'extended blocks' }],
+        ['.', Metric.CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS, '.', '.', { stat: 'Maximum', label: 'active blocks' }],
+        ['.', Metric.CIRCUIT_BREAKER_V2_FILLERS_EVALUATED, '.', '.', { stat: 'Maximum', label: 'fillers evaluated' }],
+      ],
+      view: 'timeSeries',
+      stacked: false,
+      region,
+      period: 600,
+      title: 'Circuit Breaker Activity | 10 minutes',
+    },
+  },
+  // Per-filler smoothed fade rates against the block threshold: healthy fillers should sit
+  // near the 5% prior; anyone trending toward the 12% line is about to be benched. The
+  // during-block rate is charted alongside because a benched filler's post-block fade rate
+  // sits at the prior — the during-block rate is what shows them above the threshold.
+  {
+    height: 8,
+    width: 12,
+    type: 'metric',
+    properties: {
+      metrics: [
+        [
+          {
+            expression: `SEARCH('{Uniswap,Service} Service="${CircuitBreakerMetricDimension.Service}" ${Metric.CIRCUIT_BREAKER_V2_FADE_RATE}_', 'Average', 600)`,
+            id: 'fadeRates',
+            region,
+          },
+        ],
+        [
+          {
+            expression: `SEARCH('{Uniswap,Service} Service="${CircuitBreakerMetricDimension.Service}" ${Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE}_', 'Average', 600)`,
+            id: 'duringBlockRates',
+            region,
+          },
         ],
       ],
       view: 'timeSeries',
       stacked: false,
       region,
       period: 600,
-      title: 'Blocked Filler On Average | 10 minutes',
+      title: 'Filler Fade Rates (smoothed) vs Block Threshold',
+      yAxis: {
+        left: {
+          label: 'fade rate',
+          showUnits: false,
+        },
+      },
+      annotations: {
+        horizontal: [{ label: 'block threshold', value: FADE_RATE_BLOCK_THRESHOLD }],
+      },
     },
-  };
-};
+  },
+  // Escalation state per filler: repeat offenders climb, recovered fillers decay back to 0.
+  {
+    height: 8,
+    width: 12,
+    type: 'metric',
+    properties: {
+      metrics: [
+        [
+          {
+            expression: `SEARCH('{Uniswap,Service} Service="${CircuitBreakerMetricDimension.Service}" ${Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS}_', 'Maximum', 600)`,
+            id: 'consecutiveBlocks',
+            region,
+          },
+        ],
+      ],
+      view: 'timeSeries',
+      stacked: false,
+      region,
+      period: 600,
+      title: 'Filler Consecutive Blocks (escalation)',
+    },
+  },
+];
 
 export interface DashboardProps extends cdk.NestedStackProps {
   quoteLambda: aws_lambda_nodejs.NodejsFunction;
@@ -412,7 +487,7 @@ export class ParamDashboardStack extends cdk.NestedStack {
           RFQFailRatesWidget(region, RFQ_PROVIDERS),
           LambdaErrorRatesWidget(region, scope),
           FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupArn),
-          CircuitBreakerV2Widget(region),
+          CircuitBreakerWidgets(region),
         ].flat(),
       }),
     });

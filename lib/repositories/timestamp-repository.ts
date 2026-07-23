@@ -1,3 +1,4 @@
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import Logger from 'bunyan';
 import { Entity, Table } from 'dynamodb-toolbox';
@@ -9,11 +10,28 @@ export type BatchGetResponse = {
   tableName: string;
 };
 
+/**
+ * Sentinel for a filler that is not blocked (also the value for a never-blocked filler or a
+ * missing attribute). Always < now for real unix seconds; also avoids equaling
+ * lastExaminedTimestamp, which could briefly read as blocked under clock skew.
+ */
+export const UNBLOCKED_BLOCK_UNTIL_TIMESTAMP = 0;
+
+// The circuit-breaker state is small integers (unix seconds, small counts), so it is stored
+// as native DynamoDB numbers and read with a wrapNumbers:false client — no string parsing,
+// and a missing attribute reads as undefined (guarded with ?? below) rather than NaN.
+function circuitBreakerDocumentClient(): DynamoDBDocumentClient {
+  return DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+    marshallOptions: { convertEmptyValues: true },
+    unmarshallOptions: { wrapNumbers: false },
+  });
+}
+
 export class TimestampRepository implements BaseTimestampRepository {
   static log: Logger;
   static PARTITION_KEY = 'hash';
 
-  static create(documentClient: DynamoDBDocumentClient): BaseTimestampRepository {
+  static create(documentClient: DynamoDBDocumentClient = circuitBreakerDocumentClient()): BaseTimestampRepository {
     this.log = Logger.createLogger({
       name: 'DynamoTimestampRepository',
       serializers: Logger.stdSerializers,
@@ -22,7 +40,7 @@ export class TimestampRepository implements BaseTimestampRepository {
     delete this.log.fields.hostname;
 
     const table = new Table({
-      name: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS,
+      name: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS_V2,
       partitionKey: TimestampRepository.PARTITION_KEY,
       DocumentClient: documentClient,
     });
@@ -31,9 +49,10 @@ export class TimestampRepository implements BaseTimestampRepository {
       name: 'FillerTimestampEntity',
       attributes: {
         [TimestampRepository.PARTITION_KEY]: { partitionKey: true, type: 'string' },
-        [`${DYNAMO_TABLE_KEY.LAST_POST_TIMESTAMP}`]: { type: 'string' },
-        [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: { type: 'string' },
-        [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: { type: 'string' },
+        [`${DYNAMO_TABLE_KEY.LAST_EXAMINED_TIMESTAMP}`]: { type: 'number' },
+        [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: { type: 'number' },
+        [`${DYNAMO_TABLE_KEY.FADE_WINDOW_START}`]: { type: 'number' },
+        [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: { type: 'number' },
       },
       table: table,
       autoExecute: true,
@@ -53,8 +72,9 @@ export class TimestampRepository implements BaseTimestampRepository {
       updatedTimestamps.map((row) => {
         return this.entity.putBatch({
           [TimestampRepository.PARTITION_KEY]: row.hash,
-          [`${DYNAMO_TABLE_KEY.LAST_POST_TIMESTAMP}`]: row.lastPostTimestamp,
+          [`${DYNAMO_TABLE_KEY.LAST_EXAMINED_TIMESTAMP}`]: row.lastExaminedTimestamp,
           [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: row.blockUntilTimestamp,
+          [`${DYNAMO_TABLE_KEY.FADE_WINDOW_START}`]: row.fadeWindowStart,
           [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: row.consecutiveBlocks,
         });
       }),
@@ -73,9 +93,10 @@ export class TimestampRepository implements BaseTimestampRepository {
     );
     return {
       hash: Item?.hash,
-      lastPostTimestamp: parseInt(Item?.lastPostTimestamp),
-      blockUntilTimestamp: parseInt(Item?.blockUntilTimestamp),
-      consecutiveBlocks: parseInt(Item?.consecutiveBlocks),
+      lastExaminedTimestamp: Item?.lastExaminedTimestamp ?? 0,
+      blockUntilTimestamp: Item?.blockUntilTimestamp ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+      fadeWindowStart: Item?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+      consecutiveBlocks: Item?.consecutiveBlocks ?? 0,
     };
   }
 
@@ -91,12 +112,13 @@ export class TimestampRepository implements BaseTimestampRepository {
         parse: true,
       }
     );
-    return items[DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS].map((row: DynamoTimestampRepoRow) => {
+    return items[DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS_V2].map((row: DynamoTimestampRepoRow) => {
       return {
         hash: row.hash,
-        lastPostTimestamp: parseInt(row.lastPostTimestamp),
-        blockUntilTimestamp: parseInt(row.blockUntilTimestamp),
-        consecutiveBlocks: parseInt(row.consecutiveBlocks),
+        lastExaminedTimestamp: row.lastExaminedTimestamp ?? 0,
+        blockUntilTimestamp: row.blockUntilTimestamp ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+        fadeWindowStart: row.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+        consecutiveBlocks: row.consecutiveBlocks ?? 0,
       };
     });
   }
@@ -106,8 +128,9 @@ export class TimestampRepository implements BaseTimestampRepository {
     const res = new Map<string, Omit<TimestampRepoRow, 'hash'>>();
     rows.forEach((row) => {
       res.set(row.hash, {
-        lastPostTimestamp: row.lastPostTimestamp,
+        lastExaminedTimestamp: row.lastExaminedTimestamp,
         blockUntilTimestamp: row.blockUntilTimestamp,
+        fadeWindowStart: row.fadeWindowStart,
         consecutiveBlocks: row.consecutiveBlocks,
       });
     });

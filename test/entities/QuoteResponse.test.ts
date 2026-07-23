@@ -1,10 +1,10 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { parseEther } from 'ethers/lib/utils';
 import { ethers } from 'ethers';
+import { parseEther } from 'ethers/lib/utils';
 
+import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
 import { QuoteResponse } from '../../lib/entities';
 import { ProtocolVersion } from '../../lib/providers';
-import { PermissionedTokenValidator } from '@uniswap/uniswapx-sdk';
 import { RFQValidator } from '../../lib/util/rfqValidator';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -12,6 +12,7 @@ const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f7';
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
 const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const FILLER = '0x1234567890123456789012345678901234567890';
 const CHAIN_ID = 1;
 const fixedTime = 4206969;
 const WEBHOOK_URL = 'https://uniswap.org';
@@ -37,6 +38,7 @@ describe('QuoteRequest', () => {
       swapper: SWAPPER,
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
+      filler: FILLER,
     },
     TradeType.EXACT_INPUT,
     METADATA
@@ -81,6 +83,7 @@ describe('QuoteRequest', () => {
           tokenOut: TOKEN_OUT,
           amountOut: parseEther('1').toString(),
           quoteId: QUOTE_ID,
+          filler: FILLER,
         },
         type: TradeType.EXACT_INPUT,
         metadata: METADATA,
@@ -100,11 +103,30 @@ describe('QuoteRequest', () => {
           tokenOut: TOKEN_OUT.toLowerCase(),
           amountOut: parseEther('1').toString(),
           quoteId: QUOTE_ID,
+          filler: FILLER,
         },
         type: TradeType.EXACT_INPUT,
         metadata: METADATA,
       });
       expect(response.validationError).toBe(undefined);
+    });
+
+    it('fromRFQ with invalid response - missing filler', async () => {
+      const response = QuoteResponse.fromRFQ({
+        request: quoteRequest,
+        data: {
+          chainId: CHAIN_ID,
+          requestId: REQUEST_ID,
+          tokenIn: TOKEN_IN,
+          amountIn: parseEther('1').toString(),
+          tokenOut: TOKEN_OUT,
+          amountOut: parseEther('1').toString(),
+          quoteId: QUOTE_ID,
+        } as any,
+        type: TradeType.EXACT_INPUT,
+        metadata: METADATA,
+      });
+      expect(response.validationError?.message).toContain('"filler" is required');
     });
 
     it('fromRFQ with invalid response - wrong type amountIn', async () => {
@@ -116,6 +138,7 @@ describe('QuoteRequest', () => {
         tokenOut: TOKEN_OUT,
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
+        filler: FILLER,
       };
       const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
@@ -138,6 +161,7 @@ describe('QuoteRequest', () => {
         tokenOut: TOKEN_OUT,
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
+        filler: FILLER,
       };
       const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
@@ -161,6 +185,7 @@ describe('QuoteRequest', () => {
         tokenOut: '0x0000000000000000000000000000000000000000',
         amountOut: parseEther('1').toString(),
         quoteId: QUOTE_ID,
+        filler: FILLER,
       };
       const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
@@ -176,9 +201,8 @@ describe('QuoteRequest', () => {
     });
 
     it('fromRFQ with permissioned tokenIn - no provider', async () => {
-      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
-        .mockImplementation((token) => token === TOKEN_IN);
-      
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockImplementation((token) => token === TOKEN_IN);
+
       const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
@@ -209,9 +233,8 @@ describe('QuoteRequest', () => {
 
     it('fromRFQ with no permissioned tokens - no provider', async () => {
       jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockReturnValue(false);
-      const preTransferCheckMock = jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
-        .mockResolvedValue(true);
-      
+      const preTransferCheckMock = jest.spyOn(PermissionedTokenValidator, 'preTransferCheck').mockResolvedValue(true);
+
       const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
@@ -240,9 +263,8 @@ describe('QuoteRequest', () => {
     });
 
     it('fromRFQ with permissioned tokenOut - no provider', async () => {
-      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
-        .mockImplementation((token) => token === TOKEN_OUT);
-      
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockImplementation((token) => token === TOKEN_OUT);
+
       const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
         data: {
@@ -274,11 +296,9 @@ describe('QuoteRequest', () => {
     it('fromRFQ with permissioned tokenIn - failed preTransferCheck', async () => {
       const mockProvider = {} as ethers.providers.StaticJsonRpcProvider;
       const filler = '0x1234567890123456789012345678901234567890';
-      
-      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
-        .mockImplementation((token) => token === TOKEN_IN);
-      jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
-        .mockResolvedValue(false);
+
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockImplementation((token) => token === TOKEN_IN);
+      jest.spyOn(PermissionedTokenValidator, 'preTransferCheck').mockResolvedValue(false);
 
       const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
@@ -312,11 +332,9 @@ describe('QuoteRequest', () => {
     it('fromRFQ with permissioned tokenOut - failed preTransferCheck', async () => {
       const mockProvider = {} as ethers.providers.StaticJsonRpcProvider;
       const filler = '0x1234567890123456789012345678901234567890';
-      
-      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken')
-        .mockImplementation((token) => token === TOKEN_OUT);
-      jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
-        .mockResolvedValue(false);
+
+      jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockImplementation((token) => token === TOKEN_OUT);
+      jest.spyOn(PermissionedTokenValidator, 'preTransferCheck').mockResolvedValue(false);
 
       const response = QuoteResponse.fromRFQ({
         request: quoteRequest,
@@ -352,9 +370,8 @@ describe('QuoteRequest', () => {
       const filler = '0x1234567890123456789012345678901234567890';
       const amountIn = quoteRequest.amount;
       const amountOut = parseEther('1.5');
-      
-      const preTransferCheckMock = jest.spyOn(PermissionedTokenValidator, 'preTransferCheck')
-        .mockResolvedValue(true);
+
+      const preTransferCheckMock = jest.spyOn(PermissionedTokenValidator, 'preTransferCheck').mockResolvedValue(true);
       jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockReturnValue(true);
 
       const response = QuoteResponse.fromRFQ({
@@ -383,14 +400,16 @@ describe('QuoteRequest', () => {
 
       expect(validationError).toBe(undefined);
       expect(preTransferCheckMock).toHaveBeenCalledTimes(2);
-      expect(preTransferCheckMock).toHaveBeenNthCalledWith(1,
+      expect(preTransferCheckMock).toHaveBeenNthCalledWith(
+        1,
         mockProvider,
         TOKEN_IN,
         SWAPPER,
         filler,
         amountIn.toString()
       );
-      expect(preTransferCheckMock).toHaveBeenNthCalledWith(2,
+      expect(preTransferCheckMock).toHaveBeenNthCalledWith(
+        2,
         mockProvider,
         TOKEN_OUT,
         filler,
@@ -403,7 +422,7 @@ describe('QuoteRequest', () => {
       const mockProvider = {} as ethers.providers.StaticJsonRpcProvider;
       const filler = '0x1234567890123456789012345678901234567890';
       const mockLogger = { error: jest.fn() } as any;
-      
+
       jest.spyOn(PermissionedTokenValidator, 'isPermissionedToken').mockReturnValue(true);
       jest.spyOn(PermissionedTokenValidator, 'preTransferCheck').mockImplementation(() => {
         throw new Error('Simulated preTransferCheck error');
@@ -452,7 +471,7 @@ describe('QuoteRequest', () => {
       swapper: SWAPPER,
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
-      filler: undefined,
+      filler: FILLER,
     });
   });
 
@@ -467,8 +486,8 @@ describe('QuoteRequest', () => {
       swapper: SWAPPER,
       tokenIn: TOKEN_IN,
       tokenOut: TOKEN_OUT,
-      filler: undefined,
-      algo_id: undefined,
+      filler: FILLER,
+      algo_id: FILLER,
       tokenInChainId: CHAIN_ID,
       tokenOutChainId: CHAIN_ID,
     });
@@ -476,8 +495,6 @@ describe('QuoteRequest', () => {
 
   it('toLog includes fillerResponseLatencyMs when set', () => {
     quoteResponse.setFillerResponseLatencyMs(150);
-    expect(quoteResponse.toLog()).toEqual(
-      expect.objectContaining({ fillerResponseLatencyMs: 150 })
-    );
+    expect(quoteResponse.toLog()).toEqual(expect.objectContaining({ fillerResponseLatencyMs: 150 }));
   });
 });

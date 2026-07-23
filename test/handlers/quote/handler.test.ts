@@ -65,9 +65,7 @@ describe('Quote handler', () => {
           return {
             quoters,
             // Mock chainIdRpcMap
-            chainIdRpcMap: new Map([
-              [42161, new ethers.providers.StaticJsonRpcProvider()],
-            ]),
+            chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
         },
         getRequestInjected: () => requestInjectedMock,
@@ -261,6 +259,7 @@ describe('Quote handler', () => {
               swapper: request.swapper,
               chainId: request.tokenInChainId,
               quoteId: QUOTE_ID,
+              filler: MOCK_FILLER_ADDRESS,
             },
           });
         })
@@ -275,6 +274,7 @@ describe('Quote handler', () => {
               swapper: request.swapper,
               chainId: request.tokenInChainId,
               quoteId: QUOTE_ID,
+              filler: MOCK_FILLER_ADDRESS,
             },
           });
         })
@@ -289,6 +289,7 @@ describe('Quote handler', () => {
               swapper: request.swapper,
               chainId: request.tokenInChainId,
               quoteId: QUOTE_ID,
+              filler: MOCK_FILLER_ADDRESS,
             },
           });
         })
@@ -303,6 +304,7 @@ describe('Quote handler', () => {
               swapper: request.swapper,
               chainId: request.tokenInChainId,
               quoteId: QUOTE_ID,
+              filler: MOCK_FILLER_ADDRESS,
             },
           });
         });
@@ -386,6 +388,7 @@ describe('Quote handler', () => {
               swapper: request.swapper,
               chainId: request.tokenInChainId,
               quoteId: QUOTE_ID,
+              filler: MOCK_FILLER_ADDRESS,
             },
           });
         })
@@ -550,6 +553,7 @@ describe('Quote handler', () => {
               chainId: request.tokenInChainId,
               requestId: (_req as any).requestId,
               quoteId: QUOTE_ID,
+              filler: MOCK_FILLER_ADDRESS,
             },
           });
         })
@@ -564,6 +568,7 @@ describe('Quote handler', () => {
               chainId: request.tokenInChainId,
               requestId: (_req as any).requestId,
               quoteId: QUOTE_ID,
+              filler: MOCK_FILLER_ADDRESS,
             },
           });
         });
@@ -714,9 +719,7 @@ describe('Quote handler', () => {
       // allQuotes has all 3
       expect(body.allQuotes).toHaveLength(3);
       const amounts = body.allQuotes!.map((q) => q.amountOut).sort();
-      expect(amounts).toEqual(
-        [amountIn.toString(), amountIn.mul(2).toString(), amountIn.mul(3).toString()].sort()
-      );
+      expect(amounts).toEqual([amountIn.toString(), amountIn.mul(2).toString(), amountIn.mul(3).toString()].sort());
     });
 
     it('allQuotes contains all quotes - EXACT_OUTPUT', async () => {
