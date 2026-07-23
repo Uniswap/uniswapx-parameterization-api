@@ -440,25 +440,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const activeOrderProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'ActiveOrderProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'activeOrderEventProcessor',
-      timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
-      memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        VERSION: '2',
-        NODE_OPTIONS: '--enable-source-maps',
-        ANALYTICS_STREAM_ARN: analyticsStreamArn,
-        ...props.envVars,
-        stage,
-      },
-    });
-
     const unimindResponseProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'UnimindResponseProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_18_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
@@ -506,7 +487,6 @@ export class AnalyticsStack extends cdk.NestedStack {
           fillEventProcessorLambda.functionArn,
           postOrderProcessorLambda.functionArn,
           botOrderEventsProcessorLambda.functionArn,
-          activeOrderProcessorLambda.functionArn,
           unimindResponseProcessorLambda.functionArn,
           unimindParameterUpdateProcessorLambda.functionArn,
         ],
@@ -523,7 +503,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       fillEventProcessorLambda,
       postOrderProcessorLambda,
       botOrderEventsProcessorLambda,
-      activeOrderProcessorLambda,
       unimindResponseProcessorLambda,
       unimindParameterUpdateProcessorLambda,
     ].forEach((lambda) => {

@@ -49,13 +49,6 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const orderServiceProvider = new UniswapXServiceProvider(log, orderServiceUrl);
 
-    // TODO: decide if we should handle filler compliance differently
-    //const complianceKey = stage === STAGE.BETA ? BETA_COMPLIANCE_S3_KEY : PROD_COMPLIANCE_S3_KEY;
-    //const fillerComplianceProvider = new S3FillerComplianceConfigurationProvider(
-    //  log,
-    //  `${COMPLIANCE_CONFIG_BUCKET}-${stage}-1`,
-    //  complianceKey
-    //);
     const fillerComplianceProvider = new MockFillerComplianceConfigurationProvider([]);
 
     const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
