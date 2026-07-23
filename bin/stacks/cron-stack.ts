@@ -59,7 +59,7 @@ export class CronStack extends cdk.NestedStack {
       bucketName: `${FADE_RATE_BUCKET}-${stage}-1`,
     });
 
-    const chatbotTopic = chatbotSNSArn 
+    const chatbotTopic = chatbotSNSArn
       ? cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn)
       : undefined;
 
@@ -199,6 +199,21 @@ export class CronStack extends cdk.NestedStack {
       ...PROD_TABLE_CAPACITY.timestamps,
     });
     this.alarmsPerTable(fillerCBTimestampsTable, DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS, chatbotTopic);
+
+    // V2 circuit-breaker state table, separate from the V1 table so the rate-based breaker's
+    // state is isolated for independent rollout/rollback. State is derived and starts empty.
+    const fillerCBTimestampsV2Table = new aws_dynamo.Table(this, `${SERVICE_NAME}FillerCBTimestampsV2Table`, {
+      tableName: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS_V2,
+      partitionKey: {
+        name: 'hash',
+        type: aws_dynamo.AttributeType.STRING,
+      },
+      deletionProtection: true,
+      pointInTimeRecovery: true,
+      contributorInsightsEnabled: true,
+      ...PROD_TABLE_CAPACITY.timestamps,
+    });
+    this.alarmsPerTable(fillerCBTimestampsV2Table, DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS_V2, chatbotTopic);
   }
 
   private alarmsPerTable(table: aws_dynamo.Table, name: string, chatbotSNSTopic?: ITopic): void {

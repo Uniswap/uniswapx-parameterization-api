@@ -10,6 +10,11 @@ export type DynamoFillerToAddressRow = {
   addresses: string[];
 };
 
+// Max distinct on-chain addresses a single filler (webhook endpoint) may register, bounding
+// Sybil breadth. Registrations beyond the cap are a safe no-op — the order still quotes and
+// fills, the address just isn't attributed — so this can't break quoting.
+export const MAX_FILLER_ADDRESSES = 3;
+
 export interface FillerAddressRepository {
   getFillerAddresses(filler: string): Promise<string[] | undefined>;
   getFillerByAddress(address: string): Promise<string | undefined>;
@@ -79,20 +84,43 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
 
   async addNewAddressToFiller(address: string, filler?: string): Promise<void> {
     const addrToAdd = getAddress(address);
-    await this._addressToFillerEntity.put({ pk: addrToAdd, filler: filler });
-    if (filler) {
-      const fillerAddresses = await this.getFillerAddresses(filler);
-      if (!fillerAddresses || fillerAddresses.length === 0) {
-        await this._fillerToAddressEntity.put({ pk: filler, addresses: [addrToAdd] });
-      } else {
-        await this._fillerToAddressEntity.update({ pk: filler, addresses: { $add: [addrToAdd] } });
-      }
+    const existingOwner = await this.getFillerByAddress(addrToAdd);
+    const owner = filler ?? existingOwner;
+    if (!owner) {
+      throw new Error(`Filler not found for address ${addrToAdd}`);
+    }
+
+    // First-writer-wins: an address belongs to whichever filler registered it first. A claim
+    // from a different filler is ignored (prevents attribution poisoning / griefing). A genuine
+    // address migration between endpoints needs a manual override.
+    if (existingOwner && existingOwner !== owner) {
+      DynamoFillerAddressRepository.log.info(
+        { address: addrToAdd, existingOwner, attemptedOwner: owner },
+        'address already owned by another filler; ignoring claim'
+      );
+      return;
+    }
+
+    // Already registered to this owner — idempotent no-op.
+    if (existingOwner === owner) {
+      return;
+    }
+
+    // New address for this owner — enforce the per-filler cap.
+    const fillerAddresses = (await this.getFillerAddresses(owner)) ?? [];
+    if (fillerAddresses.length >= MAX_FILLER_ADDRESSES) {
+      DynamoFillerAddressRepository.log.info(
+        { filler: owner, address: addrToAdd, count: fillerAddresses.length, max: MAX_FILLER_ADDRESSES },
+        'filler address cap reached; ignoring new address'
+      );
+      return;
+    }
+
+    await this._addressToFillerEntity.put({ pk: addrToAdd, filler: owner });
+    if (fillerAddresses.length === 0) {
+      await this._fillerToAddressEntity.put({ pk: owner, addresses: [addrToAdd] });
     } else {
-      const existingFiller = await this.getFillerByAddress(addrToAdd);
-      if (!existingFiller) {
-        throw new Error(`Filler not found for address ${addrToAdd}`);
-      }
-      await this._fillerToAddressEntity.update({ pk: existingFiller, addresses: { $add: [addrToAdd] } });
+      await this._fillerToAddressEntity.update({ pk: owner, addresses: { $add: [addrToAdd] } });
     }
   }
 
@@ -148,20 +176,27 @@ export class MockFillerAddressRepository implements FillerAddressRepository {
   }
 
   async addNewAddressToFiller(address: string, filler?: string): Promise<void> {
-    if (filler) {
-      const fillerAddresses = this._fillerToAddress.get(filler) || new Set<string>();
-      fillerAddresses.add(address);
-      this._fillerToAddress.set(filler, fillerAddresses);
-      this._addressToFiller.set(address, filler);
-    } else {
-      const existingFiller = this._addressToFiller.get(address);
-      if (!existingFiller) {
-        throw new Error(`Filler not found for address ${address}`);
-      }
-      const fillerAddresses = this._fillerToAddress.get(existingFiller) || new Set<string>();
-      fillerAddresses.add(address);
-      this._fillerToAddress.set(existingFiller, fillerAddresses);
+    const existingOwner = this._addressToFiller.get(address);
+    const owner = filler ?? existingOwner;
+    if (!owner) {
+      throw new Error(`Filler not found for address ${address}`);
     }
+    // First-writer-wins: ignore a claim on an address owned by another filler.
+    if (existingOwner && existingOwner !== owner) {
+      return;
+    }
+    // Already registered to this owner — idempotent no-op.
+    if (existingOwner === owner) {
+      return;
+    }
+    // New address for this owner — enforce the per-filler cap.
+    const fillerAddresses = this._fillerToAddress.get(owner) || new Set<string>();
+    if (fillerAddresses.size >= MAX_FILLER_ADDRESSES) {
+      return;
+    }
+    fillerAddresses.add(address);
+    this._fillerToAddress.set(owner, fillerAddresses);
+    this._addressToFiller.set(address, owner);
   }
 
   async getFillerAddressesBatch(fillers: string[]): Promise<Map<string, Set<string>>> {

@@ -1,7 +1,8 @@
 import { DynamoDBClient, DynamoDBClientConfig } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { getAddress } from 'ethers/lib/utils';
 
-import { DynamoFillerAddressRepository } from '../../lib/repositories/filler-address-repository';
+import { DynamoFillerAddressRepository, MAX_FILLER_ADDRESSES } from '../../lib/repositories/filler-address-repository';
 
 const dynamoConfig: DynamoDBClientConfig = {
   endpoint: 'http://localhost:8000',
@@ -104,5 +105,33 @@ describe('filler address repository test', () => {
 
   it('should checksum address when adding to db', async () => {
     expect(await repository.getFillerAddresses('filler4')).toEqual([CHECKSUMED_ADDR]);
+  });
+
+  it('first-writer-wins: ignores a claim on an address already owned by another filler', async () => {
+    // ADDR1 is owned by filler1 (from beforeAll). A different filler tries to claim it.
+    await repository.addNewAddressToFiller(ADDR1, 'attacker');
+    // ownership is unchanged, and the attacker did not gain the address
+    expect(await repository.getFillerByAddress(ADDR1)).toEqual('filler1');
+    expect(await repository.getFillerAddresses('attacker')).toBeUndefined();
+    expect(await repository.getFillerAddresses('filler1')).toEqual([ADDR1, ADDR2]);
+  });
+
+  it('caps the number of addresses a single filler can register', async () => {
+    const addrs = [
+      '0x0000000000000000000000000000000000000010',
+      '0x0000000000000000000000000000000000000011',
+      '0x0000000000000000000000000000000000000012',
+      '0x0000000000000000000000000000000000000013',
+    ];
+    expect(addrs.length).toBeGreaterThan(MAX_FILLER_ADDRESSES); // guard: test must exceed the cap
+    for (const addr of addrs) {
+      await repository.addNewAddressToFiller(addr, 'capFiller');
+    }
+    // only the first MAX_FILLER_ADDRESSES are registered; the rest are ignored
+    const registered = (await repository.getFillerAddresses('capFiller')) ?? [];
+    expect(registered.length).toEqual(MAX_FILLER_ADDRESSES);
+    expect(registered).toEqual(addrs.slice(0, MAX_FILLER_ADDRESSES).map((a) => getAddress(a)));
+    // the over-cap address is attributed to no filler
+    expect(await repository.getFillerByAddress(addrs[MAX_FILLER_ADDRESSES])).toBeUndefined();
   });
 });

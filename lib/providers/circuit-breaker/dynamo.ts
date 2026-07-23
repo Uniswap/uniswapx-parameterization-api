@@ -1,5 +1,3 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import Logger from 'bunyan';
 
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '.';
@@ -21,15 +19,8 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
     this.log = _log.child({ quoter: 'CircuitBreakerConfigurationProvider' });
     this.webhookProvider = _webhookProvider;
     this.lastUpdatedTimestamp = Date.now();
-    const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-      marshallOptions: {
-        convertEmptyValues: true,
-      },
-      unmarshallOptions: {
-        wrapNumbers: true,
-      },
-    });
-    this.timestampDB = TimestampRepository.create(documentClient);
+    // TimestampRepository builds its own wrapNumbers:false client (state is small integers).
+    this.timestampDB = TimestampRepository.create();
   }
 
   private async getFillerEndpoints(): Promise<string[]> {

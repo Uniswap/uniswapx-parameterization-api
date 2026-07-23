@@ -424,7 +424,12 @@ describe('WebhookQuoter tests', () => {
           // written before fadedOrderHashes existed
           [
             WEBHOOK_URL_ONEINCH,
-            { blockUntilTimestamp: now + 100000, lastPostTimestamp: now - 10, consecutiveBlocks: 0 },
+            {
+              blockUntilTimestamp: now + 100000,
+              fadeWindowStart: now + 100000,
+              lastExaminedTimestamp: now - 10,
+              consecutiveBlocks: 0,
+            },
           ],
         ])
       );

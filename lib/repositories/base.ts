@@ -30,27 +30,30 @@ export enum TimestampThreshold {
 
 export type TimestampRepoRow = {
   hash: string;
-  lastPostTimestamp: number;
+  // Timestamp of the last cron run that examined this filler; boundary for "new since last run".
+  lastExaminedTimestamp: number;
+  // Block expiry; 0 (UNBLOCKED_BLOCK_UNTIL_TIMESTAMP) when the filler is not blocked.
   blockUntilTimestamp: number;
+  // Clean-slate floor for the fade-rate window: only orders completed after this are scored.
+  // Set to the block end whenever a block is applied/extended; 0 if the filler was never blocked.
+  fadeWindowStart: number;
   consecutiveBlocks: number;
   // hashes of the faded orders that caused the current block;
   // absent on rows written before this field existed
   fadedOrderHashes?: string[];
 };
 
-export type DynamoTimestampRepoRow = Exclude<TimestampRepoRow, 'lastPostTimestamp' | 'blockUntilTimestamp'> & {
-  lastPostTimestamp: string;
-  blockUntilTimestamp: string;
-  consecutiveBlocks: string;
-  fadedOrderHashes?: string[];
-};
+// Rows round-trip as native numbers now (number-typed attributes read via a wrapNumbers:false
+// client), so the raw shape matches TimestampRepoRow — no string parsing.
+export type DynamoTimestampRepoRow = TimestampRepoRow;
 
-export type ToUpdateTimestampRow = Omit<TimestampRepoRow, 'blockUntilTimestamp'> & {
+export type ToUpdateTimestampRow = Omit<TimestampRepoRow, 'blockUntilTimestamp' | 'fadeWindowStart'> & {
   blockUntilTimestamp?: number;
+  fadeWindowStart?: number;
 };
 
 /*
-  fillerHash -> { lastPostTimestamp, blockUntilTimestamp }
+  fillerHash -> { lastExaminedTimestamp, blockUntilTimestamp, fadeWindowStart, consecutiveBlocks }
 */
 export type FillerTimestampMap = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
