@@ -5,10 +5,6 @@ export const UniswapXParamServiceMetricDimension = {
   Service: 'UniswapXParameterizationAPI',
 };
 
-export const UniswapXParamServiceIntegrationMetricDimension = {
-  Service: 'UniswapXParameterizationAPI-Integration',
-};
-
 export const SyntheticSwitchMetricDimension = {
   Service: 'SyntheticSwitch',
 };
@@ -53,7 +49,6 @@ export enum Metric {
 
   QUOTE_REQUESTED = 'QUOTE_REQUESTED',
   QUOTE_LATENCY = 'QUOTE_LATENCY',
-  QUOTE_RESPONSE_COUNT = 'QUOTE_RESPONSE_COUNT',
   HANDLER_DURATION = 'HANDLER_DURATION',
 
   QUOTE_POST_ERROR = 'QUOTE_POST_ERROR',
@@ -87,7 +82,6 @@ export enum Metric {
   // Metrics for circuit breaker
   CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS = 'CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS',
   CIRCUIT_BREAKER_V2_BLOCKED = 'CIRCUIT_BREAKER_V2_BLOCKED',
-  CIRCUIT_BREAKER_TRIGGERED = 'CIRCUIT_BREAKER_TRIGGERED',
   // Per-filler Laplace-smoothed fade rate over the post-block window (compare to FADE_RATE_BLOCK_THRESHOLD)
   CIRCUIT_BREAKER_V2_FADE_RATE = 'CIRCUIT_BREAKER_V2_FADE_RATE',
   // Per-filler Laplace-smoothed fade rate over the in-flight-during-block cohort, emitted while

@@ -3,7 +3,6 @@ import { QuoteRequest, QuoteResponse } from '../entities';
 
 export enum QuoterType {
   TEST = 'TEST',
-  ROUTER = 'ROUTER',
   RFQ = 'RFQ',
 }
 

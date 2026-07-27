@@ -13,8 +13,6 @@ import {
 import { FADE_RATE_BLOCK_THRESHOLD } from '../../lib/cron/fade-rate-v2';
 import { ChainId, SUPPORTED_CHAINS } from '../../lib/util/chains';
 
-export const NAMESPACE = 'Uniswap';
-
 export type MetricPath =
   | string
   | {

@@ -19,10 +19,6 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     this.lastUpdatedEndpointsTimestamp = Date.now();
   }
 
-  fillers(): string[] {
-    return [...new Set(this.endpoints.map((endpoint) => endpoint.hash))];
-  }
-
   fillerEndpoints(): string[] {
     return this.endpoints.map((endpoint) => endpoint.endpoint);
   }
