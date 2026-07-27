@@ -6,10 +6,6 @@ import { Entity, Table } from 'dynamodb-toolbox';
 import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME } from '../constants';
 import { BaseTimestampRepository, DynamoTimestampRepoRow, TimestampRepoRow, ToUpdateTimestampRow } from './base';
 
-export type BatchGetResponse = {
-  tableName: string;
-};
-
 /**
  * Sentinel for a filler that is not blocked (also the value for a never-blocked filler or a
  * missing attribute). Always < now for real unix seconds; also avoids equaling
