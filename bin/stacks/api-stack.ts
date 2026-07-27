@@ -367,8 +367,8 @@ export class APIStack extends cdk.Stack {
       },
     });
 
-    hardQuote.addMethod('POST', hardQuoteLambdaIntegration, { 
-      apiKeyRequired: false, // TODO: Set to true once Trading API has integrated 
+    hardQuote.addMethod('POST', hardQuoteLambdaIntegration, {
+      apiKeyRequired: false, // TODO: Set to true once Trading API has integrated
     });
 
     const switchLambdaIntegration = new aws_apigateway.LambdaIntegration(switchLambdaAlias, {});

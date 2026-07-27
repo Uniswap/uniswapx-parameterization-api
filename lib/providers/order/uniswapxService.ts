@@ -1,10 +1,10 @@
 import axios, { AxiosError } from 'axios';
 import Logger from 'bunyan';
 
+import { CosignedV2DutchOrder, CosignedV3DutchOrder, OrderType } from '@uniswap/uniswapx-sdk';
 import { OrderServiceProvider, PostOrderArgs, UniswapXServiceResponse } from '.';
 import { ErrorResponse } from '../../handlers/base';
 import { ErrorCode } from '../../util/errors';
-import { CosignedV2DutchOrder, CosignedV3DutchOrder, OrderType } from '@uniswap/uniswapx-sdk';
 
 // The order service validates on-chain (RPC) before accepting, so its tail can
 // exceed a couple of seconds; this must stay below the hard-quote Lambda budget
@@ -17,7 +17,7 @@ const ORDER_RECONCILE_TIMEOUT_MS = 2000;
 
 const ORDER_TYPE_MAP = new Map<Function, string>([
   [CosignedV2DutchOrder, OrderType.Dutch_V2],
-  [CosignedV3DutchOrder, OrderType.Dutch_V3]
+  [CosignedV3DutchOrder, OrderType.Dutch_V3],
 ]);
 
 // Shape of the order service's GET /dutch-auction/orders response; we only need
@@ -93,7 +93,10 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
             data: { hash: orderHash },
           };
         }
-        this.log.error({ error: e.response?.data, httpStatus: e.response?.status, code: e.code }, 'Error posting order to UniswapX Service');
+        this.log.error(
+          { error: e.response?.data, httpStatus: e.response?.status, code: e.code },
+          'Error posting order to UniswapX Service'
+        );
         return {
           statusCode: (e.response?.status ?? 500) as ErrorResponse['statusCode'],
           errorCode: e.response?.data?.errorCode ?? ErrorCode.InternalError,

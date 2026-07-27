@@ -5,6 +5,7 @@ import { default as bunyan, default as Logger } from 'bunyan';
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { ethers } from 'ethers';
 import {
   BETA_COMPLIANCE_S3_KEY,
   BETA_S3_KEY,
@@ -21,11 +22,10 @@ import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circu
 import { S3FillerComplianceConfigurationProvider } from '../../providers/compliance/s3';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
+import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { PostQuoteRequestBody } from './schema';
-import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
-import { ethers } from 'ethers';
 
 export interface ContainerInjected {
   quoters: Quoter[];
@@ -75,15 +75,16 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     ];
 
     const chainIdRpcMap = new Map<ChainId, ethers.providers.StaticJsonRpcProvider>();
-    SUPPORTED_CHAINS.forEach(
-      chainId => {
-        const provider = new ethers.providers.StaticJsonRpcProvider({
+    SUPPORTED_CHAINS.forEach((chainId) => {
+      const provider = new ethers.providers.StaticJsonRpcProvider(
+        {
           url: getRpcUrl(chainId),
-          headers: RPC_HEADERS
-        }, chainId)
-        chainIdRpcMap.set(chainId, provider);
-      }
-    );
+          headers: RPC_HEADERS,
+        },
+        chainId
+      );
+      chainIdRpcMap.set(chainId, provider);
+    });
 
     return {
       quoters: quoters,

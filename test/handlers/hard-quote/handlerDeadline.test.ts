@@ -1,6 +1,6 @@
 import { KMSClient } from '@aws-sdk/client-kms';
-import { UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
 import { KmsSigner } from '@uniswap/signer';
+import { UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
 import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
@@ -166,7 +166,9 @@ describe('Hard quote handler - order deadline validation', () => {
 
   it('still succeeds when the deadline comfortably exceeds the decay window', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
-    const request = await getRequest(getOrder({ cosigner: cosignerWallet.address, deadline: Math.floor(Date.now() / 1000) + 1000 }));
+    const request = await getRequest(
+      getOrder({ cosigner: cosignerWallet.address, deadline: Math.floor(Date.now() / 1000) + 1000 })
+    );
 
     const response: APIGatewayProxyResult = await getHandler(quoters).handler(getEvent(request), {} as Context);
 

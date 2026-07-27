@@ -5,6 +5,7 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda
 import { default as Logger } from 'bunyan';
 import { BigNumber, ethers, Wallet } from 'ethers';
 
+import { KmsSigner } from '@uniswap/signer';
 import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
@@ -16,7 +17,6 @@ import {
 import { OrderServiceProvider } from '../../../lib/providers/order';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
 import { ErrorCode } from '../../../lib/util/errors';
-import { KmsSigner } from '@uniswap/signer';
 
 jest.mock('axios');
 jest.mock('@aws-sdk/client-kms');
@@ -86,12 +86,13 @@ describe('Quote handler order post error mapping', () => {
   }));
   (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
 
-  const requestInjectedMock: Promise<RequestInjected> = new Promise((resolve) =>
-    resolve({
-      log: logger,
-      requestId: 'test',
-      metric: new AWSMetricsLogger(createMetricsLogger()),
-    }) as unknown as RequestInjected
+  const requestInjectedMock: Promise<RequestInjected> = new Promise(
+    (resolve) =>
+      resolve({
+        log: logger,
+        requestId: 'test',
+        metric: new AWSMetricsLogger(createMetricsLogger()),
+      }) as unknown as RequestInjected
   );
 
   const injectorPromiseMock = (

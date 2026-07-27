@@ -23,19 +23,13 @@ export class S3FillerComplianceConfigurationProvider implements FillerCompliance
     try {
       const response = await axios.get(url);
       if (response.status !== 200) {
-        this.log.warn(
-          { url, status: response.status },
-          'Failed to fetch compliance list'
-        );
+        this.log.warn({ url, status: response.status }, 'Failed to fetch compliance list');
         return [];
       }
       const complianceList = response.data as FillerComplianceList;
       return complianceList.addresses;
     } catch (e: any) {
-      this.log.warn(
-        { url, error: e.message },
-        'Error fetching compliance list'
-      );
+      this.log.warn({ url, error: e.message }, 'Error fetching compliance list');
       return [];
     }
   }

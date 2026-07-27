@@ -9,11 +9,7 @@ import { currentTimestampInMs, timestampInMstoSeconds } from '../util/time';
 export abstract class HardQuoteResponse<T extends CosignedV2DutchOrder | CosignedV3DutchOrder> {
   public createdAt: string;
 
-  constructor(
-    public request: HardQuoteRequest,
-    public order: T,
-    public createdAtMs = currentTimestampInMs()
-  ) {
+  constructor(public request: HardQuoteRequest, public order: T, public createdAtMs = currentTimestampInMs()) {
     this.createdAt = timestampInMstoSeconds(parseInt(this.createdAtMs));
   }
 
