@@ -81,8 +81,11 @@ export class HardQuoteRequest {
     return this.data.tokenInChainId;
   }
 
+  // See the matching note in QuoteRequest: this getter previously returned the tokenIn chain
+  // id. Value-identical today because HardQuoteRequestBodyJoi pins tokenOutChainId to
+  // Joi.ref('tokenInChainId').
   public get tokenOutChainId(): number {
-    return this.data.tokenInChainId;
+    return this.data.tokenOutChainId;
   }
 
   public get swapper(): string {

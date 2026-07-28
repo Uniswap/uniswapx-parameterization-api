@@ -113,8 +113,13 @@ export class QuoteRequest {
     return this.data.tokenInChainId;
   }
 
+  // Returns the tokenOut chain id, which this getter previously ignored in favour of the
+  // tokenIn chain id. Value-identical today: PostQuoteRequestBodyJoi pins tokenOutChainId to
+  // Joi.ref('tokenInChainId'), so every validated request has the two equal. Fixed so the
+  // getter is correct by construction rather than by that constraint — the values reach the
+  // RFQ payloads sent to market makers.
   public get tokenOutChainId(): number {
-    return this.data.tokenInChainId;
+    return this.data.tokenOutChainId;
   }
 
   public get swapper(): string {

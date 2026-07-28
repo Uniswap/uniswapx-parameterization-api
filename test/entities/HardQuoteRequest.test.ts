@@ -235,4 +235,24 @@ describe('QuoteRequest', () => {
       protocol: ProtocolVersion.V3,
     });
   });
+
+  // Pins the tokenOutChainId getter, which previously returned the tokenIn chain id. Every
+  // other fixture sets the two equal, so nothing else here distinguishes the fix from the bug.
+  // Constructed directly because HardQuoteRequestBodyJoi pins tokenOutChainId to
+  // Joi.ref('tokenInChainId'), so a validated request can never carry differing ids.
+  it('reads tokenOutChainId from its own field', () => {
+    const order = new UnsignedV2DutchOrder(
+      getOrderInfo({
+        swapper: SWAPPER,
+      }),
+      CHAIN_ID
+    );
+    const request = makeRequest({
+      encodedInnerOrder: order.serialize(),
+      innerSig: '0x',
+      tokenOutChainId: 42161,
+    });
+    expect(request.tokenInChainId).toEqual(CHAIN_ID);
+    expect(request.tokenOutChainId).toEqual(42161);
+  });
 });
