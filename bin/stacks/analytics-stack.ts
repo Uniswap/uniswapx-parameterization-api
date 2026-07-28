@@ -459,24 +459,28 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const unimindParameterUpdateProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'UnimindParameterUpdateProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'unimindParameterUpdateProcessor',
-      timeout: cdk.Duration.seconds(60),
-      memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        VERSION: '2',
-        NODE_OPTIONS: '--enable-source-maps',
-        ANALYTICS_STREAM_ARN: analyticsStreamArn,
-        ...props.envVars,
-        stage,
-      },
-    });
+    const unimindParameterUpdateProcessorLambda = new aws_lambda_nodejs.NodejsFunction(
+      this,
+      'UnimindParameterUpdateProcessor',
+      {
+        runtime: aws_lambda.Runtime.NODEJS_18_X,
+        entry: path.join(__dirname, '../../lib/handlers/index.ts'),
+        handler: 'unimindParameterUpdateProcessor',
+        timeout: cdk.Duration.seconds(60),
+        memorySize: 512,
+        bundling: {
+          minify: true,
+          sourceMap: true,
+        },
+        environment: {
+          VERSION: '2',
+          NODE_OPTIONS: '--enable-source-maps',
+          ANALYTICS_STREAM_ARN: analyticsStreamArn,
+          ...props.envVars,
+          stage,
+        },
+      }
+    );
 
     firehoseRole.addToPolicy(
       new aws_iam.PolicyStatement({
@@ -931,10 +935,10 @@ export class AnalyticsStack extends cdk.NestedStack {
           metric: incomingRecords,
           comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
           threshold: 1,
-            evaluationPeriods: 12 * 60 / 5, // 12 hours (12 * 60 / 5 minutes)
-            treatMissingData: cdk.aws_cloudwatch.TreatMissingData.BREACHING,
-            actionsEnabled: true,
-            alarmName: missingRecordsName,
+          evaluationPeriods: (12 * 60) / 5, // 12 hours (12 * 60 / 5 minutes)
+          treatMissingData: cdk.aws_cloudwatch.TreatMissingData.BREACHING,
+          actionsEnabled: true,
+          alarmName: missingRecordsName,
         });
         if (chatBotTopic) {
           missingRecordsSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));

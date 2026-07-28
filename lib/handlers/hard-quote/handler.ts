@@ -15,7 +15,7 @@ import {
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
-import { POST_ORDER_ERROR_REASON, getV3BlockBuffer } from '../../constants';
+import { getV3BlockBuffer, POST_ORDER_ERROR_REASON } from '../../constants';
 import { HardQuoteRequest, Metric, QuoteResponse } from '../../entities';
 import { V2HardQuoteResponse } from '../../entities/V2HardQuoteResponse';
 import { V3HardQuoteResponse } from '../../entities/V3HardQuoteResponse';
@@ -57,7 +57,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
     const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
-    
+
     const orderParser = new UniswapXOrderParser();
     const orderType: OrderType = orderParser.getOrderTypeFromEncoded(
       requestBody.encodedInnerOrder,
@@ -344,7 +344,7 @@ function createHardQuoteResponse(
 async function createCosignedOrder(
   cosigner: KmsSigner,
   request: HardQuoteRequest,
-  cosignerData: CosignerData | V3CosignerData,
+  cosignerData: CosignerData | V3CosignerData
 ): Promise<CosignedV2DutchOrder | CosignedV3DutchOrder> {
   if (request.order instanceof UnsignedV2DutchOrder) {
     const v2CosignerData = cosignerData as CosignerData;
@@ -407,7 +407,10 @@ function assertV2DecayWithinDeadline(decayEndTime: number, deadline: number): vo
   }
 }
 
-async function getDefaultV3CosignerData(request: HardQuoteRequest, provider: ethers.providers.StaticJsonRpcProvider | undefined): Promise<V3CosignerData> {
+async function getDefaultV3CosignerData(
+  request: HardQuoteRequest,
+  provider: ethers.providers.StaticJsonRpcProvider | undefined
+): Promise<V3CosignerData> {
   if (!provider)
     throw new Error(
       `No rpc provider found for chain: ${request.tokenInChainId}, which is required for V3 Dutch orders`

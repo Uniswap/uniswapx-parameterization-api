@@ -5,7 +5,8 @@ import { default as bunyan, default as Logger } from 'bunyan';
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET, RPC_HEADERS } from '../../constants';
+import { ethers } from 'ethers';
+import { BETA_S3_KEY, PRODUCTION_S3_KEY, RPC_HEADERS, WEBHOOK_CONFIG_BUCKET } from '../../constants';
 import { AWSMetricsLogger, HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
 import { OrderServiceProvider, S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../../providers';
@@ -14,11 +15,10 @@ import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circu
 import { MockFillerComplianceConfigurationProvider } from '../../providers/compliance';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
+import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
 import { STAGE } from '../../util/stage';
 import { ApiInjector, ApiRInj } from '../base/api-handler';
 import { HardQuoteRequestBody } from './schema';
-import { ethers } from 'ethers';
-import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
 
 export interface ContainerInjected {
   quoters: Quoter[];
@@ -68,7 +68,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     ];
 
     const chainIdRpcMap = new Map<ChainId, ethers.providers.StaticJsonRpcProvider>();
-    SUPPORTED_CHAINS.forEach(chainId => {
+    SUPPORTED_CHAINS.forEach((chainId) => {
       const provider = new ethers.providers.StaticJsonRpcProvider(
         { url: getRpcUrl(chainId), headers: RPC_HEADERS },
         chainId

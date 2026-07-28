@@ -1,16 +1,16 @@
 import * as cdk from 'aws-cdk-lib';
 import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
 
+import { FADE_RATE_BLOCK_THRESHOLD } from '../../lib/cron/fade-rate-v2';
 import {
   CircuitBreakerMetricDimension,
   HardQuoteMetricDimension,
   Metric,
   SoftQuoteMetricDimension,
 } from '../../lib/entities';
-import { FADE_RATE_BLOCK_THRESHOLD } from '../../lib/cron/fade-rate-v2';
 import { ChainId, SUPPORTED_CHAINS } from '../../lib/util/chains';
 
 export type MetricPath =
@@ -253,10 +253,8 @@ const ErrorRatesWidget = (region: string): LambdaWidget[] =>
     };
   });
 
-
-  const LambdaErrorRatesWidget = (region: string, scope: Construct): LambdaWidget[] =>
-
-    scope.node.children
+const LambdaErrorRatesWidget = (region: string, scope: Construct): LambdaWidget[] =>
+  scope.node.children
     .filter((service) => service instanceof lambda.Function)
     .map((service) => {
       return {
@@ -267,9 +265,23 @@ const ErrorRatesWidget = (region: string): LambdaWidget[] =>
         type: 'metric',
         properties: {
           metrics: [
-            [ "AWS/Lambda", "Errors", "FunctionName", (service as lambda.Function).functionName, { "id": "errors", "stat": "Sum", "color": "#d13212", "region": region } ],
-            [ ".", "Invocations", ".", ".", { "id": "invocations", "stat": "Sum", "visible": false, "region":region } ],
-            [ { "expression": "100 - 100 * errors / MAX([errors, invocations])", "label": "Success rate (%)", "id": "availability", "yAxis": "right", "region": region } ]
+            [
+              'AWS/Lambda',
+              'Errors',
+              'FunctionName',
+              (service as lambda.Function).functionName,
+              { id: 'errors', stat: 'Sum', color: '#d13212', region: region },
+            ],
+            ['.', 'Invocations', '.', '.', { id: 'invocations', stat: 'Sum', visible: false, region: region }],
+            [
+              {
+                expression: '100 - 100 * errors / MAX([errors, invocations])',
+                label: 'Success rate (%)',
+                id: 'availability',
+                yAxis: 'right',
+                region: region,
+              },
+            ],
           ],
           view: 'timeSeries',
           stacked: true,

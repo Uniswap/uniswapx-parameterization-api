@@ -262,10 +262,10 @@ export abstract class APIGLambdaHandler<
     log: Logger
   ): Promise<
     | {
-    state: 'valid';
-    requestBody: ReqBody;
-    requestQueryParams: ReqQueryParams;
-  }
+        state: 'valid';
+        requestBody: ReqBody;
+        requestQueryParams: ReqQueryParams;
+      }
     | { state: 'invalid'; errorResponse: APIGatewayProxyResult }
   > {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */

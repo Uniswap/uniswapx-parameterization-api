@@ -14,13 +14,11 @@
     "test:unit": "jest --detectOpenHandles --forceExit --testPathIgnorePatterns test/integ dist/",
     "test:integ": "ts-mocha -p tsconfig.cdk.json -r dotenv/config test/integ/**/*.test.ts --timeout 120000",
     "fix": "run-s fix:*",
-    "fix:prettier": "prettier \"lib/**/*.ts\" --write",
-    "fix:prettiertest": "prettier \"test/**/*.ts\" --write",
-    "fix:lint": "eslint lib test --ext .ts --fix",
-    "fix:lint:cdk": "eslint bin --ext .ts --fix",
+    "fix:prettier": "prettier \"lib/**/*.ts\" \"test/**/*.ts\" \"bin/**/*.ts\" --write",
+    "fix:eslint": "eslint lib test bin --ext .ts --fix",
     "lint": "run-s lint:*",
-    "lint:prettier": "prettier \"lib/**/*.ts\"",
-    "lint:lint:cdk": "eslint bin --ext .ts",
+    "lint:prettier": "prettier --check \"lib/**/*.ts\" \"test/**/*.ts\" \"bin/**/*.ts\"",
+    "lint:eslint": "eslint lib test bin --ext .ts",
     "deploy": "yarn build && cdk deploy"
   },
   "devDependencies": {

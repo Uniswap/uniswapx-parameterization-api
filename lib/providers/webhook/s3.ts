@@ -46,5 +46,4 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     this.endpoints = JSON.parse(await s3Body.transformToString()) as WebhookConfiguration[];
     this.log.info({ endpoints: this.endpoints }, `Fetched ${this.endpoints.length} endpoints from S3`);
   }
-
 }

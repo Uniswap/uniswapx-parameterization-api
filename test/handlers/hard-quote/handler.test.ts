@@ -1,12 +1,19 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
-import { CosignedV2DutchOrder, CosignerData, OrderType, UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
+import {
+  CosignedV2DutchOrder,
+  CosignerData,
+  OrderType,
+  UnsignedV2DutchOrder,
+  UnsignedV2DutchOrderInfo,
+} from '@uniswap/uniswapx-sdk';
 import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 // import axios from 'axios';
 import { default as Logger } from 'bunyan';
 import { BigNumber, ethers, Wallet } from 'ethers';
 
+import { KmsSigner } from '@uniswap/signer';
 import { HardQuoteRequest, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
 import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
@@ -20,7 +27,6 @@ import {
 import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, MOCK_FILLER_ADDRESS, Quoter } from '../../../lib/quoters';
-import { KmsSigner } from '@uniswap/signer';
 
 jest.mock('axios');
 jest.mock('@aws-sdk/client-kms');
@@ -77,17 +83,18 @@ export const getOrder = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV2Dut
 describe('Quote handler', () => {
   const swapperWallet = Wallet.createRandom();
   const cosignerWallet = Wallet.createRandom();
-  
+
   const mockGetAddress = jest.fn().mockResolvedValue(cosignerWallet.address);
-  const mockSignDigest = jest.fn().mockImplementation((digest) => cosignerWallet.signMessage(ethers.utils.arrayify(digest)));
-  
+  const mockSignDigest = jest
+    .fn()
+    .mockImplementation((digest) => cosignerWallet.signMessage(ethers.utils.arrayify(digest)));
+
   (KmsSigner as jest.Mock).mockImplementation(() => ({
     getAddress: mockGetAddress,
     signDigest: mockSignDigest,
   }));
   (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
-  
-  
+
   // Creating mocks for all the handler dependencies.
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
@@ -108,9 +115,7 @@ describe('Quote handler', () => {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
             // Mock chainIdRpcMap
-            chainIdRpcMap: new Map([
-              [42161, new ethers.providers.StaticJsonRpcProvider()],
-            ]),
+            chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
         },
         getRequestInjected: () => requestInjectedMock,
@@ -307,7 +312,11 @@ describe('Quote handler', () => {
     it('updates decay times reasonably', async () => {
       const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
       const now = Math.floor(Date.now() / 1000);
-      const cosignerData: CosignerData = (await getCosignerData(new HardQuoteRequest(request, OrderType.Dutch_V2), getQuoteResponse({}), OrderType.Dutch_V2)) as CosignerData;
+      const cosignerData: CosignerData = (await getCosignerData(
+        new HardQuoteRequest(request, OrderType.Dutch_V2),
+        getQuoteResponse({}),
+        OrderType.Dutch_V2
+      )) as CosignerData;
       expect(cosignerData.decayStartTime).toBeGreaterThan(now);
       expect(cosignerData.decayStartTime).toBeLessThan(now + 1000);
       expect(cosignerData.decayEndTime).toBeGreaterThan(cosignerData.decayStartTime);

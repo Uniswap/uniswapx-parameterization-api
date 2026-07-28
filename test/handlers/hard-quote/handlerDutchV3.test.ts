@@ -110,9 +110,7 @@ describe('Quote handler', () => {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
             // Mock chainIdRpcMap
-            chainIdRpcMap: new Map([
-              [42161, new ethers.providers.StaticJsonRpcProvider()],
-            ]),
+            chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
         },
         getRequestInjected: () => requestInjectedMock,

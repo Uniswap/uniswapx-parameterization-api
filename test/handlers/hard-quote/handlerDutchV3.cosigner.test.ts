@@ -2,8 +2,7 @@ import { TradeType } from '@uniswap/sdk-core';
 import { OrderType, UnsignedV3DutchOrder, V3CosignerData } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 
-import { QuoteResponse, QuoteResponseData } from '../../../lib/entities';
-import { HardQuoteRequest } from '../../../lib/entities';
+import { HardQuoteRequest, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
 import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { ChainId } from '../../../lib/util/chains';
 

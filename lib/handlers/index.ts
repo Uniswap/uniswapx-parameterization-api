@@ -3,8 +3,8 @@ import {
   fillEventProcessor,
   postOrderProcessor,
   quoteProcessor,
-  unimindResponseProcessor,
   unimindParameterUpdateProcessor,
+  unimindResponseProcessor,
 } from './blueprints/cw-log-firehose-processor';
 
 module.exports = {

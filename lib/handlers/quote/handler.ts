@@ -1,8 +1,8 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Logger from 'bunyan';
-import Joi from 'joi';
 import { ethers } from 'ethers';
+import Joi from 'joi';
 
 import { Metric, QuoteRequest, QuoteResponse } from '../../entities';
 import { Quoter } from '../../quoters';

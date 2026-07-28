@@ -1,8 +1,8 @@
 import { BigNumber, ethers } from 'ethers';
 import Joi, { CustomHelpers } from 'joi';
 
-import { SUPPORTED_CHAINS, TESTNET_CHAINS } from './chains';
 import { ProtocolVersion } from '../providers';
+import { SUPPORTED_CHAINS, TESTNET_CHAINS } from './chains';
 
 export class FieldValidator {
   public static readonly address = Joi.string().custom((value: string, helpers: CustomHelpers<string>) => {

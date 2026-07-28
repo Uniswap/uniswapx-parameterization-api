@@ -268,7 +268,11 @@ export function calculateNewTimestamps(
     // down through decay and plots the 0 when a filler fully recovers. Skip never-blocked
     // fillers (0 -> 0) to avoid a flat-zero series per filler.
     if (consecutiveBlocks > 0 || previousBlocks > 0) {
-      metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, hash), consecutiveBlocks, Unit.Count);
+      metrics?.putMetric(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, hash),
+        consecutiveBlocks,
+        Unit.Count
+      );
     }
   });
   metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_NEW_BLOCKS, newBlocks, Unit.Count);

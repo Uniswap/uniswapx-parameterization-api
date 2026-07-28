@@ -1,7 +1,4 @@
-import {
-  getV3BlockBuffer,
-  getWebhookTimeoutMs,
-} from '../../lib/constants';
+import { getV3BlockBuffer, getWebhookTimeoutMs } from '../../lib/constants';
 import { ChainId } from '../../lib/util/chains';
 
 describe('V3 chain constants', () => {
