@@ -11,6 +11,7 @@ import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { BigNumber, ethers, Wallet } from 'ethers';
+import { getV3BlockBuffer } from '../../../lib/constants';
 import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
@@ -27,12 +28,17 @@ jest.mock('axios');
 jest.mock('@aws-sdk/client-kms');
 jest.mock('@uniswap/signer');
 
-//const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
+const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
+// Deliberately DIFFERENT from QUOTE_ID. HardQuoteRequest derives
+// `requestId: _data.quoteId ?? uuidv4()`, so an assertion that the response echoes the
+// requestId proves nothing while the two constants are the same uuid.
+const REQUEST_ID = 'b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03';
 const TOKEN_IN = USDT_ARBITRUM;
 const TOKEN_OUT = WBTC_ARBITRUM;
 const RAW_AMOUNT = BigNumber.from('1000000000000000000');
 const CHAIN_ID = 42161;
+// Arbitrary; the V3 path derives decayStartBlock from it, which the test asserts.
+const CURRENT_BLOCK = 1_000_000;
 
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
@@ -40,7 +46,9 @@ logger.level(Logger.FATAL);
 process.env.KMS_KEY_ID = 'test-key-id';
 process.env.REGION = 'us-east-2';
 
-export const getPartialOrder = (data: Partial<UnsignedV3DutchOrderInfo>): UnsignedV3DutchOrder => {
+// Not exported: nothing outside this file uses it, and exporting a helper from a *.test.ts
+// file is what lets a stray `.only` here silence an unrelated suite (see test/fixtures/hard-quote.ts).
+const getPartialOrder = (data: Partial<UnsignedV3DutchOrderInfo>): UnsignedV3DutchOrder => {
   const now = Math.floor(new Date().getTime() / 1000);
   const validPartialOrder = new V3DutchOrderBuilder(CHAIN_ID)
     .cosigner(data.cosigner ?? ethers.constants.AddressZero)
@@ -74,6 +82,13 @@ export const getPartialOrder = (data: Partial<UnsignedV3DutchOrderInfo>): Unsign
 
   return validPartialOrder;
 };
+
+// Mirrors makeProvider in handlerDutchV3.cosigner.test.ts. Only getBlockNumber is used by the
+// V3 cosigner path (lib/handlers/hard-quote/handler.ts:277 and :418).
+const makeProvider = (): ethers.providers.StaticJsonRpcProvider =>
+  ({
+    getBlockNumber: jest.fn().mockResolvedValue(CURRENT_BLOCK),
+  } as unknown as ethers.providers.StaticJsonRpcProvider);
 
 describe('Quote handler', () => {
   const swapperWallet = Wallet.createRandom();
@@ -109,8 +124,11 @@ describe('Quote handler', () => {
           return {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
-            // Mock chainIdRpcMap
-            chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
+            // The V3 path calls provider.getBlockNumber() to derive decayStartBlock. A real
+            // StaticJsonRpcProvider here defaults to http://localhost:8545, so the call fails
+            // and the handler returns 500 -- which is why this suite was skipped rather than
+            // being blocked on the order service. Duck-typed to keep the test offline.
+            chainIdRpcMap: new Map([[CHAIN_ID, makeProvider()]]),
           };
         },
         getRequestInjected: () => requestInjectedMock,
@@ -129,6 +147,7 @@ describe('Quote handler', () => {
     const sig = await swapperWallet._signTypedData(domain, types, values);
     return {
       requestId: REQUEST_ID,
+      quoteId: QUOTE_ID,
       tokenInChainId: CHAIN_ID,
       tokenOutChainId: CHAIN_ID,
       encodedInnerOrder: order.serialize(),
@@ -140,8 +159,7 @@ describe('Quote handler', () => {
     jest.clearAllMocks();
   });
 
-  it.skip('Simple request and response', async () => {
-    // Skip until V3 Order Service is ready
+  it('Simple request and response', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
     const request = await getRequest(getPartialOrder({ cosigner: cosignerWallet.address }));
 
@@ -149,18 +167,27 @@ describe('Quote handler', () => {
       getEvent(request),
       {} as unknown as Context
     );
-    const quoteResponse: HardQuoteResponseData = JSON.parse(response.body); // random quoteId
+    const quoteResponse: HardQuoteResponseData = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
-    expect(quoteResponse.requestId).toEqual(request.requestId);
-    expect(quoteResponse.quoteId).toEqual(request.quoteId);
+    // requestId is the indicative quoteId, not the client-supplied requestId
+    expect(quoteResponse.requestId).toEqual(QUOTE_ID);
+    expect(quoteResponse.requestId).not.toEqual(REQUEST_ID);
+    expect(quoteResponse.quoteId).toEqual(QUOTE_ID);
     expect(quoteResponse.chainId).toEqual(request.tokenInChainId);
     expect(quoteResponse.filler).toEqual(ethers.constants.AddressZero);
     const cosignedOrder = CosignedV3DutchOrder.parse(quoteResponse.encodedOrder, CHAIN_ID);
 
-    // no overrides since quote was same as request
+    // MockQuoter(1, 1) quotes exactly the requested amount, so the quote is not strictly
+    // better for the swapper and nothing is overridden.
     expect(cosignedOrder.info.cosignerData.exclusiveFiller).toEqual(ethers.constants.AddressZero);
     expect(cosignedOrder.info.cosignerData.inputOverride).toEqual(BigNumber.from(0));
     expect(cosignedOrder.info.cosignerData.outputOverrides.length).toEqual(1);
     expect(cosignedOrder.info.cosignerData.outputOverrides[0]).toEqual(BigNumber.from(0));
+
+    // V3-specific: decay is block-based, derived from the mocked getBlockNumber. Without this
+    // the mocked provider would be untested scaffolding.
+    expect(cosignedOrder.info.cosignerData.decayStartBlock).toEqual(CURRENT_BLOCK + getV3BlockBuffer(CHAIN_ID));
+    // V3 uses a tighter exclusivity override than V2's 100 bps.
+    expect(cosignedOrder.info.cosignerData.exclusivityOverrideBps).toEqual(BigNumber.from(25));
   });
 });
