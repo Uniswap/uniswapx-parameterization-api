@@ -13,7 +13,6 @@ import * as path from 'path';
 
 import { ITopic } from 'aws-cdk-lib/aws-sns';
 import { DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
-import { PARTITION_KEY } from '../../lib/repositories/switch-repository';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
@@ -29,7 +28,6 @@ type TableCapacityOptions = {
 
 export type TableCapacityConfig = {
   fillerAddress: TableCapacityOptions;
-  synthSwitch: TableCapacityOptions;
   timestamps: TableCapacityOptions;
 };
 
@@ -45,7 +43,6 @@ export interface CronStackProps extends cdk.NestedStackProps {
 
 export class CronStack extends cdk.NestedStack {
   public readonly fadeRateV2CronLambda?: aws_lambda_nodejs.NodejsFunction;
-  public readonly synthSwitchCronLambda: aws_lambda_nodejs.NodejsFunction;
   public readonly redshiftReaperCronLambda: aws_lambda_nodejs.NodejsFunction;
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
@@ -109,31 +106,6 @@ export class CronStack extends cdk.NestedStack {
       });
     }
 
-    this.synthSwitchCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}SynthSwitch`, {
-      role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
-      entry: path.join(__dirname, '../../lib/cron/synth-switch.ts'),
-      handler: 'handler',
-      timeout: Duration.minutes(10), // should be more than enough
-      memorySize: 1024,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        REDSHIFT_DATABASE: RsDatabase,
-        REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
-        REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
-        stage: stage,
-        ...envVars,
-      },
-    });
-    new aws_events.Rule(this, `${SERVICE_NAME}SynthSwitchSchedule`, {
-      // TODO: fix schedule
-      schedule: aws_events.Schedule.rate(Duration.minutes(15)),
-      targets: [new aws_events_targets.LambdaFunction(this.synthSwitchCronLambda)],
-    });
-
     this.redshiftReaperCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}Reaper`, {
       role: lambdaRole,
       runtime: aws_lambda.Runtime.NODEJS_20_X,
@@ -158,19 +130,6 @@ export class CronStack extends cdk.NestedStack {
       schedule: aws_events.Schedule.rate(Duration.hours(12)),
       targets: [new aws_events_targets.LambdaFunction(this.redshiftReaperCronLambda)],
     });
-
-    const synthSwitchTable = new aws_dynamo.Table(this, `${SERVICE_NAME}SynthSwitchTable`, {
-      tableName: DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE,
-      partitionKey: {
-        name: PARTITION_KEY,
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      deletionProtection: true,
-      pointInTimeRecovery: true,
-      contributorInsightsEnabled: true,
-      ...PROD_TABLE_CAPACITY.synthSwitch,
-    });
-    this.alarmsPerTable(synthSwitchTable, DYNAMO_TABLE_NAME.SYNTHETIC_SWITCH_TABLE, chatbotTopic);
 
     const fillerCBTimestampsTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FillerCBTimestampsTable`, {
       tableName: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS,

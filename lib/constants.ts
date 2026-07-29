@@ -3,7 +3,6 @@ import { ChainId } from './util/chains';
 
 export const COMPLIANCE_CONFIG_BUCKET = 'compliance-config';
 export const WEBHOOK_CONFIG_BUCKET = 'rfq-config';
-export const SYNTH_SWITCH_BUCKET = 'synth-config';
 export const FADE_RATE_BUCKET = 'fade-rate-config';
 export const PRODUCTION_S3_KEY = 'production.json';
 export const BETA_S3_KEY = 'beta.json';
@@ -11,7 +10,6 @@ export const PROD_COMPLIANCE_S3_KEY = 'production.json';
 export const BETA_COMPLIANCE_S3_KEY = 'beta.json';
 
 export const DYNAMO_TABLE_NAME = {
-  SYNTHETIC_SWITCH_TABLE: 'SyntheticSwitchTable',
   FILLER_ADDRESS: 'FillerAddress',
   FILLER_CB_TIMESTAMPS: 'FillerCBTimestamps',
   // V2 circuit-breaker state table, separate from FILLER_CB_TIMESTAMPS so the rate-based
@@ -21,13 +19,6 @@ export const DYNAMO_TABLE_NAME = {
 };
 
 export const DYNAMO_TABLE_KEY = {
-  TOKEN_IN: 'tokenIn',
-  TOKEN_IN_CHAIN_ID: 'tokenInChainId',
-  TOKEN_OUT: 'tokenOut',
-  TOKEN_OUT_CHAIN_ID: 'tokenOutChainId',
-  TRADE_TYPE: 'type',
-  LOWER: 'lower',
-  ENABLED: 'enabled',
   BLOCK_UNTIL_TIMESTAMP: 'blockUntilTimestamp',
   LAST_EXAMINED_TIMESTAMP: 'lastExaminedTimestamp',
   FADE_WINDOW_START: 'fadeWindowStart',
