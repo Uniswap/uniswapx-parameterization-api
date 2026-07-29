@@ -73,4 +73,42 @@ describe('QuoteRequest', () => {
       protocol: ProtocolVersion.V1,
     });
   });
+
+  // Every other fixture here sets the two chain ids equal, which cannot tell a correct
+  // tokenOutChainId getter apart from one returning tokenInChainId. These construct the entity
+  // directly because the API cannot produce differing ids today — PostQuoteRequestBodyJoi pins
+  // tokenOutChainId to Joi.ref('tokenInChainId').
+  describe('with distinct tokenIn/tokenOut chain ids', () => {
+    const OTHER_CHAIN_ID = 42161;
+
+    const crossChainRequest = new QuoteRequest({
+      tokenInChainId: CHAIN_ID,
+      tokenOutChainId: OTHER_CHAIN_ID,
+      requestId: REQUEST_ID,
+      swapper: SWAPPER,
+      tokenIn: TOKEN_IN,
+      tokenOut: TOKEN_OUT,
+      amount: ethers.utils.parseEther('1'),
+      type: TradeType.EXACT_INPUT,
+      numOutputs: 1,
+      protocol: ProtocolVersion.V1,
+    });
+
+    it('reads each chain id from its own field', () => {
+      expect(crossChainRequest.tokenInChainId).toEqual(CHAIN_ID);
+      expect(crossChainRequest.tokenOutChainId).toEqual(OTHER_CHAIN_ID);
+    });
+
+    it('carries both chain ids through toCleanJSON', () => {
+      const json = crossChainRequest.toCleanJSON();
+      expect(json.tokenInChainId).toEqual(CHAIN_ID);
+      expect(json.tokenOutChainId).toEqual(OTHER_CHAIN_ID);
+    });
+
+    it('swaps the chain ids for the opposing side', () => {
+      const opposing = crossChainRequest.toOpposingCleanJSON();
+      expect(opposing.tokenInChainId).toEqual(OTHER_CHAIN_ID);
+      expect(opposing.tokenOutChainId).toEqual(CHAIN_ID);
+    });
+  });
 });

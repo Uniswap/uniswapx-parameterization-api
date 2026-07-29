@@ -20,12 +20,12 @@ import { HardQuoteRequest, Metric, QuoteResponse } from '../../entities';
 import { V2HardQuoteResponse } from '../../entities/V2HardQuoteResponse';
 import { V3HardQuoteResponse } from '../../entities/V3HardQuoteResponse';
 import { checkDefined } from '../../preconditions/preconditions';
+import { getBestQuote } from '../../quoters/best-quote';
 import { ChainId } from '../../util/chains';
 import { NoQuotesAvailable, OrderDeadlineExpired, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
-import { getBestQuote } from '../quote/handler';
 import { ContainerInjected, RequestInjected } from './injector';
 import {
   HardQuoteRequestBody,
