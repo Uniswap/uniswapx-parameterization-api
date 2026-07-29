@@ -345,6 +345,9 @@ export class APIStack extends cdk.Stack {
     });
 
     /* add auth keys */
+    // No method currently sets apiKeyRequired; these exist for the hard-quote
+    // gating TODO above. Unrelated to the WAF's `x-api-key` byte-match, which
+    // matches a hand-managed Secrets Manager value, not an API Gateway key.
     const tradingAPIKey = api.addApiKey('TradingAPIKey', {
       apiKeyName: 'tradingAPIKey',
       description: 'API Key for trading endpoints',
@@ -353,11 +356,9 @@ export class APIStack extends cdk.Stack {
       apiKeyName: 'devAPIKey',
       description: 'API Key for development use',
     });
-    const apiAuthzKey = api.addApiKey('AuthzKey');
     const plan = api.addUsagePlan('AccessPlan', {
       name: 'AccessPlan',
     });
-    plan.addApiKey(apiAuthzKey);
     plan.addApiKey(tradingAPIKey);
     plan.addApiKey(devAPIKey);
     plan.addApiStage({

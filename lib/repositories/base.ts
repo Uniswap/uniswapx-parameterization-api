@@ -9,8 +9,6 @@ import Logger from 'bunyan';
 import { checkDefined } from '../preconditions/preconditions';
 import { sleep } from '../util/time';
 
-export * from './analytics-repository';
-
 export type SharedConfigs = {
   Database: string;
   ClusterIdentifier: string;
