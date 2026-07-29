@@ -364,25 +364,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     unimindResponseBucket.grantReadWrite(firehoseRole);
     unimindParameterUpdateBucket.grantReadWrite(firehoseRole);
 
-    const botOrderEventsProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'BotOrderEventsProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'botOrderEventsProcessor',
-      timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
-      memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        VERSION: '2',
-        NODE_OPTIONS: '--enable-source-maps',
-        ANALYTICS_STREAM_ARN: analyticsStreamArn,
-        ...props.envVars,
-        stage,
-      },
-    });
-
     const quoteProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
       runtime: aws_lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
@@ -490,7 +471,6 @@ export class AnalyticsStack extends cdk.NestedStack {
           quoteProcessorLambda.functionArn,
           fillEventProcessorLambda.functionArn,
           postOrderProcessorLambda.functionArn,
-          botOrderEventsProcessorLambda.functionArn,
           unimindResponseProcessorLambda.functionArn,
           unimindParameterUpdateProcessorLambda.functionArn,
         ],
@@ -506,7 +486,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       quoteProcessorLambda,
       fillEventProcessorLambda,
       postOrderProcessorLambda,
-      botOrderEventsProcessorLambda,
       unimindResponseProcessorLambda,
       unimindParameterUpdateProcessorLambda,
     ].forEach((lambda) => {

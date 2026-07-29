@@ -1,5 +1,4 @@
 import {
-  botOrderEventsProcessor,
   fillEventProcessor,
   postOrderProcessor,
   quoteProcessor,
@@ -11,7 +10,6 @@ module.exports = {
   fillEventProcessor: fillEventProcessor,
   postOrderProcessor: postOrderProcessor,
   quoteProcessor: quoteProcessor,
-  botOrderEventsProcessor: botOrderEventsProcessor,
   unimindResponseProcessor: unimindResponseProcessor,
   unimindParameterUpdateProcessor: unimindParameterUpdateProcessor,
 };
