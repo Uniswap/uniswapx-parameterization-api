@@ -238,12 +238,12 @@ describe('Quote handler', () => {
     });
   });
 
-  // Pins the requestId contract introduced by e542951 (PR #317): HardQuoteRequest's
-  // constructor sets `requestId: _data.quoteId ?? uuidv4()`, so the response echoes the
-  // indicative quoteId and the client-supplied requestId is discarded. This is deliberate --
-  // `hardrequests` has no quoteId column, so requestId is how the indicative quoteId reaches
-  // Redshift. The `.not.toEqual` is the load-bearing line: it fails if the derivation is
-  // removed without updating this test.
+  // Pins the requestId contract: HardQuoteRequest's constructor sets
+  // `requestId: _data.quoteId ?? uuidv4()`, so the response echoes the indicative quoteId and
+  // the client-supplied requestId is discarded. This is deliberate -- `hardrequests` has no
+  // quoteId column, so requestId is how the indicative quoteId reaches Redshift. The
+  // `.not.toEqual` is the load-bearing line: it fails if the derivation is removed without
+  // updating this test.
   it('echoes the indicative quoteId as requestId, discarding the client requestId', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
@@ -264,7 +264,6 @@ describe('Quote handler', () => {
   // quoteId is optional in HardQuoteRequestBodyJoi, and on that branch the derivation falls
   // back to a fresh uuidv4(). The caller therefore gets back a requestId it has never seen.
   // Characterization test: this documents current behavior, it does not endorse it.
-  // See the follow-up ticket on the requestId contract.
   it('with no quoteId, returns a generated requestId that is neither id the caller sent', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }), null);

@@ -12,9 +12,10 @@ const RAW_AMOUNT = BigNumber.from('1000000');
 // held regardless of whether requestId carried the caller's id or the quoteId.
 const REQUEST_ID = 'b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03';
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-// HardQuoteRequest's constructor derives `requestId: _data.quoteId ?? uuidv4()` (e542951 /
-// PR #317), so every JSON view below reports the indicative QUOTE_ID as the requestId -- the
-// caller's REQUEST_ID is discarded. Named rather than inlined so the substitution is visible.
+// HardQuoteRequest's constructor derives `requestId: _data.quoteId ?? uuidv4()`, so every JSON
+// view below reports the indicative QUOTE_ID as the requestId -- the caller's REQUEST_ID is
+// discarded. This is deliberate: `hardrequests` has no quoteId column, so requestId is how the
+// indicative quoteId reaches Redshift. Named rather than inlined so the substitution is visible.
 const DERIVED_REQUEST_ID = QUOTE_ID;
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
@@ -238,7 +239,7 @@ describe('QuoteRequest', () => {
   });
 
   // The quoteId-absent branch falls back to a fresh uuidv4(). Characterization test: this
-  // documents current behavior, it does not endorse it. See the requestId-contract follow-up.
+  // documents current behavior, it does not endorse it.
   it('with no quoteId, generates a requestId that is not the client requestId', () => {
     const order = new UnsignedV2DutchOrder(getOrderInfo({ swapper: SWAPPER }), CHAIN_ID);
     const request = makeRequest({ encodedInnerOrder: order.serialize(), innerSig: '0x', quoteId: undefined });

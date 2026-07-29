@@ -31,12 +31,12 @@
     "@typescript-eslint/ban-types": "warn",
     "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
     "@typescript-eslint/ban-ts-comment": "off",
-    // An it.only sat in test/handlers/hard-quote/handler.test.ts from March 2024 to July 2026
-    // and silenced 22 tests. CI stayed green, so a later intentional behavior change
-    // (the requestId derivation) broke those tests with nobody noticing. These three
-    // selectors catch the whole class. no jest plugin needed -- jest itself has no config
-    // option that fails a run containing focused tests, and jest/no-nested-tests
-    // does not exist.
+    // Two ways a test can silently stop running while CI still reports green: a focused test
+    // (.only/fit/fdescribe) skips all its siblings, and a test block nested inside an it()
+    // callback never registers at all. Both are lint-only problems -- jest has no config
+    // option that fails a run containing focused tests, and eslint-plugin-jest has no
+    // equivalent of the third selector, so core no-restricted-syntax covers both without
+    // adding a dependency.
     "no-restricted-syntax": [
       "error",
       {

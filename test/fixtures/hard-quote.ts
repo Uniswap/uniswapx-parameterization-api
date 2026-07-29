@@ -1,13 +1,12 @@
 // Shared V2 hard-quote order fixtures.
 //
-// WHY THIS FILE EXISTS: `getOrder` used to be exported from
-// test/handlers/hard-quote/handler.test.ts and `getOrderInfo` from
-// test/entities/HardQuoteRequest.test.ts, and imported across suites. Importing a *.test.ts
-// module runs its body inside the importer's jest context, so the imported file's
-// describe/it blocks re-register in the importer's suite. Two consequences:
+// WHY THIS FILE EXISTS: these builders were previously exported from the suites that used them
+// and imported across test files. Importing a *.test.ts module runs its body inside the
+// importer's jest context, so the imported file's describe/it blocks re-register in the
+// importer's suite. Two consequences:
 //   1. the imported suite executes twice (once on its own, once inside the importer), and
-//   2. a single `it.only` anywhere in either file silences BOTH files.
-// (2) is what hid 22 tests from March 2024 to July 2026. Never import from a *.test.ts file.
+//   2. a single `it.only` in either file silences BOTH files, with no warning.
+// Never import from a *.test.ts file -- put anything shared here instead.
 //
 // This module deliberately has no `.test.ts` suffix and is not under a `__tests__/`
 // directory, so jest's default testMatch does not collect it as a suite.
