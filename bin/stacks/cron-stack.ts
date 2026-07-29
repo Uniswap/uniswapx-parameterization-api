@@ -12,7 +12,7 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 import { ITopic } from 'aws-cdk-lib/aws-sns';
-import { DYNAMO_TABLE_KEY, DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
+import { DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
 import { PARTITION_KEY } from '../../lib/repositories/switch-repository';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
@@ -29,7 +29,6 @@ type TableCapacityOptions = {
 
 export type TableCapacityConfig = {
   fillerAddress: TableCapacityOptions;
-  fadeRate: TableCapacityOptions;
   synthSwitch: TableCapacityOptions;
   timestamps: TableCapacityOptions;
 };
@@ -108,20 +107,6 @@ export class CronStack extends cdk.NestedStack {
         schedule: aws_events.Schedule.rate(Duration.minutes(10)),
         targets: [new aws_events_targets.LambdaFunction(this.fadeRateV2CronLambda)],
       });
-
-      /* RFQ fade rate table */
-      const fadesTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FadesTable`, {
-        tableName: DYNAMO_TABLE_NAME.FADES,
-        partitionKey: {
-          name: DYNAMO_TABLE_KEY.FILLER,
-          type: aws_dynamo.AttributeType.STRING,
-        },
-        deletionProtection: true,
-        pointInTimeRecovery: true,
-        contributorInsightsEnabled: true,
-        ...PROD_TABLE_CAPACITY.fadeRate,
-      });
-      this.alarmsPerTable(fadesTable, DYNAMO_TABLE_NAME.FADES, chatbotTopic);
     }
 
     this.synthSwitchCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}SynthSwitch`, {

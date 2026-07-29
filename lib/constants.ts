@@ -11,7 +11,6 @@ export const PROD_COMPLIANCE_S3_KEY = 'production.json';
 export const BETA_COMPLIANCE_S3_KEY = 'beta.json';
 
 export const DYNAMO_TABLE_NAME = {
-  FADES: 'Fades',
   SYNTHETIC_SWITCH_TABLE: 'SyntheticSwitchTable',
   FILLER_ADDRESS: 'FillerAddress',
   FILLER_CB_TIMESTAMPS: 'FillerCBTimestamps',
@@ -22,7 +21,6 @@ export const DYNAMO_TABLE_NAME = {
 };
 
 export const DYNAMO_TABLE_KEY = {
-  FILLER: 'filler',
   TOKEN_IN: 'tokenIn',
   TOKEN_IN_CHAIN_ID: 'tokenInChainId',
   TOKEN_OUT: 'tokenOut',
