@@ -6,11 +6,8 @@ import {
 } from '@aws-sdk/client-redshift-data';
 import Logger from 'bunyan';
 
-import { SynthSwitchQueryParams, SynthSwitchTrade } from '../handlers/synth-switch';
 import { checkDefined } from '../preconditions/preconditions';
 import { sleep } from '../util/time';
-
-export * from './analytics-repository';
 
 export type SharedConfigs = {
   Database: string;
@@ -84,11 +81,6 @@ export abstract class BaseRedshiftRepository {
       }
     }
   }
-}
-
-export interface BaseSwitchRepository {
-  putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void>;
-  syntheticQuoteForTradeEnabled(trade: SynthSwitchQueryParams): Promise<boolean>;
 }
 
 export interface BaseTimestampRepository {

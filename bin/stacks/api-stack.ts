@@ -26,7 +26,6 @@ import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
-import { CronDashboardStack } from './cron-dashboard-stack';
 import { CronStack } from './cron-stack';
 import { FirehoseStack } from './firehose-stack';
 import { ParamDashboardStack } from './param-dashboard-stack';
@@ -304,32 +303,6 @@ export class APIStack extends cdk.Stack {
       provisionedConcurrentExecutions: provisionedConcurrency > 0 ? provisionedConcurrency : undefined,
     });
 
-    const switchLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Switch', {
-      role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
-      entry: path.join(__dirname, '../../lib/handlers/synth-switch/exports.ts'),
-      handler: 'switchHandler',
-      memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
-      environment: {
-        VERSION: '6',
-        NODE_OPTIONS: '--enable-source-maps',
-        ...props.envVars,
-        stage,
-        ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
-      },
-      timeout: Duration.seconds(30),
-    });
-
-    const switchLambdaAlias = new aws_lambda.Alias(this, `SwitchLiveAlias`, {
-      aliasName: 'live',
-      version: switchLambda.currentVersion,
-      provisionedConcurrentExecutions: 0,
-    });
-
     if (provisionedConcurrency > 0) {
       const quoteTarget = new aws_asg.ScalableTarget(this, 'QuoteProvConcASG', {
         serviceNamespace: aws_asg.ServiceNamespace.LAMBDA,
@@ -371,16 +344,10 @@ export class APIStack extends cdk.Stack {
       apiKeyRequired: false, // TODO: Set to true once Trading API has integrated
     });
 
-    const switchLambdaIntegration = new aws_apigateway.LambdaIntegration(switchLambdaAlias, {});
-    const switchResource = api.root.addResource('synthetic-switch', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
-        allowMethods: aws_apigateway.Cors.ALL_METHODS,
-      },
-    });
-    const enabled = switchResource.addResource('enabled');
-
     /* add auth keys */
+    // No method currently sets apiKeyRequired; these exist for the hard-quote
+    // gating TODO above. Unrelated to the WAF's `x-api-key` byte-match, which
+    // matches a hand-managed Secrets Manager value, not an API Gateway key.
     const tradingAPIKey = api.addApiKey('TradingAPIKey', {
       apiKeyName: 'tradingAPIKey',
       description: 'API Key for trading endpoints',
@@ -389,18 +356,14 @@ export class APIStack extends cdk.Stack {
       apiKeyName: 'devAPIKey',
       description: 'API Key for development use',
     });
-    const apiAuthzKey = api.addApiKey('AuthzKey');
     const plan = api.addUsagePlan('AccessPlan', {
       name: 'AccessPlan',
     });
-    plan.addApiKey(apiAuthzKey);
     plan.addApiKey(tradingAPIKey);
     plan.addApiKey(devAPIKey);
     plan.addApiStage({
       stage: api.deploymentStage,
     });
-
-    enabled.addMethod('GET', switchLambdaIntegration, { apiKeyRequired: true });
 
     /*
      * Param Dashboard Stack Initialization
@@ -421,18 +384,13 @@ export class APIStack extends cdk.Stack {
       chatbotSNSArn,
     });
 
-    const cronStack = new CronStack(this, 'CronStack', {
+    new CronStack(this, 'CronStack', {
       RsDatabase: analyticsStack.dbName,
       RsClusterIdentifier: analyticsStack.clusterId,
       RedshiftCredSecretArn: analyticsStack.credSecretArn,
       lambdaRole: lambdaRole,
       chatbotSNSArn: chatbotSNSArn,
       stage: stage,
-    });
-
-    new CronDashboardStack(this, 'CronDashboardStack', {
-      synthSwitchLambdaName: cronStack.synthSwitchCronLambda.functionName,
-      quoteLambdaName: quoteLambda.functionName,
     });
 
     /* filler addr table */
