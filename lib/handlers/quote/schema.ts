@@ -57,8 +57,6 @@ export type PostQuoteResponseWithAllQuotes = PostQuoteResponse & {
   allQuotes?: PostQuoteResponse[];
 };
 
-// The response body this service returns to whoever called POST /quote. Named for its shape, not
-// its consumer: it was URA, it is now the Trading API, and the name should not have to change again.
 export const PostQuoteResponseWithAllQuotesJoi = Joi.object({
   chainId: FieldValidator.chainId.required(),
   requestId: FieldValidator.uuid.required(),
