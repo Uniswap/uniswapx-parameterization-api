@@ -156,27 +156,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       aws_ec2.Port.tcp(rsCluster.clusterEndpoint.port)
     );
 
-    new aws_rs.Table(this, 'UnifiedRoutingRequestTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'UnifiedRoutingRequests',
-      tableColumns: [
-        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amount', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'type', dataType: RS_DATA_TYPES.TRADE_TYPE },
-        { name: 'swapper', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'configs', dataType: RS_DATA_TYPES.ROUTING }, // array as string, e.g. '[DUTCH_LIMIT,CLASSIC]'
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
-      ],
-    });
-
     const rfqRequestTable = new aws_rs.Table(this, 'RfqRequestTable', {
       cluster: rsCluster,
       adminUser: creds,
@@ -213,35 +192,6 @@ export class AnalyticsStack extends cdk.NestedStack {
         { name: 'type', dataType: RS_DATA_TYPES.TRADE_TYPE },
         { name: 'numOutputs', dataType: RS_DATA_TYPES.INTEGER },
         { name: 'cosigner', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
-      ],
-    });
-
-    new aws_rs.Table(this, 'UnifiedRoutingResponseTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'UnifiedRoutingResponses',
-      tableColumns: [
-        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
-        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'swapper', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'endAmountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'endAmountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'amountInGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'amountOutGasAdjusted', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'slippage', dataType: RS_DATA_TYPES.SLIPPAGE },
-        { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'routing', dataType: RS_DATA_TYPES.ROUTING },
         { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
         { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
       ],
