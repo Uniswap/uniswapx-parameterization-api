@@ -131,21 +131,7 @@ export class CronStack extends cdk.NestedStack {
       targets: [new aws_events_targets.LambdaFunction(this.redshiftReaperCronLambda)],
     });
 
-    const fillerCBTimestampsTable = new aws_dynamo.Table(this, `${SERVICE_NAME}FillerCBTimestampsTable`, {
-      tableName: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS,
-      partitionKey: {
-        name: 'hash',
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      deletionProtection: true,
-      pointInTimeRecovery: true,
-      contributorInsightsEnabled: true,
-      ...PROD_TABLE_CAPACITY.timestamps,
-    });
-    this.alarmsPerTable(fillerCBTimestampsTable, DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS, chatbotTopic);
-
-    // V2 circuit-breaker state table, separate from the V1 table so the rate-based breaker's
-    // state is isolated for independent rollout/rollback. State is derived and starts empty.
+    // Circuit-breaker state table. State is derived (recomputed each cron run from Redshift).
     const fillerCBTimestampsV2Table = new aws_dynamo.Table(this, `${SERVICE_NAME}FillerCBTimestampsV2Table`, {
       tableName: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS_V2,
       partitionKey: {

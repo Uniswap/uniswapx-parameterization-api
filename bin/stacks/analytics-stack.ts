@@ -156,7 +156,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       aws_ec2.Port.tcp(rsCluster.clusterEndpoint.port)
     );
 
-    const uraRequestTable = new aws_rs.Table(this, 'UnifiedRoutingRequestTable', {
+    new aws_rs.Table(this, 'UnifiedRoutingRequestTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
@@ -218,7 +218,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const uraResponseTable = new aws_rs.Table(this, 'UnifiedRoutingResponseTable', {
+    new aws_rs.Table(this, 'UnifiedRoutingResponseTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
@@ -351,11 +351,9 @@ export class AnalyticsStack extends cdk.NestedStack {
       managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
     });
     rfqRequestBucket.grantReadWrite(firehoseRole);
-    unifiedRoutingRequestBucket.grantReadWrite(firehoseRole);
     hardRequestBucket.grantReadWrite(firehoseRole);
     rfqResponseBucket.grantReadWrite(firehoseRole);
     hardResponseBucket.grantReadWrite(firehoseRole);
-    unifiedRoutingResponseBucket.grantReadWrite(firehoseRole);
     fillBucket.grantReadWrite(firehoseRole);
     ordersBucket.grantReadWrite(firehoseRole);
     botOrderLoaderBucket.grantReadWrite(firehoseRole);
@@ -537,39 +535,6 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-kinesisfirehose-deliverystream.html
-    const uraRequestStream = new aws_firehose.CfnDeliveryStream(this, 'uraRequestStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: unifiedRoutingRequestBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: uraRequestTable.tableName,
-          dataTableColumns: uraRequestTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: quoteProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
     const rfqRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RfqRequestStream', {
       redshiftDestinationConfiguration: {
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
@@ -651,39 +616,6 @@ export class AnalyticsStack extends cdk.NestedStack {
           copyOptions: "JSON 'auto ignorecase'",
           dataTableName: hardResponseTable.tableName,
           dataTableColumns: hardResponseTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: quoteProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
-    const uraResponseStream = new aws_firehose.CfnDeliveryStream(this, 'UnifiedRoutingResponseStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: unifiedRoutingResponseBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: uraResponseTable.tableName,
-          dataTableColumns: uraResponseTable.tableColumns.map((column) => column.name).toString(),
         },
         processingConfiguration: {
           enabled: true,
@@ -858,41 +790,28 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     /* Firehose Alarms */
+    // hasRedshift gates the DeliveryToRedshift alarms: the S3-only streams never emit that
+    // metric, so alarming on it just creates alarms that sit in INSUFFICIENT_DATA forever.
     const allStreams = [
-      uraRequestStream,
-      rfqRequestFirehoseStream,
-      hardRequestFirehoseStream,
-      hardResponseFirehoseStream,
-      uraResponseStream,
-      rfqResponseFirehoseStream,
-      fillStream,
-      orderStream,
-      activeOrderStream,
-      unimindResponseStream,
-      unimindParameterUpdateStream,
+      { stream: rfqRequestFirehoseStream, hasRedshift: true },
+      { stream: hardRequestFirehoseStream, hasRedshift: true },
+      { stream: hardResponseFirehoseStream, hasRedshift: true },
+      { stream: rfqResponseFirehoseStream, hasRedshift: true },
+      { stream: fillStream, hasRedshift: true },
+      { stream: orderStream, hasRedshift: true },
+      { stream: activeOrderStream, hasRedshift: false },
+      { stream: unimindResponseStream, hasRedshift: false },
+      { stream: unimindParameterUpdateStream, hasRedshift: false },
     ];
 
-    allStreams.forEach((stream) => {
+    allStreams.forEach(({ stream, hasRedshift }) => {
       const s3DeliverySuccessSev3Name = `${stream.node.id}-SEV3-S3Delivery`;
       const s3DeliverySuccessSev2Name = `${stream.node.id}-SEV2-S3Delivery`;
       const missingRecordsName = `UniswapXParameterizationAPI-SEV3-MissingRecords-${stream.node.id}`;
 
-      const redshiftDeliverySuccessSev3Name = `${stream.node.id}-SEV3-RedshiftDelivery`;
-      const redshiftDeliverySuccessSev2Name = `${stream.node.id}-SEV2-RedshiftDelivery`;
-
       const deliveryToS3 = new cdk.aws_cloudwatch.Metric({
         namespace: 'AWS/Firehose',
         metricName: 'DeliveryToS3.Success',
-        dimensionsMap: {
-          DeliveryStreamName: stream.ref,
-        },
-        statistic: 'Average',
-        period: cdk.Duration.minutes(5),
-      });
-
-      const deliveryToRedshift = new cdk.aws_cloudwatch.Metric({
-        namespace: 'AWS/Firehose',
-        metricName: 'DeliveryToRedshift.Success',
         dimensionsMap: {
           DeliveryStreamName: stream.ref,
         },
@@ -940,29 +859,41 @@ export class AnalyticsStack extends cdk.NestedStack {
         actionsEnabled: true,
       });
 
-      const redshiftDeliverySev3 = new cdk.aws_cloudwatch.Alarm(this, redshiftDeliverySuccessSev3Name, {
-        metric: deliveryToRedshift,
-        threshold: 0.95,
-        evaluationPeriods: 3,
-        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-        treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
-        actionsEnabled: true,
-      });
+      const deliveryAlarms = [s3DeliverySev3, s3DeliverySev2];
 
-      const redshiftDeliverySev2 = new cdk.aws_cloudwatch.Alarm(this, redshiftDeliverySuccessSev2Name, {
-        metric: deliveryToRedshift,
-        threshold: 0.85,
-        evaluationPeriods: 3,
-        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-        treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
-        actionsEnabled: true,
-      });
+      if (hasRedshift) {
+        const deliveryToRedshift = new cdk.aws_cloudwatch.Metric({
+          namespace: 'AWS/Firehose',
+          metricName: 'DeliveryToRedshift.Success',
+          dimensionsMap: {
+            DeliveryStreamName: stream.ref,
+          },
+          statistic: 'Average',
+          period: cdk.Duration.minutes(5),
+        });
+
+        deliveryAlarms.push(
+          new cdk.aws_cloudwatch.Alarm(this, `${stream.node.id}-SEV3-RedshiftDelivery`, {
+            metric: deliveryToRedshift,
+            threshold: 0.95,
+            evaluationPeriods: 3,
+            comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+            treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
+            actionsEnabled: true,
+          }),
+          new cdk.aws_cloudwatch.Alarm(this, `${stream.node.id}-SEV2-RedshiftDelivery`, {
+            metric: deliveryToRedshift,
+            threshold: 0.85,
+            evaluationPeriods: 3,
+            comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+            treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
+            actionsEnabled: true,
+          })
+        );
+      }
 
       if (chatBotTopic) {
-        s3DeliverySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-        s3DeliverySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-        redshiftDeliverySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-        redshiftDeliverySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
+        deliveryAlarms.forEach((alarm) => alarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic)));
       }
     });
 
@@ -999,18 +930,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       roleArn: subscriptionRole.roleArn,
       targetArn: orderStream.attrArn,
       destinationName: 'postedOrderDestination',
-    });
-
-    const uraRequestDestination = new aws_logs.CfnDestination(this, 'uraRequestDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: uraRequestStream.attrArn,
-      destinationName: 'uraRequestDestination',
-    });
-
-    const uraResponseDestination = new aws_logs.CfnDestination(this, 'uraResponseDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: uraResponseStream.attrArn,
-      destinationName: 'uraResponseDestination',
     });
 
     const unimindResponseDestination = new aws_logs.CfnDestination(this, 'UnimindResponseDestination', {
@@ -1067,37 +986,6 @@ export class AnalyticsStack extends cdk.NestedStack {
             Effect: 'Allow',
             Principal: {
               AWS: props.envVars['FILL_LOG_SENDER_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-    }
-
-    if (props.envVars['URA_ACCOUNT']) {
-      uraRequestDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['URA_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-      uraResponseDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['URA_ACCOUNT'],
             },
             Action: 'logs:PutSubscriptionFilter',
             Resource: '*',
@@ -1174,20 +1062,11 @@ export class AnalyticsStack extends cdk.NestedStack {
     new CfnOutput(this, 'postedOrderDestinationName', {
       value: postedOrderDestination.attrArn,
     });
-    new CfnOutput(this, 'uraRequestDestinationName', {
-      value: uraRequestDestination.attrArn,
-    });
-    new CfnOutput(this, 'uraResponseDestinationName', {
-      value: uraResponseDestination.attrArn,
-    });
     new CfnOutput(this, 'unimindResponseDestinationName', {
       value: unimindResponseDestination.attrArn,
     });
     new CfnOutput(this, 'unimindParameterUpdateDestinationName', {
       value: unimindParameterUpdateDestination.attrArn,
-    });
-    new CfnOutput(this, 'UraAccount', {
-      value: props.envVars['URA_ACCOUNT'],
     });
     new CfnOutput(this, 'BOT_ACCOUNT', {
       value: props.envVars['BOT_ACCOUNT'],

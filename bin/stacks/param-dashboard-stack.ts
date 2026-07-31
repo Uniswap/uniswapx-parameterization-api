@@ -79,24 +79,28 @@ const LatencyWidget = (region: string): LambdaWidget[] =>
     };
   });
 
-const RFQLatencyWidget = (region: string, rfqProviders: string[]): LambdaWidget[] =>
+// Per-filler response times, discovered via SEARCH rather than a hardcoded filler list: the
+// filler set lives in the S3 RFQ config and is only known at runtime, so any list baked in here
+// would be wrong. Series are named RFQ_RESPONSE_TIME_<filler name> (see WebhookQuoter).
+const RFQLatencyWidget = (region: string): LambdaWidget[] =>
   RFQ_SERVICES.map((service) => {
     return {
       height: 11,
       width: 13,
       type: 'metric',
       properties: {
-        metrics: rfqProviders.map((name) => [
-          'Uniswap',
-          `RFQ_RESPONSE_TIME_${name}`,
-          'Service',
-          service.Service,
-          { label: name },
-        ]),
+        metrics: [
+          [
+            {
+              expression: `SEARCH('{Uniswap,Service} Service="${service.Service}" ${Metric.RFQ_RESPONSE_TIME}_', 'p90', 300)`,
+              id: 'rfqResponseTimes',
+              region,
+            },
+          ],
+        ],
         view: 'timeSeries',
         stacked: false,
         region,
-        stat: 'p90',
         period: 300,
         title: `${service.Service} RFQ Response Times P90 | 5 minutes`,
       },
@@ -112,10 +116,7 @@ const QuotesRequestedWidget = (region: string): LambdaWidget[] =>
       x: 0,
       type: 'metric',
       properties: {
-        metrics: [
-          ['Uniswap', 'QUOTE_REQUESTED', 'Service', service.Service],
-          ['.', 'QUOTE_200', '.', '.', { visible: false }],
-        ],
+        metrics: [['Uniswap', Metric.QUOTE_REQUESTED, 'Service', service.Service]],
         view: 'timeSeries',
         region,
         stat: 'Sum',
@@ -307,7 +308,11 @@ const FailingRFQLogsWidget = (region: string, logGroup: string): LambdaWidget =>
     width: 24,
     height: 6,
     properties: {
-      query: `SOURCE '${logGroup}' | fields @timestamp, msg\n| filter quoter = 'WebhookQuoter' and msg like "Error fetching quote"\n| sort @timestamp desc\n| limit 20`,
+      // Insights treats "double quotes" as a field reference, so the old `msg like "..."` matched
+      // nothing at all. The regex needs an inline (?i) flag (Insights rejects a trailing /i) to
+      // catch both WebhookQuoter branches, which differ only in case: 'Error fetching quote from'
+      // and 'Axios error fetching quote from'.
+      query: `SOURCE '${logGroup}' | fields @timestamp, msg\n| filter quoter = 'WebhookQuoter' and msg like /(?i)error fetching quote from/\n| sort @timestamp desc\n| limit 20`,
       region,
       stacked: false,
       view: 'table',
@@ -316,7 +321,13 @@ const FailingRFQLogsWidget = (region: string, logGroup: string): LambdaWidget =>
   };
 };
 
-const RFQFailRatesWidget = (region: string, rfqProviders: string[]): LambdaWidget[] =>
+// Aggregate fail rate across all fillers. WebhookQuoter emits each of these metrics in both bare
+// and per-filler (`_<name>`) form on the same code path, so summing the per-filler series is
+// arithmetically identical to the bare series — using the bare ones keeps this to one expression
+// and, because the names come from the enum, it cannot drift from the emitter. Per-filler
+// breakdown is deliberately not charted here: pairing three metric families per filler is not
+// expressible via SEARCH, and per-filler latency is already visible in RFQLatencyWidget.
+const RFQFailRatesWidget = (region: string): LambdaWidget[] =>
   RFQ_SERVICES.map((service) => {
     return {
       height: 10,
@@ -325,42 +336,25 @@ const RFQFailRatesWidget = (region: string, rfqProviders: string[]): LambdaWidge
       x: 11,
       type: 'metric',
       properties: {
-        metrics: rfqProviders.flatMap((name, i) => {
-          const rfqRequested = i * 3;
-          const rfqFailError = i * 3 + 1;
-          const rfqFailValidation = i * 3 + 2;
-          return [
-            [
-              {
-                expression: `100*((m${rfqFailError}+m${rfqFailValidation})/m${rfqRequested})`,
-                label: name,
-                id: `e${i}`,
-                region,
-              },
-            ],
-            [
-              'Uniswap',
-              `RFQ_REQUESTED_${name}`,
-              'Service',
-              service.Service,
-              { id: `m${rfqRequested}`, visible: false },
-            ],
-            [
-              'Uniswap',
-              `RFQ_FAIl_ERROR_${name}`,
-              'Service',
-              service.Service,
-              { id: `m${rfqFailError}`, visible: false },
-            ],
-            [
-              'Uniswap',
-              `RFQ_FAIL_VALIDATION_${name}`,
-              'Service',
-              service.Service,
-              { id: `m${rfqFailValidation}`, visible: false },
-            ],
-          ];
-        }),
+        metrics: [
+          [
+            {
+              expression: '100*((mFailError+mFailValidation)/mRequested)',
+              label: 'fail rate',
+              id: 'failRate',
+              region,
+            },
+          ],
+          ['Uniswap', Metric.RFQ_REQUESTED, 'Service', service.Service, { id: 'mRequested', visible: false }],
+          ['Uniswap', Metric.RFQ_FAIL_ERROR, 'Service', service.Service, { id: 'mFailError', visible: false }],
+          [
+            'Uniswap',
+            Metric.RFQ_FAIL_VALIDATION,
+            'Service',
+            service.Service,
+            { id: 'mFailValidation', visible: false },
+          ],
+        ],
         view: 'timeSeries',
         stacked: false,
         region,
@@ -474,8 +468,6 @@ export interface DashboardProps extends cdk.NestedStackProps {
 }
 
 // TODO: fetch dynamically from s3?
-const RFQ_PROVIDERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
-
 export class ParamDashboardStack extends cdk.NestedStack {
   constructor(scope: Construct, name: string, props: DashboardProps) {
     super(scope, name, props);
@@ -488,15 +480,15 @@ export class ParamDashboardStack extends cdk.NestedStack {
         periodOverride: 'inherit',
         widgets: [
           LatencyWidget(region),
-          RFQLatencyWidget(region, RFQ_PROVIDERS),
+          RFQLatencyWidget(region),
           QuotesRequestedWidget(region),
           ErrorRatesWidget(region),
           LatencyByChainWidget(region),
           QuotesRequestedByChainWidget(region),
           ErrorRatesByChainWidget(region),
-          RFQFailRatesWidget(region, RFQ_PROVIDERS),
+          RFQFailRatesWidget(region),
           LambdaErrorRatesWidget(region, scope),
-          FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupArn),
+          FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupName),
           CircuitBreakerWidgets(region),
         ].flat(),
       }),
