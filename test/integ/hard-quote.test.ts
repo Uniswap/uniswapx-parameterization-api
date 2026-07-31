@@ -53,6 +53,15 @@ const ERC20_ABI = [
 // Amount of USDC (6 decimals) and ETH to fund the dynamic wallet
 const USDC_FUND_AMOUNT = BigNumber.from(100); // 100 wei of USDC (order only needs 1)
 const ETH_FUND_AMOUNT = ethers.utils.parseEther('0.001'); // enough for gas
+const ETH_TRANSFER_GAS_LIMIT = 21_000;
+
+// Bound every RPC call and confirmation wait so a stalled gateway or stuck tx
+// can't run a mocha hook into its timeout (ethers' default HTTP timeout is
+// 120s and tx.wait() polls forever, either of which fails the whole pipeline).
+// Sepolia blocks are ~12s: a tx not confirmed within a few blocks is stuck,
+// and waiting longer won't unstick it.
+const RPC_TIMEOUT_MS = 15_000;
+const TX_CONFIRM_TIMEOUT_MS = 30_000;
 
 let builder: V2DutchOrderBuilder;
 let provider: ethers.providers.JsonRpcProvider;
@@ -60,13 +69,41 @@ let dynamicWallet: ethers.Wallet;
 let dynamicSwapper: ethers.Wallet;
 let faucetSigner: ethers.Wallet;
 
+// Fee overrides with a 4x base-fee cap. Under EIP-1559 the tx still pays only
+// base + tip, but it stays includable through the base-fee spikes Sepolia sees
+// between fee estimation and inclusion.
+async function spikeResistantFees(): Promise<{ maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber }> {
+  const fee = await provider.getFeeData();
+  const tip = fee.maxPriorityFeePerGas ?? ethers.utils.parseUnits('1.5', 'gwei');
+  const base = fee.lastBaseFeePerGas ?? fee.gasPrice ?? ethers.utils.parseUnits('10', 'gwei');
+  return { maxFeePerGas: base.mul(4).add(tip), maxPriorityFeePerGas: tip };
+}
+
+async function waitForTx(tx: ethers.providers.TransactionResponse, label: string): Promise<void> {
+  let receipt: ethers.providers.TransactionReceipt;
+  try {
+    receipt = await provider.waitForTransaction(tx.hash, 1, TX_CONFIRM_TIMEOUT_MS);
+  } catch (e) {
+    throw new Error(
+      `${label} tx ${tx.hash} not confirmed within ${TX_CONFIRM_TIMEOUT_MS / 1000}s: ${(e as Error).message}`
+    );
+  }
+  if (receipt.status === 0) {
+    throw new Error(`${label} tx ${tx.hash} reverted`);
+  }
+}
+
 describe('Hard Quote endpoint integration test', function () {
-  before(async () => {
+  before(async function () {
+    this.timeout(180_000);
     // The RPC gateway requires the x-internal-service-secret header (see
     // RPC_HEADERS in lib/constants.ts), so attach it the same way the Lambda
     // injectors do. Without it the gateway rejects requests and ethers reports
     // "could not detect network".
-    provider = new ethers.providers.JsonRpcProvider({ url: SEPOLIA_RPC, headers: RPC_HEADERS }, SEPOLIA);
+    provider = new ethers.providers.JsonRpcProvider(
+      { url: SEPOLIA_RPC, headers: RPC_HEADERS, timeout: RPC_TIMEOUT_MS },
+      SEPOLIA
+    );
     faucetSigner = faucetWallet.connect(provider);
 
     // Generate a fresh wallet for tests that post orders to avoid TOO_MANY_OPEN_ORDERS
@@ -77,47 +114,56 @@ describe('Hard Quote endpoint integration test', function () {
 
     // Fund the dynamic wallet with ETH and USDC from the faucet wallet.
     // Send sequentially to avoid nonce conflicts with public RPCs.
+    const fees = await spikeResistantFees();
     const ethTx = await faucetSigner.sendTransaction({
       to: dynamicWallet.address,
       value: ETH_FUND_AMOUNT,
+      ...fees,
     });
-    await ethTx.wait(1);
+    await waitForTx(ethTx, 'ETH funding');
     const usdc = new ethers.Contract(TOKEN_IN, ERC20_ABI, faucetSigner);
-    const usdcTx = await usdc.transfer(dynamicWallet.address, USDC_FUND_AMOUNT);
-    await usdcTx.wait(1);
+    const usdcTx = await usdc.transfer(dynamicWallet.address, USDC_FUND_AMOUNT, fees);
+    await waitForTx(usdcTx, 'USDC funding');
 
     // Approve USDC to Permit2 so the order service's onchain validation passes
     const usdcDynamic = new ethers.Contract(TOKEN_IN, ERC20_ABI, dynamicSwapper);
-    const approveTx = await usdcDynamic.approve(PERMIT2_ADDRESS, ethers.constants.MaxUint256);
-    await approveTx.wait(1);
+    const approveTx = await usdcDynamic.approve(PERMIT2_ADDRESS, ethers.constants.MaxUint256, fees);
+    await waitForTx(approveTx, 'Permit2 approve');
 
     const balance = await usdcDynamic.balanceOf(dynamicWallet.address);
     console.log(`Funded dynamic wallet (USDC balance: ${balance.toString()})`);
   });
 
-  after(async () => {
+  after(async function () {
+    this.timeout(180_000);
+    // Cleanup is best-effort: the dynamic wallet is a throwaway, so a failed
+    // refund must never fail the suite. Every RPC call and confirmation wait
+    // in here is bounded, so the hook itself cannot hit the mocha timeout.
     try {
+      const fees = await spikeResistantFees();
+
       // Return USDC balance to faucet
       const usdc = new ethers.Contract(TOKEN_IN, ERC20_ABI, dynamicSwapper);
       const usdcBalance: BigNumber = await usdc.balanceOf(dynamicWallet.address);
       if (usdcBalance.gt(0)) {
-        const usdcTx = await usdc.transfer(FAUCET_ADDRESS, usdcBalance);
-        await usdcTx.wait();
+        const usdcTx = await usdc.transfer(FAUCET_ADDRESS, usdcBalance, fees);
+        await waitForTx(usdcTx, 'USDC refund');
       }
 
-      // Return remaining ETH to faucet (minus gas for this tx)
+      // Return remaining ETH to faucet, reserving the most the refund tx
+      // itself can cost at the capped fee. An exact legacy-gasPrice reserve
+      // goes unmineable the moment the base fee rises above it.
       const ethBalance = await provider.getBalance(dynamicWallet.address);
-      const gasPrice = await provider.getGasPrice();
-      const gasCost = gasPrice.mul(21000);
+      const gasCost = fees.maxFeePerGas.mul(ETH_TRANSFER_GAS_LIMIT);
       const refundAmount = ethBalance.sub(gasCost);
       if (refundAmount.gt(0)) {
         const ethTx = await dynamicSwapper.sendTransaction({
           to: FAUCET_ADDRESS,
           value: refundAmount,
-          gasLimit: 21000,
-          gasPrice,
+          gasLimit: ETH_TRANSFER_GAS_LIMIT,
+          ...fees,
         });
-        await ethTx.wait();
+        await waitForTx(ethTx, 'ETH refund');
       }
       console.log('Refunded faucet wallet');
     } catch (e) {
