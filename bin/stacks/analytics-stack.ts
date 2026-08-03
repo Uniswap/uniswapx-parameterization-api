@@ -29,9 +29,7 @@ enum RS_DATA_TYPES {
   TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled
   ALL_STATUS = 'text',
   TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
-  ROUTING = 'text',
   CALL_DATA = 'varchar(5000)',
-  SLIPPAGE = 'float4',
   UnitInETH = 'float8',
   BOT_EVENT_TYPE = 'text', // 'fetch' || 'filter' || 'execution' || 'quote'
   ORDER_TYPE = 'text', // 'Limit' || 'Dutch'
@@ -741,7 +739,7 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     /* Firehose Alarms */
     // hasRedshift gates the DeliveryToRedshift alarms: the S3-only streams never emit that
-    // metric, so alarming on it just creates alarms that sit in INSUFFICIENT_DATA forever.
+    // metric, and with treatMissingData NOT_BREACHING an alarm on it can never leave OK.
     const allStreams = [
       { stream: rfqRequestFirehoseStream, hasRedshift: true },
       { stream: hardRequestFirehoseStream, hasRedshift: true },

@@ -20,7 +20,6 @@ export const DYNAMO_TABLE_KEY = {
   BLOCK_UNTIL_TIMESTAMP: 'blockUntilTimestamp',
   LAST_EXAMINED_TIMESTAMP: 'lastExaminedTimestamp',
   FADE_WINDOW_START: 'fadeWindowStart',
-  FADED: 'faded',
   CONSECUTIVE_BLOCKS: 'consecutiveBlocks',
 };
 
