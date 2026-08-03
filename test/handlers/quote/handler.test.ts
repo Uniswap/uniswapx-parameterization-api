@@ -138,6 +138,33 @@ describe('Quote handler', () => {
     expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
   });
 
+  describe('QUOTE_E2E_LATENCY', () => {
+    const e2eCalls = (spy: jest.SpyInstance) => spy.mock.calls.filter((c) => c[0] === 'QUOTE_E2E_LATENCY');
+
+    it('is emitted on the 200 path', async () => {
+      const putMetricSpy = jest.spyOn(AWSMetricsLogger.prototype, 'putMetric');
+      const quoters = [new MockQuoter(logger, 1, 1)];
+      const request = getRequest(ethers.utils.parseEther('1').toString(), 'EXACT_INPUT', ProtocolVersion.V2);
+
+      const response = await getQuoteHandler(quoters).handler(getEvent(request), {} as unknown as Context);
+
+      expect(response.statusCode).toEqual(200);
+      expect(e2eCalls(putMetricSpy)).toHaveLength(1);
+    });
+
+    it('is emitted on the 404 (no quotes) path, which QUOTE_LATENCY misses', async () => {
+      const putMetricSpy = jest.spyOn(AWSMetricsLogger.prototype, 'putMetric');
+      const request = getRequest(ethers.utils.parseEther('1').toString(), 'EXACT_INPUT', ProtocolVersion.V2);
+
+      const response = await getQuoteHandler([]).handler(getEvent(request), {} as unknown as Context);
+
+      expect(response.statusCode).toEqual(404);
+      expect(e2eCalls(putMetricSpy)).toHaveLength(1);
+      const quoteLatencyCalls = putMetricSpy.mock.calls.filter((c) => c[0] === 'QUOTE_LATENCY');
+      expect(quoteLatencyCalls).toHaveLength(0);
+    });
+  });
+
   it('Handles hex amount', async () => {
     const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 1, 2)];
     const amountIn = ethers.utils.parseEther('1');

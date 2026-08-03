@@ -63,6 +63,26 @@ export enum Metric {
   RFQ_COUNT_3 = 'RFQ_COUNT_3',
   RFQ_COUNT_4_PLUS = 'RFQ_COUNT_4_PLUS',
 
+  // Latency-attribution metrics.
+  // Time spent resolving webhook config + circuit-breaker state before fan-out.
+  RFQ_PHASE_ENDPOINT_STATUSES = 'RFQ_PHASE_ENDPOINT_STATUSES',
+  // Time spent resolving the compliance exclusion map before fan-out.
+  RFQ_PHASE_COMPLIANCE = 'RFQ_PHASE_COMPLIANCE',
+  // Wall time the request blocks on the webhook fan-out Promise.all.
+  RFQ_PHASE_FANOUT = 'RFQ_PHASE_FANOUT',
+  // Fan-out wall time minus the latency of the last response that produced a usable
+  // quote — the time every swapper waits for endpoints that contributed nothing. Equals
+  // the full fan-out wall when no endpoint produced a usable quote.
+  RFQ_WASTED_WAIT = 'RFQ_WASTED_WAIT',
+  // Emitted once per fan-out for the endpoint that finished last (set the wall).
+  RFQ_STRAGGLER = 'RFQ_STRAGGLER',
+  // Webhook attempts that hit the axios timeout (ECONNABORTED). A strict subset of
+  // RFQ_FAIL_ERROR, split out because timeouts are the wasted-wait driver.
+  RFQ_TIMEOUT = 'RFQ_TIMEOUT',
+  // End-to-end handler latency on every response path (200, 404, thrown errors), unlike
+  // QUOTE_LATENCY which fires only on 200s and is blind to slow 404s.
+  QUOTE_E2E_LATENCY = 'QUOTE_E2E_LATENCY',
+
   // Metrics for circuit breaker
   CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS = 'CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS',
   // Per-filler Laplace-smoothed fade rate over the post-block window (compare to FADE_RATE_BLOCK_THRESHOLD)
@@ -90,6 +110,8 @@ type MetricNeedingContext =
   | Metric.RFQ_FAIL_VALIDATION
   | Metric.RFQ_NON_QUOTE
   | Metric.RFQ_FAIL_ERROR
+  | Metric.RFQ_STRAGGLER
+  | Metric.RFQ_TIMEOUT
   | Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS
   | Metric.CIRCUIT_BREAKER_V2_FADE_RATE
   | Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE;

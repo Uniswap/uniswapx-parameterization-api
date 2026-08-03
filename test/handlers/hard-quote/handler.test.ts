@@ -295,6 +295,25 @@ describe('Quote handler', () => {
     });
   });
 
+  it('emits QUOTE_E2E_LATENCY on both the 200 and the no-quote throw path', async () => {
+    const putMetricSpy = jest.spyOn(AWSMetricsLogger.prototype, 'putMetric');
+    const e2eCalls = () => putMetricSpy.mock.calls.filter((c) => c[0] === 'QUOTE_E2E_LATENCY');
+    const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+    const ok = await getQuoteHandler([new MockQuoter(logger, 1, 1)]).handler(
+      getEvent(request),
+      {} as unknown as Context
+    );
+    expect(ok.statusCode).toEqual(200);
+    expect(e2eCalls()).toHaveLength(1);
+
+    const notFound = await getQuoteHandler([]).handler(getEvent(request), {} as unknown as Context);
+    expect(notFound.statusCode).toEqual(404);
+    expect(e2eCalls()).toHaveLength(2);
+
+    putMetricSpy.mockRestore();
+  });
+
   describe('getCosignerData', () => {
     const getQuoteResponse = (
       data: Partial<QuoteResponseData>,

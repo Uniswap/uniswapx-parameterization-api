@@ -147,6 +147,12 @@ export function buildQuoteRequestInjected<ReqBody extends { tokenInChainId: numb
     ...metricDimension,
     ChainId: requestBody.tokenInChainId.toString(),
   });
+  // Third, dimensionless rollup set (serializes as `[]` in the EMF Dimensions array).
+  // CloudWatch percentiles cannot be merged across dimension values post-hoc, and the
+  // latency dashboard's headline needs one combined all-services stream; because soft and
+  // hard emit the same metric names, their dimensionless streams merge into a single
+  // series per metric.
+  metricsLogger.putDimensions({});
   const metric = new AWSMetricsLogger(metricsLogger);
   setGlobalMetric(metric);
 
