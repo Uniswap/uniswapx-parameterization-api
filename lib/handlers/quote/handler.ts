@@ -13,7 +13,7 @@ import {
   PostQuoteRequestBody,
   PostQuoteRequestBodyJoi,
   PostQuoteResponseWithAllQuotes,
-  URAResponseJoi,
+  PostQuoteResponseWithAllQuotesJoi,
 } from './schema';
 
 export class QuoteHandler extends APIGLambdaHandler<
@@ -83,6 +83,6 @@ export class QuoteHandler extends APIGLambdaHandler<
   }
 
   protected responseBodySchema(): Joi.ObjectSchema | null {
-    return URAResponseJoi;
+    return PostQuoteResponseWithAllQuotesJoi;
   }
 }

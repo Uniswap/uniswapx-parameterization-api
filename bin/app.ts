@@ -137,7 +137,6 @@ export class APIPipeline extends Stack {
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_BETA').toString(),
         FILL_LOG_SENDER_ACCOUNT: '321377678687',
         ORDER_LOG_SENDER_ACCOUNT: '321377678687',
-        URA_ACCOUNT: '665191769009',
         BOT_ACCOUNT: '800035746608',
       },
     });
@@ -158,7 +157,6 @@ export class APIPipeline extends Stack {
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_PROD').toString(),
         FILL_LOG_SENDER_ACCOUNT: '316116520258',
         ORDER_LOG_SENDER_ACCOUNT: '316116520258',
-        URA_ACCOUNT: '652077092967',
         BOT_ACCOUNT: '456809954954',
       },
       stage: STAGE.PROD,
@@ -268,7 +266,6 @@ const app = new cdk.App();
 const envVars: { [key: string]: string } = {};
 
 envVars['FILL_LOG_SENDER_ACCOUNT'] = process.env['FILL_LOG_SENDER_ACCOUNT'] || '';
-envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';

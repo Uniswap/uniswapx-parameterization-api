@@ -120,7 +120,6 @@ async function main(metrics: MetricsLogger) {
     const now = Math.floor(Date.now() / 1000);
     const updatedTimestamps = calculateNewTimestamps(fillerTimestamps, fillerFadeStats, now, log, metrics);
     log.info({ updatedTimestamps }, 'filler for which to update timestamp');
-    metrics.putMetric(Metric.CIRCUIT_BREAKER_V2_BLOCKED, updatedTimestamps.length, Unit.Count);
     metrics.putMetric(
       Metric.CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS,
       countActiveBlocks(fillerTimestamps, updatedTimestamps, now),

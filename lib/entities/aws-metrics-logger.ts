@@ -65,7 +65,6 @@ export enum Metric {
 
   // Metrics for circuit breaker
   CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS = 'CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS',
-  CIRCUIT_BREAKER_V2_BLOCKED = 'CIRCUIT_BREAKER_V2_BLOCKED',
   // Per-filler Laplace-smoothed fade rate over the post-block window (compare to FADE_RATE_BLOCK_THRESHOLD)
   CIRCUIT_BREAKER_V2_FADE_RATE = 'CIRCUIT_BREAKER_V2_FADE_RATE',
   // Per-filler Laplace-smoothed fade rate over the in-flight-during-block cohort, emitted while

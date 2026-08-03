@@ -101,7 +101,10 @@ export abstract class APIGLambdaHandler<
           const response = await handler(event, context);
           const requestEnd = new Date().getTime();
 
-          // Track handler duration
+          // Track handler duration. metricScope creates a fresh logger per scope, so this one
+          // needs its own setNamespace — the inner handler's logger gets it from the injector.
+          // Without this the metric lands in the aws-embedded-metrics default namespace.
+          metric.setNamespace('Uniswap');
           metric.putDimensions({ [MetricDimension.METHOD]: this.handlerName });
           metric.putMetric(Metric.HANDLER_DURATION, requestEnd - requestStart, MetricLoggerUnit.Milliseconds);
 
@@ -129,6 +132,10 @@ export abstract class APIGLambdaHandler<
             level: process.env.NODE_ENV == 'test' ? bunyan.FATAL + 1 : bunyan.INFO,
             requestId: context.awsRequestId,
           });
+
+          // The injector sets this too, but validation can fail (and emit QUOTE_500) before the
+          // injector runs, so set it here to keep those puts out of the default namespace.
+          metric.setNamespace('Uniswap');
 
           let requestBody: ReqBody;
           let requestQueryParams: ReqQueryParams;

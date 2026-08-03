@@ -11,10 +11,8 @@ export const BETA_COMPLIANCE_S3_KEY = 'beta.json';
 
 export const DYNAMO_TABLE_NAME = {
   FILLER_ADDRESS: 'FillerAddress',
-  FILLER_CB_TIMESTAMPS: 'FillerCBTimestamps',
-  // V2 circuit-breaker state table, separate from FILLER_CB_TIMESTAMPS so the rate-based
-  // breaker's state is isolated for independent rollout/rollback. State is derived
-  // (recomputed each cron run from Redshift), so it starts empty.
+  // Circuit-breaker state table for the rate-based breaker. State is derived (recomputed each
+  // cron run from Redshift). The name keeps its V2 suffix because it is the live table name.
   FILLER_CB_TIMESTAMPS_V2: 'FillerCBTimestampsV2',
 };
 
@@ -22,7 +20,6 @@ export const DYNAMO_TABLE_KEY = {
   BLOCK_UNTIL_TIMESTAMP: 'blockUntilTimestamp',
   LAST_EXAMINED_TIMESTAMP: 'lastExaminedTimestamp',
   FADE_WINDOW_START: 'fadeWindowStart',
-  FADED: 'faded',
   CONSECUTIVE_BLOCKS: 'consecutiveBlocks',
 };
 
