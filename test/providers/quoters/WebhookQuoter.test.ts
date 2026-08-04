@@ -1,10 +1,11 @@
 import { TradeType } from '@uniswap/sdk-core';
-import axios from 'axios';
+import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
+import axios, { AxiosError } from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
 import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { NOTIFICATION_TIMEOUT_MS } from '../../../lib/constants';
-import { AnalyticsEventType, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
+import { AnalyticsEventType, Metric, metricContext, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
@@ -1048,5 +1049,114 @@ describe('WebhookQuoter tests', () => {
         },
       })
     );
+  });
+
+  describe('latency instrumentation', () => {
+    let putMetricSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      putMetricSpy = jest.spyOn(metric, 'putMetric');
+    });
+
+    const mockSimpleSuccess = () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({ data: { ...quote, requestId: (_req as any).requestId } });
+        })
+        .mockImplementation((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: { ...quote, tokenIn: request.tokenOut, tokenOut: request.tokenIn },
+          });
+        });
+    };
+
+    it('times the pre-fan-out phases', async () => {
+      mockSimpleSuccess();
+      await webhookQuoter.quote(request);
+
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        Metric.RFQ_PHASE_ENDPOINT_STATUSES,
+        expect.any(Number),
+        MetricLoggerUnit.Milliseconds
+      );
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        Metric.RFQ_PHASE_COMPLIANCE,
+        expect.any(Number),
+        MetricLoggerUnit.Milliseconds
+      );
+    });
+
+    it('emits fan-out wall time, wasted wait, and exactly one straggler', async () => {
+      mockSimpleSuccess();
+      await webhookQuoter.quote(request);
+
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        Metric.RFQ_PHASE_FANOUT,
+        expect.any(Number),
+        MetricLoggerUnit.Milliseconds
+      );
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        Metric.RFQ_WASTED_WAIT,
+        expect.any(Number),
+        MetricLoggerUnit.Milliseconds
+      );
+      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_STRAGGLER, 1, MetricLoggerUnit.Count);
+      const perFillerStragglers = putMetricSpy.mock.calls.filter((c) =>
+        String(c[0]).startsWith(`${Metric.RFQ_STRAGGLER}_`)
+      );
+      expect(perFillerStragglers).toHaveLength(1);
+    });
+
+    it('emits RFQ_TIMEOUT (bare and per-filler) only for axios timeouts', async () => {
+      const timeoutError = new AxiosError('timeout of 500ms exceeded');
+      (timeoutError as any).code = 'ECONNABORTED';
+      mockedAxios.post.mockRejectedValue(timeoutError);
+
+      const response = await webhookQuoter.quote(request);
+
+      expect(response).toHaveLength(0);
+      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_TIMEOUT, 1, MetricLoggerUnit.Count);
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        metricContext(Metric.RFQ_TIMEOUT, 'uniswap'),
+        1,
+        MetricLoggerUnit.Count
+      );
+      // still counted under the umbrella error metric — RFQ_TIMEOUT is a subset, not a re-bucket
+      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
+    });
+
+    it('does not emit RFQ_TIMEOUT for non-timeout errors', async () => {
+      const httpError = new AxiosError('Request failed with status code 500');
+      (httpError as any).code = 'ERR_BAD_RESPONSE';
+      mockedAxios.post.mockRejectedValue(httpError);
+
+      await webhookQuoter.quote(request);
+
+      const timeoutCalls = putMetricSpy.mock.calls.filter((c) => String(c[0]).startsWith(Metric.RFQ_TIMEOUT));
+      expect(timeoutCalls).toHaveLength(0);
+      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
+    });
+
+    it('skips wasted-wait and straggler when no endpoint is eligible', async () => {
+      const v1OnlyProvider = new MockWebhookConfigurationProvider([
+        { name: 'v1only', endpoint: WEBHOOK_URL, headers: {}, hash: '0xv1', supportedVersions: [ProtocolVersion.V1] },
+      ]);
+      const quoter = new WebhookQuoter(
+        logger,
+        mockFirehoseLogger,
+        v1OnlyProvider,
+        MOCK_V2_CB_PROVIDER,
+        emptyMockComplianceProvider,
+        repository
+      );
+
+      const response = await quoter.quote(makeQuoteRequest({ protocol: ProtocolVersion.V2 }));
+
+      expect(response).toHaveLength(0);
+      const wastedOrStraggler = putMetricSpy.mock.calls.filter(
+        (c) => c[0] === Metric.RFQ_WASTED_WAIT || String(c[0]).startsWith(Metric.RFQ_STRAGGLER)
+      );
+      expect(wastedOrStraggler).toHaveLength(0);
+    });
   });
 });

@@ -35,43 +35,50 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
-    const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
+    // QUOTE_LATENCY below fires only on 200s (and is alarmed on), so it cannot see slow
+    // 404s — which take the full webhook fan-out just like successes. The finally makes
+    // this metric cover every exit path, including the NoQuotesAvailable throw.
+    try {
+      const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
 
-    const request = QuoteRequest.fromRequestBody(requestBody);
-    log.info({
-      eventType: 'QuoteRequest',
-      body: {
-        requestId: request.requestId,
-        tokenInChainId: request.tokenInChainId,
-        tokenOutChainId: request.tokenOutChainId,
-        offerer: request.swapper,
-        tokenIn: request.tokenIn,
-        tokenOut: request.tokenOut,
-        amount: request.amount.toString(),
-        type: TradeType[request.type],
-        createdAt: timestampInMstoSeconds(start),
-        createdAtMs: start.toString(),
-        numOutputs: request.numOutputs,
-      },
-    });
+      const request = QuoteRequest.fromRequestBody(requestBody);
+      log.info({
+        eventType: 'QuoteRequest',
+        body: {
+          requestId: request.requestId,
+          tokenInChainId: request.tokenInChainId,
+          tokenOutChainId: request.tokenOutChainId,
+          offerer: request.swapper,
+          tokenIn: request.tokenIn,
+          tokenOut: request.tokenOut,
+          amount: request.amount.toString(),
+          type: TradeType[request.type],
+          createdAt: timestampInMstoSeconds(start),
+          createdAtMs: start.toString(),
+          numOutputs: request.numOutputs,
+        },
+      });
 
-    const { bestQuote, allQuotes } = await getBestQuote(quoters, request, log, metric, provider);
-    if (!bestQuote) {
-      metric.putMetric(Metric.QUOTE_404, 1, MetricLoggerUnit.Count);
-      throw new NoQuotesAvailable();
+      const { bestQuote, allQuotes } = await getBestQuote(quoters, request, log, metric, provider);
+      if (!bestQuote) {
+        metric.putMetric(Metric.QUOTE_404, 1, MetricLoggerUnit.Count);
+        throw new NoQuotesAvailable();
+      }
+
+      log.info({ bestQuote: bestQuote }, 'bestQuote');
+
+      metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+      metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+      return {
+        statusCode: 200,
+        body: {
+          ...bestQuote.toResponseJSON(),
+          allQuotes: allQuotes.map((q) => q.toResponseJSON()),
+        },
+      };
+    } finally {
+      metric.putMetric(Metric.QUOTE_E2E_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
     }
-
-    log.info({ bestQuote: bestQuote }, 'bestQuote');
-
-    metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
-    metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
-    return {
-      statusCode: 200,
-      body: {
-        ...bestQuote.toResponseJSON(),
-        allQuotes: allQuotes.map((q) => q.toResponseJSON()),
-      },
-    };
   }
 
   protected requestBodySchema(): Joi.ObjectSchema | null {

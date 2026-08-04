@@ -26,6 +26,36 @@ import { FillerAddressRepository } from '../repositories/filler-address-reposito
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
 
+// Per-endpoint result of one webhook fan-out attempt. `response` is null when the endpoint
+// was tried but produced nothing usable (non-quote, validation failure, error, timeout);
+// attempts skipped before any request was sent (chain/protocol mismatch) yield no outcome.
+export interface FetchOutcome {
+  response: QuoteResponse | null;
+  name: string;
+  latencyMs: number;
+  timedOut: boolean;
+}
+
+// Derives the wasted-wait and straggler stats for one fan-out. Wasted wait is the time
+// between the last response that produced a usable quote and the fan-out returning — the
+// wait endpoints that contributed nothing cost every swapper. When nothing usable came
+// back the whole fan-out wall was wasted. The straggler is whichever endpoint finished
+// last, since it alone set the wall. Callers must pass a non-empty outcomes array.
+export function deriveFanoutStats(
+  outcomes: FetchOutcome[],
+  fanoutWallMs: number
+): { wastedWaitMs: number; stragglerName: string } {
+  const usable = outcomes.filter((o) => o.response !== null);
+  const lastUsefulMs = usable.length > 0 ? Math.max(...usable.map((o) => o.latencyMs)) : 0;
+  const stragglerName = outcomes.reduce((last, o) => (o.latencyMs > last.latencyMs ? o : last)).name;
+  return {
+    // The last usable response can land after Promise.all resolves its wall-clock
+    // measurement point; clamp instead of reporting negative waste.
+    wastedWaitMs: Math.max(0, fanoutWallMs - lastUsefulMs),
+    stragglerName,
+  };
+}
+
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
@@ -46,8 +76,13 @@ export class WebhookQuoter implements Quoter {
     request: QuoteRequest,
     provider?: ethers.providers.StaticJsonRpcProvider
   ): Promise<QuoteResponse[]> {
+    const beforeStatuses = Date.now();
     const statuses = await this.getEndpointStatuses();
+    metric.putMetric(Metric.RFQ_PHASE_ENDPOINT_STATUSES, Date.now() - beforeStatuses, MetricLoggerUnit.Milliseconds);
+
+    const beforeCompliance = Date.now();
     const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
+    metric.putMetric(Metric.RFQ_PHASE_COMPLIANCE, Date.now() - beforeCompliance, MetricLoggerUnit.Milliseconds);
     // Ignore endpoint status if token is permissioned
     const isPermissionedToken =
       PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId) ||
@@ -68,7 +103,19 @@ export class WebhookQuoter implements Quoter {
       `Fetching quotes from ${enabledEndpoints.length} endpoints and notifying disabled endpoints`
     );
 
-    const quotes = await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request, provider)));
+    const beforeFanout = Date.now();
+    const outcomes = (await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request, provider)))).filter(
+      (o): o is FetchOutcome => o !== null
+    );
+    const fanoutWallMs = Date.now() - beforeFanout;
+    metric.putMetric(Metric.RFQ_PHASE_FANOUT, fanoutWallMs, MetricLoggerUnit.Milliseconds);
+
+    if (outcomes.length > 0) {
+      const { wastedWaitMs, stragglerName } = deriveFanoutStats(outcomes, fanoutWallMs);
+      metric.putMetric(Metric.RFQ_WASTED_WAIT, wastedWaitMs, MetricLoggerUnit.Milliseconds);
+      metric.putMetric(Metric.RFQ_STRAGGLER, 1, MetricLoggerUnit.Count);
+      metric.putMetric(metricContext(Metric.RFQ_STRAGGLER, stragglerName), 1, MetricLoggerUnit.Count);
+    }
 
     // should not await and block
     if (!isPermissionedToken) {
@@ -77,7 +124,7 @@ export class WebhookQuoter implements Quoter {
       });
     }
 
-    return quotes.filter((q) => q !== null) as QuoteResponse[];
+    return outcomes.filter((o) => o.response !== null).map((o) => o.response) as QuoteResponse[];
   }
 
   public type(): QuoterType {
@@ -89,11 +136,14 @@ export class WebhookQuoter implements Quoter {
     return this.circuitBreakerProvider.getEndpointStatuses(endpoints);
   }
 
+  // Returns null only for attempts skipped before any request was sent (chain/protocol
+  // mismatch); once a webhook request goes out, every path returns a FetchOutcome so the
+  // caller can attribute fan-out wall time (response is null on non-quote/invalid/error).
   private async fetchQuote(
     config: WebhookConfiguration,
     request: QuoteRequest,
     provider?: ethers.providers.StaticJsonRpcProvider
-  ): Promise<QuoteResponse | null> {
+  ): Promise<FetchOutcome | null> {
     const { name, endpoint, headers } = config;
     // Child logger so every log line in this RFQ attempt carries the request id.
     // quoteId is added once it's generated below (it's per-RFQ, so it doesn't exist
@@ -228,7 +278,7 @@ export class WebhookQuoter implements Quoter {
             responseType: WebhookResponseType.NON_QUOTE,
           })
         );
-        return null;
+        return { response: null, name, latencyMs: rawResponse.latencyMs, timedOut: false };
       }
 
       // RFQ provider response failed validation
@@ -252,7 +302,7 @@ export class WebhookQuoter implements Quoter {
             validationError: error,
           })
         );
-        return null;
+        return { response: null, name, latencyMs: rawResponse.latencyMs, timedOut: false };
       }
 
       // Verify the market maker echoed back the obfuscated requestId we sent on the wire. The
@@ -278,7 +328,7 @@ export class WebhookQuoter implements Quoter {
             mismatchedRequestId: hookResponse.data?.requestId,
           })
         );
-        return null;
+        return { response: null, name, latencyMs: rawResponse.latencyMs, timedOut: false };
       }
 
       const quote = request.type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;
@@ -336,7 +386,7 @@ export class WebhookQuoter implements Quoter {
         });
       }
 
-      return response;
+      return { response, name, latencyMs: rawResponse.latencyMs, timedOut: false };
     } catch (e) {
       metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
       metric.putMetric(metricContext(Metric.RFQ_FAIL_ERROR, name), 1, MetricLoggerUnit.Count);
@@ -344,13 +394,20 @@ export class WebhookQuoter implements Quoter {
         responseTime: timestampInMstoISOString(Date.now()),
         latencyMs: Date.now() - before,
       };
+      const timedOut = e instanceof AxiosError && e.code === 'ECONNABORTED';
+      // Timeouts are a strict subset of RFQ_FAIL_ERROR, split out because an endpoint that
+      // times out holds the fan-out open for the full timeout budget — it is the
+      // wasted-wait driver, while other errors typically fail fast.
+      if (timedOut) {
+        metric.putMetric(Metric.RFQ_TIMEOUT, 1, MetricLoggerUnit.Count);
+        metric.putMetric(metricContext(Metric.RFQ_TIMEOUT, name), 1, MetricLoggerUnit.Count);
+      }
       if (e instanceof AxiosError) {
         log.error(
           { endpoint, status: e.response?.status?.toString() },
           `Axios error fetching quote from ${endpoint}: ${e}`
         );
-        const axiosResponseType =
-          e.code === 'ECONNABORTED' ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
+        const axiosResponseType = timedOut ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
         this.firehose.sendAnalyticsEvent(
           new AnalyticsEvent(AnalyticsEventType.WEBHOOK_RESPONSE, {
             ...requestContext,
@@ -372,7 +429,7 @@ export class WebhookQuoter implements Quoter {
           })
         );
       }
-      return null;
+      return { response: null, name, latencyMs: errorLatency.latencyMs, timedOut };
     }
   }
 
