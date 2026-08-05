@@ -64,18 +64,24 @@ const chainLabel = (chainId: ChainId): string => `${ChainId[chainId]} (${chainId
 // ---------------------------------------------------------------------------
 // Latency story + attribution rows.
 //
-// Frozen pre-optimization baseline for the story row: measured from the combined
-// (dimensionless) QUOTE_E2E_LATENCY stream over its first 26h in prod
-// (2026-08-04 → 2026-08-05, 4.19M samples). Deliberately NOT updated when latency
-// improves — the widening gap between the live series and these lines is the
-// dashboard's point. If the metric's semantics ever change, remeasure and rename
-// the label, don't silently re-baseline.
+// Frozen pre-optimization baseline for the story row: measured from the
+// Service=SoftQuote QUOTE_E2E_LATENCY stream over its first ~2 days in prod
+// (2026-08-04T16:00Z onward, 5.79M samples). Soft-only on purpose: hard-quote
+// latency includes cosigning and the order post to uniswapx-service, a different
+// pipeline (p50 ~821ms on ~0.06% of volume). Deliberately NOT updated when
+// latency improves — the widening gap between the live series and these lines is
+// the dashboard's point. If the metric's semantics ever change, remeasure and
+// rename the label, don't silently re-baseline.
 // ---------------------------------------------------------------------------
 export const BASELINE_E2E_P50_MS = 568;
-export const BASELINE_E2E_P90_MS = 592;
-// Mirrors the p90 QUOTE_LATENCY alarm threshold in api-stack.ts (not imported: the
-// alarm is defined inline there). Shown for context on the per-service widgets.
-const LATENCY_ALARM_THRESHOLD_MS = 2_000;
+export const BASELINE_E2E_P90_MS = 593;
+export const BASELINE_E2E_P99_MS = 704;
+// Hard-quote baselines, same window (3.6k samples — hard is ~80 requests/hour, so its
+// graphs use a 1-hour period; 5-minute percentiles would be single-digit-sample noise).
+// The hard pipeline additionally spans cosigning (KMS) and the order post.
+export const BASELINE_HARD_E2E_P50_MS = 819;
+export const BASELINE_HARD_E2E_P90_MS = 1085;
+export const BASELINE_HARD_E2E_P99_MS = 1692;
 // Per-chain webhook (RFQ) timeout — the fan-out latency floor (see lib/constants.ts).
 const WEBHOOK_TIMEOUT_MS = 500;
 
@@ -90,158 +96,218 @@ const WASTED_WAIT_COLORS = { p50: '#e34948', p90: '#d03b3b' };
 // rollup streams (soft+hard combined) that the shared quote injector emits.
 const combined = (metricName: string, opts: Exclude<MetricPath, string>): MetricPath[] => ['Uniswap', metricName, opts];
 
-/** Row 0: the story — combined latency vs the frozen Aug 2026 baseline, plus stat tiles. */
-export const StoryRowWidgets = (region: string): LambdaWidget[] => [
+// Per-service metric path builders. Soft and hard are charted separately: hard-quote
+// latency includes cosigning and the order post, a structurally different pipeline.
+const serviceMetric =
+  (service: string) =>
+  (metricName: string, opts: Exclude<MetricPath, string>): MetricPath[] =>
+    ['Uniswap', metricName, 'Service', service, opts];
+const soft = serviceMetric(SoftQuoteMetricDimension.Service);
+const hard = serviceMetric(HardQuoteMetricDimension.Service);
+
+// One graph per percentile so the p99 scale doesn't flatten p50/p90 against their
+// baselines. Period varies by service: hard quote is ~80 requests/hour, so it charts
+// hourly; 5-minute hard percentiles would be single-digit-sample noise.
+const percentileStoryGraphs = (
+  region: string,
+  titlePrefix: string,
+  metricPath: (metricName: string, opts: Exclude<MetricPath, string>) => MetricPath[],
+  baselines: { p50: number; p90: number; p99: number },
+  period: number
+): LambdaWidget[] =>
+  (
+    [
+      { stat: 'p50', baseline: baselines.p50, color: PERCENTILE_COLORS.p50 },
+      { stat: 'p90', baseline: baselines.p90, color: PERCENTILE_COLORS.p90 },
+      { stat: 'p99', baseline: baselines.p99, color: PERCENTILE_COLORS.p99 },
+    ] as const
+  ).map(({ stat, baseline, color }) => ({
+    height: 7,
+    width: 8,
+    type: 'metric',
+    properties: {
+      metrics: [metricPath(Metric.QUOTE_E2E_LATENCY, { stat, label: stat, color })],
+      view: 'timeSeries',
+      stacked: false,
+      region,
+      period,
+      title: `${titlePrefix} ${stat} — vs Aug 2026 baseline`,
+      yAxis: { left: { label: 'ms', showUnits: false } },
+      annotations: {
+        horizontal: [{ label: `Aug 2026 baseline ${stat} (${baseline}ms)`, value: baseline }],
+      },
+    },
+  }));
+
+// ---------------------------------------------------------------------------
+// Story rows. Layout contract: widgets in the same conceptual row have identical
+// heights and widths summing to 24, so CloudWatch auto-flow renders them as one
+// even row. Every title says Soft or Hard explicitly.
+// ---------------------------------------------------------------------------
+
+const pctFasterTile = (
+  region: string,
+  label: 'Soft' | 'Hard',
+  metricPath: typeof soft,
+  baseline: number,
+  period: number
+): LambdaWidget => ({
+  height: 4,
+  width: 12,
+  type: 'metric',
+  properties: {
+    metrics: [
+      [
+        {
+          expression: `100*(${baseline}-cur${label})/${baseline}`,
+          label: '%',
+          id: `pctFaster${label}`,
+          region,
+        },
+      ],
+      metricPath(Metric.QUOTE_E2E_LATENCY, { stat: 'p50', id: `cur${label}`, visible: false }),
+    ],
+    view: 'singleValue',
+    sparkline: true,
+    stacked: false,
+    region,
+    period,
+    title: `${label} e2e — % faster than Aug 2026 baseline (p50)`,
+  },
+});
+
+const latencyTile = (
+  region: string,
+  label: 'Soft' | 'Hard',
+  metricPath: typeof soft,
+  stat: 'p50' | 'p90' | 'p99',
+  period: number
+): LambdaWidget => ({
+  height: 4,
+  width: 8,
+  type: 'metric',
+  properties: {
+    metrics: [metricPath(Metric.QUOTE_E2E_LATENCY, { stat, label: stat })],
+    view: 'singleValue',
+    sparkline: true,
+    stacked: false,
+    region,
+    period,
+    title: `${label} e2e ${stat} (${period === 3600 ? '1h' : '6h'})`,
+  },
+});
+
+/** Rows 3+5: percentile graphs with frozen baselines (exported for tests). */
+export const SoftPercentileGraphs = (region: string): LambdaWidget[] =>
+  percentileStoryGraphs(
+    region,
+    'Soft e2e Latency',
+    soft,
+    { p50: BASELINE_E2E_P50_MS, p90: BASELINE_E2E_P90_MS, p99: BASELINE_E2E_P99_MS },
+    300
+  );
+
+export const HardPercentileGraphs = (region: string): LambdaWidget[] =>
+  percentileStoryGraphs(
+    region,
+    'Hard e2e Latency (incl. cosign + order post)',
+    hard,
+    { p50: BASELINE_HARD_E2E_P50_MS, p90: BASELINE_HARD_E2E_P90_MS, p99: BASELINE_HARD_E2E_P99_MS },
+    3600
+  );
+
+/**
+ * The story rows, in the agreed order:
+ *   row 1: Soft %-faster | Hard %-faster
+ *   row 2: swapper-hours saved/day | swapper-hours saved cumulative
+ *   row 3: Soft e2e p50/p90/p99 graphs vs baselines
+ *   row 4: Soft e2e p50/p90/p99 number tiles
+ *   row 5: Hard e2e p50/p90/p99 graphs vs baselines
+ *   row 6: Hard e2e p50/p90/p99 number tiles
+ */
+export const LatencyStoryRows = (region: string): LambdaWidget[] => [
+  // row 1
+  pctFasterTile(region, 'Soft', soft, BASELINE_E2E_P50_MS, 3600),
+  pctFasterTile(region, 'Hard', hard, BASELINE_HARD_E2E_P50_MS, 21600),
+  // row 2 — (baseline − p50)ms × requests → hours: /1000 (s) /3600 (h) = /3_600_000
   {
-    height: 8,
+    height: 4,
     width: 12,
     type: 'metric',
     properties: {
       metrics: [
-        combined(Metric.QUOTE_E2E_LATENCY, { stat: 'p50', label: 'p50', color: PERCENTILE_COLORS.p50 }),
-        combined(Metric.QUOTE_E2E_LATENCY, { stat: 'p90', label: 'p90', color: PERCENTILE_COLORS.p90 }),
-        combined(Metric.QUOTE_E2E_LATENCY, { stat: 'p99', label: 'p99', color: PERCENTILE_COLORS.p99 }),
-      ],
-      view: 'timeSeries',
-      stacked: false,
-      region,
-      period: 300,
-      title: 'Quote Latency, all services — vs Aug 2026 baseline',
-      yAxis: { left: { label: 'ms', showUnits: false } },
-      annotations: {
-        horizontal: [
-          { label: `Aug 2026 baseline p50 (${BASELINE_E2E_P50_MS}ms)`, value: BASELINE_E2E_P50_MS },
-          { label: `Aug 2026 baseline p90 (${BASELINE_E2E_P90_MS}ms)`, value: BASELINE_E2E_P90_MS },
-        ],
-      },
-    },
-  },
-  {
-    height: 4,
-    width: 6,
-    type: 'metric',
-    properties: {
-      metrics: [combined(Metric.QUOTE_E2E_LATENCY, { stat: 'p50', label: 'p50 now (1h)' })],
-      view: 'singleValue',
-      sparkline: true,
-      stacked: false,
-      region,
-      period: 3600,
-      title: 'Quote latency p50',
-    },
-  },
-  {
-    height: 4,
-    width: 6,
-    type: 'metric',
-    properties: {
-      metrics: [combined(Metric.QUOTE_E2E_LATENCY, { stat: 'p90', label: 'p90 now (1h)' })],
-      view: 'singleValue',
-      sparkline: true,
-      stacked: false,
-      region,
-      period: 3600,
-      title: 'Quote latency p90',
-    },
-  },
-  {
-    height: 4,
-    width: 6,
-    type: 'metric',
-    properties: {
-      metrics: [
-        [
-          {
-            expression: `100*(${BASELINE_E2E_P50_MS}-p50now)/${BASELINE_E2E_P50_MS}`,
-            label: '% faster than Aug 2026 baseline (p50)',
-            id: 'pctFaster',
-            region,
-          },
-        ],
-        combined(Metric.QUOTE_E2E_LATENCY, { stat: 'p50', id: 'p50now', visible: false }),
-      ],
-      view: 'singleValue',
-      sparkline: true,
-      stacked: false,
-      region,
-      period: 3600,
-      title: '% faster than baseline',
-    },
-  },
-  {
-    height: 4,
-    width: 6,
-    type: 'metric',
-    properties: {
-      // (baseline − p50)ms × requests → hours: /1000 (s) /3600 (h) = /3_600_000
-      metrics: [
         [
           {
             expression: `(${BASELINE_E2E_P50_MS}-dailyP50)*dailyRequests/3600000`,
-            label: 'swapper-hours of waiting eliminated per day',
+            label: 'hours',
             id: 'hoursSaved',
             region,
           },
         ],
-        combined(Metric.QUOTE_E2E_LATENCY, { stat: 'p50', id: 'dailyP50', visible: false }),
-        combined(Metric.QUOTE_REQUESTED, { stat: 'Sum', id: 'dailyRequests', visible: false }),
+        soft(Metric.QUOTE_E2E_LATENCY, { stat: 'p50', id: 'dailyP50', visible: false }),
+        soft(Metric.QUOTE_REQUESTED, { stat: 'Sum', id: 'dailyRequests', visible: false }),
       ],
       view: 'singleValue',
       sparkline: false,
       stacked: false,
       region,
       period: 86400,
-      title: 'Swapper-hours saved / day',
+      title: 'Soft — swapper-hours of waiting eliminated / day',
     },
   },
+  {
+    height: 4,
+    width: 12,
+    type: 'metric',
+    properties: {
+      // RUNNING_SUM accumulates the per-day savings; singleValue shows the latest
+      // point, i.e. the cumulative total over the displayed dashboard window.
+      metrics: [
+        [
+          {
+            expression: `RUNNING_SUM((${BASELINE_E2E_P50_MS}-cumP50)*cumRequests/3600000)`,
+            label: 'hours',
+            id: 'hoursSavedTotal',
+            region,
+          },
+        ],
+        soft(Metric.QUOTE_E2E_LATENCY, { stat: 'p50', id: 'cumP50', visible: false }),
+        soft(Metric.QUOTE_REQUESTED, { stat: 'Sum', id: 'cumRequests', visible: false }),
+      ],
+      view: 'singleValue',
+      sparkline: true,
+      stacked: false,
+      region,
+      period: 86400,
+      title: 'Soft — swapper-hours saved, total over displayed window',
+    },
+  },
+  // row 3
+  ...SoftPercentileGraphs(region),
+  // row 4
+  latencyTile(region, 'Soft', soft, 'p50', 3600),
+  latencyTile(region, 'Soft', soft, 'p90', 3600),
+  latencyTile(region, 'Soft', soft, 'p99', 3600),
+  // row 5
+  ...HardPercentileGraphs(region),
+  // row 6
+  latencyTile(region, 'Hard', hard, 'p50', 21600),
+  latencyTile(region, 'Hard', hard, 'p90', 21600),
+  latencyTile(region, 'Hard', hard, 'p99', 21600),
 ];
 
-/** Row 1: where the time goes — per-service E2E percentiles and the phase decomposition. */
+/**
+ * Row 7: soft vs hard phase decomposition p50, side by side. The per-service E2E
+ * percentile graphs that used to live here are covered by the story rows above.
+ * Note the hard chart decomposes only the shared RFQ phases — cosigning and the
+ * order post are not individually instrumented yet, so they show up as the gap
+ * between this stack and the Hard e2e graphs.
+ */
 export const PhaseDecompositionWidgets = (region: string): LambdaWidget[] =>
-  RFQ_SERVICES.flatMap((service) => [
-    {
-      height: 8,
-      width: 12,
-      type: 'metric',
-      properties: {
-        metrics: [
-          [
-            'Uniswap',
-            Metric.QUOTE_E2E_LATENCY,
-            'Service',
-            service.Service,
-            { stat: 'p50', label: 'p50', color: PERCENTILE_COLORS.p50 },
-          ],
-          [
-            'Uniswap',
-            Metric.QUOTE_E2E_LATENCY,
-            'Service',
-            service.Service,
-            { stat: 'p90', label: 'p90', color: PERCENTILE_COLORS.p90 },
-          ],
-          [
-            'Uniswap',
-            Metric.QUOTE_E2E_LATENCY,
-            'Service',
-            service.Service,
-            { stat: 'p99', label: 'p99', color: PERCENTILE_COLORS.p99 },
-          ],
-        ],
-        view: 'timeSeries',
-        stacked: false,
-        region,
-        period: 300,
-        title: `${service.Service} E2E Latency (all response codes) | 5 minutes`,
-        yAxis: { left: { label: 'ms', showUnits: false } },
-        annotations: {
-          horizontal: [
-            { label: 'webhook timeout', value: WEBHOOK_TIMEOUT_MS },
-            { label: 'p90 alarm threshold', value: LATENCY_ALARM_THRESHOLD_MS },
-          ],
-        },
-      },
-    },
-    {
+  RFQ_SERVICES.map((service) => {
+    const isHard = service.Service === HardQuoteMetricDimension.Service;
+    const label = isHard ? 'Hard' : 'Soft';
+    return {
       height: 8,
       width: 12,
       type: 'metric',
@@ -272,12 +338,14 @@ export const PhaseDecompositionWidgets = (region: string): LambdaWidget[] =>
         view: 'timeSeries',
         stacked: true,
         region,
-        period: 300,
-        title: `${service.Service} Phase decomposition p50 (stacked) | 5 minutes`,
+        period: isHard ? 3600 : 300,
+        title: isHard
+          ? `${label} phase decomposition p50 (RFQ phases only; excl. cosign + order post)`
+          : `${label} phase decomposition p50 (stacked) | 5 minutes`,
         yAxis: { left: { label: 'ms', showUnits: false } },
       },
-    },
-  ]);
+    };
+  });
 
 /** Row 2: who is costing every swapper the wait — wasted wait, timeouts, stragglers. */
 export const WastedWaitWidgets = (region: string): LambdaWidget[] => [
@@ -294,7 +362,9 @@ export const WastedWaitWidgets = (region: string): LambdaWidget[] => [
       stacked: false,
       region,
       period: 300,
-      title: 'Wasted wait after last usable quote | 5 minutes',
+      // "Straggler tax": the fan-out holds the response open after the last usable
+      // quote has arrived, waiting on stragglers ("The Tail at Scale" terminology).
+      title: 'Straggler tax (soft+hard) — wait after last usable quote | 5 minutes',
       yAxis: { left: { label: 'ms', showUnits: false } },
       annotations: {
         horizontal: [{ label: 'webhook timeout', value: WEBHOOK_TIMEOUT_MS }],
@@ -343,61 +413,68 @@ export const WastedWaitWidgets = (region: string): LambdaWidget[] => [
       stacked: false,
       region,
       period: 300,
-      title: 'Fan-out straggler (set the wall) by filler | 5 minutes',
+      title: 'Fan-out straggler by filler (soft+hard) | 5 minutes',
     },
   },
 ];
 
-/** Row 3: per-chain views of the new latency metrics. */
+/**
+ * Row 3: per-chain views of the new latency metrics. Chains are discovered via
+ * SEARCH rather than mapped from SUPPORTED_CHAINS: the service is *deployable* on
+ * 18 chains but RFQ traffic only actually flows on a handful (7 as of Aug 2026),
+ * and which ones is decided by the runtime S3 filler config, not by any code
+ * constant. SEARCH shows exactly the chains with data and picks up new ones with
+ * no deploy — the tradeoff is legend labels are raw ChainId values, not names.
+ */
+const byChainSearchWidget = (
+  region: string,
+  service: string,
+  metricName: string,
+  title: string,
+  id: string
+): LambdaWidget => ({
+  height: 8,
+  width: 12,
+  type: 'metric',
+  properties: {
+    metrics: [
+      [
+        {
+          expression: `SEARCH('{Uniswap,Service,ChainId} Service="${service}" MetricName="${metricName}"', 'p90', 300)`,
+          id,
+          region,
+        },
+      ],
+    ],
+    view: 'timeSeries',
+    stacked: false,
+    region,
+    period: 300,
+    title,
+  },
+});
+
 export const E2EByChainWidgets = (region: string): LambdaWidget[] =>
-  RFQ_SERVICES.map((service) => {
-    return {
-      height: 8,
-      width: 12,
-      type: 'metric',
-      properties: {
-        metrics: SUPPORTED_CHAINS.map((chainId) => [
-          'Uniswap',
-          Metric.QUOTE_E2E_LATENCY,
-          'Service',
-          service.Service,
-          'ChainId',
-          chainId.toString(),
-          { stat: 'p90', label: chainLabel(chainId) },
-        ]),
-        view: 'timeSeries',
-        stacked: false,
-        region,
-        period: 300,
-        title: `${service.Service} E2E Latency p90 by Chain | 5 minutes`,
-      },
-    };
-  });
+  RFQ_SERVICES.map((service) =>
+    byChainSearchWidget(
+      region,
+      service.Service,
+      Metric.QUOTE_E2E_LATENCY,
+      `${service.Service} E2E Latency p90 by Chain (active chains only) | 5 minutes`,
+      'e2eByChain'
+    )
+  );
 
 export const FanoutByChainWidgets = (region: string): LambdaWidget[] =>
-  RFQ_SERVICES.map((service) => {
-    return {
-      height: 8,
-      width: 12,
-      type: 'metric',
-      properties: {
-        metrics: SUPPORTED_CHAINS.map((chainId) => [
-          'Uniswap',
-          Metric.RFQ_PHASE_FANOUT,
-          'Service',
-          service.Service,
-          'ChainId',
-          chainId.toString(),
-          { stat: 'p90', label: chainLabel(chainId) },
-        ]),
-        view: 'timeSeries',
-        stacked: false,
-        region,
-        period: 300,
-        title: `${service.Service} Fan-out wall p90 by Chain | 5 minutes`,
-      },
-    };
-  });
+  RFQ_SERVICES.map((service) =>
+    byChainSearchWidget(
+      region,
+      service.Service,
+      Metric.RFQ_PHASE_FANOUT,
+      `${service.Service} Fan-out wall p90 by Chain (active chains only) | 5 minutes`,
+      'fanoutByChain'
+    )
+  );
 
 const LatencyWidget = (region: string): LambdaWidget[] =>
   RFQ_SERVICES.map((service) => {
@@ -815,7 +892,7 @@ export class ParamDashboardStack extends cdk.NestedStack {
         // Widgets auto-flow in array order (no explicit x/y): story row first,
         // attribution rows next, the pre-existing ops widgets after.
         widgets: [
-          StoryRowWidgets(region),
+          LatencyStoryRows(region),
           PhaseDecompositionWidgets(region),
           WastedWaitWidgets(region),
           E2EByChainWidgets(region),
