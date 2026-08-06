@@ -65,23 +65,33 @@ const chainLabel = (chainId: ChainId): string => `${ChainId[chainId]} (${chainId
 // Latency story + attribution rows.
 //
 // Frozen pre-optimization baseline for the story row: measured from the
-// Service=SoftQuote QUOTE_E2E_LATENCY stream over its first ~2 days in prod
-// (2026-08-04T16:00Z onward, 5.79M samples). Soft-only on purpose: hard-quote
-// latency includes cosigning and the order post to uniswapx-service, a different
-// pipeline (p50 ~821ms on ~0.06% of volume). Deliberately NOT updated when
-// latency improves — the widening gap between the live series and these lines is
-// the dashboard's point. If the metric's semantics ever change, remeasure and
-// rename the label, don't silently re-baseline.
+// Service=SoftQuote QUOTE_E2E_LATENCY stream over its first days in prod
+// (2026-08-04T16:00Z onward). Soft-only on purpose: hard-quote latency includes
+// cosigning and the order post to uniswapx-service, a different pipeline on
+// ~0.06% of volume. Deliberately NOT updated when latency improves — the widening
+// gap between the live series and these lines is the dashboard's point. If the
+// metric's semantics ever change, remeasure and rename the label, don't silently
+// re-baseline.
+//
+// METHOD (must match how the graphs render, or the line sits visibly off the
+// data): each baseline is the MEAN OF PER-BUCKET PERCENTILES at that graph's
+// period (5-minute buckets for soft, 1-hour for hard) — the same statistic the
+// timeSeries widgets plot. A percentile pooled over the whole window is NOT
+// comparable: pooling weights every request equally, so high-volume/fast periods
+// pull it below the per-bucket line the eye compares against (pooled soft p50
+// measured 568 vs bucket-mean 575).
 // ---------------------------------------------------------------------------
-export const BASELINE_E2E_P50_MS = 568;
-export const BASELINE_E2E_P90_MS = 593;
-export const BASELINE_E2E_P99_MS = 704;
-// Hard-quote baselines, same window (3.6k samples — hard is ~80 requests/hour, so its
-// graphs use a 1-hour period; 5-minute percentiles would be single-digit-sample noise).
+// Measured 2026-08-06 over 2026-08-04T16:00Z → 2026-08-06T22:00Z (594 buckets).
+export const BASELINE_E2E_P50_MS = 575;
+export const BASELINE_E2E_P90_MS = 597;
+export const BASELINE_E2E_P99_MS = 703;
+// Hard-quote baselines, same window and method at 1-hour buckets (hard is ~80
+// requests/hour, so 5-minute percentiles would be single-digit-sample noise; its
+// p99 in particular is the shakiest number here — ~the worst request per bucket).
 // The hard pipeline additionally spans cosigning (KMS) and the order post.
-export const BASELINE_HARD_E2E_P50_MS = 819;
-export const BASELINE_HARD_E2E_P90_MS = 1085;
-export const BASELINE_HARD_E2E_P99_MS = 1692;
+export const BASELINE_HARD_E2E_P50_MS = 868;
+export const BASELINE_HARD_E2E_P90_MS = 1168;
+export const BASELINE_HARD_E2E_P99_MS = 1779;
 // Per-chain webhook (RFQ) timeout — the fan-out latency floor (see lib/constants.ts).
 const WEBHOOK_TIMEOUT_MS = 500;
 
