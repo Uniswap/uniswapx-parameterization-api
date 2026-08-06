@@ -26,6 +26,32 @@ const INTERNAL_ERROR = (id?: string) => {
 
 export type APIGatewayProxyHandler = (event: APIGatewayProxyEvent, context: Context) => Promise<APIGatewayProxyResult>;
 
+/*
+ * The raw APIGatewayProxyEvent carries the client IP in several places: requestContext.identity.sourceIp
+ * and any of the forwarding headers (X-Forwarded-For, X-Real-IP, CF-Connecting-IP, ...). IP addresses are
+ * personal data, and our Lambda log groups have no retention policy set, so never log the raw event.
+ * This is an allowlist rather than a denylist so a new IP-bearing header can't leak in by default.
+ */
+export function redactEvent(event: APIGatewayProxyEvent) {
+  return {
+    resource: event.resource,
+    path: event.path,
+    httpMethod: event.httpMethod,
+    pathParameters: event.pathParameters,
+    queryStringParameters: event.queryStringParameters,
+    body: event.body,
+    isBase64Encoded: event.isBase64Encoded,
+    requestContext: {
+      requestId: event.requestContext?.requestId,
+      path: event.requestContext?.path,
+      stage: event.requestContext?.stage,
+      resourcePath: event.requestContext?.resourcePath,
+      httpMethod: event.requestContext?.httpMethod,
+      requestTimeEpoch: event.requestContext?.requestTimeEpoch,
+    },
+  };
+}
+
 export type ApiRInj = BaseRInj & { requestId: string };
 
 export type APIHandleRequestParams<CInj, RInj, ReqBody, ReqQueryParams> = BaseHandleRequestParams<
@@ -170,7 +196,7 @@ export abstract class APIGLambdaHandler<
               metric
             );
           } catch (err) {
-            log.error({ err, event }, 'Unexpected error building request injected.');
+            log.error({ err, event: redactEvent(event) }, 'Unexpected error building request injected.');
             metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
             return INTERNAL_ERROR();
           }
