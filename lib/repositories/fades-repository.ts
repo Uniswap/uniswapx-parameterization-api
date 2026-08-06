@@ -19,6 +19,7 @@ export type V2FadesRowType = {
   faded: number;
   postTimestamp: number;
   deadline: number; // When the order outcome was finalized
+  orderHash: string;
 };
 
 /**
@@ -51,10 +52,10 @@ export class V2FadesRepository extends BaseRedshiftRepository {
     const stmtId = await this.executeStatement(V2_FADE_RATE_SQL, V2FadesRepository.log, { waitTimeMs: 2_000 });
     const response = await this.client.send(new GetStatementResultCommand({ Id: stmtId }));
     /* result should be in the following format
-        | rfqFiller    |   postTimestamp  |   deadline   |   faded  |
-        |---- bar ------|---- 12222222 ---|--- 12222282 -|---- 0 ---|
-        |---- foo ------|---- 12345679 ---|--- 12345739 -|---- 1 ---|
-        |---- foo ------|---- 12345678 ---|--- 12345738 -|---- 0 ---|
+        | rfqFiller    |   postTimestamp  |   deadline   |   faded  |   orderHash  |
+        |---- bar ------|---- 12222222 ---|--- 12222282 -|---- 0 ---|---- 0xbar ---|
+        |---- foo ------|---- 12345679 ---|--- 12345739 -|---- 1 ---|---- 0xfoo ---|
+        |---- foo ------|---- 12345678 ---|--- 12345738 -|---- 0 ---|---- 0xbaz ---|
       */
     const result = response.Records;
     if (!result) {
@@ -68,6 +69,7 @@ export class V2FadesRepository extends BaseRedshiftRepository {
         postTimestamp: parseInt(row[1].stringValue as string),
         deadline: parseInt(row[2].stringValue as string),
         faded: Number(row[3].longValue as number),
+        orderHash: row[4].stringValue as string,
       };
       return formattedRow;
     });
@@ -91,7 +93,7 @@ WITH latestOrdersV2 AS (
   LIMIT ${FADE_QUERY_ROW_LIMIT}
 )
 SELECT
-    latestOrdersV2.chainid as chainId, latestOrdersV2.ordertype as orderType, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedorders.fillTimeBlocks as fillTimeBlocks, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
+    latestOrdersV2.chainid as chainId, latestOrdersV2.ordertype as orderType, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, latestOrdersV2.orderhash as orderHash, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedorders.fillTimeBlocks as fillTimeBlocks, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
     CASE
       WHEN latestOrdersV2.inputstartamount = latestOrdersV2.inputendamount THEN 'EXACT_INPUT'
       ELSE 'EXACT_OUTPUT'
@@ -111,10 +113,11 @@ LIMIT ${FADE_QUERY_ROW_LIMIT}
 `;
 
 const V2_FADE_RATE_SQL = `
-SELECT 
+SELECT
     rfqFiller,
     postTimestamp,
     deadline,
+    -- the parser in getFades() indexes columns by position; keep this ordering in sync
     CASE
       -- Never filled (any order type) => fade.
       WHEN fillTimestamp IS NULL THEN 1
@@ -127,7 +130,8 @@ SELECT
       -- Dutch_V2 (time-based decay): filled after decay start => fade.
       WHEN orderType = '${OrderType.Dutch_V2}' AND decayStartTime < fillTimestamp THEN 1
       ELSE 0
-    END AS faded
+    END AS faded,
+    orderHash
 FROM latestRfqsV2
 WHERE LOWER(tokenIn) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})
 AND LOWER(tokenOut) NOT IN (${PERMISSIONED_TOKENS.map((token) => `'${token.address.toLowerCase()}'`).join(',')})

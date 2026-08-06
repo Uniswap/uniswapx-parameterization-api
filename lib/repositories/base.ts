@@ -34,6 +34,9 @@ export type TimestampRepoRow = {
   // Set to the block end whenever a block is applied/extended; 0 if the filler was never blocked.
   fadeWindowStart: number;
   consecutiveBlocks: number;
+  // hashes of the faded orders that caused the current block;
+  // absent on rows written before this field existed
+  fadedOrderHashes?: string[];
 };
 
 // Rows round-trip as native numbers now (number-typed attributes read via a wrapNumbers:false

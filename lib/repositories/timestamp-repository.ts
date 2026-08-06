@@ -49,6 +49,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: { type: 'number' },
         [`${DYNAMO_TABLE_KEY.FADE_WINDOW_START}`]: { type: 'number' },
         [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: { type: 'number' },
+        [`${DYNAMO_TABLE_KEY.FADED_ORDER_HASHES}`]: { type: 'list' },
       },
       table: table,
       autoExecute: true,
@@ -72,6 +73,7 @@ export class TimestampRepository implements BaseTimestampRepository {
           [`${DYNAMO_TABLE_KEY.BLOCK_UNTIL_TIMESTAMP}`]: row.blockUntilTimestamp,
           [`${DYNAMO_TABLE_KEY.FADE_WINDOW_START}`]: row.fadeWindowStart,
           [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: row.consecutiveBlocks,
+          ...(row.fadedOrderHashes && { [`${DYNAMO_TABLE_KEY.FADED_ORDER_HASHES}`]: row.fadedOrderHashes }),
         });
       }),
       {
@@ -93,6 +95,8 @@ export class TimestampRepository implements BaseTimestampRepository {
       blockUntilTimestamp: Item?.blockUntilTimestamp ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
       fadeWindowStart: Item?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
       consecutiveBlocks: Item?.consecutiveBlocks ?? 0,
+      // absent on rows written before this attribute existed
+      fadedOrderHashes: Item?.fadedOrderHashes,
     };
   }
 
@@ -115,6 +119,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         blockUntilTimestamp: row.blockUntilTimestamp ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
         fadeWindowStart: row.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
         consecutiveBlocks: row.consecutiveBlocks ?? 0,
+        fadedOrderHashes: row.fadedOrderHashes,
       };
     });
   }
@@ -128,6 +133,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         blockUntilTimestamp: row.blockUntilTimestamp,
         fadeWindowStart: row.fadeWindowStart,
         consecutiveBlocks: row.consecutiveBlocks,
+        fadedOrderHashes: row.fadedOrderHashes,
       });
     });
     return res;
