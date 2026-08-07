@@ -98,6 +98,58 @@ describe('QuoteRequest', () => {
     expect(request.type).toEqual(TradeType.EXACT_INPUT);
   });
 
+  describe('hasUniformOutputTokens', () => {
+    const requestWithOutputs = (outputs: { token: string; startAmount: BigNumber }[]) => {
+      const order = new UnsignedV2DutchOrder(
+        getOrderInfo({
+          outputs: outputs.map((output) => ({
+            token: output.token,
+            startAmount: output.startAmount,
+            endAmount: output.startAmount,
+            recipient: ethers.constants.AddressZero,
+          })),
+        }),
+        CHAIN_ID
+      );
+      return makeRequest({ encodedInnerOrder: order.serialize(), innerSig: '0x' });
+    };
+
+    it('is true for a single output', () => {
+      expect(requestWithOutputs([{ token: TOKEN_OUT, startAmount: RAW_AMOUNT }]).hasUniformOutputTokens).toBe(true);
+    });
+
+    it('is true for a fee output in the swapper output token', () => {
+      const request = requestWithOutputs([
+        { token: TOKEN_OUT, startAmount: RAW_AMOUNT },
+        { token: TOKEN_OUT, startAmount: RAW_AMOUNT.div(1000) },
+      ]);
+      expect(request.hasUniformOutputTokens).toBe(true);
+      expect(request.outputTokens).toEqual([TOKEN_OUT, TOKEN_OUT]);
+    });
+
+    it('is true regardless of address casing', () => {
+      const request = requestWithOutputs([
+        { token: TOKEN_OUT.toLowerCase(), startAmount: RAW_AMOUNT },
+        { token: TOKEN_OUT, startAmount: RAW_AMOUNT.div(1000) },
+      ]);
+      expect(request.hasUniformOutputTokens).toBe(true);
+    });
+
+    // The scalar the quoter is asked to beat would otherwise mix 1 WETH with a raw
+    // 1000000 of a 6 decimal token.
+    it('is false when a higher output pays a different token', () => {
+      const request = requestWithOutputs([
+        { token: TOKEN_OUT, startAmount: RAW_AMOUNT },
+        { token: TOKEN_IN, startAmount: BigNumber.from('1000000') },
+      ]);
+      expect(request.hasUniformOutputTokens).toBe(false);
+      expect(request.outputTokens).toEqual([TOKEN_OUT, TOKEN_IN]);
+      // tokenOut and amount both stay silent about the second token
+      expect(request.tokenOut).toEqual(TOKEN_OUT);
+      expect(request.numOutputs).toEqual(2);
+    });
+  });
+
   it('toCleanJSON', async () => {
     const order = new UnsignedV2DutchOrder(
       getOrderInfo({
