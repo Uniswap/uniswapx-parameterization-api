@@ -22,7 +22,13 @@ import { V3HardQuoteResponse } from '../../entities/V3HardQuoteResponse';
 import { checkDefined } from '../../preconditions/preconditions';
 import { getBestQuote } from '../../quoters/best-quote';
 import { ChainId } from '../../util/chains';
-import { NoQuotesAvailable, OrderDeadlineExpired, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
+import {
+  MixedOutputTokensError,
+  NoQuotesAvailable,
+  OrderDeadlineExpired,
+  OrderPostError,
+  UnknownOrderCosignerError,
+} from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
@@ -68,6 +74,22 @@ export class QuoteHandler extends APIGLambdaHandler<
         requestBody.tokenInChainId
       );
       const request = HardQuoteRequest.fromHardRequestBody(requestBody, orderType);
+
+      // Reject before the auction rather than after. We quote this order as a single
+      // tokenOut plus one summed amount, so a quoter pricing an order whose outputs span
+      // multiple tokens is bidding on something the order does not contain. Winning that
+      // auction hands it exclusivity on an order it has to fade, which costs it fill rate
+      // and circuit-breaker standing for a request it was never able to price. The order
+      // service rejects the same shape at POST /order, so the fill could not happen.
+      if (!request.hasUniformOutputTokens) {
+        log.error(
+          { tokenOut: request.tokenOut, outputTokens: request.outputTokens, requestId: request.requestId },
+          'Order outputs span multiple tokens'
+        );
+        metric.putMetric(Metric.QUOTE_MIXED_OUTPUT_TOKENS, 1, MetricLoggerUnit.Count);
+        throw new MixedOutputTokensError();
+      }
+
       // re-create KmsClient every call to avoid clock skew issue
       // https://github.com/aws/aws-sdk-js-v3/issues/6400
       const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');

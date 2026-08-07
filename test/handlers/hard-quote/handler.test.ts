@@ -114,6 +114,90 @@ describe('Quote handler', () => {
     jest.clearAllMocks();
   });
 
+  describe('orders whose outputs span multiple tokens', () => {
+    const mixedOutputOrder = () =>
+      getOrder({
+        cosigner: cosignerWallet.address,
+        outputs: [
+          {
+            token: TOKEN_OUT,
+            startAmount: RAW_AMOUNT,
+            endAmount: RAW_AMOUNT,
+            recipient: ethers.constants.AddressZero,
+          },
+          {
+            token: TOKEN_IN,
+            startAmount: BigNumber.from('4800000000000'),
+            endAmount: BigNumber.from('4800000000000'),
+            recipient: ethers.constants.AddressZero,
+          },
+        ],
+      });
+
+    it('are rejected with a 400', async () => {
+      const quoters = [new MockQuoter(logger, 1, 1)];
+      const request = await getRequest(mixedOutputOrder());
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+
+      expect(response.statusCode).toEqual(400);
+      expect(JSON.parse(response.body).detail).toContain('All order outputs must pay the same token');
+    });
+
+    // The point of rejecting here rather than after the auction: a quoter that wins on a
+    // price it could not have computed gets exclusivity on an order it has to fade.
+    it('never reach the quoters', async () => {
+      const quoter = new MockQuoter(logger, 1, 1);
+      const quoteSpy = jest.spyOn(quoter, 'quote');
+      const request = await getRequest(mixedOutputOrder());
+
+      await getQuoteHandler([quoter]).handler(getEvent(request), {} as unknown as Context);
+
+      expect(quoteSpy).not.toHaveBeenCalled();
+    });
+
+    it('are rejected before the order is cosigned', async () => {
+      const request = await getRequest(mixedOutputOrder());
+
+      await getQuoteHandler([new MockQuoter(logger, 1, 1)]).handler(getEvent(request), {} as unknown as Context);
+
+      expect(mockSignDigest).not.toHaveBeenCalled();
+    });
+
+    it('still accepts a fee output in the swapper output token', async () => {
+      const quoters = [new MockQuoter(logger, 1, 1)];
+      const request = await getRequest(
+        getOrder({
+          cosigner: cosignerWallet.address,
+          outputs: [
+            {
+              token: TOKEN_OUT,
+              startAmount: RAW_AMOUNT,
+              endAmount: RAW_AMOUNT,
+              recipient: ethers.constants.AddressZero,
+            },
+            {
+              token: TOKEN_OUT,
+              startAmount: RAW_AMOUNT.div(1000),
+              endAmount: RAW_AMOUNT.div(1000),
+              recipient: ethers.constants.AddressZero,
+            },
+          ],
+        })
+      );
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+
+      expect(response.statusCode).toEqual(200);
+    });
+  });
+
   it('Simple request and response', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
