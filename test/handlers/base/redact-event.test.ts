@@ -40,8 +40,10 @@ describe('redactEvent', () => {
     },
   } as unknown as APIGatewayProxyEvent;
 
+  // toStrictEqual, not toEqual: toEqual ignores keys whose value is undefined, so a field
+  // added back to the allowlist but absent from this fixture would slip through.
   it('keeps the fields needed to debug a request', () => {
-    expect(redactEvent(event)).toEqual({
+    expect(redactEvent(event)).toStrictEqual({
       resource: '/quote',
       path: '/quote',
       httpMethod: 'POST',
