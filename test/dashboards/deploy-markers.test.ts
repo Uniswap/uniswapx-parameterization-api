@@ -1,4 +1,10 @@
-import { deployMarkers, MILESTONES, parseGitLog } from '../../bin/stacks/deploy-markers';
+import {
+  deployMarkers,
+  DEPLOY_MARKER_COUNT,
+  MAX_LABEL_LENGTH,
+  MILESTONES,
+  parseGitLog,
+} from '../../bin/stacks/deploy-markers';
 import {
   LambdaWidget,
   LatencyStoryRows,
@@ -17,9 +23,9 @@ describe('deployMarkers (executes real git)', () => {
     for (const m of markers) {
       expect(Number.isNaN(Date.parse(m.value))).toBe(false);
       expect(m.label).toMatch(/^[0-9a-f]{7} /);
-      expect(m.label.length).toBeLessThanOrEqual(50);
+      expect(m.label.length).toBeLessThanOrEqual(MAX_LABEL_LENGTH);
     }
-    expect(markers.length).toBeLessThanOrEqual(10);
+    expect(markers.length).toBeLessThanOrEqual(DEPLOY_MARKER_COUNT);
   });
 });
 
@@ -43,7 +49,7 @@ describe('parseGitLog', () => {
   it('truncates long labels and drops unparseable lines', () => {
     const long = `abcdef1234567890|2026-08-10T12:00:00Z|${'x'.repeat(200)}`;
     const [a] = parseGitLog(long);
-    expect(a.label.length).toBeLessThanOrEqual(80);
+    expect(a.label.length).toBeLessThanOrEqual(MAX_LABEL_LENGTH);
     expect(parseGitLog('')).toEqual([]);
     expect(parseGitLog('garbage-without-pipes')).toEqual([]);
   });
@@ -96,17 +102,21 @@ describe('withEventMarkers', () => {
 
   it('keeps the marker-annotated widget payload within the dashboard size budget', () => {
     // PutDashboard rejects bodies >100KB; an unbounded marker regime measured
-    // ~122KB. The markers go only on the attribution widgets, capped at 10 deploys
-    // + milestones with 50-char labels. Worst-case payload for that subset must
-    // leave ample room for the ~37KB of ops widgets that share the body.
-    const worstCaseMarkers = Array.from({ length: 11 }, (_, i) => ({
+    // ~122KB. The markers go only on the attribution widgets, capped at
+    // DEPLOY_MARKER_COUNT deploys + milestones with MAX_LABEL_LENGTH-char labels.
+    // Worst-case payload for that subset must leave ample room for the ~37KB of ops
+    // widgets that share the body, under the stack's 90KB synth guard. Derived from
+    // the constants so raising either one has to re-clear this budget.
+    const worstCaseMarkers = Array.from({ length: DEPLOY_MARKER_COUNT + MILESTONES.length }, (_, i) => ({
       value: '2026-08-10T12:00:00-07:00',
-      label: `${i.toString(16).padStart(7, '0')} ${'x'.repeat(42)}`,
+      label: `${i.toString(16).padStart(7, '0')} ${'x'.repeat(MAX_LABEL_LENGTH - 8)}`,
     }));
     const annotated = withEventMarkers(
       [LatencyStoryRows('us-east-2'), PhaseDecompositionWidgets('us-east-2'), WastedWaitWidgets('us-east-2')].flat(),
       worstCaseMarkers
     );
-    expect(JSON.stringify(annotated).length).toBeLessThan(55_000);
+    // Measured 42.5KB at 30 deploy markers + 1 milestone; the whole body synths to
+    // ~72KB against the stack's 90KB guard.
+    expect(JSON.stringify(annotated).length).toBeLessThan(50_000);
   });
 });

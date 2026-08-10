@@ -5,11 +5,15 @@ export type VerticalAnnotation = {
   value: string; // ISO 8601 timestamp
 };
 
-// Markers are copied into every widget they annotate and the dashboard body has a
-// hard 100KB PutDashboard limit, so both the marker count and label length are
-// deliberately small. See MARKER_WIDGET_BUDGET in param-dashboard-stack.ts.
-const MAX_LABEL_LENGTH = 50;
-const DEPLOY_MARKER_COUNT = 10;
+// Markers are copied into every widget they annotate, so each one costs ~1.1KB of
+// dashboard body across the attribution widgets, against a hard 100KB PutDashboard
+// limit (the size guard in param-dashboard-stack.ts trips at 90KB). 30 markers puts
+// the body around 72KB. Raise these only with a fresh measurement — see the size
+// budget test in test/dashboards/deploy-markers.test.ts.
+export const MAX_LABEL_LENGTH = 50;
+// Sized to span the dashboard's -P3M default window rather than the last few days:
+// at this repo's merge cadence 30 markers is roughly a month of history.
+export const DEPLOY_MARKER_COUNT = 30;
 
 /**
  * Hand-maintained markers for changes that move the latency graphs but leave no
