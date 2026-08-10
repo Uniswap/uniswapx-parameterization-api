@@ -50,6 +50,9 @@ describe('WebhookQuoter tests', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
+    // clearAllMocks clears recorded calls but leaves implementations in place, so a persistent
+    // mockImplementation would leak into later tests that rely on mockImplementationOnce.
+    mockedAxios.post.mockReset();
   });
 
   const webhookProvider = new MockWebhookConfigurationProvider([
@@ -919,6 +922,56 @@ describe('WebhookQuoter tests', () => {
     expect(response).toEqual([]);
   });
 
+  // The signal the filler docs ask for: "a 204 with an empty body is the expected signal when you
+  // cannot or will not quote". This case passed before 204 was checked explicitly, but only by
+  // accident — an empty body makes amountOut default to 0 and fall into the zero-amount branch.
+  it('Counts as non-quote if response returns 204 with an empty body', async () => {
+    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      return Promise.resolve({ data: '', status: 204 });
+    });
+
+    const response = await webhookQuoter.quote(request);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      { response: '', responseStatus: 204 },
+      `Webhook elected not to quote: ${WEBHOOK_URL}`
+    );
+    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: expect.objectContaining({
+          status: 204,
+          responseType: WebhookResponseType.NON_QUOTE,
+        }),
+      })
+    );
+    expect(response.length).toEqual(0);
+  });
+
+  // A 204 is "no content", so the status decides on its own. Without an explicit check a body
+  // carrying a non-zero amount slips past the zero-amount branch and is accepted as a real quote.
+  it('Counts as non-quote if response returns 204 carrying a quote body', async () => {
+    mockedAxios.post.mockImplementation((_endpoint, _req, _options) => {
+      return Promise.resolve({ data: { ...quote, requestId: (_req as any).requestId }, status: 204 });
+    });
+
+    const response = await webhookQuoter.quote(request);
+
+    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: expect.objectContaining({
+          status: 204,
+          responseType: WebhookResponseType.NON_QUOTE,
+        }),
+      })
+    );
+    expect(response.length).toEqual(0);
+  });
+
+  // Note: axios's default validateStatus rejects non-2xx, so a real 404 never reaches isNonQuote —
+  // it lands in the catch as an HTTP_ERROR. This mock resolves it, so it covers the branch in
+  // isolation rather than the production path.
   it('Counts as non-quote if response returns 404', async () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
