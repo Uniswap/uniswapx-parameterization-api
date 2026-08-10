@@ -969,37 +969,39 @@ describe('WebhookQuoter tests', () => {
     expect(response.length).toEqual(0);
   });
 
-  // Note: axios's default validateStatus rejects non-2xx, so a real 404 never reaches isNonQuote —
-  // it lands in the catch as an HTTP_ERROR. This mock resolves it, so it covers the branch in
-  // isolation rather than the production path.
-  it('Counts as non-quote if response returns 404', async () => {
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: '',
-        status: 404,
-      });
+  // 204 is the only status that signals a non-quote. axios's default validateStatus rejects non-2xx,
+  // so a 404 never reaches isNonQuote — it rejects into the catch and is recorded as an HTTP_ERROR.
+  // Pinned here so widening validateStatus, which would silently reclassify every 4xx as a
+  // non-quote, shows up as a test failure instead.
+  it('Counts a 404 as an HTTP error, not a non-quote', async () => {
+    // Resolve or reject the way real axios would for the config the quoter actually passes. A mock
+    // that rejects unconditionally would keep passing even if validateStatus were widened, which is
+    // what let the unreachable branch sit here unnoticed in the first place.
+    mockedAxios.post.mockImplementation((_endpoint, _req, options) => {
+      const validateStatus = (options as any)?.validateStatus ?? ((s: number) => s >= 200 && s < 300);
+      if (validateStatus(404)) {
+        return Promise.resolve({ status: 404, data: '' });
+      }
+      const notFound = new AxiosError('Request failed with status code 404');
+      (notFound as any).code = 'ERR_BAD_REQUEST';
+      (notFound as any).response = { status: 404, data: '' };
+      return Promise.reject(notFound);
     });
+
     const response = await webhookQuoter.quote(request);
-    // logs in fetchQuote go through a child logger bound with the request id, then enriched with the quote id
-    expect(logger.child).toHaveBeenCalledWith({ requestId: request.requestId });
-    expect(logger.child).toHaveBeenCalledWith({ quoteId: expect.any(String) });
-    expect(logger.info).toHaveBeenCalledWith(
-      {
-        response: '',
-        responseStatus: 404,
-      },
-      `Webhook elected not to quote: ${WEBHOOK_URL}`
-    );
+
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-        eventProperties: {
-          ...sharedWebhookResponseEventProperties,
+        eventProperties: expect.objectContaining({
           status: 404,
-          data: '',
-          algo_id: undefined,
-          responseType: WebhookResponseType.NON_QUOTE,
-        },
+          responseType: WebhookResponseType.HTTP_ERROR,
+        }),
+      })
+    );
+    expect(mockFirehoseLogger.sendAnalyticsEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventProperties: expect.objectContaining({ responseType: WebhookResponseType.NON_QUOTE }),
       })
     );
     expect(response.length).toEqual(0);

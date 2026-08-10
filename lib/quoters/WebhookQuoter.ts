@@ -456,17 +456,12 @@ export class WebhookQuoter implements Quoter {
 // these should be treated differently from quote validation errors for analytics purposes
 // valid non-quote responses:
 // - 204, the signal the filler docs ask for
-// - 404
 // - 0 amount quote
+// Note that non-2xx statuses never get here: axios's default validateStatus rejects them, so they
+// land in the caller's catch as an HTTP_ERROR. A 404 is an error, not an election not to quote.
 function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedResponse: QuoteResponse): boolean {
   // A 204 means "no content", so the status alone decides — a body that arrives with it is not a quote.
   if (hookResponse.status === 204) {
-    return true;
-  }
-
-  // Unreachable in practice: axios's default validateStatus rejects non-2xx, so a 404 lands in the
-  // caller's catch as an HTTP_ERROR before reaching here. Left in place rather than relied upon.
-  if (hookResponse.status === 404) {
     return true;
   }
 
