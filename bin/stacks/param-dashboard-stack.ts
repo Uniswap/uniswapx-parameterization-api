@@ -879,6 +879,41 @@ const CircuitBreakerWidgets = (region: string): LambdaWidget[] => [
       title: 'Filler Consecutive Blocks (escalation)',
     },
   },
+  // Watchlist: per-filler RAW fade rate over the whole 24h window, no clean-slate amnesty and
+  // no smoothing. The breaker deliberately tolerates low-volume fillers up to ~0.12n + 1.4
+  // fades/day (e.g. ~20% raw at 15 orders/day) — anyone hugging or exceeding the threshold
+  // line here for days while never showing up in the blocks widgets is inside that envelope
+  // and needs a human conversation, not a threshold change (see PR #482 backtest).
+  {
+    height: 8,
+    width: 12,
+    type: 'metric',
+    properties: {
+      metrics: [
+        [
+          {
+            expression: `SEARCH('{Uniswap,Service} Service="${CircuitBreakerMetricDimension.Service}" ${Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE}_', 'Average', 600)`,
+            id: 'chronicRates',
+            region,
+          },
+        ],
+      ],
+      view: 'timeSeries',
+      stacked: false,
+      region,
+      period: 600,
+      title: 'Filler Chronic Fade Rate (raw, 24h, no amnesty) — watchlist',
+      yAxis: {
+        left: {
+          label: 'raw fade rate',
+          showUnits: false,
+        },
+      },
+      annotations: {
+        horizontal: [{ label: 'block threshold (smoothed)', value: FADE_RATE_BLOCK_THRESHOLD }],
+      },
+    },
+  },
 ];
 
 export interface DashboardProps extends cdk.NestedStackProps {

@@ -4,6 +4,7 @@ import {
   BASE_BLOCK_SECS,
   calculateBlockUntilTimestamp,
   calculateNewTimestamps,
+  CHRONIC_RATE_MIN_SAMPLE,
   CLEAN_RUNS_PER_DECAY,
   countActiveBlocks,
   FADE_RATE_BLOCK_THRESHOLD,
@@ -13,6 +14,7 @@ import {
   laplaceSmoothedFadeRate,
   LAPLACE_ALPHA,
   LAPLACE_BETA,
+  MAX_BLOCK_BACKOFF_EXPONENT,
   UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
 } from '../../lib/cron/fade-rate-v2';
 import { Metric, metricContext } from '../../lib/entities';
@@ -99,6 +101,9 @@ describe('FadeRateV2 cron', () => {
       // no prior timestamp => every completion is new
       expect(stats['fillerA'].newCompletions).toEqual(10);
       expect(stats['fillerA'].newFades).toEqual(3);
+      // chronic view: raw rate over all rows, no smoothing
+      expect(stats['fillerA'].chronicRate).toBeCloseTo(3 / 10, 6);
+      expect(stats['fillerA'].chronicTotal).toEqual(10);
     });
 
     it('excludes pre-block orders from the rate window', () => {
@@ -134,6 +139,10 @@ describe('FadeRateV2 cron', () => {
       // only the 5 post-lastPost orders are new completions, 1 of them faded
       expect(stats['fillerB'].newCompletions).toEqual(5);
       expect(stats['fillerB'].newFades).toEqual(1);
+      // chronic view has NO amnesty: the pre-block fades excluded from the rate window still
+      // count here (3 fades over all 7 rows)
+      expect(stats['fillerB'].chronicRate).toBeCloseTo(3 / 7, 6);
+      expect(stats['fillerB'].chronicTotal).toEqual(7);
     });
 
     it('scores in-flight orders that completed during a block, even after it expired', () => {
@@ -194,13 +203,28 @@ describe('FadeRateV2 cron', () => {
       expect(calculateBlockUntilTimestamp(now, 2)).toEqual(now + BASE_BLOCK_SECS * 4);
       expect(calculateBlockUntilTimestamp(now, undefined)).toEqual(now + BASE_BLOCK_SECS);
     });
+
+    it('caps the backoff exponent so a single increment never exceeds 32 hours', () => {
+      const capped = now + BASE_BLOCK_SECS * 2 ** MAX_BLOCK_BACKOFF_EXPONENT;
+      expect(calculateBlockUntilTimestamp(now, MAX_BLOCK_BACKOFF_EXPONENT)).toEqual(capped);
+      expect(calculateBlockUntilTimestamp(now, MAX_BLOCK_BACKOFF_EXPONENT + 1)).toEqual(capped);
+      expect(calculateBlockUntilTimestamp(now, 50)).toEqual(capped);
+      expect(capped - now).toEqual(32 * 3600); // pin the intended ceiling in wall-clock terms
+    });
   });
 
   describe('calculateNewTimestamps', () => {
     it('blocks a filler whose fade rate exceeds the threshold', () => {
       const timestamps: FillerTimestamps = new Map();
       const stats: FillerFadeStatsMap = {
-        newBad: { fadeRate: 0.2, duringBlockRate: 0.05, newCompletions: 1, newFades: 1 },
+        newBad: {
+          fadeRate: 0.2,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 1,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row).toEqual({
@@ -216,7 +240,7 @@ describe('FadeRateV2 cron', () => {
     it('does not block a filler under the threshold', () => {
       const timestamps: FillerTimestamps = new Map();
       const stats: FillerFadeStatsMap = {
-        ok: { fadeRate: 0.05, duringBlockRate: 0.05, newCompletions: 1, newFades: 0 },
+        ok: { fadeRate: 0.05, duringBlockRate: 0.05, newCompletions: 1, newFades: 0, chronicRate: 0, chronicTotal: 0 },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
@@ -240,7 +264,14 @@ describe('FadeRateV2 cron', () => {
         ],
       ]);
       const stats: FillerFadeStatsMap = {
-        repeat: { fadeRate: 0.3, duringBlockRate: 0.05, newCompletions: 1, newFades: 1 },
+        repeat: {
+          fadeRate: 0.3,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 1,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(now + BASE_BLOCK_SECS * 4); // 2^2 (old consecutive)
@@ -262,7 +293,14 @@ describe('FadeRateV2 cron', () => {
         ],
       ]);
       const stats: FillerFadeStatsMap = {
-        recovering: { fadeRate: 0.05, duringBlockRate: 0.05, newCompletions: 1, newFades: 0 },
+        recovering: {
+          fadeRate: 0.05,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 0,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP); // not blocked
@@ -288,7 +326,14 @@ describe('FadeRateV2 cron', () => {
         ],
       ]);
       const stats: FillerFadeStatsMap = {
-        idler: { fadeRate: 0.05, duringBlockRate: 0.05, newCompletions: 0, newFades: 0 },
+        idler: {
+          fadeRate: 0.05,
+          duringBlockRate: 0.05,
+          newCompletions: 0,
+          newFades: 0,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.consecutiveBlocks).toEqual(3); // frozen, not decayed
@@ -312,7 +357,14 @@ describe('FadeRateV2 cron', () => {
       // post-block rate sits at the prior (blocked => empty window), but the in-flight
       // cohort faded at over the threshold rate
       const stats: FillerFadeStatsMap = {
-        blockedFader: { fadeRate: 0.05, duringBlockRate: 0.2, newCompletions: 1, newFades: 1 },
+        blockedFader: {
+          fadeRate: 0.05,
+          duringBlockRate: 0.2,
+          newCompletions: 1,
+          newFades: 1,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(now + 500 + BASE_BLOCK_SECS * 2); // extend from current end, 2^1
@@ -343,6 +395,8 @@ describe('FadeRateV2 cron', () => {
           duringBlockRate: laplaceSmoothedFadeRate(1, 20),
           newCompletions: 20,
           newFades: 1,
+          chronicRate: 0,
+          chronicTotal: 0,
         },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
@@ -367,7 +421,14 @@ describe('FadeRateV2 cron', () => {
         ],
       ]);
       const stats: FillerFadeStatsMap = {
-        lateFader: { fadeRate: 0.05, duringBlockRate: 0.14, newCompletions: 1, newFades: 1 },
+        lateFader: {
+          fadeRate: 0.05,
+          duringBlockRate: 0.14,
+          newCompletions: 1,
+          newFades: 1,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(now + BASE_BLOCK_SECS * 2); // 2^1 backoff
@@ -389,7 +450,14 @@ describe('FadeRateV2 cron', () => {
       ]);
       // even a high (stale) window rate must not extend an active block by itself
       const stats: FillerFadeStatsMap = {
-        blockedClean: { fadeRate: 0.9, duringBlockRate: 0.05, newCompletions: 1, newFades: 0 },
+        blockedClean: {
+          fadeRate: 0.9,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 0,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(now + 300);
@@ -414,7 +482,14 @@ describe('FadeRateV2 cron', () => {
           ],
         ]) as FillerTimestamps;
       const clean: FillerFadeStatsMap = {
-        gamer: { fadeRate: 0.04, duringBlockRate: 0.05, newCompletions: 1, newFades: 0 },
+        gamer: {
+          fadeRate: 0.04,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 0,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
 
       // clean runs build the streak without decaying until the streak completes
@@ -447,7 +522,14 @@ describe('FadeRateV2 cron', () => {
       ]);
       // under threshold, but the run's one new completion faded
       const stats: FillerFadeStatsMap = {
-        almostRecovered: { fadeRate: 0.09, duringBlockRate: 0.05, newCompletions: 1, newFades: 1 },
+        almostRecovered: {
+          fadeRate: 0.09,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 1,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP); // still not blocked
@@ -469,9 +551,30 @@ describe('FadeRateV2 cron', () => {
         ],
       ]);
       const stats: FillerFadeStatsMap = {
-        breach: { fadeRate: 0.25, duringBlockRate: 0.05, newCompletions: 1, newFades: 1 },
-        clean: { fadeRate: 0.03, duringBlockRate: 0.05, newCompletions: 1, newFades: 0 },
-        blocked: { fadeRate: 0.05, duringBlockRate: 0.05, newCompletions: 1, newFades: 0 },
+        breach: {
+          fadeRate: 0.25,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 1,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
+        clean: {
+          fadeRate: 0.03,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 0,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
+        blocked: {
+          fadeRate: 0.05,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 0,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
       };
       const rows: ToUpdateTimestampRow[] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(rows).toHaveLength(3);
@@ -496,9 +599,30 @@ describe('FadeRateV2 cron', () => {
         ],
       ]);
       const stats: FillerFadeStatsMap = {
-        breach: { fadeRate: 0.25, duringBlockRate: 0.05, newCompletions: 1, newFades: 1 }, // trips a new block
-        clean: { fadeRate: 0.03, duringBlockRate: 0.05, newCompletions: 1, newFades: 0 },
-        extendMe: { fadeRate: 0.05, duringBlockRate: 0.2, newCompletions: 1, newFades: 1 }, // extends an active block
+        breach: {
+          fadeRate: 0.25,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 1,
+          chronicRate: 0,
+          chronicTotal: 0,
+        }, // trips a new block
+        clean: {
+          fadeRate: 0.03,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 0,
+          chronicRate: 0,
+          chronicTotal: 0,
+        },
+        extendMe: {
+          fadeRate: 0.05,
+          duringBlockRate: 0.2,
+          newCompletions: 1,
+          newFades: 1,
+          chronicRate: 0,
+          chronicTotal: 0,
+        }, // extends an active block
       };
       calculateNewTimestamps(timestamps, stats, now, logger, metrics);
 
@@ -562,7 +686,14 @@ describe('FadeRateV2 cron', () => {
         ],
       ]);
       const stats: FillerFadeStatsMap = {
-        recovering: { fadeRate: 0.03, duringBlockRate: 0.05, newCompletions: 5, newFades: 0 }, // decays 1 -> 0
+        recovering: {
+          fadeRate: 0.03,
+          duringBlockRate: 0.05,
+          newCompletions: 5,
+          newFades: 0,
+          chronicRate: 0,
+          chronicTotal: 0,
+        }, // decays 1 -> 0
       };
       calculateNewTimestamps(timestamps, stats, now, logger, metrics);
 
@@ -570,6 +701,42 @@ describe('FadeRateV2 cron', () => {
       expect(metrics.putMetric).toHaveBeenCalledWith(
         metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'recovering'),
         0,
+        expect.anything()
+      );
+    });
+
+    it('emits the chronic (no-amnesty) watchlist rate only at sufficient sample size', () => {
+      const metrics = { putMetric: jest.fn() } as any;
+      const stats: FillerFadeStatsMap = {
+        // a low-volume ~20% fader living inside the block threshold's envelope: never blocked,
+        // but the watchlist metric keeps them visible
+        watchme: {
+          fadeRate: 0.11,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 0,
+          chronicRate: 0.2,
+          chronicTotal: CHRONIC_RATE_MIN_SAMPLE,
+        },
+        // below the sample gate: a single faded order must not chart as a 100% swing
+        tiny: {
+          fadeRate: 0.09,
+          duringBlockRate: 0.05,
+          newCompletions: 1,
+          newFades: 1,
+          chronicRate: 1,
+          chronicTotal: CHRONIC_RATE_MIN_SAMPLE - 1,
+        },
+      };
+      calculateNewTimestamps(new Map(), stats, now, logger, metrics);
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'watchme'),
+        0.2,
+        expect.anything()
+      );
+      expect(metrics.putMetric).not.toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'tiny'),
+        expect.anything(),
         expect.anything()
       );
     });

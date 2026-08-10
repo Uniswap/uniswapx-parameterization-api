@@ -44,6 +44,14 @@ export type FillerFadeStats = {
   // Fades among newCompletions. A run with any new fade is not a clean run: it cannot build
   // the decay streak (and resets it), so a sub-threshold fade never counts as recovery.
   newFades: number;
+  // Raw (unsmoothed) fade rate over the filler's ENTIRE query window (24h / latest-100 per
+  // address), ignoring the clean-slate floor — the no-amnesty "chronic" view. Never used for
+  // blocking: emitted as a watchlist metric so persistent moderate faders who live inside the
+  // block threshold's envelope (~0.12n + 1.4 fades per day, e.g. ~20% raw at 15 orders/day)
+  // stay visible to humans even though the breaker correctly never trips on them.
+  chronicRate: number;
+  // Sample size behind chronicRate; the metric is only emitted at CHRONIC_RATE_MIN_SAMPLE+.
+  chronicTotal: number;
 };
 export type FillerFadeStatsMap = Record<string, FillerFadeStats>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
@@ -68,6 +76,15 @@ export const FADE_RATE_BLOCK_THRESHOLD = 0.12;
 // fader whose fades land in separate cron runs (fade #1 under threshold -> "activity" decay,
 // fade #2 -> block) nets zero escalation per cycle and stays on 15-30 minute blocks forever.
 export const CLEAN_RUNS_PER_DECAY = 6;
+// Cap on the block-backoff exponent: a single block/extension increment is at most
+// BASE_BLOCK_SECS * 2^7 = 32 hours (extensions stack, so the worst continuous bench seen in
+// the 2-week backtest under the cap was ~64h). Uncapped, the same replay produced a 152h
+// (6.3-day) block. The cap costs ~12% of worst-offender fade containment in exchange for a
+// bounded worst-case sentence and automatic recovery from pathological stored state.
+export const MAX_BLOCK_BACKOFF_EXPONENT = 7;
+// Minimum sample size before the chronic-rate watchlist metric is emitted, so one or two
+// orders don't chart as a 0%/100% swing.
+export const CHRONIC_RATE_MIN_SAMPLE = 10;
 
 const log = Logger.createLogger({
   name: 'FadeRate',
@@ -199,6 +216,14 @@ export function calculateNewTimestamps(
     metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_FADE_RATE, hash), fadeRate, Unit.None);
     if (isCurrentlyBlocked) {
       metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE, hash), duringBlockRate, Unit.None);
+    }
+    // Watchlist, not a trigger: the raw no-amnesty rate over the whole query window. Backtests
+    // show a low-volume filler can sustain ~20% raw inside the block threshold's envelope and
+    // that no trigger calibration catches them without unacceptable collateral — this metric
+    // keeps them visible for human follow-up instead. Gated on sample size to avoid charting
+    // 0%/100% single-order noise.
+    if (stats.chronicTotal >= CHRONIC_RATE_MIN_SAMPLE) {
+      metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, hash), stats.chronicRate, Unit.None);
     }
 
     // Resulting escalation level for this filler, emitted once below so the dashboard can chart
@@ -385,6 +410,8 @@ export function getFillersFadeStats(
       blockTotal: number;
       newCompletions: number;
       newFades: number;
+      chronicFades: number;
+      chronicTotal: number;
     }
   > = {};
   rows.forEach((row) => {
@@ -403,10 +430,15 @@ export function getFillersFadeStats(
         blockTotal: 0,
         newCompletions: 0,
         newFades: 0,
+        chronicFades: 0,
+        chronicTotal: 0,
       };
     }
     const windowStart = fillerTimestamp?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP;
     const lastExaminedTimestamp = fillerTimestamp?.lastExaminedTimestamp ?? 0;
+    // Chronic (no-amnesty) view: every row in the query window, regardless of cohort.
+    tallies[fillerHash].chronicTotal += 1;
+    tallies[fillerHash].chronicFades += row.faded;
     if (row.deadline > lastExaminedTimestamp) {
       tallies[fillerHash].newCompletions += 1;
       tallies[fillerHash].newFades += row.faded;
@@ -431,6 +463,8 @@ export function getFillersFadeStats(
       duringBlockRate: laplaceSmoothedFadeRate(t.blockFades, t.blockTotal),
       newCompletions: t.newCompletions,
       newFades: t.newFades,
+      chronicRate: t.chronicTotal > 0 ? t.chronicFades / t.chronicTotal : 0,
+      chronicTotal: t.chronicTotal,
     };
   });
   log?.info({ tallies, stats }, 'fade stats by filler');
@@ -447,8 +481,9 @@ export function getFillersFadeStats(
     - 1 consecutive block:  15 * 2^1 = 30 minutes
     - 2 consecutive blocks: 15 * 2^2 = 60 minutes
     - 3 consecutive blocks: 15 * 2^3 = 120 minutes
+    - 7+ consecutive blocks: capped at 15 * 2^7 = 32 hours per increment
 */
 export function calculateBlockUntilTimestamp(fromTimestamp: number, consecutiveBlocks: number | undefined): number {
-  const blocks = consecutiveBlocks || 0;
+  const blocks = Math.min(consecutiveBlocks || 0, MAX_BLOCK_BACKOFF_EXPONENT);
   return Math.floor(fromTimestamp + BASE_BLOCK_SECS * Math.pow(2, blocks));
 }

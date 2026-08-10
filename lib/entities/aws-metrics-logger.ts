@@ -92,6 +92,12 @@ export enum Metric {
   // post-block FADE_RATE, which sits at the prior while blocked) is what shows a benched filler
   // above the threshold. Compare to FADE_RATE_BLOCK_THRESHOLD.
   CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE = 'CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE',
+  // Per-filler RAW (unsmoothed) fade rate over the entire query window, ignoring the
+  // clean-slate floor — the no-amnesty "chronic" view. Watchlist only, never a block trigger:
+  // it exists to surface persistent moderate faders who live inside the block threshold's
+  // small-sample envelope (e.g. ~20% raw at ~15 orders/day). Emitted only at a minimum sample
+  // size (CHRONIC_RATE_MIN_SAMPLE).
+  CIRCUIT_BREAKER_V2_CHRONIC_RATE = 'CIRCUIT_BREAKER_V2_CHRONIC_RATE',
   // Fillers newly blocked in a cron run (unblocked -> blocked)
   CIRCUIT_BREAKER_V2_NEW_BLOCKS = 'CIRCUIT_BREAKER_V2_NEW_BLOCKS',
   // Active blocks extended in a cron run (in-flight cohort faded over threshold while blocked)
@@ -114,7 +120,8 @@ type MetricNeedingContext =
   | Metric.RFQ_TIMEOUT
   | Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS
   | Metric.CIRCUIT_BREAKER_V2_FADE_RATE
-  | Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE;
+  | Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE
+  | Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE;
 
 export function metricContext(metric: MetricNeedingContext, context: string): string {
   return `${metric}_${context}`;
