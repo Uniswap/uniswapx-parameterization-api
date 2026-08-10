@@ -173,9 +173,11 @@ const ConfigChangeStripWidget = (region: string): LambdaWidget => ({
  * to the git-derived markers, whose timestamps are merge time (~15-30 min before
  * serving). Version numbers map to commits by lining a version's first-traffic
  * time up with the nearest deploy marker (deliberately no per-version commit
- * stamping: that would force a provisioned-concurrency re-warm on every merge).
+ * stamping: that would force a provisioned-concurrency re-warm on every merge),
+ * which is why this widget carries the markers itself rather than making you read
+ * the timestamp off a different graph.
  */
-const InvocationsByVersionWidget = (region: string, quoteLambdaFunctionName: string): LambdaWidget => ({
+export const InvocationsByVersionWidget = (region: string, quoteLambdaFunctionName: string): LambdaWidget => ({
   height: 6,
   width: 24,
   type: 'metric',
@@ -986,8 +988,8 @@ export class ParamDashboardStack extends cdk.NestedStack {
     // Markers are copied into every widget they annotate; the dashboard body has a
     // hard 100KB PutDashboard limit (an unbounded regime measured ~122KB). They
     // therefore go ONLY on the attribution graphs — story rows, phase
-    // decomposition, straggler tax — never the ops widgets, and both the marker
-    // count and label length are capped in deploy-markers.ts.
+    // decomposition, straggler tax, invocations-by-version — never the ops widgets,
+    // and both the marker count and label length are capped in deploy-markers.ts.
     const eventMarkers = [...MILESTONES, ...deployMarkers()];
 
     const dashboardBody = JSON.stringify({
@@ -1001,10 +1003,12 @@ export class ParamDashboardStack extends cdk.NestedStack {
         withEventMarkers(LatencyStoryRows(region), eventMarkers),
         [ConfigChangeStripWidget(region)],
         withEventMarkers([PhaseDecompositionWidgets(region), WastedWaitWidgets(region)].flat(), eventMarkers),
+        [E2EByChainWidgets(region), FanoutByChainWidgets(region)].flat(),
+        // Marked deliberately, unlike the ops widgets below it: this widget's whole
+        // job is to date each version's first traffic, and that timestamp only means
+        // something read against the merge that produced the version.
+        withEventMarkers([InvocationsByVersionWidget(region, props.quoteLambda.functionName)], eventMarkers),
         [
-          E2EByChainWidgets(region),
-          FanoutByChainWidgets(region),
-          InvocationsByVersionWidget(region, props.quoteLambda.functionName),
           LatencyWidget(region),
           RFQLatencyWidget(region),
           QuotesRequestedWidget(region),

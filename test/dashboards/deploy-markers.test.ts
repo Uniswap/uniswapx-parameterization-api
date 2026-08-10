@@ -6,6 +6,7 @@ import {
   parseGitLog,
 } from '../../bin/stacks/deploy-markers';
 import {
+  InvocationsByVersionWidget,
   LambdaWidget,
   LatencyStoryRows,
   PhaseDecompositionWidgets,
@@ -112,11 +113,17 @@ describe('withEventMarkers', () => {
       label: `${i.toString(16).padStart(7, '0')} ${'x'.repeat(MAX_LABEL_LENGTH - 8)}`,
     }));
     const annotated = withEventMarkers(
-      [LatencyStoryRows('us-east-2'), PhaseDecompositionWidgets('us-east-2'), WastedWaitWidgets('us-east-2')].flat(),
+      [
+        LatencyStoryRows('us-east-2'),
+        PhaseDecompositionWidgets('us-east-2'),
+        WastedWaitWidgets('us-east-2'),
+        InvocationsByVersionWidget('us-east-2', 'a-quote-lambda-function-name'),
+      ].flat(),
       worstCaseMarkers
     );
-    // Measured 42.5KB at 30 deploy markers + 1 milestone; the whole body synths to
-    // ~72KB against the stack's 90KB guard.
-    expect(JSON.stringify(annotated).length).toBeLessThan(50_000);
+    // Measured 45.6KB at 30 deploy markers + 1 milestone; the whole body synths to
+    // ~75KB against the stack's 90KB guard. Keep this subset in step with the
+    // withEventMarkers() calls in ParamDashboardStack, or the budget under-counts.
+    expect(JSON.stringify(annotated).length).toBeLessThan(52_000);
   });
 });
