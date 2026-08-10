@@ -17,6 +17,7 @@ export const MOCK_V2_CB_PROVIDER = new MockV2CircuitBreakerConfigurationProvider
         fadeWindowStart: now + 100000,
         lastExaminedTimestamp: now - 10,
         consecutiveBlocks: 0,
+        consecutiveCleanRuns: 0,
       },
     ],
     [
@@ -26,6 +27,7 @@ export const MOCK_V2_CB_PROVIDER = new MockV2CircuitBreakerConfigurationProvider
         fadeWindowStart: now - 10,
         lastExaminedTimestamp: now - 100,
         consecutiveBlocks: NaN,
+        consecutiveCleanRuns: 0,
       },
     ],
   ])

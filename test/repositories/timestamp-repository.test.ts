@@ -41,6 +41,7 @@ describe('Dynamo TimestampRepo tests', () => {
         blockUntilTimestamp: 6,
         fadeWindowStart: 4,
         consecutiveBlocks: 1,
+        consecutiveCleanRuns: 4,
       },
     ];
 
@@ -53,6 +54,7 @@ describe('Dynamo TimestampRepo tests', () => {
     expect(row?.blockUntilTimestamp).toBe(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
     expect(row?.fadeWindowStart).toBe(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
     expect(row?.consecutiveBlocks).toBe(0);
+    expect(row?.consecutiveCleanRuns).toBe(0); // missing attribute (pre-migration row) reads as 0
 
     row = await repo.getFillerTimestamps('0x2');
     expect(row).toBeDefined();
@@ -67,6 +69,7 @@ describe('Dynamo TimestampRepo tests', () => {
     expect(row?.blockUntilTimestamp).toBe(6);
     expect(row?.fadeWindowStart).toBe(4);
     expect(row?.consecutiveBlocks).toBe(1);
+    expect(row?.consecutiveCleanRuns).toBe(4);
   });
 
   it('should batch get timestamps', async () => {
@@ -80,6 +83,7 @@ describe('Dynamo TimestampRepo tests', () => {
           blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
           fadeWindowStart: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
           consecutiveBlocks: 0,
+          consecutiveCleanRuns: 0,
         },
         {
           hash: '0x2',
@@ -87,6 +91,7 @@ describe('Dynamo TimestampRepo tests', () => {
           blockUntilTimestamp: 5,
           fadeWindowStart: 5,
           consecutiveBlocks: 0,
+          consecutiveCleanRuns: 0,
         },
         {
           hash: '0x3',
@@ -94,6 +99,7 @@ describe('Dynamo TimestampRepo tests', () => {
           blockUntilTimestamp: 6,
           fadeWindowStart: 4,
           consecutiveBlocks: 1,
+          consecutiveCleanRuns: 4,
         },
       ])
     );

@@ -41,6 +41,9 @@ export type FillerFadeStats = {
   // working off escalation requires demonstrated activity, not just going idle while stale
   // rows linger in the 24h view.
   newCompletions: number;
+  // Fades among newCompletions. A run with any new fade is not a clean run: it cannot build
+  // the decay streak (and resets it), so a sub-threshold fade never counts as recovery.
+  newFades: number;
 };
 export type FillerFadeStatsMap = Record<string, FillerFadeStats>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
@@ -57,6 +60,14 @@ export const LAPLACE_BETA = 19;
 // a sustained ~14%+ raw fade rate (e.g. ~3 fades in 10, ~14 in 100), or ~2 fades at very low
 // volume.
 export const FADE_RATE_BLOCK_THRESHOLD = 0.12;
+// Escalation (consecutiveBlocks) decays one level only after this many consecutive clean
+// runs — cron runs with at least one new completion and zero new fades. A run with any new
+// fade resets the streak; an idle run freezes it. At the 10-minute cron cadence this makes
+// recovery cost >=1 hour of demonstrated clean activity per level, so decay is structurally
+// slower than escalation (+1 per block event). Without the streak, a chronic low-volume
+// fader whose fades land in separate cron runs (fade #1 under threshold -> "activity" decay,
+// fade #2 -> block) nets zero escalation per cycle and stays on 15-30 minute blocks forever.
+export const CLEAN_RUNS_PER_DECAY = 6;
 
 const log = Logger.createLogger({
   name: 'FadeRate',
@@ -153,9 +164,11 @@ function newConsecutiveBlocks(consecutiveBlocks?: number): number {
     - Post-block fade rate over threshold — or the during-block cohort over threshold
       (late in-flight fades from a block that expired between cron runs): block,
       increment consecutiveBlocks
-    - Otherwise: reset blockUntilTimestamp to unblocked and decay consecutiveBlocks by 1 —
-      but only if the filler completed new orders since the last run (idling must not work
-      off escalation). fadeWindowStart is left untouched so the clean-slate floor persists.
+    - Otherwise: reset blockUntilTimestamp to unblocked. consecutiveBlocks decays one level
+      per CLEAN_RUNS_PER_DECAY consecutive clean runs (>=1 new completion, 0 new fades);
+      a new fade resets the streak, idling freezes it — working off escalation requires
+      sustained demonstrated clean activity. fadeWindowStart is left untouched so the
+      clean-slate floor persists.
 
   blockUntilTimestamp is the block expiry (used for the is-blocked check). fadeWindowStart is
   the clean-slate floor for the fade-rate window; a block/extension sets both to the block end,
@@ -173,10 +186,11 @@ export function calculateNewTimestamps(
   let newBlocks = 0;
   let extendedBlocks = 0;
   Object.entries(fillerFadeStats).forEach(([hash, stats]) => {
-    const { fadeRate, duringBlockRate, newCompletions } = stats;
+    const { fadeRate, duringBlockRate, newCompletions, newFades } = stats;
     const fillerTimestamp = fillerTimestamps.get(hash);
     const isCurrentlyBlocked = fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp;
     const previousBlocks = fillerTimestamp?.consecutiveBlocks || 0;
+    const previousCleanRuns = fillerTimestamp?.consecutiveCleanRuns || 0;
 
     // Per-filler rate so the distribution can be charted against FADE_RATE_BLOCK_THRESHOLD. While
     // blocked, fadeRate sits at the prior (post-block window is empty), so also emit the
@@ -213,9 +227,12 @@ export function calculateNewTimestamps(
         blockUntilTimestamp: extendedBlockUntil,
         fadeWindowStart: extendedBlockUntil, // clean slate resumes when the extended block ends
         consecutiveBlocks,
+        consecutiveCleanRuns: 0, // faded while blocked: recovery streak restarts
       });
     } else if (isCurrentlyBlocked) {
-      // Blocked but no new fades - keep existing block and floor, don't decay
+      // Blocked with the in-flight cohort under threshold - keep existing block and floor,
+      // don't decay. Serving a bench is not recovery, so clean in-flight fills don't build
+      // the decay streak either — but a sub-threshold in-flight fade still resets it.
       consecutiveBlocks = fillerTimestamp.consecutiveBlocks;
       updatedTimestamps.push({
         hash,
@@ -223,6 +240,7 @@ export function calculateNewTimestamps(
         blockUntilTimestamp: fillerTimestamp.blockUntilTimestamp,
         fadeWindowStart: fillerTimestamp.fadeWindowStart,
         consecutiveBlocks,
+        consecutiveCleanRuns: newFades > 0 ? 0 : previousCleanRuns,
       });
     } else if (fadeRate > FADE_RATE_BLOCK_THRESHOLD || duringBlockRate > FADE_RATE_BLOCK_THRESHOLD) {
       // duringBlockRate covers in-flight fades that landed near the end of a block that
@@ -245,21 +263,38 @@ export function calculateNewTimestamps(
         blockUntilTimestamp,
         fadeWindowStart: blockUntilTimestamp, // clean slate resumes when the block ends
         consecutiveBlocks,
+        consecutiveCleanRuns: 0, // blocked: recovery streak restarts
       });
     } else {
-      // Under threshold: not blocked. Reset blockUntilTimestamp to unblocked and decay
-      // consecutiveBlocks by 1 (gradual decay resists gaming via alternating fade/clean
-      // cycles). Decay only when the filler completed new orders this run, so working off
-      // escalation requires demonstrated clean activity rather than idling. fadeWindowStart
-      // is left as-is: it holds the last block end as the clean-slate floor, so a returning
-      // filler is scored only on orders completed after their block ended.
-      consecutiveBlocks = newCompletions > 0 ? Math.max(0, previousBlocks - 1) : previousBlocks;
+      // Under threshold: not blocked. Reset blockUntilTimestamp to unblocked. Escalation
+      // decays one level only after CLEAN_RUNS_PER_DECAY consecutive clean runs (>=1 new
+      // completion, 0 new fades): a new fade resets the streak — a sub-threshold fade is
+      // not recovery — and an idle run freezes it (idling must not work off escalation).
+      // fadeWindowStart is left as-is: it holds the last block end as the clean-slate
+      // floor, so a returning filler is scored only on orders completed after their block
+      // ended.
+      let consecutiveCleanRuns: number;
+      consecutiveBlocks = previousBlocks;
+      if (previousBlocks === 0) {
+        consecutiveCleanRuns = 0; // nothing to work off; don't accumulate a stale streak
+      } else if (newFades > 0) {
+        consecutiveCleanRuns = 0;
+      } else if (newCompletions > 0) {
+        consecutiveCleanRuns = previousCleanRuns + 1;
+        if (consecutiveCleanRuns >= CLEAN_RUNS_PER_DECAY) {
+          consecutiveBlocks = previousBlocks - 1;
+          consecutiveCleanRuns = 0; // streak restarts for the next level
+        }
+      } else {
+        consecutiveCleanRuns = previousCleanRuns; // idle: frozen
+      }
       updatedTimestamps.push({
         hash,
         lastExaminedTimestamp: newPostTimestamp,
         blockUntilTimestamp: UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
         fadeWindowStart: fillerTimestamp?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
         consecutiveBlocks,
+        consecutiveCleanRuns,
       });
     }
 
@@ -343,7 +378,14 @@ export function getFillersFadeStats(
   // filler hash -> tallies used to derive the stats below
   const tallies: Record<
     string,
-    { windowFades: number; windowTotal: number; blockFades: number; blockTotal: number; newCompletions: number }
+    {
+      windowFades: number;
+      windowTotal: number;
+      blockFades: number;
+      blockTotal: number;
+      newCompletions: number;
+      newFades: number;
+    }
   > = {};
   rows.forEach((row) => {
     const fillerAddr = ethers.utils.getAddress(row.fillerAddress);
@@ -354,12 +396,20 @@ export function getFillersFadeStats(
     }
     const fillerTimestamp = fillerTimestamps.get(fillerHash);
     if (!tallies[fillerHash]) {
-      tallies[fillerHash] = { windowFades: 0, windowTotal: 0, blockFades: 0, blockTotal: 0, newCompletions: 0 };
+      tallies[fillerHash] = {
+        windowFades: 0,
+        windowTotal: 0,
+        blockFades: 0,
+        blockTotal: 0,
+        newCompletions: 0,
+        newFades: 0,
+      };
     }
     const windowStart = fillerTimestamp?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP;
     const lastExaminedTimestamp = fillerTimestamp?.lastExaminedTimestamp ?? 0;
     if (row.deadline > lastExaminedTimestamp) {
       tallies[fillerHash].newCompletions += 1;
+      tallies[fillerHash].newFades += row.faded;
     }
     if (row.deadline > windowStart) {
       // Rate window: orders completed after the filler's last block ended (clean slate).
@@ -380,6 +430,7 @@ export function getFillersFadeStats(
       fadeRate: laplaceSmoothedFadeRate(t.windowFades, t.windowTotal),
       duringBlockRate: laplaceSmoothedFadeRate(t.blockFades, t.blockTotal),
       newCompletions: t.newCompletions,
+      newFades: t.newFades,
     };
   });
   log?.info({ tallies, stats }, 'fade stats by filler');

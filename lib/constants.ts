@@ -21,6 +21,7 @@ export const DYNAMO_TABLE_KEY = {
   LAST_EXAMINED_TIMESTAMP: 'lastExaminedTimestamp',
   FADE_WINDOW_START: 'fadeWindowStart',
   CONSECUTIVE_BLOCKS: 'consecutiveBlocks',
+  CONSECUTIVE_CLEAN_RUNS: 'consecutiveCleanRuns',
 };
 
 export const POST_ORDER_ERROR_REASON = {
