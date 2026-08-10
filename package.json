@@ -60,7 +60,7 @@
     "@uniswap/sdk-core": "^7.18.0",
     "@uniswap/signer": "0.0.3-beta.4",
     "@uniswap/smart-order-router": "^4.22.20",
-    "@uniswap/uniswapx-sdk": "3.0.10",
+    "@uniswap/uniswapx-sdk": "3.1.0",
     "aws-cdk-lib": "^2.262.1",
     "aws-embedded-metrics": "^4.1.0",
     "aws-sdk": "^2.1542.0",
