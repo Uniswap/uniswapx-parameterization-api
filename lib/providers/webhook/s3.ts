@@ -47,10 +47,12 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
       })
     );
     const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
-    const previousNames = new Set(this.endpoints.map((e) => e.name));
+    // Raw reference only — the previous payload is as unvalidated as the new one,
+    // so every dereference of it belongs inside detectConfigChange's guard.
+    const previousEndpoints = this.endpoints;
     this.endpoints = JSON.parse(await s3Body.transformToString()) as WebhookConfiguration[];
     this.log.info({ endpoints: this.endpoints }, `Fetched ${this.endpoints.length} endpoints from S3`);
-    this.detectConfigChange(previousNames);
+    this.detectConfigChange(previousEndpoints);
   }
 
   /**
@@ -64,7 +66,7 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
    * Best-effort by construction: this is observability on the hot quote path, so it
    * must never throw — a malformed config entry degrades to "no marker", not a 500.
    */
-  private detectConfigChange(previousNames: Set<string>): void {
+  private detectConfigChange(previousEndpoints: WebhookConfiguration[]): void {
     try {
       const signature = configSignature(this.endpoints);
       const previousSignature = this.configSignature;
@@ -72,7 +74,11 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
       if (previousSignature === undefined || previousSignature === signature) return;
 
       metric.putMetric(Metric.RFQ_CONFIG_CHANGED, 1, MetricLoggerUnit.Count);
-      const currentNames = new Set(this.endpoints.map((e) => e.name));
+      // null-safe: both payloads are unvalidated S3 JSON and may contain null or
+      // name-less entries
+      const toNames = (endpoints: WebhookConfiguration[]) => new Set(endpoints.map((e) => String(e?.name ?? '')));
+      const currentNames = toNames(this.endpoints);
+      const previousNames = toNames(previousEndpoints);
       const added = [...currentNames].filter((n) => !previousNames.has(n));
       const removed = [...previousNames].filter((n) => !currentNames.has(n));
       this.log.info(

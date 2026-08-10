@@ -182,5 +182,18 @@ describe('S3WebhookConfigurationProvider', () => {
       applyMock(malformed);
       await expect(provider.getEndpoints()).resolves.toEqual(malformed);
     });
+
+    it('never throws when the PREVIOUS payload was malformed (null entry) either', async () => {
+      // The previous fetch's payload is as unvalidated as the new one: a null entry
+      // stored by one refresh must not poison the next refresh's change detection.
+      const malformed = [null, ...mockEndpoints] as unknown as WebhookConfiguration[];
+      applyMock(malformed);
+      const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
+      await provider.getEndpoints();
+
+      expireCache();
+      applyMock(mockEndpoints);
+      await expect(provider.getEndpoints()).resolves.toEqual(mockEndpoints);
+    });
   });
 });
