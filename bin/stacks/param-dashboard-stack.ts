@@ -146,7 +146,20 @@ const ConfigChangeStripWidget = (region: string): LambdaWidget => ({
   width: 24,
   type: 'metric',
   properties: {
-    metrics: [combined(Metric.RFQ_CONFIG_CHANGED, { stat: 'Sum', label: 'config changed' })],
+    // Two emission streams: quote lambdas publish through the request logger
+    // (dimensionless rollup), the fade-rate cron through its CircuitBreaker-
+    // dimensioned logger. Chart both so a change observed only by the cron
+    // still paints a spike.
+    metrics: [
+      combined(Metric.RFQ_CONFIG_CHANGED, { stat: 'Sum', label: 'observed by quote lambdas' }),
+      [
+        'Uniswap',
+        Metric.RFQ_CONFIG_CHANGED,
+        'Service',
+        CircuitBreakerMetricDimension.Service,
+        { stat: 'Sum', label: 'observed by circuit-breaker cron' },
+      ],
+    ],
     view: 'timeSeries',
     stacked: false,
     region,
@@ -158,8 +171,9 @@ const ConfigChangeStripWidget = (region: string): LambdaWidget => ({
 /**
  * The exact moment traffic shifted to each Lambda version — the precise complement
  * to the git-derived markers, whose timestamps are merge time (~15-30 min before
- * serving). Version numbers map to commits via the version description
- * (CODEBUILD_RESOLVED_SOURCE_VERSION, set in api-stack.ts).
+ * serving). Version numbers map to commits by lining a version's first-traffic
+ * time up with the nearest deploy marker (deliberately no per-version commit
+ * stamping: that would force a provisioned-concurrency re-warm on every merge).
  */
 const InvocationsByVersionWidget = (region: string, quoteLambdaFunctionName: string): LambdaWidget => ({
   height: 6,
@@ -969,39 +983,56 @@ export class ParamDashboardStack extends cdk.NestedStack {
 
     const region = cdk.Stack.of(this).region;
 
+    // Markers are copied into every widget they annotate; the dashboard body has a
+    // hard 100KB PutDashboard limit (an unbounded regime measured ~122KB). They
+    // therefore go ONLY on the attribution graphs — story rows, phase
+    // decomposition, straggler tax — never the ops widgets, and both the marker
+    // count and label length are capped in deploy-markers.ts.
+    const eventMarkers = [...MILESTONES, ...deployMarkers()];
+
+    const dashboardBody = JSON.stringify({
+      periodOverride: 'inherit',
+      // Default to a 3-month window: the point of the top rows is the long-run
+      // downward staircase, not the last hour.
+      start: '-P3M',
+      // Widgets auto-flow in array order (no explicit x/y): story rows first,
+      // attribution rows next, the pre-existing ops widgets after.
+      widgets: [
+        withEventMarkers(LatencyStoryRows(region), eventMarkers),
+        [ConfigChangeStripWidget(region)],
+        withEventMarkers([PhaseDecompositionWidgets(region), WastedWaitWidgets(region)].flat(), eventMarkers),
+        [
+          E2EByChainWidgets(region),
+          FanoutByChainWidgets(region),
+          InvocationsByVersionWidget(region, props.quoteLambda.functionName),
+          LatencyWidget(region),
+          RFQLatencyWidget(region),
+          QuotesRequestedWidget(region),
+          ErrorRatesWidget(region),
+          LatencyByChainWidget(region),
+          QuotesRequestedByChainWidget(region),
+          ErrorRatesByChainWidget(region),
+          RFQFailRatesWidget(region),
+          LambdaErrorRatesWidget(region, scope),
+          FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupName),
+          CircuitBreakerWidgets(region),
+        ].flat(),
+      ].flat(),
+    });
+
+    // Fail at synth, not at deploy: PutDashboard rejects bodies over 100KB with a
+    // stack-update failure. The margin absorbs CDK token expansion (function/log
+    // group names serialize as short placeholders here but resolve longer).
+    if (dashboardBody.length > 90_000) {
+      throw new Error(
+        `UniswapXParamDashboard body is ${dashboardBody.length} bytes; PutDashboard rejects >100KB. ` +
+          'Trim event markers or widgets (see deploy-markers.ts caps).'
+      );
+    }
+
     new aws_cloudwatch.CfnDashboard(this, 'UniswapXParamDashboard', {
       dashboardName: `UniswapXParamDashboard`,
-      dashboardBody: JSON.stringify({
-        periodOverride: 'inherit',
-        // Default to a 3-month window: the point of the top rows is the long-run
-        // downward staircase, not the last hour.
-        start: '-P3M',
-        // Widgets auto-flow in array order (no explicit x/y): story row first,
-        // attribution rows next, the pre-existing ops widgets after.
-        widgets: withEventMarkers(
-          [
-            LatencyStoryRows(region),
-            ConfigChangeStripWidget(region),
-            PhaseDecompositionWidgets(region),
-            WastedWaitWidgets(region),
-            E2EByChainWidgets(region),
-            FanoutByChainWidgets(region),
-            InvocationsByVersionWidget(region, props.quoteLambda.functionName),
-            LatencyWidget(region),
-            RFQLatencyWidget(region),
-            QuotesRequestedWidget(region),
-            ErrorRatesWidget(region),
-            LatencyByChainWidget(region),
-            QuotesRequestedByChainWidget(region),
-            ErrorRatesByChainWidget(region),
-            RFQFailRatesWidget(region),
-            LambdaErrorRatesWidget(region, scope),
-            FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupName),
-            CircuitBreakerWidgets(region),
-          ].flat(),
-          [...MILESTONES, ...deployMarkers()]
-        ),
-      }),
+      dashboardBody,
     });
   }
 }

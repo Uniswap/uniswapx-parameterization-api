@@ -1,5 +1,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { setGlobalMetric } from '@uniswap/smart-order-router';
 import { metricScope, MetricsLogger, Unit } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
@@ -7,7 +8,7 @@ import Logger from 'bunyan';
 
 import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
-import { CircuitBreakerMetricDimension, Metric, metricContext } from '../entities';
+import { AWSMetricsLogger, CircuitBreakerMetricDimension, Metric, metricContext } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
 import {
@@ -85,6 +86,14 @@ export const handler: ScheduledHandler = metricScope((metrics) => async (_event:
 async function main(metrics: MetricsLogger) {
   metrics.setNamespace('Uniswap');
   metrics.setDimensions(CircuitBreakerMetricDimension);
+  // The webhook config provider emits RFQ_CONFIG_CHANGED through the
+  // smart-order-router module-global metric. The quote lambdas bind it per
+  // request in their injector; without this binding here, the cron's
+  // fetchEndpoints() below would observe config changes but publish no
+  // datapoint. Cron emissions land under Service=CircuitBreaker (this logger's
+  // dimensions) — the dashboard's config-change strip charts that stream
+  // alongside the quote lambdas' dimensionless one.
+  setGlobalMetric(new AWSMetricsLogger(metrics));
 
   const sharedConfig: SharedConfigs = {
     Database: checkDefined(process.env.REDSHIFT_DATABASE),

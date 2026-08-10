@@ -1,5 +1,27 @@
-import { MILESTONES, parseGitLog } from '../../bin/stacks/deploy-markers';
-import { LambdaWidget, withEventMarkers } from '../../bin/stacks/param-dashboard-stack';
+import { deployMarkers, MILESTONES, parseGitLog } from '../../bin/stacks/deploy-markers';
+import {
+  LambdaWidget,
+  LatencyStoryRows,
+  PhaseDecompositionWidgets,
+  WastedWaitWidgets,
+  withEventMarkers,
+} from '../../bin/stacks/param-dashboard-stack';
+
+describe('deployMarkers (executes real git)', () => {
+  // Guards the actual subprocess invocation: a shell-quoting or argv regression
+  // makes git exit non-zero and this silently degrades to [] in synth — the unit
+  // tests on parseGitLog alone cannot catch that.
+  it('returns at least one marker with a parseable timestamp when run inside a git repo', () => {
+    const markers = deployMarkers();
+    expect(markers.length).toBeGreaterThan(0);
+    for (const m of markers) {
+      expect(Number.isNaN(Date.parse(m.value))).toBe(false);
+      expect(m.label).toMatch(/^[0-9a-f]{7} /);
+      expect(m.label.length).toBeLessThanOrEqual(50);
+    }
+    expect(markers.length).toBeLessThanOrEqual(10);
+  });
+});
 
 describe('parseGitLog', () => {
   it('parses sha, timestamp, and subject into annotations', () => {
@@ -70,5 +92,21 @@ describe('withEventMarkers', () => {
 
   it('is a no-op for empty marker lists', () => {
     expect(withEventMarkers([graph], [])).toEqual([graph]);
+  });
+
+  it('keeps the marker-annotated widget payload within the dashboard size budget', () => {
+    // PutDashboard rejects bodies >100KB; an unbounded marker regime measured
+    // ~122KB. The markers go only on the attribution widgets, capped at 10 deploys
+    // + milestones with 50-char labels. Worst-case payload for that subset must
+    // leave ample room for the ~37KB of ops widgets that share the body.
+    const worstCaseMarkers = Array.from({ length: 11 }, (_, i) => ({
+      value: '2026-08-10T12:00:00-07:00',
+      label: `${i.toString(16).padStart(7, '0')} ${'x'.repeat(42)}`,
+    }));
+    const annotated = withEventMarkers(
+      [LatencyStoryRows('us-east-2'), PhaseDecompositionWidgets('us-east-2'), WastedWaitWidgets('us-east-2')].flat(),
+      worstCaseMarkers
+    );
+    expect(JSON.stringify(annotated).length).toBeLessThan(55_000);
   });
 });

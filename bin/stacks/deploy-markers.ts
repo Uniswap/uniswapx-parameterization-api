@@ -1,13 +1,15 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 export type VerticalAnnotation = {
   label: string;
   value: string; // ISO 8601 timestamp
 };
 
-// CloudWatch renders annotation labels inline on the graph; keep them short.
-const MAX_LABEL_LENGTH = 80;
-const DEPLOY_MARKER_COUNT = 20;
+// Markers are copied into every widget they annotate and the dashboard body has a
+// hard 100KB PutDashboard limit, so both the marker count and label length are
+// deliberately small. See MARKER_WIDGET_BUDGET in param-dashboard-stack.ts.
+const MAX_LABEL_LENGTH = 50;
+const DEPLOY_MARKER_COUNT = 10;
 
 /**
  * Hand-maintained markers for changes that move the latency graphs but leave no
@@ -43,17 +45,23 @@ export function parseGitLog(raw: string): VerticalAnnotation[] {
  * the pipeline finishes — invisible at the dashboard's 3-month default zoom, and
  * the invocations-by-version widget gives the exact traffic-shift moment.
  *
- * Synth must never fail because history is unavailable (local synth of a shallow
- * checkout, artifact-format edge cases), so any error degrades to no markers.
+ * execFileSync (not execSync): the format string contains `|`, which a shell would
+ * parse as a pipeline; execFileSync passes argv directly with no shell involved.
+ *
+ * Synth must never fail because history is unavailable (shallow checkout, artifact
+ * edge cases), so any error degrades to no markers — but LOUDLY, so a regression
+ * here is visible in the synth log instead of silently shipping a bare dashboard.
  */
 export function deployMarkers(): VerticalAnnotation[] {
   try {
-    const raw = execSync(`git log --first-parent -n ${DEPLOY_MARKER_COUNT} --format=%H|%cI|%s`, {
+    const raw = execFileSync('git', ['log', '--first-parent', '-n', `${DEPLOY_MARKER_COUNT}`, '--format=%H|%cI|%s'], {
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
     return parseGitLog(raw);
-  } catch {
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn(`deploy-markers: git history unavailable, dashboard will have no deploy markers: ${e}`);
     return [];
   }
 }

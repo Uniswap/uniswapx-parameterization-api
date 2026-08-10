@@ -60,25 +60,49 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
    * can observe every change itself. Only an observed change between two fetches on
    * the same instance counts; the first fetch after a cold start does not (otherwise
    * every scale-up would look like a config change).
+   *
+   * Best-effort by construction: this is observability on the hot quote path, so it
+   * must never throw — a malformed config entry degrades to "no marker", not a 500.
    */
   private detectConfigChange(previousNames: Set<string>): void {
-    // order-insensitive signature over the fields that define an endpoint's identity
-    // and reachability; header values are deliberately excluded from logs but any
-    // change to them still flips the signature via JSON of the full entries
-    const signature = JSON.stringify(
-      [...this.endpoints].sort((a, b) => a.endpoint.localeCompare(b.endpoint)).map((e) => ({ ...e }))
-    );
-    const previousSignature = this.configSignature;
-    this.configSignature = signature;
-    if (previousSignature === undefined || previousSignature === signature) return;
+    try {
+      const signature = configSignature(this.endpoints);
+      const previousSignature = this.configSignature;
+      this.configSignature = signature;
+      if (previousSignature === undefined || previousSignature === signature) return;
 
-    metric.putMetric(Metric.RFQ_CONFIG_CHANGED, 1, MetricLoggerUnit.Count);
-    const currentNames = new Set(this.endpoints.map((e) => e.name));
-    const added = [...currentNames].filter((n) => !previousNames.has(n));
-    const removed = [...previousNames].filter((n) => !currentNames.has(n));
-    this.log.info(
-      { added, removed, endpointCount: this.endpoints.length },
-      `RFQ config changed: +${added.length} -${removed.length} fillers`
-    );
+      metric.putMetric(Metric.RFQ_CONFIG_CHANGED, 1, MetricLoggerUnit.Count);
+      const currentNames = new Set(this.endpoints.map((e) => e.name));
+      const added = [...currentNames].filter((n) => !previousNames.has(n));
+      const removed = [...previousNames].filter((n) => !currentNames.has(n));
+      this.log.info(
+        { added, removed, endpointCount: this.endpoints.length },
+        `RFQ config changed: +${added.length} -${removed.length} fillers`
+      );
+    } catch (e) {
+      this.log.warn({ err: `${e}` }, 'config change detection failed; skipping marker for this refresh');
+    }
   }
+}
+
+/**
+ * Canonical signature over exactly the fields that change fan-out membership or
+ * behavior: which fillers exist, where they are reached, on which chains/protocols,
+ * and with what timeout. A fixed field projection in a fixed order makes the
+ * signature immune to false positives from key reordering, unknown/extra fields,
+ * or entry order in the S3 JSON. Header (auth) rotations are deliberately excluded:
+ * they don't change fan-out shape and would paint misleading change markers.
+ * Null-safe throughout — entries are unvalidated S3 payload.
+ */
+export function configSignature(endpoints: WebhookConfiguration[]): string {
+  const canonical = [...endpoints]
+    .map((e) => [
+      String(e?.name ?? ''),
+      String(e?.endpoint ?? ''),
+      [...(e?.chainIds ?? [])].sort((a, b) => a - b),
+      [...(e?.supportedVersions ?? [])].sort(),
+      e?.overrides?.timeout ?? null,
+    ])
+    .sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  return JSON.stringify(canonical);
 }

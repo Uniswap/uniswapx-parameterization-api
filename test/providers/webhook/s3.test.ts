@@ -141,5 +141,46 @@ describe('S3WebhookConfigurationProvider', () => {
       await provider.getEndpoints();
       expect(putMetricSpy).not.toHaveBeenCalledWith(Metric.RFQ_CONFIG_CHANGED, expect.anything(), expect.anything());
     });
+
+    it('ignores unknown extra fields and key reordering within entries', async () => {
+      const putMetricSpy = jest.spyOn(metric, 'putMetric');
+      applyMock(mockEndpoints);
+      const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
+      await provider.getEndpoints();
+
+      expireCache();
+      // same fillers, but keys reordered and an unrelated field added by the config repo
+      const cosmeticallyDifferent = mockEndpoints.map((e) => {
+        const { name, ...rest } = e;
+        return { ...rest, name, comment: 'added by config tooling' };
+      }) as unknown as WebhookConfiguration[];
+      applyMock(cosmeticallyDifferent);
+      await provider.getEndpoints();
+      expect(putMetricSpy).not.toHaveBeenCalledWith(Metric.RFQ_CONFIG_CHANGED, expect.anything(), expect.anything());
+    });
+
+    it('emits when fan-out-affecting fields change (chainIds)', async () => {
+      const putMetricSpy = jest.spyOn(metric, 'putMetric');
+      applyMock(mockEndpoints);
+      const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
+      await provider.getEndpoints();
+
+      expireCache();
+      applyMock([{ ...mockEndpoints[0], chainIds: [1, 8453] }, mockEndpoints[1]]);
+      await provider.getEndpoints();
+      const changeCalls = putMetricSpy.mock.calls.filter((c) => c[0] === Metric.RFQ_CONFIG_CHANGED);
+      expect(changeCalls).toHaveLength(1);
+    });
+
+    it('never throws on malformed config entries — quotes must not 500 over observability', async () => {
+      applyMock(mockEndpoints);
+      const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
+      await provider.getEndpoints();
+
+      expireCache();
+      const malformed = [{ name: 'broken' }, ...mockEndpoints] as unknown as WebhookConfiguration[];
+      applyMock(malformed);
+      await expect(provider.getEndpoints()).resolves.toEqual(malformed);
+    });
   });
 });

@@ -263,15 +263,11 @@ export class APIStack extends cdk.Stack {
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(30),
-      // Stamp each published version with the commit it was built from, so
-      // ExecutedVersion on the dashboard maps back to a PR via
-      // `aws lambda list-versions-by-function`. Set in CodeBuild; local synths
-      // leave it undefined. Side effect: every pipeline run publishes a new
-      // version even for no-op code changes — which makes the version timeline
-      // match the deploy timeline exactly.
-      currentVersionOptions: {
-        description: process.env.CODEBUILD_RESOLVED_SOURCE_VERSION,
-      },
+      // NOTE: deliberately no currentVersionOptions.description commit stamping —
+      // a per-build description forces a new Version + provisioned-concurrency
+      // re-warm on every merge (incl. dashboard-only ones), causing cold-start
+      // blips. ExecutedVersion → commit resolves via the dashboard's deploy
+      // markers (version publish time vs merge time) instead.
     });
 
     const quoteLambdaAlias = new aws_lambda.Alias(this, `GetOrdersLiveAlias`, {
@@ -304,10 +300,6 @@ export class APIStack extends cdk.Stack {
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(30),
-      // see quoteLambda: commit sha per published version for deploy attribution
-      currentVersionOptions: {
-        description: process.env.CODEBUILD_RESOLVED_SOURCE_VERSION,
-      },
     });
 
     const hardQuoteLambdaAlias = new aws_lambda.Alias(this, `HardQuoteLiveAlias`, {
