@@ -12,6 +12,7 @@ import {
   SoftQuoteMetricDimension,
 } from '../../lib/entities';
 import { ChainId, SUPPORTED_CHAINS } from '../../lib/util/chains';
+import { deployMarkers, MILESTONES, VerticalAnnotation } from './deploy-markers';
 
 export type MetricPath =
   | string
@@ -49,9 +50,13 @@ export type LambdaWidget = {
       };
     };
     annotations?: {
-      horizontal: {
+      horizontal?: {
         label?: string;
         value: number;
+      }[];
+      vertical?: {
+        label?: string;
+        value: string; // ISO 8601 timestamp
       }[];
     };
   };
@@ -105,6 +110,78 @@ const WASTED_WAIT_COLORS = { p50: '#e34948', p90: '#d03b3b' };
 // A metric path with NO dimension name/value pairs addresses the dimensionless
 // rollup streams (soft+hard combined) that the shared quote injector emits.
 const combined = (metricName: string, opts: Exclude<MetricPath, string>): MetricPath[] => ['Uniswap', metricName, opts];
+
+/**
+ * Stamps event markers (this-repo deploys from git, plus hand-kept milestones) as
+ * vertical annotations on every time-series widget, so latency steps line up with
+ * the change that caused them. Non-graph widgets (tiles, logs) pass through.
+ */
+export const withEventMarkers = (widgets: LambdaWidget[], markers: VerticalAnnotation[]): LambdaWidget[] =>
+  markers.length === 0
+    ? widgets
+    : widgets.map((w) =>
+        w.properties.view === 'timeSeries'
+          ? {
+              ...w,
+              properties: {
+                ...w.properties,
+                annotations: {
+                  ...w.properties.annotations,
+                  vertical: [...(w.properties.annotations?.vertical ?? []), ...markers],
+                },
+              },
+            }
+          : w
+      );
+
+/**
+ * Config-repo changes leave no trace in this repo's git history, so they get their
+ * own marker source: the RFQ_CONFIG_CHANGED metric, emitted by the webhook config
+ * provider whenever a refresh observes a different filler config. Rendered as a
+ * thin strip on the same time axis as the story graphs above it — presence of a
+ * spike means "the config changed here"; its height is just warm-instance count.
+ */
+const ConfigChangeStripWidget = (region: string): LambdaWidget => ({
+  height: 3,
+  width: 24,
+  type: 'metric',
+  properties: {
+    metrics: [combined(Metric.RFQ_CONFIG_CHANGED, { stat: 'Sum', label: 'config changed' })],
+    view: 'timeSeries',
+    stacked: false,
+    region,
+    period: 300,
+    title: 'RFQ config changes observed (spike = filler config changed; height is not meaningful)',
+  },
+});
+
+/**
+ * The exact moment traffic shifted to each Lambda version — the precise complement
+ * to the git-derived markers, whose timestamps are merge time (~15-30 min before
+ * serving). Version numbers map to commits via the version description
+ * (CODEBUILD_RESOLVED_SOURCE_VERSION, set in api-stack.ts).
+ */
+const InvocationsByVersionWidget = (region: string, quoteLambdaFunctionName: string): LambdaWidget => ({
+  height: 6,
+  width: 24,
+  type: 'metric',
+  properties: {
+    metrics: [
+      [
+        {
+          expression: `SEARCH('{AWS/Lambda,FunctionName,Resource,ExecutedVersion} FunctionName="${quoteLambdaFunctionName}" MetricName="Invocations"', 'Sum', 300)`,
+          id: 'invocationsByVersion',
+          region,
+        },
+      ],
+    ],
+    view: 'timeSeries',
+    stacked: true,
+    region,
+    period: 300,
+    title: 'Soft quote invocations by Lambda version (exact deploy traffic-shift moments)',
+  },
+});
 
 // Per-service metric path builders. Soft and hard are charted separately: hard-quote
 // latency includes cosigning and the order post, a structurally different pipeline.
@@ -901,24 +978,29 @@ export class ParamDashboardStack extends cdk.NestedStack {
         start: '-P3M',
         // Widgets auto-flow in array order (no explicit x/y): story row first,
         // attribution rows next, the pre-existing ops widgets after.
-        widgets: [
-          LatencyStoryRows(region),
-          PhaseDecompositionWidgets(region),
-          WastedWaitWidgets(region),
-          E2EByChainWidgets(region),
-          FanoutByChainWidgets(region),
-          LatencyWidget(region),
-          RFQLatencyWidget(region),
-          QuotesRequestedWidget(region),
-          ErrorRatesWidget(region),
-          LatencyByChainWidget(region),
-          QuotesRequestedByChainWidget(region),
-          ErrorRatesByChainWidget(region),
-          RFQFailRatesWidget(region),
-          LambdaErrorRatesWidget(region, scope),
-          FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupName),
-          CircuitBreakerWidgets(region),
-        ].flat(),
+        widgets: withEventMarkers(
+          [
+            LatencyStoryRows(region),
+            ConfigChangeStripWidget(region),
+            PhaseDecompositionWidgets(region),
+            WastedWaitWidgets(region),
+            E2EByChainWidgets(region),
+            FanoutByChainWidgets(region),
+            InvocationsByVersionWidget(region, props.quoteLambda.functionName),
+            LatencyWidget(region),
+            RFQLatencyWidget(region),
+            QuotesRequestedWidget(region),
+            ErrorRatesWidget(region),
+            LatencyByChainWidget(region),
+            QuotesRequestedByChainWidget(region),
+            ErrorRatesByChainWidget(region),
+            RFQFailRatesWidget(region),
+            LambdaErrorRatesWidget(region, scope),
+            FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupName),
+            CircuitBreakerWidgets(region),
+          ].flat(),
+          [...MILESTONES, ...deployMarkers()]
+        ),
       }),
     });
   }

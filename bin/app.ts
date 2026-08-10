@@ -49,6 +49,9 @@ export class APIPipeline extends Stack {
     const code = CodePipelineSource.connection('Uniswap/uniswapx-parameterization-api', 'main', {
       connectionArn:
         'arn:aws:codestar-connections:us-east-2:644039819003:connection/4806faf1-c31e-4ea2-a5bf-c6fc1fa79487',
+      // Full git clone (not a source zip) so the synth step can read git history:
+      // the dashboard derives its vertical deploy markers from `git log` at synth.
+      codeBuildCloneOutput: true,
     });
 
     const synthStep = new CodeBuildStep('Synth', {
