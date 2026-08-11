@@ -82,6 +82,12 @@ export enum Metric {
   // End-to-end handler latency on every response path (200, 404, thrown errors), unlike
   // QUOTE_LATENCY which fires only on 200s and is blind to slow 404s.
   QUOTE_E2E_LATENCY = 'QUOTE_E2E_LATENCY',
+  // Emitted when a config refresh observes a different RFQ filler config than the
+  // previous fetch on the same instance. Marks config-repo changes (filler adds/
+  // removals) on the latency dashboard, which no git-based deploy marker can see.
+  // Value is meaningless as a magnitude (each warm instance emits once): presence
+  // in a period = the config changed in that period.
+  RFQ_CONFIG_CHANGED = 'RFQ_CONFIG_CHANGED',
 
   // Metrics for circuit breaker
   CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS = 'CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS',

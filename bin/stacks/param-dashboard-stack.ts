@@ -12,6 +12,7 @@ import {
   SoftQuoteMetricDimension,
 } from '../../lib/entities';
 import { ChainId, SUPPORTED_CHAINS } from '../../lib/util/chains';
+import { deployMarkers, MILESTONES, VerticalAnnotation } from './deploy-markers';
 
 export type MetricPath =
   | string
@@ -49,9 +50,13 @@ export type LambdaWidget = {
       };
     };
     annotations?: {
-      horizontal: {
+      horizontal?: {
         label?: string;
         value: number;
+      }[];
+      vertical?: {
+        label?: string;
+        value: string; // ISO 8601 timestamp
       }[];
     };
   };
@@ -105,6 +110,94 @@ const WASTED_WAIT_COLORS = { p50: '#e34948', p90: '#d03b3b' };
 // A metric path with NO dimension name/value pairs addresses the dimensionless
 // rollup streams (soft+hard combined) that the shared quote injector emits.
 const combined = (metricName: string, opts: Exclude<MetricPath, string>): MetricPath[] => ['Uniswap', metricName, opts];
+
+/**
+ * Stamps event markers (this-repo deploys from git, plus hand-kept milestones) as
+ * vertical annotations on every time-series widget, so latency steps line up with
+ * the change that caused them. Non-graph widgets (tiles, logs) pass through.
+ */
+export const withEventMarkers = (widgets: LambdaWidget[], markers: VerticalAnnotation[]): LambdaWidget[] =>
+  markers.length === 0
+    ? widgets
+    : widgets.map((w) =>
+        w.properties.view === 'timeSeries'
+          ? {
+              ...w,
+              properties: {
+                ...w.properties,
+                annotations: {
+                  ...w.properties.annotations,
+                  vertical: [...(w.properties.annotations?.vertical ?? []), ...markers],
+                },
+              },
+            }
+          : w
+      );
+
+/**
+ * Config-repo changes leave no trace in this repo's git history, so they get their
+ * own marker source: the RFQ_CONFIG_CHANGED metric, emitted by the webhook config
+ * provider whenever a refresh observes a different filler config. Rendered as a
+ * thin strip on the same time axis as the story graphs above it — presence of a
+ * spike means "the config changed here"; its height is just warm-instance count.
+ */
+const ConfigChangeStripWidget = (region: string): LambdaWidget => ({
+  height: 3,
+  width: 24,
+  type: 'metric',
+  properties: {
+    // Two emission streams: quote lambdas publish through the request logger
+    // (dimensionless rollup), the fade-rate cron through its CircuitBreaker-
+    // dimensioned logger. Chart both so a change observed only by the cron
+    // still paints a spike.
+    metrics: [
+      combined(Metric.RFQ_CONFIG_CHANGED, { stat: 'Sum', label: 'observed by quote lambdas' }),
+      [
+        'Uniswap',
+        Metric.RFQ_CONFIG_CHANGED,
+        'Service',
+        CircuitBreakerMetricDimension.Service,
+        { stat: 'Sum', label: 'observed by circuit-breaker cron' },
+      ],
+    ],
+    view: 'timeSeries',
+    stacked: false,
+    region,
+    period: 300,
+    title: 'RFQ config changes observed (spike = filler config changed; height is not meaningful)',
+  },
+});
+
+/**
+ * The exact moment traffic shifted to each Lambda version — the precise complement
+ * to the git-derived markers, whose timestamps are merge time (~15-30 min before
+ * serving). Version numbers map to commits by lining a version's first-traffic
+ * time up with the nearest deploy marker (deliberately no per-version commit
+ * stamping: that would force a provisioned-concurrency re-warm on every merge),
+ * which is why this widget carries the markers itself rather than making you read
+ * the timestamp off a different graph.
+ */
+export const InvocationsByVersionWidget = (region: string, quoteLambdaFunctionName: string): LambdaWidget => ({
+  height: 6,
+  width: 24,
+  type: 'metric',
+  properties: {
+    metrics: [
+      [
+        {
+          expression: `SEARCH('{AWS/Lambda,FunctionName,Resource,ExecutedVersion} FunctionName="${quoteLambdaFunctionName}" MetricName="Invocations"', 'Sum', 300)`,
+          id: 'invocationsByVersion',
+          region,
+        },
+      ],
+    ],
+    view: 'timeSeries',
+    stacked: true,
+    region,
+    period: 300,
+    title: 'Soft quote invocations by Lambda version (exact deploy traffic-shift moments)',
+  },
+});
 
 // Per-service metric path builders. Soft and hard are charted separately: hard-quote
 // latency includes cosigning and the order post, a structurally different pipeline.
@@ -892,21 +985,30 @@ export class ParamDashboardStack extends cdk.NestedStack {
 
     const region = cdk.Stack.of(this).region;
 
-    new aws_cloudwatch.CfnDashboard(this, 'UniswapXParamDashboard', {
-      dashboardName: `UniswapXParamDashboard`,
-      dashboardBody: JSON.stringify({
-        periodOverride: 'inherit',
-        // Default to a 3-month window: the point of the top rows is the long-run
-        // downward staircase, not the last hour.
-        start: '-P3M',
-        // Widgets auto-flow in array order (no explicit x/y): story row first,
-        // attribution rows next, the pre-existing ops widgets after.
-        widgets: [
-          LatencyStoryRows(region),
-          PhaseDecompositionWidgets(region),
-          WastedWaitWidgets(region),
-          E2EByChainWidgets(region),
-          FanoutByChainWidgets(region),
+    // Markers are copied into every widget they annotate; the dashboard body has a
+    // hard 100KB PutDashboard limit (an unbounded regime measured ~122KB). They
+    // therefore go ONLY on the attribution graphs — story rows, phase
+    // decomposition, straggler tax, invocations-by-version — never the ops widgets,
+    // and both the marker count and label length are capped in deploy-markers.ts.
+    const eventMarkers = [...MILESTONES, ...deployMarkers()];
+
+    const dashboardBody = JSON.stringify({
+      periodOverride: 'inherit',
+      // Default to a 3-month window: the point of the top rows is the long-run
+      // downward staircase, not the last hour.
+      start: '-P3M',
+      // Widgets auto-flow in array order (no explicit x/y): story rows first,
+      // attribution rows next, the pre-existing ops widgets after.
+      widgets: [
+        withEventMarkers(LatencyStoryRows(region), eventMarkers),
+        [ConfigChangeStripWidget(region)],
+        withEventMarkers([PhaseDecompositionWidgets(region), WastedWaitWidgets(region)].flat(), eventMarkers),
+        [E2EByChainWidgets(region), FanoutByChainWidgets(region)].flat(),
+        // Marked deliberately, unlike the ops widgets below it: this widget's whole
+        // job is to date each version's first traffic, and that timestamp only means
+        // something read against the merge that produced the version.
+        withEventMarkers([InvocationsByVersionWidget(region, props.quoteLambda.functionName)], eventMarkers),
+        [
           LatencyWidget(region),
           RFQLatencyWidget(region),
           QuotesRequestedWidget(region),
@@ -919,7 +1021,22 @@ export class ParamDashboardStack extends cdk.NestedStack {
           FailingRFQLogsWidget(region, props.quoteLambda.logGroup.logGroupName),
           CircuitBreakerWidgets(region),
         ].flat(),
-      }),
+      ].flat(),
+    });
+
+    // Fail at synth, not at deploy: PutDashboard rejects bodies over 100KB with a
+    // stack-update failure. The margin absorbs CDK token expansion (function/log
+    // group names serialize as short placeholders here but resolve longer).
+    if (dashboardBody.length > 90_000) {
+      throw new Error(
+        `UniswapXParamDashboard body is ${dashboardBody.length} bytes; PutDashboard rejects >100KB. ` +
+          'Trim event markers or widgets (see deploy-markers.ts caps).'
+      );
+    }
+
+    new aws_cloudwatch.CfnDashboard(this, 'UniswapXParamDashboard', {
+      dashboardName: `UniswapXParamDashboard`,
+      dashboardBody,
     });
   }
 }

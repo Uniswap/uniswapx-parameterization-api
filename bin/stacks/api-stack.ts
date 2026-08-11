@@ -263,6 +263,11 @@ export class APIStack extends cdk.Stack {
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
       },
       timeout: Duration.seconds(30),
+      // NOTE: deliberately no currentVersionOptions.description commit stamping —
+      // a per-build description forces a new Version + provisioned-concurrency
+      // re-warm on every merge (incl. dashboard-only ones), causing cold-start
+      // blips. ExecutedVersion → commit resolves via the dashboard's deploy
+      // markers (version publish time vs merge time) instead.
     });
 
     const quoteLambdaAlias = new aws_lambda.Alias(this, `GetOrdersLiveAlias`, {
