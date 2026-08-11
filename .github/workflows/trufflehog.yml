@@ -50,9 +50,11 @@ jobs:
         continue-on-error: true
         with:
           path: ./
-          base: "${{ github.event.repository.default_branch }}"
-          head: HEAD
-          extra_args: --debug --only-verified 
+          # Leave base/head unset so the action derives the scan range from the
+          # event: before..after on push, base.sha..head.sha on pull_request.
+          # Setting them explicitly resolved to main..HEAD on a push to main —
+          # the same commit — which the action rejects as an error.
+          extra_args: --debug --only-verified
 
       - name: Scan Results Status
         if: steps.trufflehog.outcome == 'failure'
