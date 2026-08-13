@@ -4,6 +4,7 @@ import {
   BASE_BLOCK_SECS,
   calculateBlockUntilTimestamp,
   calculateNewTimestamps,
+  CHRONIC_RATE_EMISSION_FLOOR,
   CHRONIC_RATE_MIN_SAMPLE,
   CLEAN_RUNS_PER_DECAY,
   countActiveBlocks,
@@ -20,7 +21,12 @@ import {
   UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
 } from '../../lib/cron/fade-rate-v2';
 import { Metric, metricContext } from '../../lib/entities';
-import { TimestampRepoRow, ToUpdateTimestampRow, V2FadesRowType } from '../../lib/repositories';
+import {
+  ORDERS_PER_FILLER_LIMIT,
+  TimestampRepoRow,
+  ToUpdateTimestampRow,
+  V2FadesRowType,
+} from '../../lib/repositories';
 
 const now = Math.floor(Date.now() / 1000);
 // deadlines at least this old are past the streak's finality horizon (load state final)
@@ -47,6 +53,7 @@ const fadeStats = (overrides: Partial<FillerFadeStats> = {}): FillerFadeStats =>
   newFades: 0,
   chronicRate: 0,
   chronicTotal: 0,
+  saturatedAddresses: 0,
   ...overrides,
 });
 const cbState = (overrides: Partial<Omit<TimestampRepoRow, 'hash'>> = {}): Omit<TimestampRepoRow, 'hash'> => ({
@@ -140,6 +147,9 @@ describe('FadeRateV2 cron', () => {
       expect(stats['fillerA'].fadeRate).toBeCloseTo(2 / 21, 6); // scored for blocking
       expect(stats['fillerA'].newCompletions).toEqual(0); // not yet streak-classified
       expect(stats['fillerA'].newFades).toEqual(0);
+      // the chronic watchlist view also scores only final rows (a not-yet-loaded fill would
+      // read as a transient fade and sawtooth the metric every load cycle)
+      expect(stats['fillerA'].chronicTotal).toEqual(0);
 
       // next run after the row ages past the horizon: classified exactly once
       const later = now + STREAK_FINALITY_LAG_SECS;
@@ -229,6 +239,25 @@ describe('FadeRateV2 cron', () => {
       expect(stats['fillerC'].fadeRate).toBeCloseTo(3 / 24, 6);
       expect(stats['fillerC'].duringBlockRate).toBeCloseTo(0.05, 6);
     });
+
+    it('flags addresses whose latest-N window has outrun the streak finality horizon', () => {
+      // fillerA: a full window whose OLDEST row is fresher than the finality horizon — rows
+      // are being evicted before they can ever be streak-classified
+      const rows: V2FadesRowType[] = [
+        ...Array(ORDERS_PER_FILLER_LIMIT)
+          .fill(0)
+          .map((_, i) => order('0x0000000000000000000000000000000000000001', 0, now - 200 - i)),
+        // fillerB: also a full window, but it still reaches past the horizon (oldest row is
+        // final) — that's the designed adaptive window, not degradation
+        ...Array(ORDERS_PER_FILLER_LIMIT - 1)
+          .fill(0)
+          .map((_, i) => order('0x0000000000000000000000000000000000000002', 0, now - 200 - i)),
+        order('0x0000000000000000000000000000000000000002', 0, now - FINAL),
+      ];
+      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), now, logger);
+      expect(stats['fillerA'].saturatedAddresses).toEqual(1);
+      expect(stats['fillerB'].saturatedAddresses).toEqual(0);
+    });
   });
 
   describe('calculateBlockUntilTimestamp', () => {
@@ -296,6 +325,35 @@ describe('FadeRateV2 cron', () => {
       const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
       expect(row.blockUntilTimestamp).toEqual(now + BASE_BLOCK_SECS * 2 ** MAX_BLOCK_BACKOFF_EXPONENT);
       expect(row.consecutiveBlocks).toEqual(MAX_BLOCK_BACKOFF_EXPONENT); // counter capped too
+    });
+
+    it('clamps legacy over-cap stored consecutiveBlocks on every path, not just re-blocks', () => {
+      // Rows written before the cap existed can hold values > MAX_BLOCK_BACKOFF_EXPONENT.
+      // The clamp happens where stored state is read, so the keep-block and decay paths
+      // normalize it too — otherwise a legacy 12 needs 12 * CLEAN_RUNS_PER_DECAY clean runs
+      // to recover, violating the documented bound, and the metric charts impossible levels.
+      const legacyBlocked: FillerTimestamps = new Map([
+        ['legacy', cbState({ blockUntilTimestamp: now + 300, fadeWindowStart: now + 300, consecutiveBlocks: 12 })],
+      ]);
+      const [kept] = calculateNewTimestamps(legacyBlocked, { legacy: fadeStats() }, now, logger);
+      expect(kept.consecutiveBlocks).toEqual(MAX_BLOCK_BACKOFF_EXPONENT); // normalized while benched
+
+      const legacyDecaying: FillerTimestamps = new Map([
+        ['legacy', cbState({ consecutiveBlocks: 12, consecutiveCleanRuns: CLEAN_RUNS_PER_DECAY - 1 })],
+      ]);
+      const [decayed] = calculateNewTimestamps(legacyDecaying, { legacy: fadeStats() }, now, logger);
+      expect(decayed.consecutiveBlocks).toEqual(MAX_BLOCK_BACKOFF_EXPONENT - 1); // clamped, then decayed
+    });
+
+    it('clamps corrupted negative stored consecutiveBlocks back to zero', () => {
+      // No code path writes negatives, but a manual edit or bad backfill could: unclamped,
+      // decay would drive it lower and a later block would compute 2^negative — a
+      // sub-base-length fractional block. The read clamp floors it at 0.
+      const timestamps: FillerTimestamps = new Map([['corrupted', cbState({ consecutiveBlocks: -3 })]]);
+      const stats: FillerFadeStatsMap = { corrupted: fadeStats() };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row.consecutiveBlocks).toEqual(0);
+      expect(row.consecutiveCleanRuns).toEqual(0);
     });
 
     it('resets blockUntilTimestamp but preserves fadeWindowStart when the decay streak completes', () => {
@@ -543,6 +601,8 @@ describe('FadeRateV2 cron', () => {
         watchme: fadeStats({ fadeRate: 0.11, chronicRate: 0.2, chronicTotal: CHRONIC_RATE_MIN_SAMPLE }),
         // below the sample gate: a single faded order must not chart as a 100% swing
         tiny: fadeStats({ fadeRate: 0.09, newFades: 1, chronicRate: 1, chronicTotal: CHRONIC_RATE_MIN_SAMPLE - 1 }),
+        // below the rate floor: a healthy filler must not get a permanent flat-zero series
+        healthy: fadeStats({ chronicRate: CHRONIC_RATE_EMISSION_FLOOR - 0.01, chronicTotal: 50 }),
       };
       calculateNewTimestamps(new Map(), stats, now, logger, metrics);
       expect(metrics.putMetric).toHaveBeenCalledWith(
@@ -553,6 +613,25 @@ describe('FadeRateV2 cron', () => {
       expect(metrics.putMetric).not.toHaveBeenCalledWith(
         metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'tiny'),
         expect.anything(),
+        expect.anything()
+      );
+      expect(metrics.putMetric).not.toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'healthy'),
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    it('emits the aggregate count of window-saturated addresses', () => {
+      const metrics = { putMetric: jest.fn() } as any;
+      const stats: FillerFadeStatsMap = {
+        busy: fadeStats({ saturatedAddresses: 2 }),
+        quiet: fadeStats(),
+      };
+      calculateNewTimestamps(new Map(), stats, now, logger, metrics);
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        Metric.CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES,
+        2,
         expect.anything()
       );
     });

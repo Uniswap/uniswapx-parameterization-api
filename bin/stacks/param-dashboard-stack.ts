@@ -808,6 +808,16 @@ const CircuitBreakerWidgets = (region: string): LambdaWidget[] => [
         ['.', Metric.CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS, '.', '.', { stat: 'Sum', label: 'extended blocks' }],
         ['.', Metric.CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS, '.', '.', { stat: 'Maximum', label: 'active blocks' }],
         ['.', Metric.CIRCUIT_BREAKER_V2_FILLERS_EVALUATED, '.', '.', { stat: 'Maximum', label: 'fillers evaluated' }],
+        [
+          '.',
+          Metric.CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES,
+          '.',
+          '.',
+          // addresses whose latest-N window has outrun the streak finality horizon (rows
+          // evicted before classification): sustained nonzero = per-address volume has
+          // outgrown the window and decay fidelity degrades for those fillers
+          { stat: 'Maximum', label: 'window-saturated addresses' },
+        ],
       ],
       view: 'timeSeries',
       stacked: false,
@@ -879,8 +889,11 @@ const CircuitBreakerWidgets = (region: string): LambdaWidget[] => [
       title: 'Filler Consecutive Blocks (escalation)',
     },
   },
-  // Watchlist: per-filler RAW fade rate over the whole 24h window, no clean-slate amnesty and
-  // no smoothing. The breaker deliberately tolerates low-volume fillers up to ~0.12n + 1.4
+  // Watchlist: per-filler RAW fade rate over the query window's final rows — no clean-slate
+  // amnesty, no smoothing. The window is adaptive (24h for low-volume fillers, the latest-100
+  // per address for high-volume ones — see SATURATED_ADDRESSES when the cap binds). Series
+  // exist only for fillers over the emission floor, so an empty chart means nobody is
+  // watch-worthy. The breaker deliberately tolerates low-volume fillers up to ~0.12n + 1.4
   // fades/day (e.g. ~20% raw at 15 orders/day) — anyone hugging or exceeding the threshold
   // line here for days while never showing up in the blocks widgets is inside that envelope
   // and needs a human conversation, not a threshold change (see PR #482 backtest).
@@ -902,7 +915,7 @@ const CircuitBreakerWidgets = (region: string): LambdaWidget[] => [
       stacked: false,
       region,
       period: 600,
-      title: 'Filler Chronic Fade Rate (raw, 24h, no amnesty) — watchlist',
+      title: 'Filler Chronic Fade Rate (raw, no amnesty, adaptive window) — watchlist',
       yAxis: {
         left: {
           label: 'raw fade rate',

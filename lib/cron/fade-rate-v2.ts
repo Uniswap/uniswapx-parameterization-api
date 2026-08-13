@@ -11,6 +11,7 @@ import { CircuitBreakerMetricDimension, Metric, metricContext } from '../entitie
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider } from '../providers';
 import {
+  ORDERS_PER_FILLER_LIMIT,
   SharedConfigs,
   TimestampRepoRow,
   ToUpdateTimestampRow,
@@ -46,14 +47,24 @@ export type FillerFadeStats = {
   // A run with any new fade is not a clean run: it cannot build the decay streak (and resets
   // it), so a sub-threshold fade never counts as recovery.
   newFades: number;
-  // Raw (unsmoothed) fade rate over the filler's ENTIRE query window (24h / latest-100 per
-  // address), ignoring the clean-slate floor — the no-amnesty "chronic" view. Never used for
-  // blocking: emitted as a watchlist metric so persistent moderate faders who live inside the
-  // block threshold's envelope (~0.12n + 1.4 fades per day, e.g. ~20% raw at 15 orders/day)
-  // stay visible to humans even though the breaker correctly never trips on them.
+  // Raw (unsmoothed) fade rate over the FINAL rows of the filler's query window (24h /
+  // latest-100 per address, deadline past the finality horizon), ignoring the clean-slate
+  // floor — the no-amnesty "chronic" view. Final rows only, so not-yet-loaded fills can't
+  // inflate the rate with transient fades. Never used for blocking: emitted as a watchlist
+  // metric so persistent moderate faders who live inside the block threshold's envelope
+  // (~0.12n + 1.4 fades per day, e.g. ~20% raw at 15 orders/day) stay visible to humans even
+  // though the breaker correctly never trips on them.
   chronicRate: number;
   // Sample size behind chronicRate; the metric is only emitted at CHRONIC_RATE_MIN_SAMPLE+.
   chronicTotal: number;
+  // How many of this filler's addresses have a query window that no longer reaches back to
+  // the streak finality horizon: the address returned the full latest-N cap AND its oldest
+  // returned row is fresher than STREAK_FINALITY_LAG_SECS. Rows for such an address are
+  // being evicted before they can ever be streak-classified, thinning decay credit. (Merely
+  // being at the latest-N cap is the designed adaptive window and is NOT flagged — big
+  // fillers sit at the cap constantly.) Surfaced as an aggregate metric so per-address
+  // volume outgrowing the window shows on the dashboard instead of as a stuck recovery.
+  saturatedAddresses: number;
 };
 export type FillerFadeStatsMap = Record<string, FillerFadeStats>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
@@ -87,6 +98,17 @@ export const CLEAN_RUNS_PER_DECAY = 6;
 // NULL) exactly when it counts as new — resetting an honest filler's streak with no later
 // correction. Rows older than the lag have final load state, so classification is exact.
 // 2h = hourly load cadence + headroom for cross-table skew and job runtime.
+//
+// Known boundary (by design): a row is only classifiable while it survives in the query's
+// latest-ORDERS_PER_FILLER_LIMIT window per address, so streak classification degrades for
+// an address completing more than ORDERS_PER_FILLER_LIMIT orders per lag period (~50/hour
+// sustained) — evicted rows are never classified, thinning streak credit (and, in the
+// extreme, freezing decay). The 2-week backtest showed only the two busiest, never-escalated
+// addresses touch this (peak 2h bursts at 104-123% of the cap; 0.6% of all rows evicted
+// pre-classification, zero behavioral impact on escalated fillers).
+// CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES fires when an address's window no longer reaches
+// back to this horizon, so volume growth surfaces on the dashboard rather than as a stuck
+// recovery.
 export const STREAK_FINALITY_LAG_SECS = 2 * 60 * 60;
 // Cap on the block backoff: both the stored consecutiveBlocks counter and the duration
 // exponent stop growing here, so a single block/extension increment is at most
@@ -99,6 +121,12 @@ export const MAX_BLOCK_BACKOFF_EXPONENT = 7;
 // Minimum sample size before the chronic-rate watchlist metric is emitted, so one or two
 // orders don't chart as a 0%/100% swing.
 export const CHRONIC_RATE_MIN_SAMPLE = 10;
+// Rate floor for emitting the chronic-rate watchlist metric. Without it, every filler at
+// >= CHRONIC_RATE_MIN_SAMPLE orders/day gets a permanent per-filler CloudWatch series that
+// sits flat near 0 and is never consulted; a series should start exactly when a filler
+// becomes watch-worthy. Half the block threshold leaves generous headroom below the
+// enforcement line while still charting anyone trending toward it.
+export const CHRONIC_RATE_EMISSION_FLOOR = FADE_RATE_BLOCK_THRESHOLD / 2;
 
 const log = Logger.createLogger({
   name: 'FadeRate',
@@ -220,11 +248,19 @@ export function calculateNewTimestamps(
   const updatedTimestamps: ToUpdateTimestampRow[] = [];
   let newBlocks = 0;
   let extendedBlocks = 0;
+  let saturatedAddresses = 0;
   Object.entries(fillerFadeStats).forEach(([hash, stats]) => {
     const { fadeRate, duringBlockRate, newCompletions, newFades } = stats;
+    saturatedAddresses += stats.saturatedAddresses;
     const fillerTimestamp = fillerTimestamps.get(hash);
     const isCurrentlyBlocked = fillerTimestamp && fillerTimestamp.blockUntilTimestamp > newPostTimestamp;
-    const previousBlocks = fillerTimestamp?.consecutiveBlocks || 0;
+    // previousBlocks is the single clamped read of stored escalation: legacy rows predate the
+    // backoff cap (values > MAX would extend recovery beyond the documented bound and chart
+    // impossible levels), and corrupted rows could be negative (decay would drive them lower
+    // and 2^negative yields sub-base fractional blocks). Clamping once here covers every
+    // branch below — extend, keep, re-block, and decay — so pathological stored state
+    // normalizes on the next run regardless of which path the filler takes.
+    const previousBlocks = Math.min(Math.max(fillerTimestamp?.consecutiveBlocks || 0, 0), MAX_BLOCK_BACKOFF_EXPONENT);
     const previousCleanRuns = fillerTimestamp?.consecutiveCleanRuns || 0;
 
     // Per-filler rate so the distribution can be charted against FADE_RATE_BLOCK_THRESHOLD. While
@@ -235,12 +271,13 @@ export function calculateNewTimestamps(
     if (isCurrentlyBlocked) {
       metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE, hash), duringBlockRate, Unit.None);
     }
-    // Watchlist, not a trigger: the raw no-amnesty rate over the whole query window. Backtests
-    // show a low-volume filler can sustain ~20% raw inside the block threshold's envelope and
-    // that no trigger calibration catches them without unacceptable collateral — this metric
-    // keeps them visible for human follow-up instead. Gated on sample size to avoid charting
-    // 0%/100% single-order noise.
-    if (stats.chronicTotal >= CHRONIC_RATE_MIN_SAMPLE) {
+    // Watchlist, not a trigger: the raw no-amnesty rate over the query window's final rows.
+    // Backtests show a low-volume filler can sustain ~20% raw inside the block threshold's
+    // envelope and that no trigger calibration catches them without unacceptable collateral —
+    // this metric keeps them visible for human follow-up instead. Gated on sample size (so one
+    // or two orders don't chart as a 0%/100% swing) and a rate floor (so a per-filler series
+    // starts only when a filler becomes watch-worthy, not for every healthy filler forever).
+    if (stats.chronicTotal >= CHRONIC_RATE_MIN_SAMPLE && stats.chronicRate >= CHRONIC_RATE_EMISSION_FLOOR) {
       metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, hash), stats.chronicRate, Unit.None);
     }
 
@@ -254,9 +291,9 @@ export function calculateNewTimestamps(
       // in-flight fade offset by clean in-flight fills does not extend the block.
       const extendedBlockUntil = calculateBlockUntilTimestamp(
         fillerTimestamp.blockUntilTimestamp, // Extend from when current block ends
-        fillerTimestamp.consecutiveBlocks
+        previousBlocks
       );
-      consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp.consecutiveBlocks);
+      consecutiveBlocks = newConsecutiveBlocks(previousBlocks);
 
       extendedBlocks++;
       log?.info(
@@ -276,7 +313,7 @@ export function calculateNewTimestamps(
       // Blocked with the in-flight cohort under threshold - keep existing block and floor,
       // don't decay. Serving a bench is not recovery, so clean in-flight fills don't build
       // the decay streak either — but a sub-threshold in-flight fade still resets it.
-      consecutiveBlocks = fillerTimestamp.consecutiveBlocks;
+      consecutiveBlocks = previousBlocks;
       updatedTimestamps.push({
         hash,
         lastExaminedTimestamp: newPostTimestamp,
@@ -291,8 +328,8 @@ export function calculateNewTimestamps(
       // path that scores them. Over the rolling 24h window a filler can also cross the
       // threshold on a run with no new completions ("blocked while idle") as clean orders age
       // out; that is accepted behavior.
-      const blockUntilTimestamp = calculateBlockUntilTimestamp(newPostTimestamp, fillerTimestamp?.consecutiveBlocks);
-      consecutiveBlocks = newConsecutiveBlocks(fillerTimestamp?.consecutiveBlocks);
+      const blockUntilTimestamp = calculateBlockUntilTimestamp(newPostTimestamp, previousBlocks);
+      consecutiveBlocks = newConsecutiveBlocks(previousBlocks);
 
       newBlocks++;
       log?.info(
@@ -354,7 +391,8 @@ export function calculateNewTimestamps(
   });
   metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_NEW_BLOCKS, newBlocks, Unit.Count);
   metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS, extendedBlocks, Unit.Count);
-  log?.info({ updatedTimestamps, newBlocks, extendedBlocks }, 'updated timestamps');
+  metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES, saturatedAddresses, Unit.Count);
+  log?.info({ updatedTimestamps, newBlocks, extendedBlocks, saturatedAddresses }, 'updated timestamps');
   return updatedTimestamps;
 }
 
@@ -441,6 +479,11 @@ export function getFillersFadeStats(
       chronicTotal: number;
     }
   > = {};
+  // per-address row count and oldest deadline, to detect addresses whose latest-N window has
+  // outrun the streak finality horizon (rows evicted before they can be classified)
+  const addressRowCounts = new Map<string, number>();
+  const addressOldestDeadline = new Map<string, number>();
+  const addressHash = new Map<string, string>();
   rows.forEach((row) => {
     const fillerAddr = ethers.utils.getAddress(row.fillerAddress);
     const fillerHash = addressToFillerMap.get(fillerAddr);
@@ -448,6 +491,9 @@ export function getFillersFadeStats(
       log?.info({ fillerAddr }, 'filler address not found dynamo mapping');
       return;
     }
+    addressRowCounts.set(fillerAddr, (addressRowCounts.get(fillerAddr) ?? 0) + 1);
+    addressOldestDeadline.set(fillerAddr, Math.min(addressOldestDeadline.get(fillerAddr) ?? Infinity, row.deadline));
+    addressHash.set(fillerAddr, fillerHash);
     const fillerTimestamp = fillerTimestamps.get(fillerHash);
     if (!tallies[fillerHash]) {
       tallies[fillerHash] = {
@@ -463,9 +509,13 @@ export function getFillersFadeStats(
     }
     const windowStart = fillerTimestamp?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP;
     const lastExaminedTimestamp = fillerTimestamp?.lastExaminedTimestamp ?? 0;
-    // Chronic (no-amnesty) view: every row in the query window, regardless of cohort.
-    tallies[fillerHash].chronicTotal += 1;
-    tallies[fillerHash].chronicFades += row.faded;
+    // Chronic (no-amnesty) view: every FINAL row in the query window, regardless of cohort.
+    // Fresher rows are excluded for the same reason the streak defers them: a not-yet-loaded
+    // fill reads as a transient fade and would sawtooth the watchlist metric every load cycle.
+    if (row.deadline <= now - STREAK_FINALITY_LAG_SECS) {
+      tallies[fillerHash].chronicTotal += 1;
+      tallies[fillerHash].chronicFades += row.faded;
+    }
     // Streak inputs, classified against the finality-lagged horizon so hourly-batch load lag
     // can't miss a late fade or count a not-yet-loaded fill as a transient fade. The slices
     // partition time across runs because lastExaminedTimestamp advances to `now` each run.
@@ -492,6 +542,20 @@ export function getFillersFadeStats(
     }
   });
 
+  // An address is streak-degraded when it fills the latest-N cap AND its oldest returned row
+  // is fresher than the finality horizon: rows are then evicted from the window before they
+  // can ever be streak-classified. (Being at the cap alone is the designed adaptive window —
+  // high-volume addresses sit there constantly — so it is deliberately not flagged.)
+  const saturatedByHash: Record<string, number> = {};
+  addressRowCounts.forEach((count, addr) => {
+    const oldestDeadline = addressOldestDeadline.get(addr) ?? 0;
+    if (count >= ORDERS_PER_FILLER_LIMIT && oldestDeadline > now - STREAK_FINALITY_LAG_SECS) {
+      const hash = addressHash.get(addr)!;
+      saturatedByHash[hash] = (saturatedByHash[hash] ?? 0) + 1;
+      log?.info({ addr, hash, count, oldestDeadline }, 'filler address window has outrun the streak finality horizon');
+    }
+  });
+
   const stats: FillerFadeStatsMap = {};
   Object.entries(tallies).forEach(([hash, t]) => {
     stats[hash] = {
@@ -501,6 +565,7 @@ export function getFillersFadeStats(
       newFades: t.newFades,
       chronicRate: t.chronicTotal > 0 ? t.chronicFades / t.chronicTotal : 0,
       chronicTotal: t.chronicTotal,
+      saturatedAddresses: saturatedByHash[hash] ?? 0,
     };
   });
   log?.info({ tallies, stats }, 'fade stats by filler');
