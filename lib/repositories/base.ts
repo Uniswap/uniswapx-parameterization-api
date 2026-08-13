@@ -44,13 +44,12 @@ export type TimestampRepoRow = {
 // client), so the raw shape matches TimestampRepoRow — no string parsing.
 export type DynamoTimestampRepoRow = TimestampRepoRow;
 
-export type ToUpdateTimestampRow = Omit<
-  TimestampRepoRow,
-  'blockUntilTimestamp' | 'fadeWindowStart' | 'consecutiveCleanRuns'
-> & {
+// consecutiveCleanRuns stays required here: updateTimestampsBatch does a full-item put, so an
+// optional field a caller forgets to set would silently wipe the stored streak (reads default
+// missing attributes to 0).
+export type ToUpdateTimestampRow = Omit<TimestampRepoRow, 'blockUntilTimestamp' | 'fadeWindowStart'> & {
   blockUntilTimestamp?: number;
   fadeWindowStart?: number;
-  consecutiveCleanRuns?: number;
 };
 
 /*

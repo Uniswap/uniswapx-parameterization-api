@@ -16,7 +16,7 @@ data-eng-workflows/lib/spaces/uniswap_x/functions/uniswap_x_hourly_config/tables
 Table → YAML mapping (table names are lowercased in Redshift; YAML uses snake_case):
 
 | Redshift table   | Load schema YAML       |
-|------------------|------------------------|
+| ---------------- | ---------------------- |
 | `postedorders`   | `posted_orders.yaml`   |
 | `archivedorders` | `archived_orders.yaml` |
 | `rfqrequests`    | `rfq_requests.yaml`    |
@@ -26,7 +26,7 @@ Table → YAML mapping (table names are lowercased in Redshift; YAML uses snake_
 in the corresponding YAML.** The view/query column references are validated only at runtime
 against the live cluster — there is no compile-time or unit-test check — so a typo or a
 non-loaded column fails the cron in production (and a column that exists but is null for the
-relevant rows fails *silently*).
+relevant rows fails _silently_).
 
 ### The trap: "emitted" ≠ "loaded"
 
@@ -61,7 +61,11 @@ posted while a filler would have been benched as prevented (see PR #482 discussi
 full harness design, per-filler duty-cycle/allowed-fades metrics, and baseline numbers).
 
 Extract query (matches the breaker's fade semantics from `V2_FADE_RATE_SQL`, but with **no
-24h window, no latest-100 cap, and no row limit** — the replay applies windowing itself):
+24h window, no latest-100 cap, and no row limit** — the replay applies windowing itself).
+**Keep the `faded` CASE in sync with `V2_FADE_RATE_SQL`** — e.g. #461 changed Dutch_V3 to
+`fillTimeBlocks > 0` (a fill at the decay-start block is _not_ a fade); an extract using the
+old `>= 0` inflates V3 fade rates and mis-calibrates every knob. The raw columns are included
+so the replay can recompute `faded` locally if the semantics change again:
 
 ```sql
 SELECT
@@ -79,7 +83,7 @@ SELECT
     ao.tokenOut AS tokenOut,
     CASE
       WHEN ao.fillTimestamp IS NULL THEN 1
-      WHEN po.ordertype = 'Dutch_V3' AND ao.fillTimeBlocks >= 0 THEN 1
+      WHEN po.ordertype = 'Dutch_V3' AND ao.fillTimeBlocks > 0 THEN 1
       WHEN po.ordertype = 'Dutch_V2' AND po.starttime < ao.fillTimestamp THEN 1
       ELSE 0
     END AS faded

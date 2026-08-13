@@ -37,12 +37,14 @@ export type FillerFadeStats = {
   // in-flight fills offset stray fades: extending a block is volume-neutral, just like
   // tripping one.
   duringBlockRate: number;
-  // Orders completed since the last cron run (any cohort). Gates consecutiveBlocks decay:
-  // working off escalation requires demonstrated activity, not just going idle while stale
-  // rows linger in the 24h view.
+  // Completions newly classified this run (see the finality-lagged slice in
+  // getFillersFadeStats) whose deadline is past the clean-slate floor. Gates consecutiveBlocks
+  // decay: working off escalation requires demonstrated post-block activity — idling doesn't
+  // count, and neither do fills that were merely in flight while serving a bench.
   newCompletions: number;
-  // Fades among newCompletions. A run with any new fade is not a clean run: it cannot build
-  // the decay streak (and resets it), so a sub-threshold fade never counts as recovery.
+  // Fades newly classified this run, from ANY cohort (a during-bench fade is still a fade).
+  // A run with any new fade is not a clean run: it cannot build the decay streak (and resets
+  // it), so a sub-threshold fade never counts as recovery.
   newFades: number;
   // Raw (unsmoothed) fade rate over the filler's ENTIRE query window (24h / latest-100 per
   // address), ignoring the clean-slate floor — the no-amnesty "chronic" view. Never used for
@@ -69,18 +71,30 @@ export const LAPLACE_BETA = 19;
 // volume.
 export const FADE_RATE_BLOCK_THRESHOLD = 0.12;
 // Escalation (consecutiveBlocks) decays one level only after this many consecutive clean
-// runs — cron runs with at least one new completion and zero new fades. A run with any new
-// fade resets the streak; an idle run freezes it. At the 10-minute cron cadence this makes
-// recovery cost >=1 hour of demonstrated clean activity per level, so decay is structurally
-// slower than escalation (+1 per block event). Without the streak, a chronic low-volume
-// fader whose fades land in separate cron runs (fade #1 under threshold -> "activity" decay,
-// fade #2 -> block) nets zero escalation per cycle and stays on 15-30 minute blocks forever.
+// runs — cron runs whose newly classified slice has at least one post-floor completion and
+// zero new fades. A run with any new fade resets the streak; an idle run freezes it. At the
+// 10-minute cron cadence this makes recovery cost >=1 hour of demonstrated clean activity
+// per level, so decay is structurally slower than escalation (+1 per block event). Without
+// the streak, a chronic low-volume fader whose fades land in separate cron runs (fade #1
+// under threshold -> "activity" decay, fade #2 -> block) nets zero escalation per cycle and
+// stays on 15-30 minute blocks forever.
 export const CLEAN_RUNS_PER_DECAY = 6;
-// Cap on the block-backoff exponent: a single block/extension increment is at most
-// BASE_BLOCK_SECS * 2^7 = 32 hours (extensions stack, so the worst continuous bench seen in
-// the 2-week backtest under the cap was ~64h). Uncapped, the same replay produced a 152h
-// (6.3-day) block. The cap costs ~12% of worst-offender fade containment in exchange for a
-// bounded worst-case sentence and automatic recovery from pathological stored state.
+// The streak classifies rows as "new" against a horizon that trails wall clock by this lag,
+// because postedorders/archivedorders are batch-loaded (hourly) while the cron runs every 10
+// minutes. Without the lag, streak classification is wrong in both directions: a fade whose
+// row loads late (deadline already behind the watermark) never resets the streak, and an
+// order whose fill row hasn't loaded yet reads as a transient fade (LEFT JOIN fillTimestamp
+// NULL) exactly when it counts as new — resetting an honest filler's streak with no later
+// correction. Rows older than the lag have final load state, so classification is exact.
+// 2h = hourly load cadence + headroom for cross-table skew and job runtime.
+export const STREAK_FINALITY_LAG_SECS = 2 * 60 * 60;
+// Cap on the block backoff: both the stored consecutiveBlocks counter and the duration
+// exponent stop growing here, so a single block/extension increment is at most
+// BASE_BLOCK_SECS * 2^7 = 32 hours (extensions stack: worst continuous bench in the 2-week
+// backtest under the cap was ~64h, vs a 128h single block uncapped), and full recovery is
+// bounded at MAX_BLOCK_BACKOFF_EXPONENT * CLEAN_RUNS_PER_DECAY clean runs rather than
+// growing with block history. Costs ~20% of worst-offender fade containment in exchange for
+// a bounded worst-case sentence and automatic recovery from pathological stored state.
 export const MAX_BLOCK_BACKOFF_EXPONENT = 7;
 // Minimum sample size before the chronic-rate watchlist metric is emitted, so one or two
 // orders don't chart as a 0%/100% swing.
@@ -136,16 +150,17 @@ async function main(metrics: MetricsLogger) {
     const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerEndpoints);
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
 
+    const now = Math.floor(Date.now() / 1000);
+
     // compute each filler's Laplace-smoothed fade rates (post-block window + during-block cohort):
     //  | hash     |  fadeRate  |  duringBlockRate  |
     //  |---- foo -|---- 0.18 --|------ 0.05 -------|
     //  |---- bar -|---- 0.05 --|------ 0.20 -------|
-    const fillerFadeStats = getFillersFadeStats(result, addressToFillerMap, fillerTimestamps, log);
+    const fillerFadeStats = getFillersFadeStats(result, addressToFillerMap, fillerTimestamps, now, log);
 
     //  | hash        |lastExaminedTimestamp|blockUntilTimestamp|fadeWindowStart|
     //  |---- foo ----|---- 1300000 ----|----      calculated block until  ----|
     //  |---- bar ----|---- 1300000 ----|----      13500000                ----|
-    const now = Math.floor(Date.now() / 1000);
     const updatedTimestamps = calculateNewTimestamps(fillerTimestamps, fillerFadeStats, now, log, metrics);
     log.info({ updatedTimestamps }, 'filler for which to update timestamp');
     metrics.putMetric(
@@ -169,7 +184,10 @@ function newConsecutiveBlocks(consecutiveBlocks?: number): number {
   if (Number.isNaN(consecutiveBlocks)) {
     return 1;
   }
-  return consecutiveBlocks + 1;
+  // Cap the stored counter, not just the duration exponent: full recovery costs
+  // consecutiveBlocks * CLEAN_RUNS_PER_DECAY clean runs, so an uncapped counter would leave a
+  // long-reformed filler one sub-threshold fade away from a max-length block indefinitely.
+  return Math.min(consecutiveBlocks + 1, MAX_BLOCK_BACKOFF_EXPONENT);
 }
 
 /* compute blockUntil timestamp for each filler
@@ -382,6 +400,14 @@ export function laplaceSmoothedFadeRate(fades: number, total: number): number {
      trickling isolated fades (each slice under threshold) won't extend the block, but those
      orders never enter the post-block window either — they still serve the full bench.
 
+   - newCompletions / newFades (streak inputs): rows classified as new against a horizon that
+     trails wall clock by STREAK_FINALITY_LAG_SECS. Each run classifies deadlines in
+     (lastExaminedTimestamp - LAG, now - LAG] — lastExaminedTimestamp advances to `now` every
+     run, so consecutive runs' slices partition time and each row is classified exactly once,
+     after its load state is final. newCompletions additionally requires deadline past the
+     clean-slate floor (fills served while benched are not recovery); newFades counts any
+     cohort (a during-bench fade still resets the streak).
+
    NOTE: cohort membership uses `deadline` (order completion time) instead of `postTimestamp`.
    This ensures orders posted before the last cron run but completed after are still counted,
    preventing the "in-flight orders" exploit.
@@ -390,6 +416,7 @@ export function getFillersFadeStats(
   rows: V2FadesRowType[],
   addressToFillerMap: Map<string, string>,
   fillerTimestamps: FillerTimestamps,
+  now: number,
   log?: Logger
 ): FillerFadeStatsMap {
   log?.info(
@@ -439,8 +466,17 @@ export function getFillersFadeStats(
     // Chronic (no-amnesty) view: every row in the query window, regardless of cohort.
     tallies[fillerHash].chronicTotal += 1;
     tallies[fillerHash].chronicFades += row.faded;
-    if (row.deadline > lastExaminedTimestamp) {
-      tallies[fillerHash].newCompletions += 1;
+    // Streak inputs, classified against the finality-lagged horizon so hourly-batch load lag
+    // can't miss a late fade or count a not-yet-loaded fill as a transient fade. The slices
+    // partition time across runs because lastExaminedTimestamp advances to `now` each run.
+    if (
+      row.deadline > lastExaminedTimestamp - STREAK_FINALITY_LAG_SECS &&
+      row.deadline <= now - STREAK_FINALITY_LAG_SECS
+    ) {
+      if (row.deadline > windowStart) {
+        // Bench fills (deadline on/before the floor) earn nothing toward recovery.
+        tallies[fillerHash].newCompletions += 1;
+      }
       tallies[fillerHash].newFades += row.faded;
     }
     if (row.deadline > windowStart) {

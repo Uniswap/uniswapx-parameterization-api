@@ -27,6 +27,10 @@ describe('Dynamo TimestampRepo tests', () => {
         blockUntilTimestamp: undefined,
         fadeWindowStart: undefined,
         consecutiveBlocks: 0,
+        // simulate a pre-migration writer that never knew about the attribute (the type
+        // requires it precisely so real callers can't do this silently); the put omits it
+        // and the read path must default it to 0
+        consecutiveCleanRuns: undefined as unknown as number,
       },
       {
         hash: '0x2',
@@ -34,6 +38,7 @@ describe('Dynamo TimestampRepo tests', () => {
         blockUntilTimestamp: 5,
         fadeWindowStart: 5,
         consecutiveBlocks: 0,
+        consecutiveCleanRuns: 0,
       },
       {
         hash: '0x3',
