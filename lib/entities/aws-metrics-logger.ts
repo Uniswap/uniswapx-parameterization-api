@@ -98,6 +98,20 @@ export enum Metric {
   // post-block FADE_RATE, which sits at the prior while blocked) is what shows a benched filler
   // above the threshold. Compare to FADE_RATE_BLOCK_THRESHOLD.
   CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE = 'CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE',
+  // Per-filler RAW (unsmoothed) fade rate over the query window's FINAL rows (past the
+  // streak finality horizon, so not-yet-loaded fills can't chart as transient fades),
+  // ignoring the clean-slate floor — the no-amnesty "chronic" view. Watchlist only, never a
+  // block trigger: it exists to surface persistent moderate faders who live inside the block
+  // threshold's small-sample envelope (e.g. ~20% raw at ~15 orders/day). Emitted only at a
+  // minimum sample size (CHRONIC_RATE_MIN_SAMPLE) and rate floor (CHRONIC_RATE_EMISSION_FLOOR)
+  // so per-filler series exist only for watch-worthy fillers.
+  CIRCUIT_BREAKER_V2_CHRONIC_RATE = 'CIRCUIT_BREAKER_V2_CHRONIC_RATE',
+  // Filler addresses whose latest-N query window has outrun the streak finality horizon this
+  // run (window full AND its oldest row fresher than STREAK_FINALITY_LAG_SECS): rows for
+  // these addresses are evicted before they can be streak-classified, thinning decay credit.
+  // Merely sitting at the latest-N cap is the designed adaptive window and does not count.
+  // Sustained nonzero values mean per-address volume has outgrown the window parameters.
+  CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES = 'CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES',
   // Fillers newly blocked in a cron run (unblocked -> blocked)
   CIRCUIT_BREAKER_V2_NEW_BLOCKS = 'CIRCUIT_BREAKER_V2_NEW_BLOCKS',
   // Active blocks extended in a cron run (in-flight cohort faded over threshold while blocked)
@@ -120,7 +134,8 @@ type MetricNeedingContext =
   | Metric.RFQ_TIMEOUT
   | Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS
   | Metric.CIRCUIT_BREAKER_V2_FADE_RATE
-  | Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE;
+  | Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE
+  | Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE;
 
 export function metricContext(metric: MetricNeedingContext, context: string): string {
   return `${metric}_${context}`;
