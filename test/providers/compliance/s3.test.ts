@@ -74,14 +74,14 @@ describe('S3ComplianceConfigurationProvider', () => {
 
   it('fetches and merges compliance list addresses', async () => {
     applyMock(mockConfigs);
-    mockedAxios.get.mockResolvedValueOnce({ 
-      status: 200, 
-      data: mockComplianceList 
+    mockedAxios.get.mockResolvedValueOnce({
+      status: 200,
+      data: mockComplianceList,
     });
 
     const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
     const map = await provider.getEndpointToExcludedAddrsMap();
-    
+
     expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/compliance-list.json');
     expect(map).toMatchObject(
       new Map([
@@ -98,7 +98,7 @@ describe('S3ComplianceConfigurationProvider', () => {
 
     const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
     const map = await provider.getEndpointToExcludedAddrsMap();
-    
+
     expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/compliance-list.json');
     expect(map).toMatchObject(
       new Map([

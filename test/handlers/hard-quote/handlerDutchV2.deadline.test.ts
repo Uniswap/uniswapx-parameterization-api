@@ -75,9 +75,7 @@ describe('V2 cosigner: decayEndTime vs deadline', () => {
     const req = makeRequest(now + 30);
     // EXE-28: this must be a typed client error (-> HTTP 400), not a plain
     // Error that the base handler surfaces as a retryable 5xx.
-    await expect(getCosignerData(req, makeQuote(), OrderType.Dutch_V2)).rejects.toBeInstanceOf(
-      OrderDeadlineExpired
-    );
+    await expect(getCosignerData(req, makeQuote(), OrderType.Dutch_V2)).rejects.toBeInstanceOf(OrderDeadlineExpired);
     await expect(getCosignerData(req, makeQuote(), OrderType.Dutch_V2)).rejects.toThrow(/deadline/);
   });
 

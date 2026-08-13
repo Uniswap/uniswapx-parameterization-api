@@ -15,17 +15,17 @@ import {
 import { BigNumber, ethers } from 'ethers';
 import Joi from 'joi';
 
-import { POST_ORDER_ERROR_REASON, getV3BlockBuffer } from '../../constants';
+import { getV3BlockBuffer, POST_ORDER_ERROR_REASON } from '../../constants';
 import { HardQuoteRequest, Metric, QuoteResponse } from '../../entities';
 import { V2HardQuoteResponse } from '../../entities/V2HardQuoteResponse';
 import { V3HardQuoteResponse } from '../../entities/V3HardQuoteResponse';
 import { checkDefined } from '../../preconditions/preconditions';
+import { getBestQuote } from '../../quoters/best-quote';
 import { ChainId } from '../../util/chains';
 import { NoQuotesAvailable, OrderDeadlineExpired, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
-import { getBestQuote } from '../quote/handler';
 import { ContainerInjected, RequestInjected } from './injector';
 import {
   HardQuoteRequestBody,
@@ -56,124 +56,131 @@ export class QuoteHandler extends APIGLambdaHandler<
 
     metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
 
-    const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
-    
-    const orderParser = new UniswapXOrderParser();
-    const orderType: OrderType = orderParser.getOrderTypeFromEncoded(
-      requestBody.encodedInnerOrder,
-      requestBody.tokenInChainId
-    );
-    const request = HardQuoteRequest.fromHardRequestBody(requestBody, orderType);
-    // re-create KmsClient every call to avoid clock skew issue
-    // https://github.com/aws/aws-sdk-js-v3/issues/6400
-    const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
-    const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
-    const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);
-    const cosignerAddress = await cosigner.getAddress();
+    // QUOTE_LATENCY below fires only on successful order posts (and is alarmed on). The
+    // finally makes this metric cover every exit path — no-quote throws, cosigner
+    // mismatches, and order-service failures included.
+    try {
+      const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
 
-    // we dont have access to the cosigner key, throw
-    if (request.order.info.cosigner !== cosignerAddress) {
-      log.error({ cosignerInReq: request.order.info.cosigner, expected: cosignerAddress }, 'Unknown cosigner');
-      throw new UnknownOrderCosignerError();
-    }
-    // Instead of decoding the order, we rely on frontend passing in the requestId
-    //   from indicative quote
-    log.info({
-      eventType: 'HardRequest',
-      body: {
-        requestId: request.requestId,
-        quoteId: request.quoteId,
-        tokenInChainId: request.tokenInChainId,
-        tokenOutChainId: request.tokenOutChainId,
-        tokenIn: request.tokenIn,
-        tokenOut: request.tokenOut,
-        offerer: request.swapper,
-        amount: request.amount.toString(),
-        type: TradeType[request.type],
-        numOutputs: request.numOutputs,
-        cosigner: request.order.info.cosigner,
-        createdAt: timestampInMstoSeconds(start),
-        createdAtMs: start.toString(),
-      },
-    });
+      const orderParser = new UniswapXOrderParser();
+      const orderType: OrderType = orderParser.getOrderTypeFromEncoded(
+        requestBody.encodedInnerOrder,
+        requestBody.tokenInChainId
+      );
+      const request = HardQuoteRequest.fromHardRequestBody(requestBody, orderType);
+      // re-create KmsClient every call to avoid clock skew issue
+      // https://github.com/aws/aws-sdk-js-v3/issues/6400
+      const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
+      const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
+      const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);
+      const cosignerAddress = await cosigner.getAddress();
 
-    let bestQuote;
-    if (!requestBody.forceOpenOrder) {
-      const result = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, provider, RESPONSE_LOG_TYPE);
-      bestQuote = result.bestQuote;
-      if (!bestQuote && !requestBody.allowNoQuote) {
-        if (!requestBody.allowNoQuote) {
-          throw new NoQuotesAvailable();
+      // we dont have access to the cosigner key, throw
+      if (request.order.info.cosigner !== cosignerAddress) {
+        log.error({ cosignerInReq: request.order.info.cosigner, expected: cosignerAddress }, 'Unknown cosigner');
+        throw new UnknownOrderCosignerError();
+      }
+      // Instead of decoding the order, we rely on frontend passing in the requestId
+      //   from indicative quote
+      log.info({
+        eventType: 'HardRequest',
+        body: {
+          requestId: request.requestId,
+          quoteId: request.quoteId,
+          tokenInChainId: request.tokenInChainId,
+          tokenOutChainId: request.tokenOutChainId,
+          tokenIn: request.tokenIn,
+          tokenOut: request.tokenOut,
+          offerer: request.swapper,
+          amount: request.amount.toString(),
+          type: TradeType[request.type],
+          numOutputs: request.numOutputs,
+          cosigner: request.order.info.cosigner,
+          createdAt: timestampInMstoSeconds(start),
+          createdAtMs: start.toString(),
+        },
+      });
+
+      let bestQuote;
+      if (!requestBody.forceOpenOrder) {
+        const result = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, provider, RESPONSE_LOG_TYPE);
+        bestQuote = result.bestQuote;
+        if (!bestQuote && !requestBody.allowNoQuote) {
+          if (!requestBody.allowNoQuote) {
+            throw new NoQuotesAvailable();
+          }
         }
       }
-    }
 
-    let cosignerData: CosignerData | V3CosignerData;
-    if (bestQuote) {
-      cosignerData = await getCosignerData(request, bestQuote, orderType, provider);
-      log.info({ bestQuote: bestQuote }, 'bestQuote');
-    } else {
-      cosignerData = await getDefaultCosignerData(request, orderType, provider);
-      log.info({ cosignerData: cosignerData }, 'open order with default cosignerData');
-    }
-
-    const cosignedOrder = await createCosignedOrder(cosigner, request, cosignerData);
-    try {
-      metric.putMetric(Metric.QUOTE_POST_ATTEMPT, 1, MetricLoggerUnit.Count);
-      // if no quote and creating open order, create random new quoteId
-      const response = await orderServiceProvider.postOrder({
-        order: cosignedOrder,
-        signature: request.innerSig,
-        quoteId: bestQuote?.quoteId ?? request.quoteId ?? request.requestId,
-        requestId: request.requestId,
-      });
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
-        metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
-        const hardResponse = createHardQuoteResponse(request, cosignedOrder);
-        if (!bestQuote) {
-          // The RFQ responses are logged in getBestQuote()
-          // we log the Open Orders here
-          log.info({
-            eventType: RESPONSE_LOG_TYPE,
-            body: {
-              ...hardResponse.toLog(),
-              offerer: request.swapper,
-            },
-          });
-        }
-        return {
-          statusCode: 200,
-          body: hardResponse.toResponseJSON(),
-        };
+      let cosignerData: CosignerData | V3CosignerData;
+      if (bestQuote) {
+        cosignerData = await getCosignerData(request, bestQuote, orderType, provider);
+        log.info({ bestQuote: bestQuote }, 'bestQuote');
       } else {
-        const error = response as ErrorResponse;
-        log.error({ error: error }, 'Error posting order');
+        cosignerData = await getDefaultCosignerData(request, orderType, provider);
+        log.info({ cosignerData: cosignerData }, 'open order with default cosignerData');
+      }
 
-        // user error should not be alerted on
-        if (error.detail != POST_ORDER_ERROR_REASON.INSUFFICIENT_FUNDS) {
-          metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
-        }
-        // Only a 4xx from the order service is a genuine rejection of the
-        // order. Anything else (timeouts, 5xx) is indeterminate — the order
-        // service may have accepted the order after we stopped waiting — and
-        // rewriting it to 400 makes clients treat a live, fillable order as
-        // rejected (SWAP-2839).
-        if (error.statusCode >= 400 && error.statusCode < 500) {
-          metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
+      const cosignedOrder = await createCosignedOrder(cosigner, request, cosignerData);
+      try {
+        metric.putMetric(Metric.QUOTE_POST_ATTEMPT, 1, MetricLoggerUnit.Count);
+        // if no quote and creating open order, create random new quoteId
+        const response = await orderServiceProvider.postOrder({
+          order: cosignedOrder,
+          signature: request.innerSig,
+          quoteId: bestQuote?.quoteId ?? request.quoteId ?? request.requestId,
+          requestId: request.requestId,
+        });
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+          metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+          const hardResponse = createHardQuoteResponse(request, cosignedOrder);
+          if (!bestQuote) {
+            // The RFQ responses are logged in getBestQuote()
+            // we log the Open Orders here
+            log.info({
+              eventType: RESPONSE_LOG_TYPE,
+              body: {
+                ...hardResponse.toLog(),
+                offerer: request.swapper,
+              },
+            });
+          }
+          return {
+            statusCode: 200,
+            body: hardResponse.toResponseJSON(),
+          };
+        } else {
+          const error = response as ErrorResponse;
+          log.error({ error: error }, 'Error posting order');
+
+          // user error should not be alerted on
+          if (error.detail != POST_ORDER_ERROR_REASON.INSUFFICIENT_FUNDS) {
+            metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
+          }
+          // Only a 4xx from the order service is a genuine rejection of the
+          // order. Anything else (timeouts, 5xx) is indeterminate — the order
+          // service may have accepted the order after we stopped waiting — and
+          // rewriting it to 400 makes clients treat a live, fillable order as
+          // rejected.
+          if (error.statusCode >= 400 && error.statusCode < 500) {
+            metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
+            return {
+              ...error,
+              statusCode: 400,
+            };
+          }
+          metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
           return {
             ...error,
-            statusCode: 400,
+            statusCode: 500,
           };
         }
-        metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
-        return {
-          ...error,
-          statusCode: 500,
-        };
+      } catch (e) {
+        throw new OrderPostError((e as Error).message);
       }
-    } catch (e) {
-      throw new OrderPostError((e as Error).message);
+    } finally {
+      metric.putMetric(Metric.QUOTE_E2E_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
     }
   }
 
@@ -344,7 +351,7 @@ function createHardQuoteResponse(
 async function createCosignedOrder(
   cosigner: KmsSigner,
   request: HardQuoteRequest,
-  cosignerData: CosignerData | V3CosignerData,
+  cosignerData: CosignerData | V3CosignerData
 ): Promise<CosignedV2DutchOrder | CosignedV3DutchOrder> {
   if (request.order instanceof UnsignedV2DutchOrder) {
     const v2CosignerData = cosignerData as CosignerData;
@@ -407,7 +414,10 @@ function assertV2DecayWithinDeadline(decayEndTime: number, deadline: number): vo
   }
 }
 
-async function getDefaultV3CosignerData(request: HardQuoteRequest, provider: ethers.providers.StaticJsonRpcProvider | undefined): Promise<V3CosignerData> {
+async function getDefaultV3CosignerData(
+  request: HardQuoteRequest,
+  provider: ethers.providers.StaticJsonRpcProvider | undefined
+): Promise<V3CosignerData> {
   if (!provider)
     throw new Error(
       `No rpc provider found for chain: ${request.tokenInChainId}, which is required for V3 Dutch orders`

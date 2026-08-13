@@ -30,6 +30,27 @@
     "@typescript-eslint/no-empty-interface": "off",
     "@typescript-eslint/ban-types": "warn",
     "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
-    "@typescript-eslint/ban-ts-comment": "off"
+    "@typescript-eslint/ban-ts-comment": "off",
+    // Two ways a test can silently stop running while CI still reports green: a focused test
+    // (.only/fit/fdescribe) skips all its siblings, and a test block nested inside an it()
+    // callback never registers at all. Both are lint-only problems -- jest has no config
+    // option that fails a run containing focused tests, and eslint-plugin-jest has no
+    // equivalent of the third selector, so core no-restricted-syntax covers both without
+    // adding a dependency.
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.object.name=/^(it|test|describe)$/][callee.property.name='only']",
+        "message": "Focused test (.only) silently skips every sibling test. Remove it before committing."
+      },
+      {
+        "selector": "CallExpression[callee.name=/^(fit|fdescribe)$/]",
+        "message": "Focused test (fit/fdescribe) silently skips every sibling test. Use it()/describe() instead."
+      },
+      {
+        "selector": "CallExpression[callee.name=/^(it|test)$/] CallExpression[callee.name=/^(it|test|describe)$/]",
+        "message": "A test block nested inside an it()/test() callback never registers as a test. Move it out to the enclosing describe()."
+      }
+    ]
   }
 }

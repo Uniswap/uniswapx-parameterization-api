@@ -6,11 +6,23 @@ const now = Math.floor(Date.now() / 1000);
 const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
   [
     'filler1',
-    { lastExaminedTimestamp: now - 150, blockUntilTimestamp: NaN, fadeWindowStart: NaN, consecutiveBlocks: NaN },
+    {
+      lastExaminedTimestamp: now - 150,
+      blockUntilTimestamp: NaN,
+      fadeWindowStart: NaN,
+      consecutiveBlocks: NaN,
+      consecutiveCleanRuns: 0,
+    },
   ],
   [
     'filler2',
-    { lastExaminedTimestamp: now - 75, blockUntilTimestamp: now - 50, fadeWindowStart: now - 50, consecutiveBlocks: 0 },
+    {
+      lastExaminedTimestamp: now - 75,
+      blockUntilTimestamp: now - 50,
+      fadeWindowStart: now - 50,
+      consecutiveBlocks: 0,
+      consecutiveCleanRuns: 0,
+    },
   ],
   [
     'filler3',
@@ -19,12 +31,19 @@ const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
       blockUntilTimestamp: now + 1000,
       fadeWindowStart: now + 1000,
       consecutiveBlocks: 0,
+      consecutiveCleanRuns: 0,
       fadedOrderHashes: ['0xfaded1', '0xfaded2'],
     },
   ],
   [
     'filler4',
-    { lastExaminedTimestamp: now - 150, blockUntilTimestamp: NaN, fadeWindowStart: NaN, consecutiveBlocks: 0 },
+    {
+      lastExaminedTimestamp: now - 150,
+      blockUntilTimestamp: NaN,
+      fadeWindowStart: NaN,
+      consecutiveBlocks: 0,
+      consecutiveCleanRuns: 0,
+    },
   ],
   [
     'filler5',
@@ -33,6 +52,7 @@ const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
       blockUntilTimestamp: now + 100,
       fadeWindowStart: now + 100,
       consecutiveBlocks: 1,
+      consecutiveCleanRuns: 0,
     },
   ],
 ]);

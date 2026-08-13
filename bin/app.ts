@@ -49,6 +49,9 @@ export class APIPipeline extends Stack {
     const code = CodePipelineSource.connection('Uniswap/uniswapx-parameterization-api', 'main', {
       connectionArn:
         'arn:aws:codestar-connections:us-east-2:644039819003:connection/4806faf1-c31e-4ea2-a5bf-c6fc1fa79487',
+      // Full git clone (not a source zip) so the synth step can read git history:
+      // the dashboard derives its vertical deploy markers from `git log` at synth.
+      codeBuildCloneOutput: true,
     });
 
     const synthStep = new CodeBuildStep('Synth', {
@@ -113,8 +116,7 @@ export class APIPipeline extends Stack {
     });
 
     const rpcUrls = sm.Secret.fromSecretAttributes(this, 'rpcUrls', {
-      secretCompleteArn:
-        'arn:aws:secretsmanager:us-east-2:644039819003:secret:prod/param-api/rpc-urls-HJyniu',
+      secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:prod/param-api/rpc-urls-HJyniu',
     });
 
     // The Lambda's getRpcUrl reads RPC_PREFIX_URL at runtime and appends the
@@ -124,7 +126,7 @@ export class APIPipeline extends Stack {
     const jsonRpcProviders = {
       RPC_PREFIX_URL: rpcUrls.secretValueFromJson('RPC_PREFIX_URL').toString(),
       RPC_HEADER_SECRET: rpcUrls.secretValueFromJson('RPC_HEADER_SECRET').toString(),
-    } as {[chainKey: string]: string};
+    } as { [chainKey: string]: string };
 
     // Beta us-east-2
     const betaUsEast2Stage = new APIStage(this, 'beta-us-east-2', {
@@ -138,7 +140,6 @@ export class APIPipeline extends Stack {
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_BETA').toString(),
         FILL_LOG_SENDER_ACCOUNT: '321377678687',
         ORDER_LOG_SENDER_ACCOUNT: '321377678687',
-        URA_ACCOUNT: '665191769009',
         BOT_ACCOUNT: '800035746608',
       },
     });
@@ -159,7 +160,6 @@ export class APIPipeline extends Stack {
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_PROD').toString(),
         FILL_LOG_SENDER_ACCOUNT: '316116520258',
         ORDER_LOG_SENDER_ACCOUNT: '316116520258',
-        URA_ACCOUNT: '652077092967',
         BOT_ACCOUNT: '456809954954',
       },
       stage: STAGE.PROD,
@@ -236,10 +236,7 @@ export class APIPipeline extends Stack {
       rolePolicyStatements: [
         new cdk.aws_iam.PolicyStatement({
           effect: cdk.aws_iam.Effect.ALLOW,
-          actions: [
-            'kms:Decrypt',
-            'kms:DescribeKey'
-          ],
+          actions: ['kms:Decrypt', 'kms:DescribeKey'],
           resources: ['*'],
         }),
       ],
@@ -272,13 +269,12 @@ const app = new cdk.App();
 const envVars: { [key: string]: string } = {};
 
 envVars['FILL_LOG_SENDER_ACCOUNT'] = process.env['FILL_LOG_SENDER_ACCOUNT'] || '';
-envVars['URA_ACCOUNT'] = process.env['URA_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
 // Local dev: Lambda runtime reads RPC_PREFIX_URL via getRpcUrl. RPC_HEADER_SECRET
 // is optional locally and omitted from RPC_HEADERS when unset.
-const jsonRpcProviders: {[chainKey: string]: string} = {
+const jsonRpcProviders: { [chainKey: string]: string } = {
   RPC_PREFIX_URL: process.env['RPC_PREFIX_URL'] || '',
   RPC_HEADER_SECRET: process.env['RPC_HEADER_SECRET'] || '',
 };

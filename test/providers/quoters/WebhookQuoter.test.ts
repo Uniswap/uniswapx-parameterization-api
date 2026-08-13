@@ -1,10 +1,11 @@
 import { TradeType } from '@uniswap/sdk-core';
-import axios from 'axios';
+import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
+import axios, { AxiosError } from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
 import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { NOTIFICATION_TIMEOUT_MS } from '../../../lib/constants';
-import { AnalyticsEventType, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
+import { AnalyticsEventType, Metric, metricContext, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MockV2CircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
@@ -52,6 +53,9 @@ describe('WebhookQuoter tests', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
+    // clearAllMocks clears recorded calls but leaves implementations in place, so a persistent
+    // mockImplementation would leak into later tests that rely on mockImplementationOnce.
+    mockedAxios.post.mockReset();
   });
 
   const webhookProvider = new MockWebhookConfigurationProvider([
@@ -429,6 +433,7 @@ describe('WebhookQuoter tests', () => {
               fadeWindowStart: now + 100000,
               lastExaminedTimestamp: now - 10,
               consecutiveBlocks: 0,
+              consecutiveCleanRuns: 0,
             },
           ],
         ])
@@ -996,34 +1001,86 @@ describe('WebhookQuoter tests', () => {
     expect(response).toEqual([]);
   });
 
-  it('Counts as non-quote if response returns 404', async () => {
+  // The signal the filler docs ask for: "a 204 with an empty body is the expected signal when you
+  // cannot or will not quote". This case passed before 204 was checked explicitly, but only by
+  // accident — an empty body makes amountOut default to 0 and fall into the zero-amount branch.
+  it('Counts as non-quote if response returns 204 with an empty body', async () => {
     mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
-      return Promise.resolve({
-        data: '',
-        status: 404,
-      });
+      return Promise.resolve({ data: '', status: 204 });
     });
+
     const response = await webhookQuoter.quote(request);
-    // logs in fetchQuote go through a child logger bound with the request id, then enriched with the quote id
-    expect(logger.child).toHaveBeenCalledWith({ requestId: request.requestId });
-    expect(logger.child).toHaveBeenCalledWith({ quoteId: expect.any(String) });
+
     expect(logger.info).toHaveBeenCalledWith(
-      {
-        response: '',
-        responseStatus: 404,
-      },
+      { response: '', responseStatus: 204 },
       `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
-        eventProperties: {
-          ...sharedWebhookResponseEventProperties,
-          status: 404,
-          data: '',
-          algo_id: undefined,
+        eventProperties: expect.objectContaining({
+          status: 204,
           responseType: WebhookResponseType.NON_QUOTE,
-        },
+        }),
+      })
+    );
+    expect(response.length).toEqual(0);
+  });
+
+  // A 204 is "no content", so the status decides on its own. Without an explicit check a body
+  // carrying a non-zero amount slips past the zero-amount branch and is accepted as a real quote.
+  it('Counts as non-quote if response returns 204 carrying a quote body', async () => {
+    mockedAxios.post.mockImplementation((_endpoint, _req, _options) => {
+      return Promise.resolve({ data: { ...quote, requestId: (_req as any).requestId }, status: 204 });
+    });
+
+    const response = await webhookQuoter.quote(request);
+
+    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: expect.objectContaining({
+          status: 204,
+          responseType: WebhookResponseType.NON_QUOTE,
+        }),
+      })
+    );
+    expect(response.length).toEqual(0);
+  });
+
+  // 204 is the only status that signals a non-quote. axios's default validateStatus rejects non-2xx,
+  // so a 404 never reaches isNonQuote — it rejects into the catch and is recorded as an HTTP_ERROR.
+  // Pinned here so widening validateStatus, which would silently reclassify every 4xx as a
+  // non-quote, shows up as a test failure instead.
+  it('Counts a 404 as an HTTP error, not a non-quote', async () => {
+    // Resolve or reject the way real axios would for the config the quoter actually passes. A mock
+    // that rejects unconditionally would keep passing even if validateStatus were widened, which is
+    // what let the unreachable branch sit here unnoticed in the first place.
+    mockedAxios.post.mockImplementation((_endpoint, _req, options) => {
+      const validateStatus = (options as any)?.validateStatus ?? ((s: number) => s >= 200 && s < 300);
+      if (validateStatus(404)) {
+        return Promise.resolve({ status: 404, data: '' });
+      }
+      const notFound = new AxiosError('Request failed with status code 404');
+      (notFound as any).code = 'ERR_BAD_REQUEST';
+      (notFound as any).response = { status: 404, data: '' };
+      return Promise.reject(notFound);
+    });
+
+    const response = await webhookQuoter.quote(request);
+
+    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
+        eventProperties: expect.objectContaining({
+          status: 404,
+          responseType: WebhookResponseType.HTTP_ERROR,
+        }),
+      })
+    );
+    expect(mockFirehoseLogger.sendAnalyticsEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventProperties: expect.objectContaining({ responseType: WebhookResponseType.NON_QUOTE }),
       })
     );
     expect(response.length).toEqual(0);
@@ -1126,5 +1183,114 @@ describe('WebhookQuoter tests', () => {
         },
       })
     );
+  });
+
+  describe('latency instrumentation', () => {
+    let putMetricSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      putMetricSpy = jest.spyOn(metric, 'putMetric');
+    });
+
+    const mockSimpleSuccess = () => {
+      mockedAxios.post
+        .mockImplementationOnce((_endpoint, _req, _options) => {
+          return Promise.resolve({ data: { ...quote, requestId: (_req as any).requestId } });
+        })
+        .mockImplementation((_endpoint, _req, _options) => {
+          return Promise.resolve({
+            data: { ...quote, tokenIn: request.tokenOut, tokenOut: request.tokenIn },
+          });
+        });
+    };
+
+    it('times the pre-fan-out phases', async () => {
+      mockSimpleSuccess();
+      await webhookQuoter.quote(request);
+
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        Metric.RFQ_PHASE_ENDPOINT_STATUSES,
+        expect.any(Number),
+        MetricLoggerUnit.Milliseconds
+      );
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        Metric.RFQ_PHASE_COMPLIANCE,
+        expect.any(Number),
+        MetricLoggerUnit.Milliseconds
+      );
+    });
+
+    it('emits fan-out wall time, wasted wait, and exactly one straggler', async () => {
+      mockSimpleSuccess();
+      await webhookQuoter.quote(request);
+
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        Metric.RFQ_PHASE_FANOUT,
+        expect.any(Number),
+        MetricLoggerUnit.Milliseconds
+      );
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        Metric.RFQ_WASTED_WAIT,
+        expect.any(Number),
+        MetricLoggerUnit.Milliseconds
+      );
+      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_STRAGGLER, 1, MetricLoggerUnit.Count);
+      const perFillerStragglers = putMetricSpy.mock.calls.filter((c) =>
+        String(c[0]).startsWith(`${Metric.RFQ_STRAGGLER}_`)
+      );
+      expect(perFillerStragglers).toHaveLength(1);
+    });
+
+    it('emits RFQ_TIMEOUT (bare and per-filler) only for axios timeouts', async () => {
+      const timeoutError = new AxiosError('timeout of 500ms exceeded');
+      (timeoutError as any).code = 'ECONNABORTED';
+      mockedAxios.post.mockRejectedValue(timeoutError);
+
+      const response = await webhookQuoter.quote(request);
+
+      expect(response).toHaveLength(0);
+      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_TIMEOUT, 1, MetricLoggerUnit.Count);
+      expect(putMetricSpy).toHaveBeenCalledWith(
+        metricContext(Metric.RFQ_TIMEOUT, 'uniswap'),
+        1,
+        MetricLoggerUnit.Count
+      );
+      // still counted under the umbrella error metric — RFQ_TIMEOUT is a subset, not a re-bucket
+      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
+    });
+
+    it('does not emit RFQ_TIMEOUT for non-timeout errors', async () => {
+      const httpError = new AxiosError('Request failed with status code 500');
+      (httpError as any).code = 'ERR_BAD_RESPONSE';
+      mockedAxios.post.mockRejectedValue(httpError);
+
+      await webhookQuoter.quote(request);
+
+      const timeoutCalls = putMetricSpy.mock.calls.filter((c) => String(c[0]).startsWith(Metric.RFQ_TIMEOUT));
+      expect(timeoutCalls).toHaveLength(0);
+      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
+    });
+
+    it('skips wasted-wait and straggler when no endpoint is eligible', async () => {
+      const v1OnlyProvider = new MockWebhookConfigurationProvider([
+        { name: 'v1only', endpoint: WEBHOOK_URL, headers: {}, hash: '0xv1', supportedVersions: [ProtocolVersion.V1] },
+      ]);
+      const quoter = new WebhookQuoter(
+        logger,
+        mockFirehoseLogger,
+        v1OnlyProvider,
+        MOCK_V2_CB_PROVIDER,
+        emptyMockComplianceProvider,
+        repository
+      );
+
+      const response = await quoter.quote(makeQuoteRequest({ protocol: ProtocolVersion.V2 }));
+
+      expect(response).toHaveLength(0);
+      const wastedOrStraggler = putMetricSpy.mock.calls.filter(
+        (c) => c[0] === Metric.RFQ_WASTED_WAIT || String(c[0]).startsWith(Metric.RFQ_STRAGGLER)
+      );
+      expect(wastedOrStraggler).toHaveLength(0);
+    });
   });
 });

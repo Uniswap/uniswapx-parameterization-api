@@ -1,10 +1,10 @@
 import { KMSClient } from '@aws-sdk/client-kms';
-import { UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
 import { KmsSigner } from '@uniswap/signer';
+import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
-import { BigNumber, ethers, Wallet } from 'ethers';
+import { ethers, Wallet } from 'ethers';
 
 import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
@@ -16,15 +16,13 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { getOrder } from '../../fixtures/hard-quote';
 
 jest.mock('axios');
 jest.mock('@aws-sdk/client-kms');
 jest.mock('@uniswap/signer');
 
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
-const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
-const RAW_AMOUNT = BigNumber.from('1000000000000000000');
 const CHAIN_ID = 1;
 
 const logger = Logger.createLogger({ name: 'test' });
@@ -32,40 +30,6 @@ logger.level(Logger.FATAL);
 
 process.env.KMS_KEY_ID = 'test-key-id';
 process.env.REGION = 'us-east-2';
-
-const getOrder = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV2DutchOrder => {
-  const now = Math.floor(new Date().getTime() / 1000);
-  return new UnsignedV2DutchOrder(
-    Object.assign(
-      {
-        deadline: now + 1000,
-        reactor: ethers.constants.AddressZero,
-        swapper: ethers.constants.AddressZero,
-        nonce: BigNumber.from(10),
-        additionalValidationContract: ethers.constants.AddressZero,
-        additionalValidationData: '0x',
-        cosigner: ethers.constants.AddressZero,
-        cosignerData: undefined,
-        input: {
-          token: TOKEN_IN,
-          startAmount: RAW_AMOUNT,
-          endAmount: RAW_AMOUNT,
-        },
-        outputs: [
-          {
-            token: TOKEN_OUT,
-            startAmount: RAW_AMOUNT,
-            endAmount: RAW_AMOUNT.mul(90).div(100),
-            recipient: ethers.constants.AddressZero,
-          },
-        ],
-        cosignature: undefined,
-      },
-      data
-    ),
-    CHAIN_ID
-  );
-};
 
 describe('Hard quote handler - order deadline validation', () => {
   const swapperWallet = Wallet.createRandom();
@@ -166,7 +130,9 @@ describe('Hard quote handler - order deadline validation', () => {
 
   it('still succeeds when the deadline comfortably exceeds the decay window', async () => {
     const quoters = [new MockQuoter(logger, 1, 1)];
-    const request = await getRequest(getOrder({ cosigner: cosignerWallet.address, deadline: Math.floor(Date.now() / 1000) + 1000 }));
+    const request = await getRequest(
+      getOrder({ cosigner: cosignerWallet.address, deadline: Math.floor(Date.now() / 1000) + 1000 })
+    );
 
     const response: APIGatewayProxyResult = await getHandler(quoters).handler(getEvent(request), {} as Context);
 

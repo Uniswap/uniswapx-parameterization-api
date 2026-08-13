@@ -81,8 +81,11 @@ export class HardQuoteRequest {
     return this.data.tokenInChainId;
   }
 
+  // See the matching note in QuoteRequest: this getter previously returned the tokenIn chain
+  // id. Value-identical today because HardQuoteRequestBodyJoi pins tokenOutChainId to
+  // Joi.ref('tokenInChainId').
   public get tokenOutChainId(): number {
-    return this.data.tokenInChainId;
+    return this.data.tokenOutChainId;
   }
 
   public get swapper(): string {
@@ -122,16 +125,14 @@ export class HardQuoteRequest {
     if (this.order instanceof UnsignedV2DutchOrder) {
       return this.order.info.input.startAmount.eq(this.order.info.input.endAmount)
         ? TradeType.EXACT_INPUT
-        : TradeType.EXACT_OUTPUT
-    } 
-    else if (this.order instanceof UnsignedV3DutchOrder) {
-      // If curve doesn't exist OR has all relative amounts are zero, then it's EXACT_INPUT
-      return !this.order.info.input.curve || 
-          !this.order.info.input.curve.relativeAmounts.some(relativeAmount => relativeAmount !== BigInt(0))
-        ? TradeType.EXACT_INPUT 
         : TradeType.EXACT_OUTPUT;
-    }
-    else {
+    } else if (this.order instanceof UnsignedV3DutchOrder) {
+      // If curve doesn't exist OR has all relative amounts are zero, then it's EXACT_INPUT
+      return !this.order.info.input.curve ||
+        !this.order.info.input.curve.relativeAmounts.some((relativeAmount) => relativeAmount !== BigInt(0))
+        ? TradeType.EXACT_INPUT
+        : TradeType.EXACT_OUTPUT;
+    } else {
       throw new Error('Unsupported order type');
     }
   }

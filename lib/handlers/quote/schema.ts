@@ -57,7 +57,7 @@ export type PostQuoteResponseWithAllQuotes = PostQuoteResponse & {
   allQuotes?: PostQuoteResponse[];
 };
 
-export const URAResponseJoi = Joi.object({
+export const PostQuoteResponseWithAllQuotesJoi = Joi.object({
   chainId: FieldValidator.chainId.required(),
   requestId: FieldValidator.uuid.required(),
   tokenIn: Joi.string().required(),

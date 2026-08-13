@@ -6,11 +6,8 @@ import {
 } from '@aws-sdk/client-redshift-data';
 import Logger from 'bunyan';
 
-import { SynthSwitchQueryParams, SynthSwitchTrade } from '../handlers/synth-switch';
 import { checkDefined } from '../preconditions/preconditions';
 import { sleep } from '../util/time';
-
-export * from './analytics-repository';
 
 export type SharedConfigs = {
   Database: string;
@@ -37,8 +34,13 @@ export type TimestampRepoRow = {
   // Set to the block end whenever a block is applied/extended; 0 if the filler was never blocked.
   fadeWindowStart: number;
   consecutiveBlocks: number;
-  // hashes of the faded orders that caused the current block;
-  // absent on rows written before this field existed
+  // Streak of consecutive clean runs (cron runs with >=1 new completion and 0 new fades)
+  // while unblocked and escalated. consecutiveBlocks decays one level per
+  // CLEAN_RUNS_PER_DECAY of these; any new fade resets the streak, idle runs freeze it.
+  consecutiveCleanRuns: number;
+  // hashes of the faded orders that caused the current block; absent on rows written
+  // before this field existed. Deliberately optional on writes: omitting it on the
+  // full-item put is how an expired block's hashes are cleared.
   fadedOrderHashes?: string[];
 };
 
@@ -46,6 +48,9 @@ export type TimestampRepoRow = {
 // client), so the raw shape matches TimestampRepoRow — no string parsing.
 export type DynamoTimestampRepoRow = TimestampRepoRow;
 
+// consecutiveCleanRuns stays required here: updateTimestampsBatch does a full-item put, so an
+// optional field a caller forgets to set would silently wipe the stored streak (reads default
+// missing attributes to 0).
 export type ToUpdateTimestampRow = Omit<TimestampRepoRow, 'blockUntilTimestamp' | 'fadeWindowStart'> & {
   blockUntilTimestamp?: number;
   fadeWindowStart?: number;
@@ -87,11 +92,6 @@ export abstract class BaseRedshiftRepository {
       }
     }
   }
-}
-
-export interface BaseSwitchRepository {
-  putSynthSwitch(trade: SynthSwitchTrade, lower: string, enabled: boolean): Promise<void>;
-  syntheticQuoteForTradeEnabled(trade: SynthSwitchQueryParams): Promise<boolean>;
 }
 
 export interface BaseTimestampRepository {

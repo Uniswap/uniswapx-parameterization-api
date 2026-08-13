@@ -16,7 +16,7 @@ data-eng-workflows/lib/spaces/uniswap_x/functions/uniswap_x_hourly_config/tables
 Table → YAML mapping (table names are lowercased in Redshift; YAML uses snake_case):
 
 | Redshift table   | Load schema YAML       |
-|------------------|------------------------|
+| ---------------- | ---------------------- |
 | `postedorders`   | `posted_orders.yaml`   |
 | `archivedorders` | `archived_orders.yaml` |
 | `rfqrequests`    | `rfq_requests.yaml`    |
@@ -26,7 +26,7 @@ Table → YAML mapping (table names are lowercased in Redshift; YAML uses snake_
 in the corresponding YAML.** The view/query column references are validated only at runtime
 against the live cluster — there is no compile-time or unit-test check — so a typo or a
 non-loaded column fails the cron in production (and a column that exists but is null for the
-relevant rows fails *silently*).
+relevant rows fails _silently_).
 
 ### The trap: "emitted" ≠ "loaded"
 
@@ -50,3 +50,62 @@ for the rows you care about.
    ```
 3. New columns must be added to the `data-eng-workflows` load YAML (and the table) **before**
    any SQL here references them.
+
+## Backtesting fade circuit-breaker changes against real order history
+
+Any change to the circuit-breaker knobs in `lib/cron/fade-rate-v2.ts` (threshold, Laplace
+prior, block backoff/cap, decay rules, windowing) should be replayed against real order data
+before shipping — the PR #482 backtest reversed two confidently-held design opinions, cheaply.
+Method: pull the extract below, then simulate 10-minute cron runs over it, treating orders
+posted while a filler would have been benched as prevented (see PR #482 discussion for the
+full harness design, per-filler duty-cycle/allowed-fades metrics, and baseline numbers).
+
+Extract query (matches the breaker's fade semantics from `V2_FADE_RATE_SQL`, but with **no
+24h window, no latest-100 cap, and no row limit** — the replay applies windowing itself).
+**Keep the `faded` CASE in sync with `V2_FADE_RATE_SQL`** — e.g. #461 changed Dutch_V3 to
+`fillTimeBlocks > 0` (a fill at the decay-start block is _not_ a fade); an extract using the
+old `>= 0` inflates V3 fade rates and mis-calibrates every knob. The raw columns are included
+so the replay can recompute `faded` locally if the semantics change again:
+
+```sql
+SELECT
+    po.filler   AS rfqFiller,       -- quoted exclusive filler address
+    po.quoteid  AS quoteId,
+    po.chainid  AS chainId,
+    po.ordertype AS orderType,
+    po.createdat AS postTimestamp,  -- epoch secs
+    po.deadline AS deadline,        -- epoch secs, completion time
+    po.starttime AS decayStartTime,
+    ao.fillTimestamp AS fillTimestamp,
+    ao.fillTimeBlocks AS fillTimeBlocks,
+    ao.filler AS actualFiller,
+    ao.tokenIn AS tokenIn,
+    ao.tokenOut AS tokenOut,
+    CASE
+      WHEN ao.fillTimestamp IS NULL THEN 1
+      WHEN po.ordertype = 'Dutch_V3' AND ao.fillTimeBlocks > 0 THEN 1
+      WHEN po.ordertype = 'Dutch_V2' AND po.starttime < ao.fillTimestamp THEN 1
+      ELSE 0
+    END AS faded
+FROM postedorders po
+LEFT OUTER JOIN archivedorders ao ON po.quoteid = ao.quoteid
+WHERE po.ordertype IN ('Dutch_V2', 'Dutch_V3')
+  AND po.quoteid IS NOT NULL
+  AND po.filler IS NOT NULL
+  AND po.filler != '0x0000000000000000000000000000000000000000'
+  AND po.chainid NOT IN (5, 8001, 420, 421613)
+  AND po.deadline < EXTRACT(EPOCH FROM GETDATE())                          -- completed only
+  AND po.deadline >= EXTRACT(EPOCH FROM (GETDATE() - INTERVAL '28 DAYS'))  -- replay window
+ORDER BY po.deadline ASC;
+```
+
+Post-processing the replay must do itself (deliberately not in the SQL):
+
+- **Filter permissioned-token orders** using `PERMISSIONED_TOKENS` from `@uniswap/uniswapx-sdk`
+  (the breaker excludes them); the SQL keeps `tokenIn`/`tokenOut` for this so the list can't
+  drift from the code.
+- **Aggregate addresses to fillers** with the `FillerAddress` DynamoDB table
+  (`aws dynamodb scan --table-name FillerAddress`) — the breaker scores per filler hash, not
+  per address. Per-address replay is a usable approximation but under-counts multi-address
+  fillers.
+- Dedupe on `quoteId` (the `archivedorders` join can rarely fan out).

@@ -1,10 +1,11 @@
 import { KMSClient } from '@aws-sdk/client-kms';
-import { UnsignedV2DutchOrder, UnsignedV2DutchOrderInfo } from '@uniswap/uniswapx-sdk';
+import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
-import { BigNumber, ethers, Wallet } from 'ethers';
+import { ethers, Wallet } from 'ethers';
 
+import { KmsSigner } from '@uniswap/signer';
 import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
@@ -16,16 +17,13 @@ import {
 import { OrderServiceProvider } from '../../../lib/providers/order';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
 import { ErrorCode } from '../../../lib/util/errors';
-import { KmsSigner } from '@uniswap/signer';
+import { getOrder } from '../../fixtures/hard-quote';
 
 jest.mock('axios');
 jest.mock('@aws-sdk/client-kms');
 jest.mock('@uniswap/signer');
 
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
-const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
-const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
-const RAW_AMOUNT = BigNumber.from('1000000000000000000');
 const CHAIN_ID = 1;
 
 const logger = Logger.createLogger({ name: 'test' });
@@ -33,40 +31,6 @@ logger.level(Logger.FATAL);
 
 process.env.KMS_KEY_ID = 'test-key-id';
 process.env.REGION = 'us-east-2';
-
-const getOrder = (data: Partial<UnsignedV2DutchOrderInfo>): UnsignedV2DutchOrder => {
-  const now = Math.floor(new Date().getTime() / 1000);
-  return new UnsignedV2DutchOrder(
-    Object.assign(
-      {
-        deadline: now + 1000,
-        reactor: ethers.constants.AddressZero,
-        swapper: ethers.constants.AddressZero,
-        nonce: BigNumber.from(10),
-        additionalValidationContract: ethers.constants.AddressZero,
-        additionalValidationData: '0x',
-        cosigner: ethers.constants.AddressZero,
-        cosignerData: undefined,
-        input: {
-          token: TOKEN_IN,
-          startAmount: RAW_AMOUNT,
-          endAmount: RAW_AMOUNT,
-        },
-        outputs: [
-          {
-            token: TOKEN_OUT,
-            startAmount: RAW_AMOUNT,
-            endAmount: RAW_AMOUNT.mul(90).div(100),
-            recipient: ethers.constants.AddressZero,
-          },
-        ],
-        cosignature: undefined,
-      },
-      data
-    ),
-    CHAIN_ID
-  );
-};
 
 // Status mapping when the order service post fails: only genuine 4xx
 // rejections may surface as 400; indeterminate outcomes (timeouts, 5xx) must
@@ -86,12 +50,13 @@ describe('Quote handler order post error mapping', () => {
   }));
   (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
 
-  const requestInjectedMock: Promise<RequestInjected> = new Promise((resolve) =>
-    resolve({
-      log: logger,
-      requestId: 'test',
-      metric: new AWSMetricsLogger(createMetricsLogger()),
-    }) as unknown as RequestInjected
+  const requestInjectedMock: Promise<RequestInjected> = new Promise(
+    (resolve) =>
+      resolve({
+        log: logger,
+        requestId: 'test',
+        metric: new AWSMetricsLogger(createMetricsLogger()),
+      }) as unknown as RequestInjected
   );
 
   const injectorPromiseMock = (
