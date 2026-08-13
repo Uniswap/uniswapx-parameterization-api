@@ -86,7 +86,7 @@ This data will be included in the body of the request and will be sent to the gi
 
 This data will be expected in the body of the quote response.
 
-_Note: if a quoter elects to not quote a swap they should still send back a response but with a zero value in the `amountIn`/`amountOut` field, depending on the trade type._
+_Note: if a quoter elects to not quote a swap, the preferred signal is a `204` with an empty body. A `200` carrying a zero value in the `amountIn`/`amountOut` field, depending on the trade type, is also accepted._
 
 ```
 {
