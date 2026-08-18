@@ -1,4 +1,5 @@
 import Logger from 'bunyan';
+import { ethers } from 'ethers';
 
 import {
   BASE_BLOCK_SECS,
@@ -8,6 +9,7 @@ import {
   CHRONIC_RATE_MIN_SAMPLE,
   CLEAN_RUNS_PER_DECAY,
   countActiveBlocks,
+  countEvaluationGaps,
   FADE_RATE_BLOCK_THRESHOLD,
   FillerFadeStats,
   FillerFadeStatsMap,
@@ -17,6 +19,7 @@ import {
   LAPLACE_ALPHA,
   LAPLACE_BETA,
   MAX_BLOCK_BACKOFF_EXPONENT,
+  STALE_EXAMINATION_SECS,
   STREAK_FINALITY_LAG_SECS,
   UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
 } from '../../lib/cron/fade-rate-v2';
@@ -257,6 +260,85 @@ describe('FadeRateV2 cron', () => {
       const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), now, logger);
       expect(stats['fillerA'].saturatedAddresses).toEqual(1);
       expect(stats['fillerB'].saturatedAddresses).toEqual(0);
+    });
+
+    it('counts and warns on rows whose settling address is not in the mapping', () => {
+      const metrics = { putMetric: jest.fn() } as any;
+      const warn = jest.spyOn(logger, 'warn');
+      const UNMAPPED_A = '0x00000000000000000000000000000000000000aa';
+      const UNMAPPED_B = '0x00000000000000000000000000000000000000bb';
+      const rows: V2FadesRowType[] = [
+        order('0x0000000000000000000000000000000000000001', 0, now - FINAL),
+        order(UNMAPPED_A, 1, now - FINAL),
+        order(UNMAPPED_A, 0, now - FINAL),
+        order(UNMAPPED_B, 1, now - FINAL),
+      ];
+      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), now, logger, metrics);
+
+      // 3 rows across 2 distinct addresses; the mapped row is unaffected
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        Metric.CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS,
+        3,
+        expect.anything()
+      );
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        Metric.CIRCUIT_BREAKER_V2_UNATTRIBUTED_ADDRESSES,
+        2,
+        expect.anything()
+      );
+      expect(Object.keys(stats)).toEqual(['fillerA']);
+      // the dropped fades never reach fillerA's numerator either
+      expect(stats['fillerA'].fadeRate).toBeCloseTo(1 / 21, 6);
+
+      // warned per row (raised from info), naming the address so the endpoint can be registered
+      expect(warn).toHaveBeenCalledTimes(3);
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ fillerAddr: ethers.utils.getAddress(UNMAPPED_A) }),
+        expect.stringContaining('not in filler address mapping')
+      );
+      warn.mockRestore();
+    });
+
+    it('emits zero unattributed orders when every settling address is mapped', () => {
+      const metrics = { putMetric: jest.fn() } as any;
+      getFillersFadeStats(
+        [order('0x0000000000000000000000000000000000000001', 0, now - FINAL)],
+        ADDRESS_TO_FILLER,
+        new Map(),
+        now,
+        logger,
+        metrics
+      );
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        Metric.CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS,
+        0,
+        expect.anything()
+      );
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        Metric.CIRCUIT_BREAKER_V2_UNATTRIBUTED_ADDRESSES,
+        0,
+        expect.anything()
+      );
+    });
+
+    it('produces no stats row at all for a filler whose every order settles unmapped', () => {
+      // The production "Riverside" shape: the filler's registered address goes quiet while a
+      // second, unregistered settling address takes all of their flow. Without a tally the
+      // filler is never reached by calculateNewTimestamps, so nothing is written and its
+      // stored timestamps freeze — this is what CIRCUIT_BREAKER_V2_STALE_FILLERS surfaces.
+      const metrics = { putMetric: jest.fn() } as any;
+      const rows: V2FadesRowType[] = Array(5)
+        .fill(0)
+        .map(() => order('0x00000000000000000000000000000000000000cc', 1, now - FINAL));
+      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), now, logger, metrics);
+
+      expect(stats).toEqual({});
+      expect(calculateNewTimestamps(new Map(), stats, now, logger)).toEqual([]);
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        Metric.CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS,
+        5,
+        expect.anything()
+      );
     });
   });
 
@@ -750,6 +832,94 @@ describe('FadeRateV2 cron', () => {
         },
       ];
       expect(countActiveBlocks(timestamps, updated, now)).toEqual(0);
+    });
+  });
+
+  describe('countEvaluationGaps', () => {
+    const MAP = new Map<string, string>([
+      ['0x0000000000000000000000000000000000000001', 'evaluated'],
+      ['0x0000000000000000000000000000000000000002', 'silent'],
+      ['0x0000000000000000000000000000000000000003', 'frozen'],
+      // a second address for the same filler must not double-count them
+      ['0x0000000000000000000000000000000000000004', 'silent'],
+    ]);
+
+    it('counts mapped fillers that produced no stats, and those whose state has frozen', () => {
+      const metrics = { putMetric: jest.fn() } as any;
+      const timestamps: FillerTimestamps = new Map([
+        ['evaluated', cbState()],
+        ['silent', cbState({ lastExaminedTimestamp: now - 600 })], // quiet run, recently examined
+        ['frozen', cbState({ lastExaminedTimestamp: now - STALE_EXAMINATION_SECS - 600 })],
+      ]);
+      const stats: FillerFadeStatsMap = { evaluated: fadeStats() };
+
+      expect(countEvaluationGaps(MAP, stats, timestamps, now, logger, metrics)).toEqual({
+        fillersNotEvaluated: 2, // silent + frozen
+        staleFillers: 1, // frozen
+      });
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        Metric.CIRCUIT_BREAKER_V2_FILLERS_NOT_EVALUATED,
+        2,
+        expect.anything()
+      );
+      expect(metrics.putMetric).toHaveBeenCalledWith(Metric.CIRCUIT_BREAKER_V2_STALE_FILLERS, 1, expect.anything());
+      // named per filler, so the dashboard shows which endpoint went dark
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_STALE_FILLERS, 'frozen'),
+        1,
+        expect.anything()
+      );
+      expect(metrics.putMetric).not.toHaveBeenCalledWith(
+        metricContext(Metric.CIRCUIT_BREAKER_V2_STALE_FILLERS, 'silent'),
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    it('reports no gaps when every mapped filler was evaluated', () => {
+      const metrics = { putMetric: jest.fn() } as any;
+      const timestamps: FillerTimestamps = new Map([
+        ['evaluated', cbState()],
+        ['silent', cbState()],
+        ['frozen', cbState()],
+      ]);
+      const stats: FillerFadeStatsMap = {
+        evaluated: fadeStats(),
+        silent: fadeStats(),
+        frozen: fadeStats(),
+      };
+      expect(countEvaluationGaps(MAP, stats, timestamps, now, logger, metrics)).toEqual({
+        fillersNotEvaluated: 0,
+        staleFillers: 0,
+      });
+      expect(metrics.putMetric).toHaveBeenCalledWith(
+        Metric.CIRCUIT_BREAKER_V2_FILLERS_NOT_EVALUATED,
+        0,
+        expect.anything()
+      );
+    });
+
+    it('does not treat a never-examined filler as frozen (onboarding is not a stall)', () => {
+      // No stored row at all: lastExaminedTimestamp is absent, which would read as maximally
+      // stale if it were defaulted to 0.
+      const metrics = { putMetric: jest.fn() } as any;
+      expect(countEvaluationGaps(MAP, {}, new Map(), now, logger, metrics)).toEqual({
+        fillersNotEvaluated: 3,
+        staleFillers: 0,
+      });
+      expect(metrics.putMetric).toHaveBeenCalledWith(Metric.CIRCUIT_BREAKER_V2_STALE_FILLERS, 0, expect.anything());
+    });
+
+    it('ignores stored state for fillers absent from the address mapping', () => {
+      // A filler with no registered address is outside this count's denominator; the mapping is
+      // the only roster the cron reads.
+      const timestamps: FillerTimestamps = new Map([
+        ['unmappedFiller', cbState({ lastExaminedTimestamp: now - STALE_EXAMINATION_SECS - 600 })],
+      ]);
+      expect(countEvaluationGaps(new Map(), {}, timestamps, now, logger)).toEqual({
+        fillersNotEvaluated: 0,
+        staleFillers: 0,
+      });
     });
   });
 });

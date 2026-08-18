@@ -353,9 +353,17 @@ export class WebhookQuoter implements Quoter {
         })
       );
 
-      // do not await to minimize latency
+      // Deliberately not awaited: this is the RFQ hot path under a 500ms budget and a DynamoDB
+      // round trip here would be a latency regression. The catch is what makes a failed
+      // registration visible — an unregistered settling address silently drops that filler's
+      // orders out of the circuit breaker's fade rate entirely.
       if (response.filler) {
-        this.repository.addNewAddressToFiller(response.filler, endpoint);
+        this.repository.addNewAddressToFiller(response.filler, endpoint).catch((e) => {
+          log.error(
+            { endpoint, filler: response.filler, error: e },
+            `WebhookQuoter: failed to register filler address for endpoint ${endpoint}`
+          );
+        });
       }
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
