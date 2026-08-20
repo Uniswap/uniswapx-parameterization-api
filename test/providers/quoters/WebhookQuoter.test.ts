@@ -290,6 +290,40 @@ describe('WebhookQuoter tests', () => {
     expect(repository.getFillerAddresses(WEBHOOK_URL)).resolves.toEqual([FILLER]);
   });
 
+  it('logs a failed filler address registration without failing or delaying the quote', async () => {
+    // Registration is deliberately not awaited (RFQ hot path), so a rejection used to be
+    // invisible — and an unregistered settling address silently drops that filler's orders out
+    // of the circuit breaker's fade rate.
+    const registrationError = new Error('dynamo unavailable');
+    jest.spyOn(repository, 'addNewAddressToFiller').mockRejectedValueOnce(registrationError);
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: { ...quote, requestId: (_req as any).requestId },
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
+      });
+
+    const responses = await webhookQuoter.quote(request);
+    // the quote is unaffected: the registration is fire-and-forget, not part of the response path
+    expect(responses.length).toEqual(1);
+    // flush the un-awaited rejection's catch handler
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: WEBHOOK_URL, filler: FILLER, error: registrationError }),
+      expect.stringContaining('failed to register filler address')
+    );
+  });
+
   it('Respects filler compliance requirements', async () => {
     const webhookQuoter = new WebhookQuoter(
       logger,

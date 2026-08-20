@@ -919,6 +919,57 @@ const CircuitBreakerWidgets = (region: string): LambdaWidget[] => [
       title: 'Circuit Breaker Activity | 10 minutes',
     },
   },
+  // Attribution coverage: whether the breaker is seeing everyone's orders at all. Every other
+  // circuit-breaker widget is conditioned on an order being attributable to a filler, so a
+  // settling address missing from the filler-address mapping is invisible everywhere else —
+  // the order leaves both the numerator and the denominator, and a filler whose every order
+  // settles that way stops being evaluated with no other signal. Read the panels together:
+  // unattributed orders climbing while a filler goes stale is an unregistered address eating
+  // that filler's flow; "fillers not evaluated" alone is normally just idle endpoints.
+  {
+    height: 8,
+    width: 12,
+    type: 'metric',
+    properties: {
+      metrics: [
+        [
+          'Uniswap',
+          Metric.CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS,
+          'Service',
+          CircuitBreakerMetricDimension.Service,
+          { stat: 'Sum', label: 'orders dropped (unattributable address)' },
+        ],
+        [
+          '.',
+          Metric.CIRCUIT_BREAKER_V2_UNATTRIBUTED_ADDRESSES,
+          '.',
+          '.',
+          { stat: 'Maximum', label: 'distinct unmapped addresses' },
+        ],
+        [
+          '.',
+          Metric.CIRCUIT_BREAKER_V2_FILLERS_NOT_EVALUATED,
+          '.',
+          '.',
+          { stat: 'Maximum', label: 'fillers not evaluated' },
+        ],
+        [
+          '.',
+          Metric.CIRCUIT_BREAKER_V2_STALE_FILLERS,
+          '.',
+          '.',
+          // stored lastExaminedTimestamp older than a full fade query window: the filler's
+          // circuit-breaker state has frozen
+          { stat: 'Maximum', label: 'fillers with frozen state' },
+        ],
+      ],
+      view: 'timeSeries',
+      stacked: false,
+      region,
+      period: 600,
+      title: 'Circuit Breaker Attribution Coverage | 10 minutes',
+    },
+  },
   // Per-filler smoothed fade rates against the block threshold: healthy fillers should sit
   // near the 5% prior; anyone trending toward the 12% line is about to be benched. The
   // during-block rate is charted alongside because a benched filler's post-block fade rate

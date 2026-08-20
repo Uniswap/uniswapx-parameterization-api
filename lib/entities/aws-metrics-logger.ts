@@ -120,6 +120,25 @@ export enum Metric {
   CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS = 'CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS',
   // Fillers with fade stats evaluated in a cron run (sample-health denominator)
   CIRCUIT_BREAKER_V2_FILLERS_EVALUATED = 'CIRCUIT_BREAKER_V2_FILLERS_EVALUATED',
+  // Rows dropped from the run because their settling address is absent from the filler-address
+  // mapping. Such an order leaves BOTH the numerator and the denominator of every fade rate, so
+  // it is invisible in FADE_RATE / CHRONIC_RATE — the breaker simply never sees it. Nonzero means
+  // fade rates are being computed on an incomplete order set.
+  CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS = 'CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS',
+  // Distinct settling addresses behind CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS. Separates "one
+  // unregistered address is eating a filler's whole order flow" (1, sustained) from incidental
+  // one-off settlement by an address the service does not track.
+  CIRCUIT_BREAKER_V2_UNATTRIBUTED_ADDRESSES = 'CIRCUIT_BREAKER_V2_UNATTRIBUTED_ADDRESSES',
+  // Inverse of CIRCUIT_BREAKER_V2_FILLERS_EVALUATED: fillers in the address mapping that produced
+  // no evaluable rows this run, so the decision logic never reached them and no block state was
+  // written. A healthy baseline is nonzero (genuinely idle endpoints look identical from here),
+  // so read it as a level to alarm on movement in, not as an error count.
+  CIRCUIT_BREAKER_V2_FILLERS_NOT_EVALUATED = 'CIRCUIT_BREAKER_V2_FILLERS_NOT_EVALUATED',
+  // Fillers whose stored lastExaminedTimestamp is older than STALE_EXAMINATION_SECS — the breaker
+  // has had no view of them for longer than a full query window. Emitted per filler as well as in
+  // total, so the endpoint that went dark is named rather than merely counted. Fillers with no
+  // stored row at all are excluded: never-examined is onboarding, not a stall.
+  CIRCUIT_BREAKER_V2_STALE_FILLERS = 'CIRCUIT_BREAKER_V2_STALE_FILLERS',
 }
 
 type MetricNeedingContext =
@@ -135,7 +154,8 @@ type MetricNeedingContext =
   | Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS
   | Metric.CIRCUIT_BREAKER_V2_FADE_RATE
   | Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE
-  | Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE;
+  | Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE
+  | Metric.CIRCUIT_BREAKER_V2_STALE_FILLERS;
 
 export function metricContext(metric: MetricNeedingContext, context: string): string {
   return `${metric}_${context}`;

@@ -128,6 +128,15 @@ export const CHRONIC_RATE_MIN_SAMPLE = 10;
 // becomes watch-worthy. Half the block threshold leaves generous headroom below the
 // enforcement line while still charting anyone trending toward it.
 export const CHRONIC_RATE_EMISSION_FLOOR = FADE_RATE_BLOCK_THRESHOLD / 2;
+// A filler examined within this long has had at least one row inside the current query window;
+// past it the breaker has no view of them at all and their stored timestamps are frozen. Matched
+// to the fade view's 24h rolling window rather than the 10-minute cron cadence: a filler only
+// gets a stats row (and therefore a timestamp write) on a run where the query returns rows for
+// one of their mapped addresses, so anything shorter would flag every quiet hour. The frozen-
+// timestamp signal cannot distinguish a genuinely idle endpoint from one whose orders are all
+// settling through an unmapped address — read it against
+// CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS, which separates the two.
+export const STALE_EXAMINATION_SECS = 24 * 60 * 60;
 
 const log = Logger.createLogger({
   name: 'FadeRate',
@@ -193,7 +202,8 @@ async function main(metrics: MetricsLogger) {
     //  | hash     |  fadeRate  |  duringBlockRate  |
     //  |---- foo -|---- 0.18 --|------ 0.05 -------|
     //  |---- bar -|---- 0.05 --|------ 0.20 -------|
-    const fillerFadeStats = getFillersFadeStats(result, addressToFillerMap, fillerTimestamps, now, log);
+    const fillerFadeStats = getFillersFadeStats(result, addressToFillerMap, fillerTimestamps, now, log, metrics);
+    countEvaluationGaps(addressToFillerMap, fillerFadeStats, fillerTimestamps, now, log, metrics);
 
     //  | hash        |lastExaminedTimestamp|blockUntilTimestamp|fadeWindowStart|
     //  |---- foo ----|---- 1300000 ----|----      calculated block until  ----|
@@ -458,13 +468,21 @@ export function laplaceSmoothedFadeRate(fades: number, total: number): number {
    NOTE: cohort membership uses `deadline` (order completion time) instead of `postTimestamp`.
    This ensures orders posted before the last cron run but completed after are still counted,
    preventing the "in-flight orders" exploit.
+
+   Rows whose settling address has no entry in addressToFillerMap cannot be attributed to any
+   filler and are dropped before every accumulator above — they leave both the numerator and the
+   denominator of every rate, so no existing metric can show them. They are counted into
+   CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS / _ADDRESSES and warned per row instead of being
+   skipped silently: a filler whose every row misses gets no tally, is never reached by
+   calculateNewTimestamps, and has no timestamps written at all.
 */
 export function getFillersFadeStats(
   rows: V2FadesRowType[],
   addressToFillerMap: Map<string, string>,
   fillerTimestamps: FillerTimestamps,
   now: number,
-  log?: Logger
+  log?: Logger,
+  metrics?: MetricsLogger
 ): FillerFadeStatsMap {
   log?.info(
     {
@@ -493,11 +511,21 @@ export function getFillersFadeStats(
   const addressRowCounts = new Map<string, number>();
   const addressOldestDeadline = new Map<string, number>();
   const addressHash = new Map<string, string>();
+  let unattributedOrders = 0;
+  const unattributedAddresses = new Set<string>();
   rows.forEach((row) => {
     const fillerAddr = ethers.utils.getAddress(row.fillerAddress);
     const fillerHash = addressToFillerMap.get(fillerAddr);
     if (!fillerHash) {
-      log?.info({ fillerAddr }, 'filler address not found dynamo mapping');
+      unattributedOrders += 1;
+      unattributedAddresses.add(fillerAddr);
+      // The fade query does not project a quote id or order hash (V2FadesRowType carries neither),
+      // so the row is identified by address plus its timestamps — enough to find it in
+      // latestRfqsV2, which does carry quoteid.
+      log?.warn(
+        { fillerAddr, postTimestamp: row.postTimestamp, deadline: row.deadline, faded: row.faded },
+        'settling address not in filler address mapping; order dropped from the fade rate entirely'
+      );
       return;
     }
     addressRowCounts.set(fillerAddr, (addressRowCounts.get(fillerAddr) ?? 0) + 1);
@@ -577,8 +605,57 @@ export function getFillersFadeStats(
       saturatedAddresses: saturatedByHash[hash] ?? 0,
     };
   });
-  log?.info({ tallies, stats }, 'fade stats by filler');
+  metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_UNATTRIBUTED_ORDERS, unattributedOrders, Unit.Count);
+  metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_UNATTRIBUTED_ADDRESSES, unattributedAddresses.size, Unit.Count);
+  log?.info(
+    { tallies, stats, unattributedOrders, unattributedAddresses: [...unattributedAddresses] },
+    'fade stats by filler'
+  );
   return stats;
+}
+
+/* Fillers the run never reached, so an endpoint dropping out of the calculation is visible.
+
+   - fillersNotEvaluated: the inverse of CIRCUIT_BREAKER_V2_FILLERS_EVALUATED. Denominator is the
+     set of fillers in the address mapping, not the full configured roster: the cron already reads
+     that mapping and nothing else here knows the roster, so a filler with no registered address
+     at all is outside this count.
+   - staleFillers: fillers whose stored lastExaminedTimestamp trails `now` by more than
+     STALE_EXAMINATION_SECS. Only fillers that already have a stored row are considered — a filler
+     that has never been examined is onboarding, not stalled. This is the signal that separates a
+     filler the breaker briefly had nothing to say about from one whose state has frozen.
+
+   Neither count feeds a blocking decision.
+*/
+export function countEvaluationGaps(
+  addressToFillerMap: Map<string, string>,
+  fillerFadeStats: FillerFadeStatsMap,
+  fillerTimestamps: FillerTimestamps,
+  now: number,
+  log?: Logger,
+  metrics?: MetricsLogger
+): { fillersNotEvaluated: number; staleFillers: number } {
+  const mappedFillers = new Set(addressToFillerMap.values());
+  const notEvaluated = [...mappedFillers].filter((hash) => !fillerFadeStats[hash]);
+
+  const stale: string[] = [];
+  mappedFillers.forEach((hash) => {
+    const lastExamined = fillerTimestamps.get(hash)?.lastExaminedTimestamp;
+    if (lastExamined !== undefined && now - lastExamined > STALE_EXAMINATION_SECS) {
+      stale.push(hash);
+      // Per filler as well as in total: the count alone says something froze, not which endpoint.
+      metrics?.putMetric(metricContext(Metric.CIRCUIT_BREAKER_V2_STALE_FILLERS, hash), 1, Unit.Count);
+      log?.warn(
+        { hash, lastExaminedTimestamp: lastExamined, secsSinceExamined: now - lastExamined },
+        'filler has not been examined within a full fade query window; its circuit breaker state is frozen'
+      );
+    }
+  });
+
+  metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_FILLERS_NOT_EVALUATED, notEvaluated.length, Unit.Count);
+  metrics?.putMetric(Metric.CIRCUIT_BREAKER_V2_STALE_FILLERS, stale.length, Unit.Count);
+  log?.info({ notEvaluated, stale }, 'fillers not evaluated this run');
+  return { fillersNotEvaluated: notEvaluated.length, staleFillers: stale.length };
 }
 
 /*
