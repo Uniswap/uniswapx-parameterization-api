@@ -17,6 +17,7 @@ import {
   LAPLACE_ALPHA,
   LAPLACE_BETA,
   MAX_BLOCK_BACKOFF_EXPONENT,
+  MAX_FADED_ORDER_HASHES,
   STREAK_FINALITY_LAG_SECS,
   UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
 } from '../../lib/cron/fade-rate-v2';
@@ -37,11 +38,12 @@ const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
 // helper to build a faded/non-faded order row
-const order = (fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRowType => ({
+const order = (fillerAddress: string, faded: 0 | 1, deadline: number, orderHash?: string): V2FadesRowType => ({
   fillerAddress,
   faded,
   postTimestamp: deadline - 20,
   deadline,
+  orderHash: orderHash ?? `0xorder${fillerAddress.slice(-2)}at${deadline}`,
 });
 
 // factories so tests spell out only the fields they exercise; defaults are a quiet,
@@ -702,6 +704,138 @@ describe('FadeRateV2 cron', () => {
       // not a flattened level worked off by the cycle's own first fade
       expect(row2.blockUntilTimestamp).toEqual(t2 + BASE_BLOCK_SECS * 4);
       expect(row2.consecutiveBlocks).toEqual(3);
+    });
+  });
+
+  describe('fadedOrderHashes persistence', () => {
+    it('collects the faded order hashes per cohort in getFillersFadeStats', () => {
+      const addr = '0x0000000000000000000000000000000000000001';
+      const map = new Map([[addr, 'filler']]);
+      // fadeWindowStart in the past: rows after it are the rate window,
+      // rows on/before it (but after lastExamined) are the during-block cohort
+      const timestamps: FillerTimestamps = new Map([
+        ['filler', cbState({ lastExaminedTimestamp: now - 100, fadeWindowStart: now - 50 })],
+      ]);
+      const rows = [
+        order(addr, 1, now - 10, '0xwindowfade'), // window cohort, faded
+        order(addr, 0, now - 20, '0xwindowclean'), // window cohort, clean
+        order(addr, 1, now - 60, '0xblockfade'), // during-block cohort, faded
+        order(addr, 0, now - 70, '0xblockclean'), // during-block cohort, clean
+      ];
+      const stats = getFillersFadeStats(rows, map, timestamps, now, logger);
+      expect(stats['filler'].windowFadedOrderHashes).toEqual(['0xwindowfade']);
+      expect(stats['filler'].duringBlockFadedOrderHashes).toEqual(['0xblockfade']);
+    });
+
+    it('stores the window cohort hashes when the fade rate trips a new block', () => {
+      const stats: FillerFadeStatsMap = {
+        newBad: fadeStats({
+          fadeRate: 0.2,
+          newFades: 2,
+          windowFadedOrderHashes: ['0xw1', '0xw2'],
+          duringBlockFadedOrderHashes: ['0xb1'], // under threshold: not a cause
+        }),
+      };
+      const [row] = calculateNewTimestamps(new Map(), stats, now, logger);
+      expect(row.fadedOrderHashes).toEqual(['0xw1', '0xw2']);
+    });
+
+    it('stores the during-block cohort hashes when a late in-flight fade re-blocks after expiry', () => {
+      const timestamps: FillerTimestamps = new Map([
+        ['slip', cbState({ fadeWindowStart: now - 10, consecutiveBlocks: 1 })],
+      ]);
+      const stats: FillerFadeStatsMap = {
+        slip: fadeStats({
+          duringBlockRate: 0.3,
+          newFades: 1,
+          windowFadedOrderHashes: [],
+          duringBlockFadedOrderHashes: ['0xinflight'],
+        }),
+      };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row.blockUntilTimestamp).toBeGreaterThan(now);
+      expect(row.fadedOrderHashes).toEqual(['0xinflight']);
+    });
+
+    it('appends the extending in-flight fades to the stored hashes when extending a block', () => {
+      const timestamps: FillerTimestamps = new Map([
+        [
+          'blocked',
+          cbState({
+            blockUntilTimestamp: now + 500,
+            fadeWindowStart: now + 500,
+            consecutiveBlocks: 1,
+            fadedOrderHashes: ['0xold'],
+          }),
+        ],
+      ]);
+      const stats: FillerFadeStatsMap = {
+        blocked: fadeStats({
+          duringBlockRate: 0.3,
+          newFades: 1,
+          windowFadedOrderHashes: [],
+          duringBlockFadedOrderHashes: ['0xnew'],
+        }),
+      };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row.blockUntilTimestamp).toBeGreaterThan(now + 500);
+      expect(row.fadedOrderHashes).toEqual(['0xold', '0xnew']);
+    });
+
+    it('carries stored hashes forward when blocked with a clean in-flight cohort', () => {
+      const timestamps: FillerTimestamps = new Map([
+        [
+          'blocked',
+          cbState({
+            blockUntilTimestamp: now + 500,
+            fadeWindowStart: now + 500,
+            consecutiveBlocks: 1,
+            fadedOrderHashes: ['0xold'],
+          }),
+        ],
+      ]);
+      const stats: FillerFadeStatsMap = { blocked: fadeStats() };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row.blockUntilTimestamp).toEqual(now + 500);
+      expect(row.fadedOrderHashes).toEqual(['0xold']);
+    });
+
+    it('clears stored hashes when the filler is under threshold (block expired)', () => {
+      const timestamps: FillerTimestamps = new Map([
+        ['recovered', cbState({ fadeWindowStart: now - 50, consecutiveBlocks: 1, fadedOrderHashes: ['0xold'] })],
+      ]);
+      const stats: FillerFadeStatsMap = { recovered: fadeStats() };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      expect(row.blockUntilTimestamp).toEqual(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
+      expect(row.fadedOrderHashes).toBeUndefined();
+    });
+
+    it('dedupes and caps stored hashes at MAX_FADED_ORDER_HASHES, keeping the most recent', () => {
+      const existing = Array.from({ length: MAX_FADED_ORDER_HASHES }, (_, i) => `0x${i}`);
+      const timestamps: FillerTimestamps = new Map([
+        [
+          'blocked',
+          cbState({
+            blockUntilTimestamp: now + 500,
+            fadeWindowStart: now + 500,
+            consecutiveBlocks: 1,
+            fadedOrderHashes: existing,
+          }),
+        ],
+      ]);
+      const stats: FillerFadeStatsMap = {
+        blocked: fadeStats({
+          duringBlockRate: 0.3,
+          newFades: 2,
+          duringBlockFadedOrderHashes: ['0x1', '0xnew'], // '0x1' is already stored
+        }),
+      };
+      const [row] = calculateNewTimestamps(timestamps, stats, now, logger);
+      const hashes = row.fadedOrderHashes!;
+      expect(hashes.length).toBe(MAX_FADED_ORDER_HASHES);
+      expect(hashes[hashes.length - 1]).toBe('0xnew');
+      expect(hashes).not.toContain('0x0'); // oldest dropped
+      expect(hashes.filter((h) => h === '0x1').length).toBe(1); // deduped
     });
   });
 

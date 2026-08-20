@@ -22,6 +22,7 @@ export const DYNAMO_TABLE_KEY = {
   FADE_WINDOW_START: 'fadeWindowStart',
   CONSECUTIVE_BLOCKS: 'consecutiveBlocks',
   CONSECUTIVE_CLEAN_RUNS: 'consecutiveCleanRuns',
+  FADED_ORDER_HASHES: 'fadedOrderHashes',
 };
 
 export const POST_ORDER_ERROR_REASON = {

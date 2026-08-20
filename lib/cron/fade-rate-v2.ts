@@ -66,11 +66,19 @@ export type FillerFadeStats = {
   // fillers sit at the cap constantly.) Surfaced as an aggregate metric so per-address
   // volume outgrowing the window shows on the dashboard instead of as a stuck recovery.
   saturatedAddresses: number;
+  // Hashes of the faded orders behind each rate cohort, so a block entry can carry the
+  // reason for the block (surfaced to the filler in the blocking notification).
+  windowFadedOrderHashes?: string[];
+  duringBlockFadedOrderHashes?: string[];
 };
 export type FillerFadeStatsMap = Record<string, FillerFadeStats>;
 export type FillerTimestamps = Map<string, Omit<TimestampRepoRow, 'hash'>>;
 
 export const BASE_BLOCK_SECS = 60 * 15; // 15 minutes
+
+/** Bound on the faded order hashes persisted per block entry (most recent kept), so
+    repeatedly extended blocks can't grow the Dynamo item without limit. */
+export const MAX_FADED_ORDER_HASHES = 50;
 
 // Laplace (additive) smoothing applied to each filler's fade rate so a few fades on a
 // small sample don't trip the breaker. Equivalent to seeding every filler with ALPHA
@@ -317,6 +325,12 @@ export function calculateNewTimestamps(
         fadeWindowStart: extendedBlockUntil, // clean slate resumes when the extended block ends
         consecutiveBlocks,
         consecutiveCleanRuns: 0, // faded while blocked: recovery streak restarts
+        // the extended block was caused by the previously stored fades plus the
+        // in-flight fades that extended it
+        fadedOrderHashes: mergeFadedOrderHashes(
+          fillerTimestamp.fadedOrderHashes,
+          stats.duringBlockFadedOrderHashes ?? []
+        ),
       });
     } else if (isCurrentlyBlocked) {
       // Blocked with the in-flight cohort under threshold - keep existing block and floor,
@@ -330,6 +344,8 @@ export function calculateNewTimestamps(
         fadeWindowStart: fillerTimestamp.fadeWindowStart,
         consecutiveBlocks,
         consecutiveCleanRuns: newFades > 0 ? 0 : previousCleanRuns,
+        // carry forward the fades that caused the still-active block
+        fadedOrderHashes: fillerTimestamp.fadedOrderHashes,
       });
     } else if (fadeRate > FADE_RATE_BLOCK_THRESHOLD || duringBlockRate > FADE_RATE_BLOCK_THRESHOLD) {
       // duringBlockRate covers in-flight fades that landed near the end of a block that
@@ -353,6 +369,11 @@ export function calculateNewTimestamps(
         fadeWindowStart: blockUntilTimestamp, // clean slate resumes when the block ends
         consecutiveBlocks,
         consecutiveCleanRuns: 0, // blocked: recovery streak restarts
+        // the faded orders from whichever cohort(s) exceeded the threshold
+        fadedOrderHashes: mergeFadedOrderHashes(undefined, [
+          ...(fadeRate > FADE_RATE_BLOCK_THRESHOLD ? stats.windowFadedOrderHashes ?? [] : []),
+          ...(duringBlockRate > FADE_RATE_BLOCK_THRESHOLD ? stats.duringBlockFadedOrderHashes ?? [] : []),
+        ]),
       });
     } else {
       // Under threshold: not blocked. Reset blockUntilTimestamp to unblocked. Escalation
@@ -423,6 +444,14 @@ export function countActiveBlocks(
   return [...effectiveBlockUntil.values()].filter((blockUntil) => blockUntil > now).length;
 }
 
+/* combine the faded order hashes already stored on a block entry with the new window's,
+   deduped and capped to the most recent MAX_FADED_ORDER_HASHES.
+   Returns undefined when there are none, so no attribute is written to the entry. */
+function mergeFadedOrderHashes(existing: string[] | undefined, incoming: string[]): string[] | undefined {
+  const merged = Array.from(new Set([...(existing ?? []), ...incoming]));
+  return merged.length > 0 ? merged.slice(-MAX_FADED_ORDER_HASHES) : undefined;
+}
+
 /* Laplace-smoothed fade rate: pretend we've already seen LAPLACE_ALPHA fades and
    LAPLACE_BETA clean fills, so small samples are pulled toward the prior mean instead
    of swinging to 0% or 100%. */
@@ -486,6 +515,8 @@ export function getFillersFadeStats(
       newFades: number;
       chronicFades: number;
       chronicTotal: number;
+      windowFadedOrderHashes: string[];
+      blockFadedOrderHashes: string[];
     }
   > = {};
   // per-address row count and oldest deadline, to detect addresses whose latest-N window has
@@ -514,6 +545,8 @@ export function getFillersFadeStats(
         newFades: 0,
         chronicFades: 0,
         chronicTotal: 0,
+        windowFadedOrderHashes: [],
+        blockFadedOrderHashes: [],
       };
     }
     const windowStart = fillerTimestamp?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP;
@@ -542,12 +575,18 @@ export function getFillersFadeStats(
       // Rate window: orders completed after the filler's last block ended (clean slate).
       tallies[fillerHash].windowTotal += 1;
       tallies[fillerHash].windowFades += row.faded;
+      if (row.faded && row.orderHash) {
+        tallies[fillerHash].windowFadedOrderHashes.push(row.orderHash);
+      }
     } else if (row.deadline > lastExaminedTimestamp) {
       // During-block cohort: completed since the last cron run but on/before the block end,
       // i.e. in flight during the block. Never overlaps the rate window (deadline <= floor),
       // so during-block orders stay excluded from the post-block clean slate.
       tallies[fillerHash].blockTotal += 1;
       tallies[fillerHash].blockFades += row.faded;
+      if (row.faded && row.orderHash) {
+        tallies[fillerHash].blockFadedOrderHashes.push(row.orderHash);
+      }
     }
   });
 
@@ -575,6 +614,8 @@ export function getFillersFadeStats(
       chronicRate: t.chronicTotal > 0 ? t.chronicFades / t.chronicTotal : 0,
       chronicTotal: t.chronicTotal,
       saturatedAddresses: saturatedByHash[hash] ?? 0,
+      windowFadedOrderHashes: t.windowFadedOrderHashes,
+      duringBlockFadedOrderHashes: t.blockFadedOrderHashes,
     };
   });
   log?.info({ tallies, stats }, 'fade stats by filler');

@@ -7,6 +7,11 @@ export const WEBHOOK_URL_ONEINCH = 'https://1inch.io';
 export const WEBHOOK_URL_SEARCHER = 'https://searcher.com';
 export const WEBHOOK_URL_FOO = 'https://foo.com';
 
+export const FADED_ORDER_HASHES = [
+  '0x1111111111111111111111111111111111111111111111111111111111111111',
+  '0x2222222222222222222222222222222222222222222222222222222222222222',
+];
+
 export const MOCK_V2_CB_PROVIDER = new MockV2CircuitBreakerConfigurationProvider(
   [WEBHOOK_URL, WEBHOOK_URL_ONEINCH, WEBHOOK_URL_SEARCHER],
   new Map([
@@ -18,6 +23,7 @@ export const MOCK_V2_CB_PROVIDER = new MockV2CircuitBreakerConfigurationProvider
         lastExaminedTimestamp: now - 10,
         consecutiveBlocks: 0,
         consecutiveCleanRuns: 0,
+        fadedOrderHashes: FADED_ORDER_HASHES,
       },
     ],
     [

@@ -119,7 +119,7 @@ export class WebhookQuoter implements Quoter {
 
     // should not await and block
     if (!isPermissionedToken) {
-      Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e))).then((results) => {
+      Promise.allSettled(disabledEndpoints.map((e) => this.notifyBlock(e, request))).then((results) => {
         this.log.info({ requestId: request.requestId, results }, 'Notified disabled endpoints');
       });
     }
@@ -433,7 +433,10 @@ export class WebhookQuoter implements Quoter {
     }
   }
 
-  private async notifyBlock(status: { webhook: WebhookConfiguration; blockUntil: number }): Promise<void> {
+  private async notifyBlock(
+    status: { webhook: WebhookConfiguration; blockUntil: number; fadedOrderHashes?: string[] },
+    request: QuoteRequest
+  ): Promise<void> {
     const axiosConfig = {
       timeout: NOTIFICATION_TIMEOUT_MS,
       ...(!!status.webhook.headers && { headers: status.webhook.headers }),
@@ -443,6 +446,11 @@ export class WebhookQuoter implements Quoter {
         status.webhook.endpoint,
         {
           blockUntilTimestamp: status.blockUntil,
+          // The faded order(s) that caused this block, so fillers know exactly which
+          // orders triggered the circuit breaker. Omitted for block entries written
+          // before the faded order hashes were persisted alongside the block.
+          ...(!!status.fadedOrderHashes?.length && { orderHashes: status.fadedOrderHashes }),
+          ...(request.quoteId && { quoteId: request.quoteId }),
         },
         axiosConfig
       )

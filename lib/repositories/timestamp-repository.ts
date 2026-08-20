@@ -50,6 +50,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         [`${DYNAMO_TABLE_KEY.FADE_WINDOW_START}`]: { type: 'number' },
         [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: { type: 'number' },
         [`${DYNAMO_TABLE_KEY.CONSECUTIVE_CLEAN_RUNS}`]: { type: 'number' },
+        [`${DYNAMO_TABLE_KEY.FADED_ORDER_HASHES}`]: { type: 'list' },
       },
       table: table,
       autoExecute: true,
@@ -74,6 +75,7 @@ export class TimestampRepository implements BaseTimestampRepository {
           [`${DYNAMO_TABLE_KEY.FADE_WINDOW_START}`]: row.fadeWindowStart,
           [`${DYNAMO_TABLE_KEY.CONSECUTIVE_BLOCKS}`]: row.consecutiveBlocks,
           [`${DYNAMO_TABLE_KEY.CONSECUTIVE_CLEAN_RUNS}`]: row.consecutiveCleanRuns,
+          ...(row.fadedOrderHashes && { [`${DYNAMO_TABLE_KEY.FADED_ORDER_HASHES}`]: row.fadedOrderHashes }),
         });
       }),
       {
@@ -96,6 +98,8 @@ export class TimestampRepository implements BaseTimestampRepository {
       fadeWindowStart: Item?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
       consecutiveBlocks: Item?.consecutiveBlocks ?? 0,
       consecutiveCleanRuns: Item?.consecutiveCleanRuns ?? 0,
+      // absent on rows written before this attribute existed
+      fadedOrderHashes: Item?.fadedOrderHashes,
     };
   }
 
@@ -119,6 +123,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         fadeWindowStart: row.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
         consecutiveBlocks: row.consecutiveBlocks ?? 0,
         consecutiveCleanRuns: row.consecutiveCleanRuns ?? 0,
+        fadedOrderHashes: row.fadedOrderHashes,
       };
     });
   }
@@ -133,6 +138,7 @@ export class TimestampRepository implements BaseTimestampRepository {
         fadeWindowStart: row.fadeWindowStart,
         consecutiveBlocks: row.consecutiveBlocks,
         consecutiveCleanRuns: row.consecutiveCleanRuns,
+        fadedOrderHashes: row.fadedOrderHashes,
       });
     });
     return res;
