@@ -1,9 +1,15 @@
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import axios from 'axios';
 import { default as Logger } from 'bunyan';
 
 import { FillerComplianceConfiguration, FillerComplianceConfigurationProvider, FillerComplianceList } from '.';
 import { checkDefined } from '../../preconditions/preconditions';
+import { createConfigS3Client } from '../../util/config-s3-client';
+
+// Bounds the per-config complianceListUrl fetch, which runs serially on the quote
+// path right after each config refresh. Without it a dead upstream stalled every
+// quote on the instance for ~15s (2026-07 incident); failures already fail open.
+export const COMPLIANCE_LIST_TIMEOUT_MS = 2000;
 
 export class S3FillerComplianceConfigurationProvider implements FillerComplianceConfigurationProvider {
   private log: Logger;
@@ -21,7 +27,7 @@ export class S3FillerComplianceConfigurationProvider implements FillerCompliance
 
   private async fetchComplianceList(url: string): Promise<string[]> {
     try {
-      const response = await axios.get(url);
+      const response = await axios.get(url, { timeout: COMPLIANCE_LIST_TIMEOUT_MS });
       if (response.status !== 200) {
         this.log.warn({ url, status: response.status }, 'Failed to fetch compliance list');
         return [];
@@ -76,7 +82,7 @@ export class S3FillerComplianceConfigurationProvider implements FillerCompliance
   }
 
   async fetchConfigs(): Promise<void> {
-    const s3Client = new S3Client({});
+    const s3Client = createConfigS3Client();
     try {
       const s3Res = await s3Client.send(
         new GetObjectCommand({
@@ -88,7 +94,9 @@ export class S3FillerComplianceConfigurationProvider implements FillerCompliance
       this.configs = JSON.parse(await s3Body.transformToString()) as FillerComplianceConfiguration[];
       this.log.info({ configsLength: this.configs.map((c) => c.addresses.length) }, `Fetched configs`);
     } catch (e: any) {
-      this.log.info(
+      // Fails open on the last fetched configs (or none): a timed-out refresh must
+      // not hold or 500 the quote path.
+      this.log.warn(
         { name: e.name, message: e.message },
         'Error fetching compliance s3 config. Default to allowing all'
       );

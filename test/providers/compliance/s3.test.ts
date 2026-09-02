@@ -6,6 +6,7 @@ import {
   FillerComplianceConfiguration,
   S3FillerComplianceConfigurationProvider,
 } from '../../../lib/providers/compliance';
+import { COMPLIANCE_LIST_TIMEOUT_MS } from '../../../lib/providers/compliance/s3';
 
 const mockConfigs = [
   {
@@ -82,12 +83,36 @@ describe('S3ComplianceConfigurationProvider', () => {
     const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
     const map = await provider.getEndpointToExcludedAddrsMap();
 
-    expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/compliance-list.json');
+    expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/compliance-list.json', {
+      timeout: COMPLIANCE_LIST_TIMEOUT_MS,
+    });
     expect(map).toMatchObject(
       new Map([
         ['https://google.com', new Set(['0x1234'])],
         ['https://meta.com', new Set(['0x1234', '0x5678'])],
         ['https://x.com', new Set(['0x7890', '0x2345', '0x6789'])],
+      ])
+    );
+  });
+
+  it('keeps serving the cached configs when the S3 refresh fails', async () => {
+    applyMock(mockConfigs);
+    // one rejection per refresh: the initial build and the post-failure rebuild
+    mockedAxios.get.mockRejectedValueOnce(new Error('Network error')).mockRejectedValueOnce(new Error('Network error'));
+    const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
+    const before = await provider.getEndpointToExcludedAddrsMap();
+    expect(before.size).toBe(3);
+
+    jest.useFakeTimers().setSystemTime(Date.now() + 10 * 60 * 1000);
+    jest.spyOn(S3Client.prototype, 'send').mockImplementationOnce(() => Promise.reject(new Error('TimeoutError')));
+    const after = await provider.getEndpointToExcludedAddrsMap();
+    jest.useRealTimers();
+
+    expect(after).toMatchObject(
+      new Map([
+        ['https://google.com', new Set(['0x1234'])],
+        ['https://meta.com', new Set(['0x1234', '0x5678'])],
+        ['https://x.com', new Set(['0x7890'])],
       ])
     );
   });
@@ -99,7 +124,9 @@ describe('S3ComplianceConfigurationProvider', () => {
     const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
     const map = await provider.getEndpointToExcludedAddrsMap();
 
-    expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/compliance-list.json');
+    expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/compliance-list.json', {
+      timeout: COMPLIANCE_LIST_TIMEOUT_MS,
+    });
     expect(map).toMatchObject(
       new Map([
         ['https://google.com', new Set(['0x1234'])],
