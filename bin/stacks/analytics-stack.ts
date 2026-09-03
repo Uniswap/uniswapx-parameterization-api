@@ -28,11 +28,9 @@ enum RS_DATA_TYPES {
   BIGINT = 'bigint',
   INTEGER = 'integer',
   TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled
-  ALL_STATUS = 'text',
   TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
   CALL_DATA = 'varchar(5000)',
   UnitInETH = 'float8',
-  BOT_EVENT_TYPE = 'text', // 'fetch' || 'filter' || 'execution' || 'quote'
   ORDER_TYPE = 'text', // 'Limit' || 'Dutch'
 }
 
