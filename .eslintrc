@@ -41,13 +41,7 @@
     "@typescript-eslint/adjacent-overload-signatures": "error",
     "@typescript-eslint/no-empty-function": "error",
     "@typescript-eslint/no-inferrable-types": "error",
-    // New in v8's recommended preset. Off to keep the lint gate identical across the TypeScript
-    // upgrade: its only hits are RedshiftColumnType in bin/stacks/analytics-stack.ts, where several
-    // semantic names intentionally share the same SQL type ('text'). Candidate to enable separately.
-    "@typescript-eslint/no-duplicate-enum-values": "off",
-    // v8 changed the no-unused-vars default for catch-clause bindings from "none" to "all";
-    // "caughtErrors": "none" keeps the v5 behaviour (unused `catch (err)` is not reported).
-    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "caughtErrors": "none" }],
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
     "@typescript-eslint/ban-ts-comment": "off",
     // Two ways a test can silently stop running while CI still reports green: a focused test
     // (.only/fit/fdescribe) skips all its siblings, and a test block nested inside an it()

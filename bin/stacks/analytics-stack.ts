@@ -12,6 +12,7 @@ import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import path from 'path';
+import { LAMBDA_BUNDLING } from './lambda-bundling';
 
 const RS_DATABASE_NAME = 'uniswap_x'; // must be lowercase
 const ADMIN = 'admin';
@@ -27,11 +28,9 @@ enum RS_DATA_TYPES {
   BIGINT = 'bigint',
   INTEGER = 'integer',
   TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled
-  ALL_STATUS = 'text',
   TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
   CALL_DATA = 'varchar(5000)',
   UnitInETH = 'float8',
-  BOT_EVENT_TYPE = 'text', // 'fetch' || 'filter' || 'execution' || 'quote'
   ORDER_TYPE = 'text', // 'Limit' || 'Dutch'
 }
 
@@ -314,10 +313,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       handler: 'quoteProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
       memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
+      bundling: LAMBDA_BUNDLING,
       environment: {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
@@ -333,10 +329,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       handler: 'postOrderProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
       memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
+      bundling: LAMBDA_BUNDLING,
       environment: {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
@@ -352,10 +345,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       handler: 'fillEventProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
       memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
+      bundling: LAMBDA_BUNDLING,
       environment: {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
@@ -371,10 +361,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       handler: 'unimindResponseProcessor',
       timeout: cdk.Duration.seconds(60),
       memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
+      bundling: LAMBDA_BUNDLING,
       environment: {
         VERSION: '2',
         NODE_OPTIONS: '--enable-source-maps',
@@ -393,10 +380,7 @@ export class AnalyticsStack extends cdk.NestedStack {
         handler: 'unimindParameterUpdateProcessor',
         timeout: cdk.Duration.seconds(60),
         memorySize: 512,
-        bundling: {
-          minify: true,
-          sourceMap: true,
-        },
+        bundling: LAMBDA_BUNDLING,
         environment: {
           VERSION: '2',
           NODE_OPTIONS: '--enable-source-maps',
