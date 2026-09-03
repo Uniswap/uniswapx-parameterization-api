@@ -20,8 +20,8 @@
     "strictPropertyInitialization": true,
     "outDir": "dist",
     "allowJs": true,
-    "typeRoots": ["./node_modules/@types"]
+    "typeRoots": ["./node_modules/@types"],
+    "skipLibCheck": true
   },
-  "files": ["./.env.js"],
   "exclude": ["cdk.out", "./dist/**/*"]
 }

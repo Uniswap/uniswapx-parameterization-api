@@ -28,8 +28,26 @@
     "import/newline-after-import": "error",
     "import/no-duplicates": "error",
     "@typescript-eslint/no-empty-interface": "off",
-    "@typescript-eslint/ban-types": "warn",
-    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    // @typescript-eslint v8 removed ban-types and split it into the three rules below; the repo
+    // ran ban-types at "warn", and no-empty-interface is off above, so empty interfaces stay allowed.
+    "@typescript-eslint/no-unsafe-function-type": "warn",
+    "@typescript-eslint/no-wrapper-object-types": "warn",
+    "@typescript-eslint/no-empty-object-type": ["warn", { "allowInterfaces": "always" }],
+    // v8's `recommended` preset differs from v5's. Pin the v5 severities so the TypeScript upgrade
+    // changes the compiler, not the lint gate (v8 raises the first two to error / drops them, and
+    // moved the last three to the `stylistic` preset).
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-non-null-assertion": "warn",
+    "@typescript-eslint/adjacent-overload-signatures": "error",
+    "@typescript-eslint/no-empty-function": "error",
+    "@typescript-eslint/no-inferrable-types": "error",
+    // New in v8's recommended preset. Off to keep the lint gate identical across the TypeScript
+    // upgrade: its only hits are RedshiftColumnType in bin/stacks/analytics-stack.ts, where several
+    // semantic names intentionally share the same SQL type ('text'). Candidate to enable separately.
+    "@typescript-eslint/no-duplicate-enum-values": "off",
+    // v8 changed the no-unused-vars default for catch-clause bindings from "none" to "all";
+    // "caughtErrors": "none" keeps the v5 behaviour (unused `catch (err)` is not reported).
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "caughtErrors": "none" }],
     "@typescript-eslint/ban-ts-comment": "off",
     // Two ways a test can silently stop running while CI still reports green: a focused test
     // (.only/fit/fdescribe) skips all its siblings, and a test block nested inside an it()
