@@ -16,6 +16,7 @@ import { DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
+import { LAMBDA_BUNDLING } from './lambda-bundling';
 
 type CapacityOptions = {
   readCapacity?: number;
@@ -67,10 +68,7 @@ export class CronStack extends cdk.NestedStack {
         handler: 'handler',
         timeout: Duration.seconds(240),
         memorySize: 512,
-        bundling: {
-          minify: true,
-          sourceMap: true,
-        },
+        bundling: LAMBDA_BUNDLING,
         environment: {
           REDSHIFT_DATABASE: RsDatabase,
           REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
@@ -113,10 +111,7 @@ export class CronStack extends cdk.NestedStack {
       handler: 'handler',
       timeout: Duration.seconds(600), // deletion of large number of rows can take a while
       memorySize: 512,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
+      bundling: LAMBDA_BUNDLING,
       environment: {
         REDSHIFT_DATABASE: RsDatabase,
         REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,

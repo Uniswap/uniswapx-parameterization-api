@@ -28,6 +28,7 @@ import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 import { CronStack } from './cron-stack';
 import { FirehoseStack } from './firehose-stack';
+import { LAMBDA_BUNDLING } from './lambda-bundling';
 import { ParamDashboardStack } from './param-dashboard-stack';
 
 /**
@@ -256,10 +257,7 @@ export class APIStack extends cdk.Stack {
         subnets: [...vpc.privateSubnets],
       },
       memorySize: 2048,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
+      bundling: LAMBDA_BUNDLING,
       environment: {
         VERSION: '6',
         NODE_OPTIONS: '--enable-source-maps',
@@ -291,10 +289,7 @@ export class APIStack extends cdk.Stack {
         subnets: [...vpc.privateSubnets],
       },
       memorySize: 2048,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
+      bundling: LAMBDA_BUNDLING,
       environment: {
         VERSION: '6',
         NODE_OPTIONS: '--enable-source-maps',
