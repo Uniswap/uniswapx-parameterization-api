@@ -346,28 +346,11 @@ export class APIStack extends cdk.Stack {
     });
 
     hardQuote.addMethod('POST', hardQuoteLambdaIntegration, {
-      apiKeyRequired: false, // TODO: Set to true once Trading API has integrated
-    });
-
-    /* add auth keys */
-    // No method currently sets apiKeyRequired; these exist for the hard-quote
-    // gating TODO above. Unrelated to the WAF's `x-api-key` byte-match, which
-    // matches a hand-managed Secrets Manager value, not an API Gateway key.
-    const tradingAPIKey = api.addApiKey('TradingAPIKey', {
-      apiKeyName: 'tradingAPIKey',
-      description: 'API Key for trading endpoints',
-    });
-    const devAPIKey = api.addApiKey('DevAPIKey', {
-      apiKeyName: 'devAPIKey',
-      description: 'API Key for development use',
-    });
-    const plan = api.addUsagePlan('AccessPlan', {
-      name: 'AccessPlan',
-    });
-    plan.addApiKey(tradingAPIKey);
-    plan.addApiKey(devAPIKey);
-    plan.addApiStage({
-      stage: api.deploymentStage,
+      // Explicitly the default: no API Gateway key gating on any method. Request
+      // gating is the entry gateway's job after the monorepo migration. Unrelated
+      // to the WAF's `x-api-key` byte-match above, which matches a hand-managed
+      // Secrets Manager value, not an API Gateway key.
+      apiKeyRequired: false,
     });
 
     /*
