@@ -1,24 +1,22 @@
-import { FillerComplianceConfiguration, FillerComplianceConfigurationProvider } from '.';
+import {
+  buildExclusionIndex,
+  FillerComplianceConfiguration,
+  FillerComplianceConfigurationProvider,
+  isExcludedIn,
+} from '.';
 
 export class MockFillerComplianceConfigurationProvider implements FillerComplianceConfigurationProvider {
-  constructor(private configs: FillerComplianceConfiguration[]) {}
+  private readonly index;
 
-  async getConfigs(): Promise<FillerComplianceConfiguration[]> {
-    return this.configs;
+  constructor(configs: FillerComplianceConfiguration[]) {
+    this.index = buildExclusionIndex(configs);
   }
 
-  async getEndpointToExcludedAddrsMap(): Promise<Map<string, Set<string>>> {
-    const map = new Map<string, Set<string>>();
-    this.configs.forEach((config) => {
-      config.endpoints.forEach((endpoint) => {
-        if (!map.has(endpoint)) {
-          map.set(endpoint, new Set<string>());
-        }
-        config.addresses.forEach((address) => {
-          map.get(endpoint)?.add(address);
-        });
-      });
-    });
-    return map;
+  ensureLoaded(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  isExcluded(endpoint: string, swapper: string): boolean {
+    return isExcludedIn(this.index, endpoint, swapper);
   }
 }

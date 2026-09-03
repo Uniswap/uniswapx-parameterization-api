@@ -1,138 +1,127 @@
-import { S3Client } from '@aws-sdk/client-s3';
-import axios from 'axios';
 import { default as Logger } from 'bunyan';
 
+import { FillerComplianceConfiguration } from '../../../lib/providers/compliance';
 import {
-  FillerComplianceConfiguration,
+  COMPLIANCE_REFRESH_INTERVAL_MS,
+  ComplianceS3Client,
   S3FillerComplianceConfigurationProvider,
-} from '../../../lib/providers/compliance';
-import { COMPLIANCE_LIST_TIMEOUT_MS } from '../../../lib/providers/compliance/s3';
+} from '../../../lib/providers/compliance/s3';
 
-const mockConfigs = [
-  {
-    endpoints: ['https://google.com'],
-    addresses: ['0x1234'],
-  },
-  {
-    endpoints: ['https://meta.com'],
-    addresses: ['0x1234', '0x5678'],
-  },
-  {
-    endpoints: ['https://x.com'],
-    addresses: ['0x7890'],
-    complianceListUrl: 'https://example.com/compliance-list.json',
-  },
-];
+type SendResult = Awaited<ReturnType<ComplianceS3Client['send']>>;
 
-const mockComplianceList = {
-  addresses: ['0x2345', '0x6789'],
-};
+// Each send() runs the next queued outcome; an unqueued send() throws instead of hanging.
+class FakeS3Client implements ComplianceS3Client {
+  public sendCount = 0;
+  constructor(private readonly outcomes: (() => Promise<SendResult>)[]) {}
 
-function applyMock(configs: FillerComplianceConfiguration[]) {
-  jest.spyOn(S3Client.prototype, 'send').mockImplementationOnce(() =>
-    Promise.resolve({
-      Body: {
-        transformToString: () => Promise.resolve(JSON.stringify(configs)),
-      },
-    })
-  );
+  send(): Promise<SendResult> {
+    const next = this.outcomes[this.sendCount++];
+    if (!next) throw new Error(`unexpected S3 fetch #${this.sendCount}`);
+    return next();
+  }
 }
 
-// silent logger in tests
+const ok = (configs: FillerComplianceConfiguration[]) => () =>
+  Promise.resolve({ Body: { transformToString: () => Promise.resolve(JSON.stringify(configs)) } });
+const fail = () => Promise.reject(new Error('TimeoutError'));
+// Drains pending microtasks so a background refresh can land.
+const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+const ENDPOINT = 'https://filler.example/rfq';
+const SWAPPER = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const OTHER = '0x0000000000000000000000000000000000000001';
+const configs = [{ endpoints: [ENDPOINT], addresses: [SWAPPER] }];
+
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+describe('S3FillerComplianceConfigurationProvider', () => {
+  const START = 1_700_000_000_000;
+  let now: number;
 
-describe('S3ComplianceConfigurationProvider', () => {
-  const bucket = 'test-bucket';
-  const key = 'test-key';
+  beforeEach(() => {
+    now = START;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+  });
+  afterEach(() => jest.restoreAllMocks());
 
-  afterEach(() => {
-    jest.clearAllMocks();
+  const makeProvider = (s3: FakeS3Client) =>
+    new S3FillerComplianceConfigurationProvider(logger, 'test-bucket', 'test-key', s3);
+
+  it('treats an empty config as loaded and does not refetch it per request', async () => {
+    const s3 = new FakeS3Client([ok([])]);
+    const provider = makeProvider(s3);
+    for (let i = 0; i < 5; i++) {
+      await provider.ensureLoaded();
+      expect(provider.isExcluded(ENDPOINT, SWAPPER)).toBe(false);
+    }
+    expect(s3.sendCount).toBe(1);
   });
 
-  it('fetches configs', async () => {
-    applyMock(mockConfigs);
-    const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
-    const endpoints = await provider.getConfigs();
-    expect(endpoints).toEqual(mockConfigs);
+  it('matches swapper addresses case-insensitively and ignores unknown endpoints', async () => {
+    const provider = makeProvider(new FakeS3Client([ok(configs)]));
+    await provider.ensureLoaded();
+    expect(provider.isExcluded(ENDPOINT, SWAPPER.toLowerCase())).toBe(true);
+    expect(provider.isExcluded(ENDPOINT, SWAPPER.toUpperCase())).toBe(true);
+    expect(provider.isExcluded(ENDPOINT, OTHER)).toBe(false);
+    expect(provider.isExcluded('https://unknown.example', SWAPPER)).toBe(false);
   });
 
-  it('generates endpoint to addrs map', async () => {
-    applyMock(mockConfigs);
-    const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
-    const map = await provider.getEndpointToExcludedAddrsMap();
-    expect(map).toMatchObject(
-      new Map([
-        ['https://google.com', new Set(['0x1234'])],
-        ['https://meta.com', new Set(['0x1234', '0x5678'])],
-        ['https://x.com', new Set(['0x7890'])],
-      ])
-    );
+  it('refreshes in the background once the interval elapses, then swaps the new data in', async () => {
+    let finishRefresh!: (result: SendResult) => void;
+    const pending = new Promise<SendResult>((resolve) => (finishRefresh = resolve));
+    const s3 = new FakeS3Client([ok(configs), () => pending]);
+    const provider = makeProvider(s3);
+    await provider.ensureLoaded();
+
+    now = START + COMPLIANCE_REFRESH_INTERVAL_MS - 1;
+    await provider.ensureLoaded();
+    expect(s3.sendCount).toBe(1);
+
+    now = START + COMPLIANCE_REFRESH_INTERVAL_MS;
+    // Resolves while the fetch is still pending, still serving the old data.
+    await provider.ensureLoaded();
+    expect(provider.isExcluded(ENDPOINT, SWAPPER)).toBe(true);
+    // Concurrent callers share the single in-flight fetch.
+    await provider.ensureLoaded();
+    expect(s3.sendCount).toBe(2);
+
+    finishRefresh(await ok([{ endpoints: [ENDPOINT], addresses: [OTHER] }])());
+    await flush();
+    expect(provider.isExcluded(ENDPOINT, SWAPPER)).toBe(false);
+    expect(provider.isExcluded(ENDPOINT, OTHER)).toBe(true);
   });
 
-  it('fetches and merges compliance list addresses', async () => {
-    applyMock(mockConfigs);
-    mockedAxios.get.mockResolvedValueOnce({
-      status: 200,
-      data: mockComplianceList,
-    });
+  it('keeps the last good data when a refresh fails and retries only at the next interval', async () => {
+    const s3 = new FakeS3Client([ok(configs), fail, ok([])]);
+    const provider = makeProvider(s3);
+    await provider.ensureLoaded();
 
-    const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
-    const map = await provider.getEndpointToExcludedAddrsMap();
+    now = START + COMPLIANCE_REFRESH_INTERVAL_MS;
+    await provider.ensureLoaded();
+    await flush();
+    await provider.ensureLoaded();
+    expect(s3.sendCount).toBe(2);
+    expect(provider.isExcluded(ENDPOINT, SWAPPER)).toBe(true);
 
-    expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/compliance-list.json', {
-      timeout: COMPLIANCE_LIST_TIMEOUT_MS,
-    });
-    expect(map).toMatchObject(
-      new Map([
-        ['https://google.com', new Set(['0x1234'])],
-        ['https://meta.com', new Set(['0x1234', '0x5678'])],
-        ['https://x.com', new Set(['0x7890', '0x2345', '0x6789'])],
-      ])
-    );
+    now = START + 2 * COMPLIANCE_REFRESH_INTERVAL_MS;
+    await provider.ensureLoaded();
+    await flush();
+    expect(s3.sendCount).toBe(3);
+    expect(provider.isExcluded(ENDPOINT, SWAPPER)).toBe(false);
   });
 
-  it('keeps serving the cached configs when the S3 refresh fails', async () => {
-    applyMock(mockConfigs);
-    // one rejection per refresh: the initial build and the post-failure rebuild
-    mockedAxios.get.mockRejectedValueOnce(new Error('Network error')).mockRejectedValueOnce(new Error('Network error'));
-    const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
-    const before = await provider.getEndpointToExcludedAddrsMap();
-    expect(before.size).toBe(3);
+  it('fails open on a failed first load and retries only at the next interval', async () => {
+    const s3 = new FakeS3Client([fail, ok(configs)]);
+    const provider = makeProvider(s3);
+    await provider.ensureLoaded();
+    await provider.ensureLoaded();
+    expect(s3.sendCount).toBe(1);
+    expect(provider.isExcluded(ENDPOINT, SWAPPER)).toBe(false);
 
-    jest.useFakeTimers().setSystemTime(Date.now() + 10 * 60 * 1000);
-    jest.spyOn(S3Client.prototype, 'send').mockImplementationOnce(() => Promise.reject(new Error('TimeoutError')));
-    const after = await provider.getEndpointToExcludedAddrsMap();
-    jest.useRealTimers();
-
-    expect(after).toMatchObject(
-      new Map([
-        ['https://google.com', new Set(['0x1234'])],
-        ['https://meta.com', new Set(['0x1234', '0x5678'])],
-        ['https://x.com', new Set(['0x7890'])],
-      ])
-    );
-  });
-
-  it('handles compliance list fetch failure gracefully', async () => {
-    applyMock(mockConfigs);
-    mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
-
-    const provider = new S3FillerComplianceConfigurationProvider(logger, bucket, key);
-    const map = await provider.getEndpointToExcludedAddrsMap();
-
-    expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/compliance-list.json', {
-      timeout: COMPLIANCE_LIST_TIMEOUT_MS,
-    });
-    expect(map).toMatchObject(
-      new Map([
-        ['https://google.com', new Set(['0x1234'])],
-        ['https://meta.com', new Set(['0x1234', '0x5678'])],
-        ['https://x.com', new Set(['0x7890'])],
-      ])
-    );
+    now = START + COMPLIANCE_REFRESH_INTERVAL_MS;
+    await provider.ensureLoaded();
+    await flush();
+    expect(provider.isExcluded(ENDPOINT, SWAPPER)).toBe(true);
   });
 });

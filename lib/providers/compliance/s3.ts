@@ -1,105 +1,69 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import axios from 'axios';
 import { default as Logger } from 'bunyan';
 
-import { FillerComplianceConfiguration, FillerComplianceConfigurationProvider, FillerComplianceList } from '.';
+import {
+  buildExclusionIndex,
+  ExclusionIndex,
+  FillerComplianceConfiguration,
+  FillerComplianceConfigurationProvider,
+  isExcludedIn,
+} from '.';
 import { checkDefined } from '../../preconditions/preconditions';
 import { createConfigS3Client } from '../../util/config-s3-client';
 
-// Bounds the per-config complianceListUrl fetch, which runs serially on the quote
-// path right after each config refresh. Without it a dead upstream stalled every
-// quote on the instance for ~15s (2026-07 incident); failures already fail open.
-export const COMPLIANCE_LIST_TIMEOUT_MS = 2000;
+export const COMPLIANCE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
+// The slice of S3Client this provider uses, typed structurally so tests can inject a fake.
+export interface ComplianceS3Client {
+  send(command: GetObjectCommand): Promise<{ Body?: { transformToString(): Promise<string> } }>;
+}
+
+// Stale-while-revalidate: the first call per container awaits one bounded fetch; after that a
+// call that finds the interval elapsed starts a single background refresh and keeps serving the
+// current index, which is swapped atomically when the fetch completes. The fetch stays on the
+// request path (not container init) because of a Dec-2024 S3 clock-skew issue.
 export class S3FillerComplianceConfigurationProvider implements FillerComplianceConfigurationProvider {
-  private log: Logger;
-  private configs: FillerComplianceConfiguration[];
-  private endpointToExcludedAddrsMap: Map<string, Set<string>>;
-  private lastFetchTime: number;
-  private readonly REFRESH_INTERVAL = 5 * 60 * 1000;
+  private readonly log: Logger;
+  private index: ExclusionIndex = new Map();
+  // Tracked explicitly: an empty config (prod today) is a loaded config, not a missing one.
+  private loaded = false;
+  private lastFetchTime = 0;
+  private inflight: Promise<void> | undefined;
 
-  constructor(_log: Logger, private bucket: string, private key: string) {
-    this.configs = [];
+  constructor(
+    _log: Logger,
+    private readonly bucket: string,
+    private readonly key: string,
+    private readonly s3Client: ComplianceS3Client = createConfigS3Client()
+  ) {
     this.log = _log.child({ quoter: 'S3FillerComplianceConfigurationProvider' });
-    this.endpointToExcludedAddrsMap = new Map<string, Set<string>>();
-    this.lastFetchTime = 0;
   }
 
-  private async fetchComplianceList(url: string): Promise<string[]> {
+  async ensureLoaded(): Promise<void> {
+    if (Date.now() - this.lastFetchTime >= COMPLIANCE_REFRESH_INTERVAL_MS && !this.inflight) {
+      this.inflight = this.fetchConfigs().finally(() => (this.inflight = undefined));
+    }
+    if (!this.loaded) await this.inflight;
+  }
+
+  isExcluded(endpoint: string, swapper: string): boolean {
+    return isExcludedIn(this.index, endpoint, swapper);
+  }
+
+  private async fetchConfigs(): Promise<void> {
     try {
-      const response = await axios.get(url, { timeout: COMPLIANCE_LIST_TIMEOUT_MS });
-      if (response.status !== 200) {
-        this.log.warn({ url, status: response.status }, 'Failed to fetch compliance list');
-        return [];
-      }
-      const complianceList = response.data as FillerComplianceList;
-      return complianceList.addresses;
-    } catch (e: any) {
-      this.log.warn({ url, error: e.message }, 'Error fetching compliance list');
-      return [];
-    }
-  }
-
-  async getEndpointToExcludedAddrsMap(): Promise<Map<string, Set<string>>> {
-    const now = Date.now();
-    if (this.configs.length === 0 || now - this.lastFetchTime >= this.REFRESH_INTERVAL) {
-      await this.fetchConfigs();
-      this.endpointToExcludedAddrsMap.clear();
-      this.lastFetchTime = now;
-    }
-    if (this.endpointToExcludedAddrsMap.size > 0) {
-      return this.endpointToExcludedAddrsMap;
-    }
-
-    // Fetch additional addresses from complianceListUrl for each config
-    for (const config of this.configs) {
-      if (config.complianceListUrl) {
-        const additionalAddresses = await this.fetchComplianceList(config.complianceListUrl);
-        config.addresses = [...config.addresses, ...additionalAddresses];
-      }
-    }
-
-    // Build the endpoint to addresses map
-    this.configs.forEach((config) => {
-      config.endpoints.forEach((endpoint) => {
-        if (!this.endpointToExcludedAddrsMap.has(endpoint)) {
-          this.endpointToExcludedAddrsMap.set(endpoint, new Set<string>());
-        }
-        config.addresses.forEach((address) => {
-          this.endpointToExcludedAddrsMap.get(endpoint)?.add(address);
-        });
-      });
-    });
-
-    return this.endpointToExcludedAddrsMap;
-  }
-
-  async getConfigs(): Promise<FillerComplianceConfiguration[]> {
-    if (this.configs.length === 0) {
-      await this.fetchConfigs();
-    }
-    return this.configs;
-  }
-
-  async fetchConfigs(): Promise<void> {
-    const s3Client = createConfigS3Client();
-    try {
-      const s3Res = await s3Client.send(
-        new GetObjectCommand({
-          Bucket: this.bucket,
-          Key: this.key,
-        })
-      );
+      const s3Res = await this.s3Client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.key }));
       const s3Body = checkDefined(s3Res.Body, 's3Res.Body is undefined');
-      this.configs = JSON.parse(await s3Body.transformToString()) as FillerComplianceConfiguration[];
-      this.log.info({ configsLength: this.configs.map((c) => c.addresses.length) }, `Fetched configs`);
-    } catch (e: any) {
-      // Fails open on the last fetched configs (or none): a timed-out refresh must
-      // not hold or 500 the quote path.
-      this.log.warn(
-        { name: e.name, message: e.message },
-        'Error fetching compliance s3 config. Default to allowing all'
-      );
+      const configs = JSON.parse(await s3Body.transformToString()) as FillerComplianceConfiguration[];
+      this.index = buildExclusionIndex(configs);
+      this.log.info({ configsLength: configs.map((c) => c.addresses.length) }, 'Fetched configs');
+    } catch (e) {
+      // Fails open on the last good index (or an empty one); the next attempt waits for the interval.
+      const { name, message } = e instanceof Error ? e : { name: 'UnknownError', message: String(e) };
+      this.log.warn({ name, message }, 'Error fetching compliance s3 config. Default to allowing all');
+    } finally {
+      this.loaded = true;
+      this.lastFetchTime = Date.now();
     }
   }
 }

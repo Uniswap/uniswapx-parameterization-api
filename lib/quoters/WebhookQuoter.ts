@@ -81,7 +81,7 @@ export class WebhookQuoter implements Quoter {
     metric.putMetric(Metric.RFQ_PHASE_ENDPOINT_STATUSES, Date.now() - beforeStatuses, MetricLoggerUnit.Milliseconds);
 
     const beforeCompliance = Date.now();
-    const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
+    await this.complianceProvider.ensureLoaded();
     metric.putMetric(Metric.RFQ_PHASE_COMPLIANCE, Date.now() - beforeCompliance, MetricLoggerUnit.Milliseconds);
     // Ignore endpoint status if token is permissioned
     const isPermissionedToken =
@@ -92,7 +92,7 @@ export class WebhookQuoter implements Quoter {
       : statuses.enabled;
     const enabledEndpoints = baseFillerSet.filter(
       (e) =>
-        passFillerCompliance(e, endpointToAddrsMap, request.swapper) &&
+        !this.complianceProvider.isExcluded(e.endpoint, request.swapper) &&
         getEndpointSupportedProtocols(e).includes(request.protocol)
     );
 
@@ -478,12 +478,4 @@ export function getEndpointSupportedProtocols(e: WebhookConfiguration) {
     return [ProtocolVersion.V2, ProtocolVersion.V3];
   }
   return e.supportedVersions;
-}
-
-export function passFillerCompliance(
-  e: WebhookConfiguration,
-  endpointToAddrsMap: Map<string, Set<string>>,
-  swapper: string
-) {
-  return endpointToAddrsMap.get(e.endpoint) === undefined || !endpointToAddrsMap.get(e.endpoint)?.has(swapper);
 }
