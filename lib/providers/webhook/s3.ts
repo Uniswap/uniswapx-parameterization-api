@@ -1,10 +1,11 @@
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { default as Logger } from 'bunyan';
 
 import { WebhookConfiguration, WebhookConfigurationProvider } from '.';
 import { Metric } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
+import { createConfigS3Client } from '../../util/config-s3-client';
 
 // reads endpoint configuration from a static file
 export class S3WebhookConfigurationProvider implements WebhookConfigurationProvider {
@@ -32,14 +33,25 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
       this.endpoints.length === 0 ||
       Date.now() - this.lastUpdatedEndpointsTimestamp > S3WebhookConfigurationProvider.UPDATE_ENDPOINTS_PERIOD_MS
     ) {
-      await this.fetchEndpoints();
-      this.lastUpdatedEndpointsTimestamp = Date.now();
+      try {
+        await this.fetchEndpoints();
+      } catch (e: any) {
+        // Fail open on the cached config: a stalled or failed refresh must never hold
+        // or 500 the quote path. The next attempt is at the normal cadence — or on the
+        // next request if nothing has ever been cached (endpoints.length === 0).
+        this.log.warn(
+          { name: e?.name, message: e?.message, cachedEndpoints: this.endpoints.length },
+          'Error refreshing webhook config from S3; serving cached endpoints'
+        );
+      } finally {
+        this.lastUpdatedEndpointsTimestamp = Date.now();
+      }
     }
     return this.endpoints;
   }
 
   async fetchEndpoints(): Promise<void> {
-    const s3Client = new S3Client({});
+    const s3Client = createConfigS3Client();
     const s3Res = await s3Client.send(
       new GetObjectCommand({
         Bucket: this.bucket,

@@ -71,7 +71,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     const unifiedRoutingResponseBucket = new aws_s3.Bucket(this, 'UnifiedRoutingResponseBucket');
     const fillBucket = new aws_s3.Bucket(this, 'FillBucket');
     const ordersBucket = new aws_s3.Bucket(this, 'OrdersBucket');
-    const activeOrdersBucket = new aws_s3.Bucket(this, 'ActiveOrdersBucket');
     const botOrderLoaderBucket = new aws_s3.Bucket(this, 'BotOrderLoaderBucket');
     const botOrderRouterBucket = new aws_s3.Bucket(this, 'BotOrderRouterBucket');
     const botOrderBroadcasterBucket = new aws_s3.Bucket(this, 'BotOrderBroadcasterBucket');
@@ -87,7 +86,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     unifiedRoutingResponseBucket.grantRead(dsRole);
     fillBucket.grantRead(dsRole);
     ordersBucket.grantRead(dsRole);
-    activeOrdersBucket.grantRead(dsRole);
     botOrderLoaderBucket.grantRead(dsRole);
     botOrderRouterBucket.grantRead(dsRole);
     botOrderBroadcasterBucket.grantRead(dsRole);
@@ -648,17 +646,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    // cannot setup log processor for s3 destination via cfnDeliveryStream even though
-    //    it's supported through the console :(
-    const activeOrderRedshiftStreamName = 'activeOrderRedshiftStream';
-    const activeOrderStream = new aws_firehose.CfnDeliveryStream(this, activeOrderRedshiftStreamName, {
-      s3DestinationConfiguration: {
-        bucketArn: activeOrdersBucket.bucketArn,
-        roleArn: firehoseRole.roleArn,
-        compressionFormat: 'UNCOMPRESSED',
-      },
-    });
-
     const orderStream = new aws_firehose.CfnDeliveryStream(this, 'OrderStream', {
       redshiftDestinationConfiguration: {
         clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
@@ -747,7 +734,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       { stream: rfqResponseFirehoseStream, hasRedshift: true },
       { stream: fillStream, hasRedshift: true },
       { stream: orderStream, hasRedshift: true },
-      { stream: activeOrderStream, hasRedshift: false },
       { stream: unimindResponseStream, hasRedshift: false },
       { stream: unimindParameterUpdateStream, hasRedshift: false },
     ];
@@ -776,19 +762,17 @@ export class AnalyticsStack extends cdk.NestedStack {
         statistic: 'Sum',
         period: cdk.Duration.minutes(5),
       });
-      if (stream.node.id !== activeOrderRedshiftStreamName) {
-        const missingRecordsSev3 = new cdk.aws_cloudwatch.Alarm(this, missingRecordsName, {
-          metric: incomingRecords,
-          comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-          threshold: 1,
-          evaluationPeriods: (12 * 60) / 5, // 12 hours (12 * 60 / 5 minutes)
-          treatMissingData: cdk.aws_cloudwatch.TreatMissingData.BREACHING,
-          actionsEnabled: true,
-          alarmName: missingRecordsName,
-        });
-        if (chatBotTopic) {
-          missingRecordsSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-        }
+      const missingRecordsSev3 = new cdk.aws_cloudwatch.Alarm(this, missingRecordsName, {
+        metric: incomingRecords,
+        comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        threshold: 1,
+        evaluationPeriods: (12 * 60) / 5, // 12 hours (12 * 60 / 5 minutes)
+        treatMissingData: cdk.aws_cloudwatch.TreatMissingData.BREACHING,
+        actionsEnabled: true,
+        alarmName: missingRecordsName,
+      });
+      if (chatBotTopic) {
+        missingRecordsSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
       }
 
       const s3DeliverySev3 = new cdk.aws_cloudwatch.Alarm(this, s3DeliverySuccessSev3Name, {
@@ -868,12 +852,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       destinationName: 'fillEventDestination',
     });
 
-    const activeOrderDestination = new aws_logs.CfnDestination(this, 'activeOrderEventDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: activeOrderStream.attrArn,
-      destinationName: 'activeOrderEventDestination',
-    });
-
     const postedOrderDestination = new aws_logs.CfnDestination(this, 'PostedOrderDestination', {
       roleArn: subscriptionRole.roleArn,
       targetArn: orderStream.attrArn,
@@ -896,20 +874,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     // enclosed in if statement to allow deploying stack w/o having to set up x-account logging
     if (props.envVars['FILL_LOG_SENDER_ACCOUNT']) {
       fillDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['FILL_LOG_SENDER_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-      activeOrderDestination.destinationPolicy = JSON.stringify({
         Version: '2012-10-17',
         Statement: [
           {

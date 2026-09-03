@@ -106,10 +106,6 @@ export class APIPipeline extends Stack {
       secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-service-api-xCINOs',
     });
 
-    const rfqWebhookConfig = sm.Secret.fromSecretAttributes(this, 'RfqConfig', {
-      secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:rfq-webhook-config-sy04bH',
-    });
-
     const internalApiKey = sm.Secret.fromSecretAttributes(this, 'internal-api-key', {
       secretCompleteArn:
         'arn:aws:secretsmanager:us-east-2:644039819003:secret:gouda-parameterization-api-internal-api-key-uw4sIa',
@@ -136,7 +132,6 @@ export class APIPipeline extends Stack {
       stage: STAGE.BETA,
       envVars: {
         ...jsonRpcProviders,
-        RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_BETA').toString(),
         FILL_LOG_SENDER_ACCOUNT: '321377678687',
         ORDER_LOG_SENDER_ACCOUNT: '321377678687',
@@ -156,7 +151,6 @@ export class APIPipeline extends Stack {
       chatbotSNSArn: 'arn:aws:sns:us-east-2:644039819003:SlackChatbotTopic',
       envVars: {
         ...jsonRpcProviders,
-        RFQ_WEBHOOK_CONFIG: rfqWebhookConfig.secretValue.toString(),
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_PROD').toString(),
         FILL_LOG_SENDER_ACCOUNT: '316116520258',
         ORDER_LOG_SENDER_ACCOUNT: '316116520258',
