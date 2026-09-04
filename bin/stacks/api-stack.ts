@@ -389,33 +389,11 @@ export class APIStack extends cdk.Stack {
       chatbotSNSArn,
     });
 
-    new CronStack(this, 'CronStack', {
-      RsDatabase: analyticsStack.dbName,
-      RsClusterIdentifier: analyticsStack.clusterId,
-      RedshiftCredSecretArn: analyticsStack.credSecretArn,
-      lambdaRole: lambdaRole,
-      chatbotSNSArn: chatbotSNSArn,
-      stage: stage,
-    });
-
-    /* filler addr table */
-    new aws_dynamo.Table(this, `FillerAddrTable`, {
-      tableName: DYNAMO_TABLE_NAME.FILLER_ADDRESS,
-      partitionKey: {
-        name: 'pk',
-        type: aws_dynamo.AttributeType.STRING,
-      },
-      deletionProtection: true,
-      pointInTimeRecovery: true,
-      contributorInsightsEnabled: true,
-      ...PROD_TABLE_CAPACITY.fillerAddress,
-    });
-
     /* posted-orders table: the hard-quote Lambda writes one row per confirmed RFQ-won post
-       (lib/handlers/hard-quote/posted-order-recorder.ts); the fade-rate cron will read it in
-       a later PR. Derived and rebuildable bookkeeping with a 48h TTL, so on-demand capacity
-       and no PITR. Both indexes sort by deadline: "completed" for the breaker means the
-       deadline has passed. */
+       (lib/handlers/hard-quote/posted-order-recorder.ts); the fade-rate cron resolves outcomes
+       into it and reads the 24h window back (lib/cron/order-service-fades-source.ts). Derived
+       and rebuildable bookkeeping with a 48h TTL, so on-demand capacity and no PITR. Both
+       indexes sort by deadline: "completed" for the breaker means the deadline has passed. */
     const postedOrdersTable = new aws_dynamo.Table(this, 'PostedOrdersTable', {
       tableName: DYNAMO_TABLE_NAME.POSTED_ORDERS,
       partitionKey: {
@@ -440,6 +418,30 @@ export class APIStack extends cdk.Stack {
     // The shared Lambda role already carries AmazonDynamoDBFullAccess; the explicit grant
     // documents the dependency and keeps the write working if that policy is ever narrowed.
     postedOrdersTable.grantWriteData(hardQuoteLambda);
+
+    new CronStack(this, 'CronStack', {
+      RsDatabase: analyticsStack.dbName,
+      RsClusterIdentifier: analyticsStack.clusterId,
+      RedshiftCredSecretArn: analyticsStack.credSecretArn,
+      lambdaRole: lambdaRole,
+      chatbotSNSArn: chatbotSNSArn,
+      stage: stage,
+      postedOrdersTable,
+      orderServiceUrl: props.envVars.ORDER_SERVICE_URL,
+    });
+
+    /* filler addr table */
+    new aws_dynamo.Table(this, `FillerAddrTable`, {
+      tableName: DYNAMO_TABLE_NAME.FILLER_ADDRESS,
+      partitionKey: {
+        name: 'pk',
+        type: aws_dynamo.AttributeType.STRING,
+      },
+      deletionProtection: true,
+      pointInTimeRecovery: true,
+      contributorInsightsEnabled: true,
+      ...PROD_TABLE_CAPACITY.fillerAddress,
+    });
 
     /* Alarms */
     const apiAlarm5xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {
