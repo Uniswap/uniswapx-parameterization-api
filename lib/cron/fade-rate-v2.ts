@@ -10,8 +10,9 @@ import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
 import { AWSMetricsLogger, CircuitBreakerMetricDimension, Metric, metricContext } from '../entities';
 import { checkDefined } from '../preconditions/preconditions';
-import { S3WebhookConfigurationProvider } from '../providers';
+import { S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../providers';
 import {
+  BaseTimestampRepository,
   ORDERS_PER_FILLER_LIMIT,
   SharedConfigs,
   TimestampRepoRow,
@@ -19,9 +20,12 @@ import {
   V2FadesRepository,
   V2FadesRowType,
 } from '../repositories';
-import { DynamoFillerAddressRepository } from '../repositories/filler-address-repository';
+import { DynamoFillerAddressRepository, FillerAddressRepository } from '../repositories/filler-address-repository';
+import { DynamoPostedOrderRepository } from '../repositories/posted-order-repository';
 import { TimestampRepository, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
+import { runFadeRateShadow, ShadowContext } from './fade-rate-shadow';
+import { FadesSource, OrderServiceFadesSource } from './order-service-fades-source';
 
 // Re-exported for existing importers; the sentinel lives with the repository that owns the
 // stored value's parse/write semantics.
@@ -142,6 +146,7 @@ const log = Logger.createLogger({
   name: 'FadeRate',
   serializers: Logger.stdSerializers,
 });
+const defaultLog = log;
 
 /* set up aws clients */
 const stage = process.env['stage'];
@@ -162,7 +167,73 @@ export const handler: ScheduledHandler = metricScope((metrics) => async (_event:
   await main(metrics);
 });
 
+/**
+ * Everything the cron run touches, injectable so the run can be exercised end to end with
+ * fakes. Production wiring is in main(); the shared module-level clients above are what it
+ * passes.
+ */
+export type FadeRateCronDeps = {
+  fadesRepository: FadesSource & { createFadesView(): Promise<void> };
+  webhookProvider: Pick<S3WebhookConfigurationProvider, 'fetchEndpoints' | 'fillerEndpoints'>;
+  fillerAddressRepo: Pick<FillerAddressRepository, 'getAddressToFillerMap'>;
+  timestampDB: BaseTimestampRepository;
+  // Optional shadow evaluation of the order-service fades source. Invoked strictly after the
+  // real path has written its decisions, with no handle to the timestamp table; it is expected
+  // not to throw, and the run additionally guards it so it cannot fail the cron.
+  shadow?: (ctx: ShadowContext) => Promise<unknown>;
+  now?: () => number;
+  log?: Logger;
+};
+
 async function main(metrics: MetricsLogger) {
+  const sharedConfig: SharedConfigs = {
+    Database: checkDefined(process.env.REDSHIFT_DATABASE),
+    ClusterIdentifier: checkDefined(process.env.REDSHIFT_CLUSTER_IDENTIFIER),
+    SecretArn: checkDefined(process.env.REDSHIFT_SECRET_ARN),
+  };
+  await runFadeRateCron(metrics, {
+    fadesRepository: V2FadesRepository.create(sharedConfig),
+    webhookProvider,
+    fillerAddressRepo,
+    timestampDB,
+    shadow: buildOrderServiceShadow(metrics),
+  });
+}
+
+/**
+ * Production wiring of the shadow (see lib/cron/fade-rate-shadow.ts). Skipped, with a log
+ * line, when the order service URL is not configured for this stage.
+ */
+function buildOrderServiceShadow(metrics: MetricsLogger): FadeRateCronDeps['shadow'] {
+  const orderServiceUrl = process.env.ORDER_SERVICE_URL;
+  if (!orderServiceUrl) {
+    log.info('ORDER_SERVICE_URL is not set; skipping the order-service fade shadow');
+    return undefined;
+  }
+  const shadowLog = log.child({ shadow: 'order-service-fades' });
+  const source = new OrderServiceFadesSource({
+    postedOrders: DynamoPostedOrderRepository.create(
+      // Not the hard-quote path's 200/300ms-bounded client: the cron is not in series with a
+      // quote, and the shadow has its own wall-time budget.
+      DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+        marshallOptions: { convertEmptyValues: true, removeUndefinedValues: true },
+        unmarshallOptions: { wrapNumbers: false },
+      })
+    ),
+    orderStatus: new UniswapXServiceProvider(shadowLog, orderServiceUrl),
+    fillerEndpoints: () => webhookProvider.fillerEndpoints(),
+    log: shadowLog,
+    // Parity flag (default on): never-filled cancelled / insufficient-funds / error orders
+    // count as fades, as the SQL's `fillTimestamp IS NULL` branch does today. Set the env var
+    // to 'false' to preview the candidate behavior change in the shadow metrics.
+    policy: { countNeverFilledTerminalAsFade: process.env.FADE_SHADOW_NEVER_FILLED_TERMINAL_AS_FADE !== 'false' },
+  });
+  return (ctx) => runFadeRateShadow(ctx, { source, log: shadowLog, metrics });
+}
+
+export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCronDeps): Promise<void> {
+  const { fadesRepository, webhookProvider, fillerAddressRepo, timestampDB } = deps;
+  const log = deps.log ?? defaultLog;
   metrics.setNamespace('Uniswap');
   metrics.setDimensions(CircuitBreakerMetricDimension);
   // The webhook config provider emits RFQ_CONFIG_CHANGED through the
@@ -174,12 +245,6 @@ async function main(metrics: MetricsLogger) {
   // alongside the quote lambdas' dimensionless one.
   setGlobalMetric(new AWSMetricsLogger(metrics));
 
-  const sharedConfig: SharedConfigs = {
-    Database: checkDefined(process.env.REDSHIFT_DATABASE),
-    ClusterIdentifier: checkDefined(process.env.REDSHIFT_CLUSTER_IDENTIFIER),
-    SecretArn: checkDefined(process.env.REDSHIFT_SECRET_ARN),
-  };
-  const fadesRepository = V2FadesRepository.create(sharedConfig);
   await fadesRepository.createFadesView();
   await webhookProvider.fetchEndpoints();
   /*
@@ -196,7 +261,7 @@ async function main(metrics: MetricsLogger) {
     const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerEndpoints);
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = deps.now ? deps.now() : Math.floor(Date.now() / 1000);
 
     // compute each filler's Laplace-smoothed fade rates (post-block window + during-block cohort):
     //  | hash     |  fadeRate  |  duringBlockRate  |
@@ -220,6 +285,30 @@ async function main(metrics: MetricsLogger) {
       await timestampDB.updateTimestampsBatch(updatedTimestamps);
     } else {
       log.info('no timestamp to update');
+    }
+
+    // Shadow evaluation of the order-service fades source: strictly after the real path has
+    // written its decisions. It scores its own rows with the same code against the same stored
+    // state (metrics and row logging off), writes nothing and notifies nobody. Guarded so that
+    // nothing it does can fail the cron — the shadow's own runner already never throws; this
+    // covers the wiring around it.
+    if (deps.shadow) {
+      try {
+        await deps.shadow({
+          redshiftRows: result,
+          realUpdates: updatedTimestamps,
+          now,
+          score: (rows) =>
+            calculateNewTimestamps(
+              fillerTimestamps,
+              getFillersFadeStats(rows, addressToFillerMap, fillerTimestamps, now),
+              now
+            ),
+        });
+      } catch (e) {
+        metrics.putMetric(Metric.CIRCUIT_BREAKER_SHADOW_FAILURE, 1, Unit.Count);
+        log.error({ error: e instanceof Error ? e.message : e }, 'fade shadow wiring threw; real decisions unaffected');
+      }
     }
   }
 }

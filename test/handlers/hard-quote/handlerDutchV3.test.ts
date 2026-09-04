@@ -23,6 +23,7 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
 
 jest.mock('axios');
 jest.mock('@aws-sdk/client-kms');
@@ -124,6 +125,7 @@ describe('Quote handler', () => {
           return {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
+            postedOrderRepository: new MockPostedOrderRepository(),
             // The V3 path calls provider.getBlockNumber() to derive decayStartBlock. A real
             // StaticJsonRpcProvider here defaults to http://localhost:8545, so the call fails
             // and the handler returns 500 -- which is why this suite was skipped rather than

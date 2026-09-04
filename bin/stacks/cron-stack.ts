@@ -40,6 +40,11 @@ export interface CronStackProps extends cdk.NestedStackProps {
   stage: string;
   chatbotSNSArn?: string;
   envVars?: { [key: string]: string };
+  // Inputs of the fade cron's shadow evaluation of the order-service fades source
+  // (lib/cron/fade-rate-shadow.ts): the PostedOrders table it resolves outcomes in, and the
+  // order service it asks for them. Both optional so the stack synthesizes without them.
+  postedOrdersTable?: aws_dynamo.ITable;
+  orderServiceUrl?: string;
 }
 
 export class CronStack extends cdk.NestedStack {
@@ -48,7 +53,17 @@ export class CronStack extends cdk.NestedStack {
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
-    const { RsDatabase, RsClusterIdentifier, RedshiftCredSecretArn, lambdaRole, stage, envVars, chatbotSNSArn } = props;
+    const {
+      RsDatabase,
+      RsClusterIdentifier,
+      RedshiftCredSecretArn,
+      lambdaRole,
+      stage,
+      envVars,
+      chatbotSNSArn,
+      postedOrdersTable,
+      orderServiceUrl,
+    } = props;
 
     new s3.Bucket(this, 'FadeRateS3', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -75,8 +90,13 @@ export class CronStack extends cdk.NestedStack {
           REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
           stage: stage,
           ...envVars,
+          ...(orderServiceUrl && { ORDER_SERVICE_URL: orderServiceUrl }),
         },
       });
+      // The shared Lambda role already carries AmazonDynamoDBFullAccess; the explicit grant
+      // documents the dependency (read the window + pending index, write outcomes) and keeps
+      // the shadow working if that policy is ever narrowed.
+      postedOrdersTable?.grantReadWriteData(this.fadeRateV2CronLambda);
 
       // Add Sev3 alarm for FadeRateV2Cron lambda errors
       const fadeRateV2CronErrors = this.fadeRateV2CronLambda.metricErrors({

@@ -50,6 +50,15 @@ export enum Metric {
   QUOTE_POST_ERROR = 'QUOTE_POST_ERROR',
   QUOTE_POST_ATTEMPT = 'QUOTE_POST_ATTEMPT',
 
+  // Bookkeeping for the PostedOrders table (hard-quote path). One of the pair fires per
+  // confirmed RFQ-won post, so RECORDED + RECORD_FAILED should track QUOTE_200 for exclusive
+  // orders; a rising FAILED share means the breaker's first-hand data is going missing.
+  POSTED_ORDER_RECORDED = 'POSTED_ORDER_RECORDED',
+  POSTED_ORDER_RECORD_FAILED = 'POSTED_ORDER_RECORD_FAILED',
+  // Wall time of the (bounded) DynamoDB write, on both outcomes. It sits in series with the
+  // hard-quote response, so this is the metric that proves the write stays at a few ms.
+  POSTED_ORDER_RECORD_LATENCY = 'POSTED_ORDER_RECORD_LATENCY',
+
   RFQ_REQUESTED = 'RFQ_REQUESTED',
   RFQ_SUCCESS = 'RFQ_SUCCESS',
   RFQ_RESPONSE_TIME = 'RFQ_RESPONSE_TIME',
@@ -137,6 +146,39 @@ export enum Metric {
   // total, so the endpoint that went dark is named rather than merely counted. Fillers with no
   // stored row at all are excluded: never-examined is onboarding, not a stall.
   CIRCUIT_BREAKER_V2_STALE_FILLERS = 'CIRCUIT_BREAKER_V2_STALE_FILLERS',
+
+  // Shadow evaluation of the order-service fades source (lib/cron/fade-rate-shadow.ts). Runs
+  // after the Redshift path each cron, writes nothing. Exactly one of SUCCESS / FAILURE fires
+  // per run; DURATION is the wall time it added to the cron (budgeted, see the runner).
+  CIRCUIT_BREAKER_SHADOW_SUCCESS = 'CIRCUIT_BREAKER_SHADOW_SUCCESS',
+  CIRCUIT_BREAKER_SHADOW_FAILURE = 'CIRCUIT_BREAKER_SHADOW_FAILURE',
+  CIRCUIT_BREAKER_SHADOW_DURATION = 'CIRCUIT_BREAKER_SHADOW_DURATION',
+  // Outcome resolution against the order service this run: pending orders past their deadline
+  // at the start, how many got a terminal outcome, how many the service still calls `open`
+  // (status-poller lag), how many it does not know at all, how many could not be scored.
+  CIRCUIT_BREAKER_SHADOW_PENDING_PAST_DEADLINE = 'CIRCUIT_BREAKER_SHADOW_PENDING_PAST_DEADLINE',
+  CIRCUIT_BREAKER_SHADOW_RESOLVED = 'CIRCUIT_BREAKER_SHADOW_RESOLVED',
+  CIRCUIT_BREAKER_SHADOW_STILL_OPEN = 'CIRCUIT_BREAKER_SHADOW_STILL_OPEN',
+  CIRCUIT_BREAKER_SHADOW_NOT_FOUND = 'CIRCUIT_BREAKER_SHADOW_NOT_FOUND',
+  CIRCUIT_BREAKER_SHADOW_UNCLASSIFIABLE = 'CIRCUIT_BREAKER_SHADOW_UNCLASSIFIABLE',
+  // Row-level comparison, both sides restricted to orders posted since PostedOrders went
+  // live. ONLY_OLD / ONLY_NEW are (fillerAddress, deadline) keys present on one side only.
+  CIRCUIT_BREAKER_SHADOW_ROWS_OLD = 'CIRCUIT_BREAKER_SHADOW_ROWS_OLD',
+  CIRCUIT_BREAKER_SHADOW_ROWS_NEW = 'CIRCUIT_BREAKER_SHADOW_ROWS_NEW',
+  CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_OLD = 'CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_OLD',
+  CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_NEW = 'CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_NEW',
+  CIRCUIT_BREAKER_SHADOW_FADES_OLD = 'CIRCUIT_BREAKER_SHADOW_FADES_OLD',
+  CIRCUIT_BREAKER_SHADOW_FADES_NEW = 'CIRCUIT_BREAKER_SHADOW_FADES_NEW',
+  // Block decisions the shadow would have made vs. the decisions the Redshift path actually
+  // wrote this run (per filler: blocked?, blockUntil, consecutiveBlocks). The RESTRICTED pair
+  // re-scores the Redshift rows with the same go-live floor, so it is the fair comparison
+  // while Redshift's 24h window still contains pre-go-live orders.
+  CIRCUIT_BREAKER_SHADOW_DECISION_AGREE = 'CIRCUIT_BREAKER_SHADOW_DECISION_AGREE',
+  CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE = 'CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE',
+  CIRCUIT_BREAKER_SHADOW_DECISION_AGREE_RESTRICTED = 'CIRCUIT_BREAKER_SHADOW_DECISION_AGREE_RESTRICTED',
+  CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE_RESTRICTED = 'CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE_RESTRICTED',
+  // Fillers the shadow would have benched after this run (the headline "what would change").
+  CIRCUIT_BREAKER_SHADOW_WOULD_BLOCK = 'CIRCUIT_BREAKER_SHADOW_WOULD_BLOCK',
 }
 
 type MetricNeedingContext =

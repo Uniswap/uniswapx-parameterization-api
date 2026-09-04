@@ -11,7 +11,24 @@ export const DYNAMO_TABLE_NAME = {
   // Circuit-breaker state table for the rate-based breaker. State is derived (recomputed each
   // cron run from Redshift). The name keeps its V2 suffix because it is the live table name.
   FILLER_CB_TIMESTAMPS_V2: 'FillerCBTimestampsV2',
+  // GPA's own record of every RFQ-won order it posts (hard-quote path), so the fade breaker
+  // can eventually be computed from first-hand data instead of the Redshift analytics
+  // pipeline. Derived and rebuildable; rows expire POSTED_ORDER_TTL_SECS after their deadline.
+  POSTED_ORDERS: 'PostedOrders',
 };
+
+export const POSTED_ORDERS_INDEX = {
+  // Sparse: only rows whose outcome is still pending carry the `pending` key attribute, so
+  // "every order past its deadline with no recorded outcome" is one range query on one key.
+  PENDING_DEADLINE: 'pending-deadline-index',
+  // "A filler's orders completed (deadline passed) in the last 24h" — keyed by the filler
+  // identity the breaker scores by (the webhook endpoint), not the onchain address.
+  FILLER_DEADLINE: 'filler-deadline-index',
+};
+
+// Rows are only useful until the breaker has scored them; 48h past the deadline leaves a
+// full 24h scoring window plus a day of slack for a stalled cron.
+export const POSTED_ORDER_TTL_SECS = 48 * 60 * 60;
 
 export const DYNAMO_TABLE_KEY = {
   BLOCK_UNTIL_TIMESTAMP: 'blockUntilTimestamp',

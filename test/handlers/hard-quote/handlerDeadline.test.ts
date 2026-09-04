@@ -16,6 +16,7 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
 import { getOrder } from '../../fixtures/hard-quote';
 
 jest.mock('axios');
@@ -64,6 +65,7 @@ describe('Hard quote handler - order deadline validation', () => {
           return {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
+            postedOrderRepository: new MockPostedOrderRepository(),
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
         },
