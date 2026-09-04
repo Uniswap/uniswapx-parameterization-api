@@ -17,6 +17,7 @@ import {
   exclusiveFillerOf,
   recordPostedOrder,
 } from '../../../lib/handlers/hard-quote/posted-order-recorder';
+import { ProtocolVersion } from '../../../lib/providers';
 import {
   MockPostedOrderRepository,
   PostedOrderOutcome,
@@ -79,6 +80,7 @@ const quote = (filler: string | undefined = FILLER): QuoteResponse =>
       amount: RAW_AMOUNT,
       type: TradeType.EXACT_INPUT,
       numOutputs: 1,
+      protocol: ProtocolVersion.V2,
       quoteId: QUOTE_ID,
     }),
     amountQuoted: RAW_AMOUNT.mul(2),
