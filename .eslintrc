@@ -28,7 +28,19 @@
     "import/newline-after-import": "error",
     "import/no-duplicates": "error",
     "@typescript-eslint/no-empty-interface": "off",
-    "@typescript-eslint/ban-types": "warn",
+    // @typescript-eslint v8 removed ban-types and split it into the three rules below; the repo
+    // ran ban-types at "warn", and no-empty-interface is off above, so empty interfaces stay allowed.
+    "@typescript-eslint/no-unsafe-function-type": "warn",
+    "@typescript-eslint/no-wrapper-object-types": "warn",
+    "@typescript-eslint/no-empty-object-type": ["warn", { "allowInterfaces": "always" }],
+    // v8's `recommended` preset differs from v5's. Pin the v5 severities so the TypeScript upgrade
+    // changes the compiler, not the lint gate (v8 raises the first two to error / drops them, and
+    // moved the last three to the `stylistic` preset).
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-non-null-assertion": "warn",
+    "@typescript-eslint/adjacent-overload-signatures": "error",
+    "@typescript-eslint/no-empty-function": "error",
+    "@typescript-eslint/no-inferrable-types": "error",
     "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
     "@typescript-eslint/ban-ts-comment": "off",
     // Two ways a test can silently stop running while CI still reports green: a focused test

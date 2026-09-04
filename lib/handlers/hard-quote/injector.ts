@@ -5,7 +5,6 @@ import { default as Logger } from 'bunyan';
 import { HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
 import { OrderServiceProvider, UniswapXServiceProvider } from '../../providers';
-import { MockFillerComplianceConfigurationProvider } from '../../providers/compliance';
 import { ApiInjector } from '../base/api-handler';
 import {
   BaseQuoteContainerInjected,
@@ -30,13 +29,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
 
-    // Hard quotes are cosigned and posted to the order service rather than dispatched
-    // per-swapper, so no swapper-based filler exclusion applies. An empty config list makes
-    // passFillerCompliance() always true and keeps the compliance S3 reads (and the
-    // outbound compliance-list fetch) off this Lambda's hot path.
-    const fillerComplianceProvider = new MockFillerComplianceConfigurationProvider([]);
-
-    const base = buildQuoteContainerInjected(log, stage, fillerComplianceProvider);
+    const base = buildQuoteContainerInjected(log, stage);
 
     return {
       ...base,

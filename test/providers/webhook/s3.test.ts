@@ -41,6 +41,9 @@ describe('S3WebhookConfigurationProvider', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    // 'Refetches after cache expires' leaves fake timers installed; a following test
+    // that re-installs them would otherwise see the clock reset and its cache unexpired.
+    jest.useRealTimers();
   });
 
   it('Fetches endpoints', async () => {
@@ -86,6 +89,56 @@ describe('S3WebhookConfigurationProvider', () => {
     jest.useFakeTimers().setSystemTime(Date.now() + 1000000);
     endpoints = await provider.getEndpoints();
     expect(endpoints).toEqual(updatedEndpoints);
+  });
+
+  describe('refresh failure', () => {
+    const expireCache = () => jest.useFakeTimers().setSystemTime(Date.now() + 1000000);
+    const applyFailure = () =>
+      jest.spyOn(S3Client.prototype, 'send').mockImplementationOnce(() => Promise.reject(new Error('TimeoutError')));
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('keeps serving the cached endpoints and does not throw when the refresh fails', async () => {
+      applyMock(mockEndpoints);
+      const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
+      await provider.getEndpoints();
+
+      expireCache();
+      applyFailure();
+      await expect(provider.getEndpoints()).resolves.toEqual(mockEndpoints);
+    });
+
+    it('does not retry on every request after a failed refresh — the next attempt waits for the cadence', async () => {
+      applyMock(mockEndpoints);
+      const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
+      await provider.getEndpoints();
+
+      expireCache();
+      applyFailure();
+      await provider.getEndpoints();
+      const sendSpy = jest.spyOn(S3Client.prototype, 'send');
+      // initial fetch + the failed refresh
+      expect(sendSpy).toHaveBeenCalledTimes(2);
+      await provider.getEndpoints();
+      expect(sendSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not throw on a cold-start failure; returns no endpoints and retries on the next request', async () => {
+      applyFailure();
+      const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
+      await expect(provider.getEndpoints()).resolves.toEqual([]);
+
+      applyMock(mockEndpoints);
+      await expect(provider.getEndpoints()).resolves.toEqual(mockEndpoints);
+    });
+
+    it('fetchEndpoints itself still throws, so the cron sees S3 failures', async () => {
+      applyFailure();
+      const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
+      await expect(provider.fetchEndpoints()).rejects.toThrow('TimeoutError');
+    });
   });
 
   describe('config change detection', () => {

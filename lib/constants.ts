@@ -1,13 +1,10 @@
 import { secondsToBlocks } from '@uniswap/sdk-core';
 import { ChainId } from './util/chains';
 
-export const COMPLIANCE_CONFIG_BUCKET = 'compliance-config';
 export const WEBHOOK_CONFIG_BUCKET = 'rfq-config';
 export const FADE_RATE_BUCKET = 'fade-rate-config';
 export const PRODUCTION_S3_KEY = 'production.json';
 export const BETA_S3_KEY = 'beta.json';
-export const PROD_COMPLIANCE_S3_KEY = 'production.json';
-export const BETA_COMPLIANCE_S3_KEY = 'beta.json';
 
 export const DYNAMO_TABLE_NAME = {
   FILLER_ADDRESS: 'FillerAddress',

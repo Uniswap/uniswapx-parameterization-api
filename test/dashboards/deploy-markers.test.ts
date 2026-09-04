@@ -1,6 +1,6 @@
 import {
-  deployMarkers,
   DEPLOY_MARKER_COUNT,
+  deployMarkers,
   MAX_LABEL_LENGTH,
   MILESTONES,
   parseGitLog,

@@ -307,7 +307,7 @@ export abstract class APIGLambdaHandler<
     if (event.body) {
       try {
         bodyRaw = JSON.parse(event.body);
-      } catch (err) {
+      } catch {
         return {
           state: 'invalid',
           errorResponse: {
