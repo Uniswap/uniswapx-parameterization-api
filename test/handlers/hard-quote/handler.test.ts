@@ -21,6 +21,11 @@ import {
 import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
+import {
+  MockPostedOrderRepository,
+  PostedOrderOutcome,
+  PostedOrderRepository,
+} from '../../../lib/repositories/posted-order-repository';
 import { getOrder } from '../../fixtures/hard-quote';
 
 jest.mock('axios');
@@ -69,7 +74,8 @@ describe('Quote handler', () => {
   );
 
   const injectorPromiseMock = (
-    quoters: Quoter[]
+    quoters: Quoter[],
+    postedOrderRepository: PostedOrderRepository = new MockPostedOrderRepository()
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
@@ -77,6 +83,7 @@ describe('Quote handler', () => {
           return {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
+            postedOrderRepository,
             // Mock chainIdRpcMap
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
@@ -85,7 +92,8 @@ describe('Quote handler', () => {
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
     );
 
-  const getQuoteHandler = (quoters: Quoter[]) => new HardQuoteHandler('quote', injectorPromiseMock(quoters));
+  const getQuoteHandler = (quoters: Quoter[], postedOrderRepository?: PostedOrderRepository) =>
+    new HardQuoteHandler('quote', injectorPromiseMock(quoters, postedOrderRepository));
 
   const getEvent = (request: HardQuoteRequestBody): APIGatewayProxyEvent =>
     ({
@@ -489,6 +497,72 @@ describe('Quote handler', () => {
       await expect(
         getCosignerData(new HardQuoteRequest(request, OrderType.Dutch_V2), getQuoteResponse({}), OrderType.Dutch)
       ).rejects.toThrow('Unsupported order type');
+    });
+  });
+  // Bookkeeping for the fade breaker: one PostedOrders row per confirmed RFQ-won post.
+  describe('posted-order bookkeeping', () => {
+    it('records the posted order when the winning quote earned exclusivity', async () => {
+      const repository = new MockPostedOrderRepository();
+      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+      const order = getOrder({ cosigner: cosignerWallet.address });
+      const request = await getRequest(order);
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters, repository).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      expect(response.statusCode).toEqual(200);
+      const quoteResponse: HardQuoteResponseData = JSON.parse(response.body);
+      const cosignedOrder = CosignedV2DutchOrder.parse(quoteResponse.encodedOrder, CHAIN_ID);
+
+      expect(repository.records.size).toEqual(1);
+      const record = await repository.getPostedOrder(quoteResponse.orderHash);
+      expect(record).toEqual({
+        orderHash: cosignedOrder.hash(),
+        quoteId: quoteResponse.quoteId,
+        requestId: quoteResponse.requestId,
+        chainId: CHAIN_ID,
+        orderType: OrderType.Dutch_V2,
+        fillerAddress: MOCK_FILLER_ADDRESS,
+        // MockQuoter's metadata endpoint: the identity the breaker scores by
+        filler: 'https://uniswap.org',
+        fillerName: 'uniswap',
+        decayStartTime: cosignedOrder.info.cosignerData.decayStartTime,
+        deadline: order.info.deadline,
+        tokenIn: TOKEN_IN,
+        tokenOut: TOKEN_OUT,
+        postedAt: expect.any(Number),
+        outcome: PostedOrderOutcome.PENDING,
+      });
+    });
+
+    it('records nothing when the quote did not beat the swapper price (no exclusive filler)', async () => {
+      const repository = new MockPostedOrderRepository();
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler([new MockQuoter(logger, 1, 1)], repository).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      expect(response.statusCode).toEqual(200);
+      expect(JSON.parse(response.body).filler).toEqual(ethers.constants.AddressZero);
+      expect(repository.records.size).toEqual(0);
+    });
+
+    it('a failing repository does not affect the response', async () => {
+      const repository = new MockPostedOrderRepository();
+      repository.putPostedOrder = async () => {
+        throw new Error('dynamo is down');
+      };
+      const quoters = [new MockQuoter(logger, 2, 1)];
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters, repository).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      expect(response.statusCode).toEqual(200);
+      expect(JSON.parse(response.body).filler).toEqual(MOCK_FILLER_ADDRESS);
     });
   });
 });

@@ -27,6 +27,7 @@ import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
 import { ContainerInjected, RequestInjected } from './injector';
+import { recordPostedOrder } from './posted-order-recorder';
 import {
   HardQuoteRequestBody,
   HardQuoteRequestBodyJoi,
@@ -49,7 +50,7 @@ export class QuoteHandler extends APIGLambdaHandler<
   ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
       requestInjected: { log, metric },
-      containerInjected: { quoters, orderServiceProvider, chainIdRpcMap },
+      containerInjected: { quoters, orderServiceProvider, chainIdRpcMap, postedOrderRepository },
       requestBody,
     } = params;
     const start = Date.now();
@@ -122,17 +123,31 @@ export class QuoteHandler extends APIGLambdaHandler<
       }
 
       const cosignedOrder = await createCosignedOrder(cosigner, request, cosignerData);
+      // if no quote and creating open order, create random new quoteId
+      const postedQuoteId = bestQuote?.quoteId ?? request.quoteId ?? request.requestId;
       try {
         metric.putMetric(Metric.QUOTE_POST_ATTEMPT, 1, MetricLoggerUnit.Count);
-        // if no quote and creating open order, create random new quoteId
         const response = await orderServiceProvider.postOrder({
           order: cosignedOrder,
           signature: request.innerSig,
-          quoteId: bestQuote?.quoteId ?? request.quoteId ?? request.requestId,
+          quoteId: postedQuoteId,
           requestId: request.requestId,
         });
         if (response.statusCode == 200 || response.statusCode == 201) {
           metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+          // 200 and 201 (the latter also covers a post whose timeout was reconciled as
+          // accepted) are the only confirmed posts, so this is the only place the
+          // fade-breaker bookkeeping row is written. Bounded and non-throwing; it runs
+          // before QUOTE_LATENCY is stamped so the alarmed metric keeps including it.
+          await recordPostedOrder({
+            repository: postedOrderRepository,
+            order: cosignedOrder,
+            quote: bestQuote ?? undefined,
+            quoteId: postedQuoteId,
+            requestId: request.requestId,
+            log,
+            metric,
+          });
           metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
           const hardResponse = createHardQuoteResponse(request, cosignedOrder);
           if (!bestQuote) {
