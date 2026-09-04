@@ -21,7 +21,6 @@ import {
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
-import { FillerComplianceConfigurationProvider } from '../providers/compliance';
 import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
@@ -66,7 +65,6 @@ export class WebhookQuoter implements Quoter {
     private firehose: FirehoseLogger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    private complianceProvider: FillerComplianceConfigurationProvider,
     private repository: FillerAddressRepository
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
@@ -80,9 +78,6 @@ export class WebhookQuoter implements Quoter {
     const statuses = await this.getEndpointStatuses();
     metric.putMetric(Metric.RFQ_PHASE_ENDPOINT_STATUSES, Date.now() - beforeStatuses, MetricLoggerUnit.Milliseconds);
 
-    const beforeCompliance = Date.now();
-    const endpointToAddrsMap = await this.complianceProvider.getEndpointToExcludedAddrsMap();
-    metric.putMetric(Metric.RFQ_PHASE_COMPLIANCE, Date.now() - beforeCompliance, MetricLoggerUnit.Milliseconds);
     // Ignore endpoint status if token is permissioned
     const isPermissionedToken =
       PermissionedTokenValidator.isPermissionedToken(request.tokenIn, request.tokenInChainId) ||
@@ -90,11 +85,7 @@ export class WebhookQuoter implements Quoter {
     const baseFillerSet = isPermissionedToken
       ? statuses.enabled.concat(statuses.disabled.map((e) => e.webhook))
       : statuses.enabled;
-    const enabledEndpoints = baseFillerSet.filter(
-      (e) =>
-        passFillerCompliance(e, endpointToAddrsMap, request.swapper) &&
-        getEndpointSupportedProtocols(e).includes(request.protocol)
-    );
+    const enabledEndpoints = baseFillerSet.filter((e) => getEndpointSupportedProtocols(e).includes(request.protocol));
 
     const disabledEndpoints = statuses.disabled;
 
@@ -478,12 +469,4 @@ export function getEndpointSupportedProtocols(e: WebhookConfiguration) {
     return [ProtocolVersion.V2, ProtocolVersion.V3];
   }
   return e.supportedVersions;
-}
-
-export function passFillerCompliance(
-  e: WebhookConfiguration,
-  endpointToAddrsMap: Map<string, Set<string>>,
-  swapper: string
-) {
-  return endpointToAddrsMap.get(e.endpoint) === undefined || !endpointToAddrsMap.get(e.endpoint)?.has(swapper);
 }

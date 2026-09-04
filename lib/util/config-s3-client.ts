@@ -1,7 +1,7 @@
 import { S3Client } from '@aws-sdk/client-s3';
 
-// The webhook and compliance config providers refresh their S3 JSON inline on the
-// quote path (~every 5 minutes per instance). The SDK ships with no client-side
+// The webhook config provider refreshes its S3 JSON inline on the quote path
+// (~every 5 minutes per instance). The SDK ships with no client-side
 // timeout, so a stalled connection held every quote on that instance until the
 // kernel gave up (~15s SYN-retransmit ladder — the 2026-07 quote-stall incident).
 // These bounds cap the stall; callers keep serving their last cached config when a

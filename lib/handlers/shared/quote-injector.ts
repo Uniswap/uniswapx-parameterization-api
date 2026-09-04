@@ -11,7 +11,6 @@ import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
-import { FillerComplianceConfigurationProvider } from '../../providers/compliance';
 import { Quoter, WebhookQuoter } from '../../quoters';
 import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
 import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
@@ -63,8 +62,7 @@ export function buildChainIdRpcMap(): Map<ChainId, ethers.providers.StaticJsonRp
 }
 
 /**
- * Builds the RFQ container both quote Lambdas share. Callers supply their own compliance
- * provider because the two Lambdas deliberately differ there — see each injector.
+ * Builds the RFQ container both quote Lambdas share.
  *
  * INVARIANT: exactly one S3WebhookConfigurationProvider is created here and that same
  * instance is given to both the circuit breaker and the WebhookQuoter. The circuit breaker
@@ -79,11 +77,7 @@ export function buildChainIdRpcMap(): Map<ChainId, ethers.providers.StaticJsonRp
  * inside the injector call (not module scope) so BaseInjector.build() keeps caching one
  * container per Lambda execution environment, preserving each provider's refresh window.
  */
-export function buildQuoteContainerInjected(
-  log: Logger,
-  stage: string | undefined,
-  fillerComplianceProvider: FillerComplianceConfigurationProvider
-): BaseQuoteContainerInjected {
+export function buildQuoteContainerInjected(log: Logger, stage: string | undefined): BaseQuoteContainerInjected {
   const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
 
   const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
@@ -101,9 +95,7 @@ export function buildQuoteContainerInjected(
   });
   const repository = DynamoFillerAddressRepository.create(documentClient);
 
-  const quoters: Quoter[] = [
-    new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, fillerComplianceProvider, repository),
-  ];
+  const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, repository)];
 
   return {
     quoters,

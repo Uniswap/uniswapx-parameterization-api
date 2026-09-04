@@ -16,7 +16,6 @@ import {
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
-import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MOCK_V2_CB_PROVIDER } from '../../fixtures';
@@ -35,13 +34,6 @@ const CHAIN_ID = 1;
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
-const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvider([]);
-const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([
-  {
-    endpoints: ['https://uniswap.org', 'google.com'],
-    addresses: [SWAPPER],
-  },
-]);
 const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
 const repository = new MockFillerAddressRepository();
 
@@ -261,16 +253,7 @@ describe('Quote handler', () => {
         { endpoint: 'https://foo.org', headers: {}, name: 'foo', hash: '0xfoo' },
       ]);
 
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          MOCK_V2_CB_PROVIDER,
-          emptyMockComplianceProvider,
-          repository
-        ),
-      ];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
@@ -370,16 +353,7 @@ describe('Quote handler', () => {
           hash: '0xfoo',
         },
       ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          MOCK_V2_CB_PROVIDER,
-          emptyMockComplianceProvider,
-          repository
-        ),
-      ];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
@@ -450,16 +424,7 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          MOCK_V2_CB_PROVIDER,
-          emptyMockComplianceProvider,
-          repository
-        ),
-      ];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -482,16 +447,7 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          MOCK_V2_CB_PROVIDER,
-          emptyMockComplianceProvider,
-          repository
-        ),
-      ];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -517,14 +473,7 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          MOCK_V2_CB_PROVIDER,
-          emptyMockComplianceProvider,
-          repository
-        ),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository),
         new MockQuoter(logger, 1, 1),
         new MockQuoter(logger, 1, 2),
       ];
@@ -555,14 +504,7 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          MOCK_V2_CB_PROVIDER,
-          emptyMockComplianceProvider,
-          repository
-        ),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -617,14 +559,7 @@ describe('Quote handler', () => {
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          MOCK_V2_CB_PROVIDER,
-          emptyMockComplianceProvider,
-          repository
-        ),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -655,37 +590,6 @@ describe('Quote handler', () => {
         ...quoteResponse,
         quoteId: expect.any(String),
       });
-    });
-
-    it('respects filler compliance requirements', async () => {
-      const webhookProvider = new MockWebhookConfigurationProvider([
-        { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
-      ]);
-      const quoters = [
-        new WebhookQuoter(
-          logger,
-          mockFirehoseLogger,
-          webhookProvider,
-          MOCK_V2_CB_PROVIDER,
-          mockComplianceProvider,
-          repository
-        ),
-      ];
-      const amountIn = ethers.utils.parseEther('1');
-      const request = getRequest(amountIn.toString());
-
-      const response: APIGatewayProxyResult = await getQuoteHandler(quoters).handler(
-        getEvent(request),
-        {} as unknown as Context
-      );
-      expect(response.statusCode).toEqual(404);
-      const quoteResponse = JSON.parse(response.body);
-      expect(quoteResponse).toMatchObject(
-        expect.objectContaining({
-          errorCode: 'QUOTE_ERROR',
-          detail: 'No quotes available',
-        })
-      );
     });
   });
 
