@@ -5,6 +5,7 @@ import { default as Logger } from 'bunyan';
 import { HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
 import { OrderServiceProvider, UniswapXServiceProvider } from '../../providers';
+import { DynamoPostedOrderRepository, PostedOrderRepository } from '../../repositories/posted-order-repository';
 import { ApiInjector } from '../base/api-handler';
 import {
   BaseQuoteContainerInjected,
@@ -17,6 +18,8 @@ import { HardQuoteRequestBody } from './schema';
 
 export interface ContainerInjected extends BaseQuoteContainerInjected {
   orderServiceProvider: OrderServiceProvider;
+  // Bookkeeping sink for confirmed RFQ-won posts (see posted-order-recorder.ts).
+  postedOrderRepository: PostedOrderRepository;
 }
 
 export interface RequestInjected extends BaseQuoteRequestInjected {}
@@ -34,6 +37,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     return {
       ...base,
       orderServiceProvider: new UniswapXServiceProvider(log, orderServiceUrl),
+      // Builds its own bounded DynamoDB client; construction is lazy (no I/O).
+      postedOrderRepository: DynamoPostedOrderRepository.create(),
     };
   }
 

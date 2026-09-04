@@ -91,8 +91,10 @@ describe('shared quote injector wiring', () => {
     it('provides the order service only where it is needed', () => {
       if (expectsOrderService) {
         expect(container.orderServiceProvider).toBeDefined();
+        expect(container.postedOrderRepository).toBeDefined();
       } else {
         expect(container.orderServiceProvider).toBeUndefined();
+        expect(container.postedOrderRepository).toBeUndefined();
       }
     });
   });

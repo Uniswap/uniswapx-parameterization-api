@@ -17,6 +17,7 @@ import {
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { OrderServiceProvider } from '../../../lib/providers/order';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
 import { ErrorCode } from '../../../lib/util/errors';
 import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
 
@@ -93,6 +94,7 @@ describe('/hard-quote response surface', () => {
         getContainerInjected: () => ({
           quoters,
           orderServiceProvider,
+          postedOrderRepository: new MockPostedOrderRepository(),
           chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
         }),
         getRequestInjected: () => requestInjectedMock,

@@ -15,7 +15,7 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 import { KmsStack } from './kms-stack';
 
-import { DYNAMO_TABLE_NAME } from '../../lib/constants';
+import { DYNAMO_TABLE_NAME, POSTED_ORDERS_INDEX } from '../../lib/constants';
 import {
   HardQuoteMetricDimension,
   Metric,
@@ -410,6 +410,36 @@ export class APIStack extends cdk.Stack {
       contributorInsightsEnabled: true,
       ...PROD_TABLE_CAPACITY.fillerAddress,
     });
+
+    /* posted-orders table: the hard-quote Lambda writes one row per confirmed RFQ-won post
+       (lib/handlers/hard-quote/posted-order-recorder.ts); the fade-rate cron will read it in
+       a later PR. Derived and rebuildable bookkeeping with a 48h TTL, so on-demand capacity
+       and no PITR. Both indexes sort by deadline: "completed" for the breaker means the
+       deadline has passed. */
+    const postedOrdersTable = new aws_dynamo.Table(this, 'PostedOrdersTable', {
+      tableName: DYNAMO_TABLE_NAME.POSTED_ORDERS,
+      partitionKey: {
+        name: 'orderHash',
+        type: aws_dynamo.AttributeType.STRING,
+      },
+      billingMode: aws_dynamo.BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: 'ttl',
+      deletionProtection: true,
+    });
+    // Sparse: `pending` is only present while the outcome is unresolved.
+    postedOrdersTable.addGlobalSecondaryIndex({
+      indexName: POSTED_ORDERS_INDEX.PENDING_DEADLINE,
+      partitionKey: { name: 'pending', type: aws_dynamo.AttributeType.STRING },
+      sortKey: { name: 'deadline', type: aws_dynamo.AttributeType.NUMBER },
+    });
+    postedOrdersTable.addGlobalSecondaryIndex({
+      indexName: POSTED_ORDERS_INDEX.FILLER_DEADLINE,
+      partitionKey: { name: 'filler', type: aws_dynamo.AttributeType.STRING },
+      sortKey: { name: 'deadline', type: aws_dynamo.AttributeType.NUMBER },
+    });
+    // The shared Lambda role already carries AmazonDynamoDBFullAccess; the explicit grant
+    // documents the dependency and keeps the write working if that policy is ever narrowed.
+    postedOrdersTable.grantWriteData(hardQuoteLambda);
 
     /* Alarms */
     const apiAlarm5xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {

@@ -15,7 +15,8 @@ import {
   RequestInjected,
 } from '../../../lib/handlers/hard-quote';
 import { OrderServiceProvider } from '../../../lib/providers/order';
-import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockPostedOrderRepository, PostedOrderOutcome } from '../../../lib/repositories/posted-order-repository';
 import { ErrorCode } from '../../../lib/util/errors';
 import { getOrder } from '../../fixtures/hard-quote';
 
@@ -61,7 +62,8 @@ describe('Quote handler order post error mapping', () => {
 
   const injectorPromiseMock = (
     quoters: Quoter[],
-    orderServiceProvider: OrderServiceProvider
+    orderServiceProvider: OrderServiceProvider,
+    postedOrderRepository: MockPostedOrderRepository
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
@@ -69,6 +71,7 @@ describe('Quote handler order post error mapping', () => {
           return {
             quoters,
             orderServiceProvider,
+            postedOrderRepository,
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
         },
@@ -76,8 +79,14 @@ describe('Quote handler order post error mapping', () => {
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
     );
 
-  const getQuoteHandler = (orderServiceProvider: OrderServiceProvider) =>
-    new HardQuoteHandler('quote', injectorPromiseMock([new MockQuoter(logger, 1, 1)], orderServiceProvider));
+  // MockQuoter at 2:1 beats the swapper's price, so the cosigned order carries an exclusive
+  // filler and is eligible for PostedOrders bookkeeping; whether a row lands then depends
+  // solely on the order-service outcome.
+  const getQuoteHandler = (orderServiceProvider: OrderServiceProvider, repository: MockPostedOrderRepository) =>
+    new HardQuoteHandler(
+      'quote',
+      injectorPromiseMock([new MockQuoter(logger, 2, 1)], orderServiceProvider, repository)
+    );
 
   const getEvent = (request: HardQuoteRequestBody): APIGatewayProxyEvent =>
     ({
@@ -96,20 +105,41 @@ describe('Quote handler order post error mapping', () => {
     };
   };
 
-  const postOrderWith = async (postResponse: {
-    statusCode: number;
-    errorCode?: ErrorCode;
-    detail?: string;
-    data?: unknown;
-  }): Promise<APIGatewayProxyResult> => {
+  const postOrderWith = async (
+    postResponse: {
+      statusCode: number;
+      errorCode?: ErrorCode;
+      detail?: string;
+      data?: unknown;
+    },
+    repository = new MockPostedOrderRepository()
+  ): Promise<APIGatewayProxyResult> => {
     const orderServiceProvider = { postOrder: jest.fn().mockResolvedValue(postResponse) };
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
-    return await getQuoteHandler(orderServiceProvider).handler(getEvent(request), {} as unknown as Context);
+    return await getQuoteHandler(orderServiceProvider, repository).handler(getEvent(request), {} as unknown as Context);
   };
 
   it('returns 200 when the order service accepts with 201', async () => {
     const response = await postOrderWith({ statusCode: 201, data: { hash: '0xhash' } });
     expect(response.statusCode).toEqual(200);
+  });
+
+  // 201 is also what a timed-out post reconciled as accepted returns, so this covers both
+  // confirmed-post paths.
+  it('records the posted order once the order service confirms it', async () => {
+    const repository = new MockPostedOrderRepository();
+    const response = await postOrderWith({ statusCode: 201, data: { hash: '0xhash' } }, repository);
+    expect(response.statusCode).toEqual(200);
+    const { orderHash } = JSON.parse(response.body);
+    expect(repository.records.size).toEqual(1);
+    expect(await repository.getPostedOrder(orderHash)).toMatchObject({
+      orderHash,
+      // the winning quote's id (what was sent to the order service); the request had none
+      quoteId: expect.any(String),
+      fillerAddress: MOCK_FILLER_ADDRESS,
+      filler: 'https://uniswap.org',
+      outcome: PostedOrderOutcome.PENDING,
+    });
   });
 
   it('returns 400 when the order service genuinely rejects the order', async () => {
@@ -122,6 +152,21 @@ describe('Quote handler order post error mapping', () => {
     expect(JSON.parse(response.body)).toMatchObject({
       detail: 'Onchain validation failed: InsufficientFunds',
     });
+  });
+
+  it('records nothing when the order service rejects the order', async () => {
+    const repository = new MockPostedOrderRepository();
+    await postOrderWith({ statusCode: 400, errorCode: ErrorCode.ValidationError, detail: 'rejected' }, repository);
+    expect(repository.records.size).toEqual(0);
+  });
+
+  it('records nothing when the order post outcome is indeterminate', async () => {
+    const repository = new MockPostedOrderRepository();
+    await postOrderWith(
+      { statusCode: 500, errorCode: ErrorCode.InternalError, detail: 'timed out', data: { hash: '0xabc' } },
+      repository
+    );
+    expect(repository.records.size).toEqual(0);
   });
 
   it('returns 500 with the order hash when the order post outcome is indeterminate', async () => {

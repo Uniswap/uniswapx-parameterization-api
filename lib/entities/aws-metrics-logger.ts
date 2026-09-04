@@ -50,6 +50,15 @@ export enum Metric {
   QUOTE_POST_ERROR = 'QUOTE_POST_ERROR',
   QUOTE_POST_ATTEMPT = 'QUOTE_POST_ATTEMPT',
 
+  // Bookkeeping for the PostedOrders table (hard-quote path). One of the pair fires per
+  // confirmed RFQ-won post, so RECORDED + RECORD_FAILED should track QUOTE_200 for exclusive
+  // orders; a rising FAILED share means the breaker's first-hand data is going missing.
+  POSTED_ORDER_RECORDED = 'POSTED_ORDER_RECORDED',
+  POSTED_ORDER_RECORD_FAILED = 'POSTED_ORDER_RECORD_FAILED',
+  // Wall time of the (bounded) DynamoDB write, on both outcomes. It sits in series with the
+  // hard-quote response, so this is the metric that proves the write stays at a few ms.
+  POSTED_ORDER_RECORD_LATENCY = 'POSTED_ORDER_RECORD_LATENCY',
+
   RFQ_REQUESTED = 'RFQ_REQUESTED',
   RFQ_SUCCESS = 'RFQ_SUCCESS',
   RFQ_RESPONSE_TIME = 'RFQ_RESPONSE_TIME',
