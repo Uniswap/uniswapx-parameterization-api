@@ -8,6 +8,7 @@ import {
   PENDING_INDEX_KEY,
   PostedOrderOutcome,
   PostedOrderRecord,
+  PostedOrderResolution,
 } from '../../lib/repositories/posted-order-repository';
 import { DYNAMO_CONFIG } from './shared';
 
@@ -127,5 +128,66 @@ describe('DynamoPostedOrderRepository', () => {
     const stored = await repo.getPostedOrder('0x02');
     expect(stored?.quoteId).toEqual('quote-2');
     expect((await repo.getPendingPastDeadline(NOW)).filter((r) => r.orderHash === '0x02')).toHaveLength(1);
+  });
+
+  describe('recordOutcome', () => {
+    const resolution: PostedOrderResolution = {
+      outcome: PostedOrderOutcome.FILLED,
+      orderStatus: 'filled',
+      fillBlock: 20_000_001,
+      fillTimestamp: NOW - 90,
+      faded: 1,
+      resolvedAt: NOW,
+    };
+
+    it('records the outcome and drops the row out of the pending index in one write', async () => {
+      const pending = record({ orderHash: '0x10', deadline: NOW - 100 });
+      await repo.putPostedOrder(pending);
+      expect((await repo.getPendingPastDeadline(NOW)).map((r) => r.orderHash)).toContain('0x10');
+
+      await repo.recordOutcome('0x10', resolution);
+
+      expect(await repo.getPostedOrder('0x10')).toEqual({ ...pending, ...resolution });
+      expect((await repo.getPendingPastDeadline(NOW)).map((r) => r.orderHash)).not.toContain('0x10');
+      // Still reachable through the filler index for row building.
+      expect((await repo.getFillerOrdersByDeadline(FILLER_A, NOW - 100, NOW - 100)).map((r) => r.orderHash)).toEqual([
+        '0x10',
+      ]);
+    });
+
+    it('omits fill fields that the resolution does not carry', async () => {
+      await repo.putPostedOrder(record({ orderHash: '0x11', deadline: NOW - 100 }));
+
+      await repo.recordOutcome('0x11', {
+        outcome: PostedOrderOutcome.CANCELLED,
+        orderStatus: 'cancelled',
+        resolvedAt: NOW,
+      });
+
+      const stored = await repo.getPostedOrder('0x11');
+      expect(stored).toMatchObject({
+        outcome: PostedOrderOutcome.CANCELLED,
+        orderStatus: 'cancelled',
+        resolvedAt: NOW,
+      });
+      expect(stored).not.toHaveProperty('fillBlock');
+      expect(stored).not.toHaveProperty('fillTimestamp');
+      expect(stored).not.toHaveProperty('faded');
+    });
+
+    it('is idempotent: recording the same resolution twice leaves the row unchanged', async () => {
+      await repo.putPostedOrder(record({ orderHash: '0x12', deadline: NOW - 100 }));
+
+      await repo.recordOutcome('0x12', resolution);
+      const first = await repo.getPostedOrder('0x12');
+      await repo.recordOutcome('0x12', resolution);
+
+      expect(await repo.getPostedOrder('0x12')).toEqual(first);
+    });
+
+    it('rejects for an unknown order hash instead of creating a phantom row', async () => {
+      await expect(repo.recordOutcome('0xdoesnotexist', resolution)).rejects.toThrow();
+      expect(await repo.getPostedOrder('0xdoesnotexist')).toBeUndefined();
+    });
   });
 });

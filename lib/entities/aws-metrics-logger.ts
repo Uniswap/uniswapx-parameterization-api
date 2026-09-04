@@ -127,6 +127,39 @@ export enum Metric {
   CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS = 'CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS',
   // Fillers with fade stats evaluated in a cron run (sample-health denominator)
   CIRCUIT_BREAKER_V2_FILLERS_EVALUATED = 'CIRCUIT_BREAKER_V2_FILLERS_EVALUATED',
+
+  // Shadow evaluation of the order-service fades source (lib/cron/fade-rate-shadow.ts). Runs
+  // after the Redshift path each cron, writes nothing. Exactly one of SUCCESS / FAILURE fires
+  // per run; DURATION is the wall time it added to the cron (budgeted, see the runner).
+  CIRCUIT_BREAKER_SHADOW_SUCCESS = 'CIRCUIT_BREAKER_SHADOW_SUCCESS',
+  CIRCUIT_BREAKER_SHADOW_FAILURE = 'CIRCUIT_BREAKER_SHADOW_FAILURE',
+  CIRCUIT_BREAKER_SHADOW_DURATION = 'CIRCUIT_BREAKER_SHADOW_DURATION',
+  // Outcome resolution against the order service this run: pending orders past their deadline
+  // at the start, how many got a terminal outcome, how many the service still calls `open`
+  // (status-poller lag), how many it does not know at all, how many could not be scored.
+  CIRCUIT_BREAKER_SHADOW_PENDING_PAST_DEADLINE = 'CIRCUIT_BREAKER_SHADOW_PENDING_PAST_DEADLINE',
+  CIRCUIT_BREAKER_SHADOW_RESOLVED = 'CIRCUIT_BREAKER_SHADOW_RESOLVED',
+  CIRCUIT_BREAKER_SHADOW_STILL_OPEN = 'CIRCUIT_BREAKER_SHADOW_STILL_OPEN',
+  CIRCUIT_BREAKER_SHADOW_NOT_FOUND = 'CIRCUIT_BREAKER_SHADOW_NOT_FOUND',
+  CIRCUIT_BREAKER_SHADOW_UNCLASSIFIABLE = 'CIRCUIT_BREAKER_SHADOW_UNCLASSIFIABLE',
+  // Row-level comparison, both sides restricted to orders posted since PostedOrders went
+  // live. ONLY_OLD / ONLY_NEW are (fillerAddress, deadline) keys present on one side only.
+  CIRCUIT_BREAKER_SHADOW_ROWS_OLD = 'CIRCUIT_BREAKER_SHADOW_ROWS_OLD',
+  CIRCUIT_BREAKER_SHADOW_ROWS_NEW = 'CIRCUIT_BREAKER_SHADOW_ROWS_NEW',
+  CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_OLD = 'CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_OLD',
+  CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_NEW = 'CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_NEW',
+  CIRCUIT_BREAKER_SHADOW_FADES_OLD = 'CIRCUIT_BREAKER_SHADOW_FADES_OLD',
+  CIRCUIT_BREAKER_SHADOW_FADES_NEW = 'CIRCUIT_BREAKER_SHADOW_FADES_NEW',
+  // Block decisions the shadow would have made vs. the decisions the Redshift path actually
+  // wrote this run (per filler: blocked?, blockUntil, consecutiveBlocks). The RESTRICTED pair
+  // re-scores the Redshift rows with the same go-live floor, so it is the fair comparison
+  // while Redshift's 24h window still contains pre-go-live orders.
+  CIRCUIT_BREAKER_SHADOW_DECISION_AGREE = 'CIRCUIT_BREAKER_SHADOW_DECISION_AGREE',
+  CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE = 'CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE',
+  CIRCUIT_BREAKER_SHADOW_DECISION_AGREE_RESTRICTED = 'CIRCUIT_BREAKER_SHADOW_DECISION_AGREE_RESTRICTED',
+  CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE_RESTRICTED = 'CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE_RESTRICTED',
+  // Fillers the shadow would have benched after this run (the headline "what would change").
+  CIRCUIT_BREAKER_SHADOW_WOULD_BLOCK = 'CIRCUIT_BREAKER_SHADOW_WOULD_BLOCK',
 }
 
 type MetricNeedingContext =

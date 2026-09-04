@@ -11,7 +11,34 @@ import { DYNAMO_TABLE_NAME, POSTED_ORDER_TTL_SECS, POSTED_ORDERS_INDEX } from '.
  */
 export enum PostedOrderOutcome {
   PENDING = 'PENDING',
+  // Terminal outcomes, recorded by the fade cron from the order service's orderStatus once
+  // the deadline has passed (see lib/cron/order-service-fades-source.ts). FILLED and EXPIRED
+  // carry a definitive `faded`; the other three are "never filled" states whose fade
+  // treatment is a scoring-time policy, so the row stores the fact and not the verdict.
+  FILLED = 'FILLED',
+  EXPIRED = 'EXPIRED',
+  CANCELLED = 'CANCELLED',
+  INSUFFICIENT_FUNDS = 'INSUFFICIENT_FUNDS',
+  ERROR = 'ERROR',
 }
+
+/**
+ * What the fade cron learned about a posted order from the order service. Written once per
+ * order (idempotently) when the deadline has passed and the service reports a terminal status.
+ */
+export type PostedOrderResolution = {
+  outcome: Exclude<PostedOrderOutcome, PostedOrderOutcome.PENDING>;
+  // Raw order-service `orderStatus` the outcome was derived from, kept for audit.
+  orderStatus: string;
+  // Fill timing as reported by the order service (block number / unix seconds). Set for fills.
+  fillBlock?: number;
+  fillTimestamp?: number;
+  // 1/0 for FILLED and EXPIRED, where the breaker's rule is definitive; undefined for the
+  // never-filled non-expiry outcomes, which the row builder scores by policy flag.
+  faded?: number;
+  // Unix seconds at which the cron recorded the outcome.
+  resolvedAt: number;
+};
 
 /**
  * One row per confirmed RFQ-won order post. Everything the breaker needs about the "posted"
@@ -46,6 +73,12 @@ export type PostedOrderRecord = {
   // Unix seconds at which the post was confirmed.
   postedAt: number;
   outcome: PostedOrderOutcome;
+  // Present once the outcome is no longer PENDING (see PostedOrderResolution).
+  orderStatus?: string;
+  fillBlock?: number;
+  fillTimestamp?: number;
+  faded?: number;
+  resolvedAt?: number;
 };
 
 export interface PostedOrderRepository {
@@ -55,6 +88,12 @@ export interface PostedOrderRepository {
   getPendingPastDeadline(now: number, limit?: number): Promise<PostedOrderRecord[]>;
   /** A filler's orders whose deadline falls in [from, to], inclusive, oldest first. */
   getFillerOrdersByDeadline(filler: string, from: number, to: number): Promise<PostedOrderRecord[]>;
+  /**
+   * Records a terminal outcome and drops the row out of the pending index in the same write.
+   * Idempotent: re-recording the same resolution is a harmless overwrite. Rejects (rather than
+   * creating a phantom row) when the order is unknown, e.g. already expired by TTL.
+   */
+  recordOutcome(orderHash: string, resolution: PostedOrderResolution): Promise<void>;
 }
 
 // Constant partition key of the sparse pending index. Present only while outcome is
@@ -129,6 +168,11 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
         tokenOut: { type: 'string', required: true },
         postedAt: { type: 'number', required: true },
         outcome: { type: 'string', required: true },
+        orderStatus: { type: 'string' },
+        fillBlock: { type: 'number' },
+        fillTimestamp: { type: 'number' },
+        faded: { type: 'number' },
+        resolvedAt: { type: 'number' },
         pending: { type: 'string' },
         ttl: { type: 'number', required: true },
       },
@@ -175,6 +219,28 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
     });
     return ((Items ?? []) as PostedOrderItem[]).map(toRecord);
   }
+
+  public async recordOutcome(orderHash: string, resolution: PostedOrderResolution): Promise<void> {
+    const { outcome, orderStatus, fillBlock, fillTimestamp, faded, resolvedAt } = resolution;
+    await this.entity.update(
+      {
+        orderHash,
+        outcome,
+        orderStatus,
+        resolvedAt,
+        ...(fillBlock !== undefined && { fillBlock }),
+        ...(fillTimestamp !== undefined && { fillTimestamp }),
+        ...(faded !== undefined && { faded }),
+        // Leaving the sparse pending index is what makes the outcome "recorded" for the
+        // cron's next getPendingPastDeadline; it must happen in this same UpdateItem.
+        $remove: ['pending'],
+      },
+      {
+        conditions: { attr: DynamoPostedOrderRepository.PARTITION_KEY, exists: true },
+        execute: true,
+      }
+    );
+  }
 }
 
 // Picks the record fields out of a stored item, dropping the index/TTL attributes and the
@@ -196,6 +262,11 @@ function toRecord(item: PostedOrderItem): PostedOrderRecord {
     tokenOut: item.tokenOut,
     postedAt: item.postedAt,
     outcome: item.outcome,
+    ...(item.orderStatus !== undefined && { orderStatus: item.orderStatus }),
+    ...(item.fillBlock !== undefined && { fillBlock: item.fillBlock }),
+    ...(item.fillTimestamp !== undefined && { fillTimestamp: item.fillTimestamp }),
+    ...(item.faded !== undefined && { faded: item.faded }),
+    ...(item.resolvedAt !== undefined && { resolvedAt: item.resolvedAt }),
   };
 }
 
@@ -222,5 +293,22 @@ export class MockPostedOrderRepository implements PostedOrderRepository {
     return [...this.records.values()]
       .filter((r) => r.filler === filler && r.deadline >= from && r.deadline <= to)
       .sort((a, b) => a.deadline - b.deadline);
+  }
+
+  async recordOutcome(orderHash: string, resolution: PostedOrderResolution): Promise<void> {
+    const existing = this.records.get(orderHash);
+    if (!existing) {
+      throw new Error(`The conditional request failed: no posted order ${orderHash}`);
+    }
+    const { outcome, orderStatus, fillBlock, fillTimestamp, faded, resolvedAt } = resolution;
+    this.records.set(orderHash, {
+      ...existing,
+      outcome,
+      orderStatus,
+      resolvedAt,
+      ...(fillBlock !== undefined && { fillBlock }),
+      ...(fillTimestamp !== undefined && { fillTimestamp }),
+      ...(faded !== undefined && { faded }),
+    });
   }
 }
