@@ -66,8 +66,6 @@ export enum Metric {
   // Latency-attribution metrics.
   // Time spent resolving webhook config + circuit-breaker state before fan-out.
   RFQ_PHASE_ENDPOINT_STATUSES = 'RFQ_PHASE_ENDPOINT_STATUSES',
-  // Time spent resolving the compliance exclusion map before fan-out.
-  RFQ_PHASE_COMPLIANCE = 'RFQ_PHASE_COMPLIANCE',
   // Wall time the request blocks on the webhook fan-out Promise.all.
   RFQ_PHASE_FANOUT = 'RFQ_PHASE_FANOUT',
   // Fan-out wall time minus the latency of the last response that produced a usable

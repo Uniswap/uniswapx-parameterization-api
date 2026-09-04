@@ -1,5 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
-import { CfnOutput, Duration } from 'aws-cdk-lib';
+import { CfnOutput, Duration, RemovalPolicy } from 'aws-cdk-lib';
 import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
 import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
@@ -28,6 +28,7 @@ import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 import { CronStack } from './cron-stack';
 import { FirehoseStack } from './firehose-stack';
+import { LAMBDA_BUNDLING } from './lambda-bundling';
 import { ParamDashboardStack } from './param-dashboard-stack';
 
 /**
@@ -231,6 +232,11 @@ export class APIStack extends cdk.Stack {
         },
       ],
     });
+    // Market makers firewall-allowlist this exact address for our RFQ webhook calls.
+    // CloudFormation's default is to release an EIP back to the public pool when the
+    // resource is removed or the stack is deleted, which is unrecoverable. RETAIN sets
+    // both DeletionPolicy and UpdateReplacePolicy so the allocation survives either path.
+    quoteLambdaElasticIp.applyRemovalPolicy(RemovalPolicy.RETAIN);
 
     const vpc = new Vpc(this, 'QuoteLambdaVpc', {
       vpcName: 'QuoteLambdaVpc',
@@ -251,10 +257,7 @@ export class APIStack extends cdk.Stack {
         subnets: [...vpc.privateSubnets],
       },
       memorySize: 2048,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
+      bundling: LAMBDA_BUNDLING,
       environment: {
         VERSION: '6',
         NODE_OPTIONS: '--enable-source-maps',
@@ -286,10 +289,7 @@ export class APIStack extends cdk.Stack {
         subnets: [...vpc.privateSubnets],
       },
       memorySize: 2048,
-      bundling: {
-        minify: true,
-        sourceMap: true,
-      },
+      bundling: LAMBDA_BUNDLING,
       environment: {
         VERSION: '6',
         NODE_OPTIONS: '--enable-source-maps',

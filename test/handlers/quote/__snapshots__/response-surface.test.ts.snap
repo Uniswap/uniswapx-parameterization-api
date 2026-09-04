@@ -1,0 +1,411 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`/quote response surface 200 EXACT_INPUT: best quote fanned out at the top level, every quote under allQuotes 1`] = `
+{
+  "body": {
+    "allQuotes": [
+      {
+        "amountIn": "1000000000000000000",
+        "amountOut": "1000000000000000000",
+        "chainId": 1,
+        "filler": "0x0000000000000000000000000000000000000001",
+        "quoteId": "00000001-0000-4000-8000-000000000000",
+        "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+        "swapper": "0x0000000000000000000000000000000000000000",
+        "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+        "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      },
+      {
+        "amountIn": "1000000000000000000",
+        "amountOut": "2000000000000000000",
+        "chainId": 1,
+        "filler": "0x0000000000000000000000000000000000000001",
+        "quoteId": "00000002-0000-4000-8000-000000000000",
+        "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+        "swapper": "0x0000000000000000000000000000000000000000",
+        "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+        "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      },
+    ],
+    "amountIn": "1000000000000000000",
+    "amountOut": "2000000000000000000",
+    "chainId": 1,
+    "filler": "0x0000000000000000000000000000000000000001",
+    "quoteId": "00000002-0000-4000-8000-000000000000",
+    "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+    "swapper": "0x0000000000000000000000000000000000000000",
+    "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+    "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"quoteId":"00000002-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"1000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"2000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001","allQuotes":[{"quoteId":"00000001-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"1000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"1000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001"},{"quoteId":"00000002-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"1000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"2000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001"}]}",
+  "statusCode": 200,
+}
+`;
+
+exports[`/quote response surface 200 EXACT_OUTPUT: lowest amountIn wins 1`] = `
+{
+  "body": {
+    "allQuotes": [
+      {
+        "amountIn": "1000000000000000000",
+        "amountOut": "1000000000000000000",
+        "chainId": 1,
+        "filler": "0x0000000000000000000000000000000000000001",
+        "quoteId": "00000001-0000-4000-8000-000000000000",
+        "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+        "swapper": "0x0000000000000000000000000000000000000000",
+        "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+        "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      },
+      {
+        "amountIn": "2000000000000000000",
+        "amountOut": "1000000000000000000",
+        "chainId": 1,
+        "filler": "0x0000000000000000000000000000000000000001",
+        "quoteId": "00000002-0000-4000-8000-000000000000",
+        "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+        "swapper": "0x0000000000000000000000000000000000000000",
+        "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+        "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      },
+    ],
+    "amountIn": "1000000000000000000",
+    "amountOut": "1000000000000000000",
+    "chainId": 1,
+    "filler": "0x0000000000000000000000000000000000000001",
+    "quoteId": "00000001-0000-4000-8000-000000000000",
+    "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+    "swapper": "0x0000000000000000000000000000000000000000",
+    "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+    "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"quoteId":"00000001-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"1000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"1000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001","allQuotes":[{"quoteId":"00000001-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"1000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"1000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001"},{"quoteId":"00000002-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"2000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"1000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001"}]}",
+  "statusCode": 200,
+}
+`;
+
+exports[`/quote response surface 200 protocol defaults to V1 when omitted and the response shape is unchanged 1`] = `
+{
+  "body": {
+    "allQuotes": [
+      {
+        "amountIn": "1000000000000000000",
+        "amountOut": "1000000000000000000",
+        "chainId": 1,
+        "filler": "0x0000000000000000000000000000000000000001",
+        "quoteId": "00000001-0000-4000-8000-000000000000",
+        "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+        "swapper": "0x0000000000000000000000000000000000000000",
+        "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+        "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      },
+    ],
+    "amountIn": "1000000000000000000",
+    "amountOut": "1000000000000000000",
+    "chainId": 1,
+    "filler": "0x0000000000000000000000000000000000000001",
+    "quoteId": "00000001-0000-4000-8000-000000000000",
+    "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+    "swapper": "0x0000000000000000000000000000000000000000",
+    "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+    "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"quoteId":"00000001-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"1000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"1000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001","allQuotes":[{"quoteId":"00000001-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"1000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"1000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001"}]}",
+  "statusCode": 200,
+}
+`;
+
+exports[`/quote response surface 200 single quoter: allQuotes is still present with one entry 1`] = `
+{
+  "body": {
+    "allQuotes": [
+      {
+        "amountIn": "1000000000000000000",
+        "amountOut": "1000000000000000000",
+        "chainId": 1,
+        "filler": "0x0000000000000000000000000000000000000001",
+        "quoteId": "00000001-0000-4000-8000-000000000000",
+        "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+        "swapper": "0x0000000000000000000000000000000000000000",
+        "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+        "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      },
+    ],
+    "amountIn": "1000000000000000000",
+    "amountOut": "1000000000000000000",
+    "chainId": 1,
+    "filler": "0x0000000000000000000000000000000000000001",
+    "quoteId": "00000001-0000-4000-8000-000000000000",
+    "requestId": "b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03",
+    "swapper": "0x0000000000000000000000000000000000000000",
+    "tokenIn": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+    "tokenOut": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"quoteId":"00000001-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"1000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"1000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001","allQuotes":[{"quoteId":"00000001-0000-4000-8000-000000000000","chainId":1,"requestId":"b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03","tokenIn":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","amountIn":"1000000000000000000","tokenOut":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","amountOut":"1000000000000000000","swapper":"0x0000000000000000000000000000000000000000","filler":"0x0000000000000000000000000000000000000001"}]}",
+  "statusCode": 200,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) empty object 1`] = `
+{
+  "body": {
+    "detail": ""requestId" is required",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"\\"requestId\\" is required","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) invalid swapper address 1`] = `
+{
+  "body": {
+    "detail": "Invalid address",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"Invalid address","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) invalid tradeType 1`] = `
+{
+  "body": {
+    "detail": ""type" must be one of [EXACT_INPUT, EXACT_OUTPUT]",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"\\"type\\" must be one of [EXACT_INPUT, EXACT_OUTPUT]","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) missing requestId 1`] = `
+{
+  "body": {
+    "detail": ""requestId" is required",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"\\"requestId\\" is required","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) negative amount 1`] = `
+{
+  "body": {
+    "detail": "Invalid amount",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"Invalid amount","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) non-numeric amount 1`] = `
+{
+  "body": {
+    "detail": "Invalid amount",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"Invalid amount","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) non-uuid requestId 1`] = `
+{
+  "body": {
+    "detail": ""requestId" must be a valid GUID",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"\\"requestId\\" must be a valid GUID","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) numOutputs below 1 1`] = `
+{
+  "body": {
+    "detail": ""numOutputs" must be greater than or equal to 1",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"\\"numOutputs\\" must be greater than or equal to 1","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) tokenOutChainId differs from tokenInChainId 1`] = `
+{
+  "body": {
+    "detail": ""tokenOutChainId" must be [ref:tokenInChainId]",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"\\"tokenOutChainId\\" must be [ref:tokenInChainId]","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) unknown protocol 1`] = `
+{
+  "body": {
+    "detail": ""protocol" must be one of [v1, v2, v3]",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"\\"protocol\\" must be one of [v1, v2, v3]","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 400 request validation (Joi) unsupported chainId 1`] = `
+{
+  "body": {
+    "detail": ""tokenInChainId" must be one of [1, 10, 56, 130, 137, 143, 196, 480, 1868, 4217, 7777777, 8453, 42161, 42220, 43114, 81457, 4663, 5042, 57073, 5, 11155111]",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"\\"tokenInChainId\\" must be one of [1, 10, 56, 130, 137, 143, 196, 480, 1868, 4217, 7777777, 8453, 42161, 42220, 43114, 81457, 4663, 5042, 57073, 5, 11155111]","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 400,
+}
+`;
+
+exports[`/quote response surface 404 NoQuotesAvailable no quoters configured 1`] = `
+{
+  "body": {
+    "detail": "No quotes available",
+    "errorCode": "QUOTE_ERROR",
+    "id": "test",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"errorCode":"QUOTE_ERROR","detail":"No quotes available","id":"test"}",
+  "statusCode": 404,
+}
+`;
+
+exports[`/quote response surface malformed transport 422 on a body that is not JSON 1`] = `
+{
+  "body": {
+    "detail": "Invalid JSON body",
+    "errorCode": "VALIDATION_ERROR",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"detail":"Invalid JSON body","errorCode":"VALIDATION_ERROR"}",
+  "statusCode": 422,
+}
+`;
+
+exports[`/quote response surface malformed transport 500 INTERNAL_ERROR on a missing body (captured as-is; arguably should be a 4xx) 1`] = `
+{
+  "body": {
+    "detail": "Unexpected error",
+    "errorCode": "INTERNAL_ERROR",
+    "id": "test",
+  },
+  "headers": {
+    "Access-Control-Allow-Credentials": true,
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  },
+  "rawBody": "{"errorCode":"INTERNAL_ERROR","detail":"Unexpected error","id":"test"}",
+  "statusCode": 500,
+}
+`;

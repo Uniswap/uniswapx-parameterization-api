@@ -45,9 +45,9 @@ function stubMetricsLogger() {
 
 describe('shared quote injector wiring', () => {
   describe.each([
-    ['soft quote', () => new SoftQuoteInjector('quoteInjector'), 'S3FillerComplianceConfigurationProvider', false],
-    ['hard quote', () => new HardQuoteInjector('hardQuoteInjector'), 'MockFillerComplianceConfigurationProvider', true],
-  ])('%s container', (_name, makeInjector, expectedComplianceProvider, expectsOrderService) => {
+    ['soft quote', () => new SoftQuoteInjector('quoteInjector'), false],
+    ['hard quote', () => new HardQuoteInjector('hardQuoteInjector'), true],
+  ])('%s container', (_name, makeInjector, expectsOrderService) => {
     let container: any;
     let quoter: any;
 
@@ -76,10 +76,6 @@ describe('shared quote injector wiring', () => {
 
     it('scopes the webhook config bucket to the stage', () => {
       expect(quoter.webhookProvider.bucket).toContain('-beta-1');
-    });
-
-    it('uses the expected compliance provider for this lambda', () => {
-      expect(quoter.complianceProvider.constructor.name).toEqual(expectedComplianceProvider);
     });
 
     it('builds one static RPC provider per supported chain', () => {

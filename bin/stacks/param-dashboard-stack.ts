@@ -101,10 +101,10 @@ export const BASELINE_HARD_E2E_P99_MS = 1779;
 const WEBHOOK_TIMEOUT_MS = 500;
 
 // Latency percentiles are one measure at three depths: a single-hue ramp, darker =
-// deeper percentile. Phases are three identities: first three categorical slots in
-// emission order. Wasted wait is the number this dashboard exists to drive down: red.
+// deeper percentile. Phases are two identities: categorical slots in emission order.
+// Wasted wait is the number this dashboard exists to drive down: red.
 const PERCENTILE_COLORS = { p50: '#6da7ec', p90: '#2a78d6', p99: '#104281' };
-const PHASE_COLORS = { statuses: '#2a78d6', compliance: '#eb6834', fanout: '#1baf7a' };
+const PHASE_COLORS = { statuses: '#2a78d6', fanout: '#1baf7a' };
 const WASTED_WAIT_COLORS = { p50: '#e34948', p90: '#d03b3b' };
 
 // A metric path with NO dimension name/value pairs addresses the dimensionless
@@ -422,13 +422,6 @@ export const PhaseDecompositionWidgets = (region: string): LambdaWidget[] =>
             'Service',
             service.Service,
             { stat: 'p50', label: 'endpoint statuses (S3+Dynamo)', color: PHASE_COLORS.statuses },
-          ],
-          [
-            'Uniswap',
-            Metric.RFQ_PHASE_COMPLIANCE,
-            'Service',
-            service.Service,
-            { stat: 'p50', label: 'compliance', color: PHASE_COLORS.compliance },
           ],
           [
             'Uniswap',

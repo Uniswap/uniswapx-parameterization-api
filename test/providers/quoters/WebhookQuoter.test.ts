@@ -8,7 +8,6 @@ import { NOTIFICATION_TIMEOUT_MS } from '../../../lib/constants';
 import { AnalyticsEventType, Metric, metricContext, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
-import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { WebhookQuoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import {
@@ -31,13 +30,6 @@ const TOKEN_OUT = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const CHAIN_ID = 1;
 const FILLER = '0x0000000000000000000000000000000000000001';
 
-const emptyMockComplianceProvider = new MockFillerComplianceConfigurationProvider([]);
-const mockComplianceProvider = new MockFillerComplianceConfigurationProvider([
-  {
-    endpoints: ['https://uniswap.org', 'google.com'],
-    addresses: [SWAPPER],
-  },
-]);
 const repository = new MockFillerAddressRepository();
 
 describe('WebhookQuoter tests', () => {
@@ -75,14 +67,7 @@ describe('WebhookQuoter tests', () => {
 
   const logger = { child: jest.fn(() => logger), info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
-  const webhookQuoter = new WebhookQuoter(
-    logger,
-    mockFirehoseLogger,
-    webhookProvider,
-    MOCK_V2_CB_PROVIDER,
-    emptyMockComplianceProvider,
-    repository
-  );
+  const webhookQuoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository);
 
   const makeQuoteRequest = (overrides: Partial<QuoteRequest>): QuoteRequest => {
     return new QuoteRequest({
@@ -324,19 +309,6 @@ describe('WebhookQuoter tests', () => {
     );
   });
 
-  it('Respects filler compliance requirements', async () => {
-    const webhookQuoter = new WebhookQuoter(
-      logger,
-      mockFirehoseLogger,
-      webhookProvider,
-      MOCK_V2_CB_PROVIDER,
-      mockComplianceProvider,
-      repository
-    );
-
-    await expect(webhookQuoter.quote(request)).resolves.toStrictEqual([]);
-  });
-
   describe('Circuit Breaker v2 tests', () => {
     /*
      should only call 'uniswap' and 'searcher' because
@@ -574,7 +546,6 @@ describe('WebhookQuoter tests', () => {
       mockFirehoseLogger,
       webhookProvider,
       MOCK_V2_CB_PROVIDER,
-      emptyMockComplianceProvider,
       repository
     );
     it('v1 quote request only sent to fillers supporting v1', async () => {
@@ -775,14 +746,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1], hash: '0xuni' },
     ]);
-    const quoter = new WebhookQuoter(
-      logger,
-      mockFirehoseLogger,
-      provider,
-      MOCK_V2_CB_PROVIDER,
-      emptyMockComplianceProvider,
-      repository
-    );
+    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, provider, MOCK_V2_CB_PROVIDER, repository);
     const request = makeQuoteRequest({ tokenInChainId: 1, tokenOutChainId: 1, protocol: ProtocolVersion.V2 });
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
@@ -822,14 +786,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6], hash: '0xuni' },
     ]);
-    const quoter = new WebhookQuoter(
-      logger,
-      mockFirehoseLogger,
-      provider,
-      MOCK_V2_CB_PROVIDER,
-      emptyMockComplianceProvider,
-      repository
-    );
+    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, provider, MOCK_V2_CB_PROVIDER, repository);
 
     const response = await quoter.quote(request);
 
@@ -1159,17 +1116,12 @@ describe('WebhookQuoter tests', () => {
         });
     };
 
-    it('times the pre-fan-out phases', async () => {
+    it('times the pre-fan-out endpoint-status phase', async () => {
       mockSimpleSuccess();
       await webhookQuoter.quote(request);
 
       expect(putMetricSpy).toHaveBeenCalledWith(
         Metric.RFQ_PHASE_ENDPOINT_STATUSES,
-        expect.any(Number),
-        MetricLoggerUnit.Milliseconds
-      );
-      expect(putMetricSpy).toHaveBeenCalledWith(
-        Metric.RFQ_PHASE_COMPLIANCE,
         expect.any(Number),
         MetricLoggerUnit.Milliseconds
       );
@@ -1230,14 +1182,7 @@ describe('WebhookQuoter tests', () => {
       const v1OnlyProvider = new MockWebhookConfigurationProvider([
         { name: 'v1only', endpoint: WEBHOOK_URL, headers: {}, hash: '0xv1', supportedVersions: [ProtocolVersion.V1] },
       ]);
-      const quoter = new WebhookQuoter(
-        logger,
-        mockFirehoseLogger,
-        v1OnlyProvider,
-        MOCK_V2_CB_PROVIDER,
-        emptyMockComplianceProvider,
-        repository
-      );
+      const quoter = new WebhookQuoter(logger, mockFirehoseLogger, v1OnlyProvider, MOCK_V2_CB_PROVIDER, repository);
 
       const response = await quoter.quote(makeQuoteRequest({ protocol: ProtocolVersion.V2 }));
 
