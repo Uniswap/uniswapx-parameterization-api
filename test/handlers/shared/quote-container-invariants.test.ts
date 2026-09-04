@@ -3,7 +3,6 @@ import bunyan from 'bunyan';
 import { buildQuoteContainerInjected } from '../../../lib/handlers/shared/quote-injector';
 import { S3WebhookConfigurationProvider } from '../../../lib/providers';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/dynamo';
-import { MockFillerComplianceConfigurationProvider } from '../../../lib/providers/compliance';
 import { WebhookQuoter } from '../../../lib/quoters';
 
 /**
@@ -54,7 +53,7 @@ describe('buildQuoteContainerInjected wiring invariants', () => {
     let quoter: any;
 
     beforeAll(() => {
-      const container = buildQuoteContainerInjected(log, stage, new MockFillerComplianceConfigurationProvider([]));
+      const container = buildQuoteContainerInjected(log, stage);
       expect(container.quoters).toHaveLength(1);
       quoter = container.quoters[0];
     });
