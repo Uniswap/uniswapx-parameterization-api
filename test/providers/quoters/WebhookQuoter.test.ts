@@ -65,7 +65,13 @@ describe('WebhookQuoter tests', () => {
     },
   ]);
 
-  const logger = { child: jest.fn(() => logger), info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
+  const logger = {
+    child: jest.fn(() => logger),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  } as any;
   const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
   const webhookQuoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository);
 
@@ -132,6 +138,53 @@ describe('WebhookQuoter tests', () => {
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
     expect(response[0].fillerName).toEqual('uniswap');
     expect(response[0].endpoint).toEqual(WEBHOOK_URL);
+  });
+
+  it('Still returns the quote when filler address registration fails', async () => {
+    // The registration call is deliberately not awaited, so an unhandled rejection here fails
+    // the whole Lambda invocation rather than just the request that caused it.
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+
+    const registrationError = new Error('ProvisionedThroughputExceededException');
+    jest.spyOn(repository, 'addNewAddressToFiller').mockRejectedValue(registrationError);
+
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: { ...quote, requestId: (_req as any).requestId },
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
+      });
+
+    try {
+      const response = await webhookQuoter.quote(request);
+
+      expect(response.length).toEqual(1);
+      expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
+
+      expect(repository.addNewAddressToFiller).toHaveBeenCalledWith(FILLER, WEBHOOK_URL);
+      expect(logger.warn).toHaveBeenCalledWith(
+        { endpoint: WEBHOOK_URL, filler: FILLER },
+        `Error registering filler address ${FILLER} for endpoint ${WEBHOOK_URL}: ${registrationError}`
+      );
+
+      // The rejection settles after quote() resolves, so drain the microtask and macrotask
+      // queues before asserting nothing escaped.
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   describe('opposing request obfuscation', () => {

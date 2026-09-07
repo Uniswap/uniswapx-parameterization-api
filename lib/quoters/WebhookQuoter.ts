@@ -346,7 +346,13 @@ export class WebhookQuoter implements Quoter {
 
       // do not await to minimize latency
       if (response.filler) {
-        this.repository.addNewAddressToFiller(response.filler, endpoint);
+        // Unawaited: without this catch a rejection fails the whole Lambda invocation.
+        this.repository.addNewAddressToFiller(response.filler, endpoint).catch((e) => {
+          log.warn(
+            { endpoint, filler: response.filler },
+            `Error registering filler address ${response.filler} for endpoint ${endpoint}: ${e}`
+          );
+        });
       }
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
