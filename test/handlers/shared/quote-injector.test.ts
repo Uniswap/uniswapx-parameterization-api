@@ -88,6 +88,15 @@ describe('shared quote injector wiring', () => {
       expect(mainnet.network.chainId).toEqual(1);
     });
 
+    it('keeps filler-address attribution out of the quoter and on the hard-quote container only', () => {
+      expect(quoter.repository).toBeUndefined();
+      if (expectsOrderService) {
+        expect(container.fillerAddressRepository).toBeDefined();
+      } else {
+        expect(container.fillerAddressRepository).toBeUndefined();
+      }
+    });
+
     it('provides the order service only where it is needed', () => {
       if (expectsOrderService) {
         expect(container.orderServiceProvider).toBeDefined();

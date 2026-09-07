@@ -99,8 +99,8 @@ const ROWS: V2FadesRowType[] = [
 
 async function fillerAddresses(): Promise<MockFillerAddressRepository> {
   const repo = new MockFillerAddressRepository();
-  await repo.addNewAddressToFiller(ADDR_A, FILLER_A);
-  await repo.addNewAddressToFiller(ADDR_B, FILLER_B);
+  await repo.recordWinningAddress(ADDR_A, FILLER_A);
+  await repo.recordWinningAddress(ADDR_B, FILLER_B);
   return repo;
 }
 
@@ -168,6 +168,31 @@ describe('runFadeRateCron', () => {
       expect(failure ?? []).toEqual(variant === withShadow ? [] : [1]);
     }
     expect(baseline.calls[Metric.CIRCUIT_BREAKER_SHADOW_FAILURE]).toBeUndefined();
+  });
+
+  it('resolves fillers by the addresses in the rows and drops mappings to endpoints no longer configured', async () => {
+    const ADDR_C = '0x00000000000000000000000000000000000000C1';
+    const REMOVED_FILLER = 'https://removed.example/rfq';
+    const addresses = await fillerAddresses();
+    await addresses.recordWinningAddress(ADDR_C, REMOVED_FILLER);
+    const rows = [...ROWS, ...Array.from({ length: 5 }, (_, i) => row(ADDR_C, 1, NOW - 100 - i))];
+    const timestamps = new FakeTimestampRepository();
+    const { metrics } = recordingMetrics();
+
+    await runFadeRateCron(metrics, {
+      fadesRepository: new FakeFadesRepository(rows),
+      webhookProvider: new FakeWebhookProvider([FILLER_A, FILLER_B]),
+      fillerAddressRepo: addresses,
+      timestampDB: timestamps,
+      now: () => NOW,
+      log,
+    });
+
+    // exactly the distinct addresses in the rows were looked up (no per-endpoint scan)
+    expect(addresses.requestedAddresses).toEqual([[ADDR_A, ADDR_B, ADDR_C]]);
+    // ADDR_C's filler is not in the webhook config, so its fades bench nobody
+    const written = timestamps.writes.flat().map((w) => w.hash);
+    expect(written).toEqual([FILLER_A, FILLER_B]);
   });
 
   it('a throwing shadow does not fail the cron', async () => {

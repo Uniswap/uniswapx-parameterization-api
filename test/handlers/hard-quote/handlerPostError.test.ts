@@ -16,6 +16,7 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { OrderServiceProvider } from '../../../lib/providers/order';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository, PostedOrderOutcome } from '../../../lib/repositories/posted-order-repository';
 import { ErrorCode } from '../../../lib/util/errors';
 import { getOrder } from '../../fixtures/hard-quote';
@@ -72,6 +73,7 @@ describe('Quote handler order post error mapping', () => {
             quoters,
             orderServiceProvider,
             postedOrderRepository,
+            fillerAddressRepository: new MockFillerAddressRepository(),
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
         },

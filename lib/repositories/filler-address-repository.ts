@@ -5,38 +5,52 @@ import { Entity, Table } from 'dynamodb-toolbox';
 import { getAddress } from 'ethers/lib/utils';
 import { DYNAMO_TABLE_NAME } from '../constants';
 
-export type DynamoFillerToAddressRow = {
+/**
+ * How long an address -> filler attribution lives after the filler last won a quote with it.
+ * The fade breaker only looks back 24h (V2FadesRepository) and the backtest extract 28d, so
+ * a 30d TTL keeps every attribution either of them can ask about while letting the addresses
+ * of a filler that rotates per quote age out instead of accumulating forever.
+ */
+export const FILLER_ADDRESS_TTL_SECS = 30 * 24 * 60 * 60;
+
+// DynamoDB BatchGetItem accepts at most 100 keys per request.
+const BATCH_GET_CHUNK = 100;
+
+/**
+ * Maps on-chain filler addresses to the RFQ webhook (filler) that quotes with them.
+ *
+ * One item per address (pk = checksummed address, filler = webhook endpoint, expiresAt = TTL).
+ * The mapping exists for exactly one reader: the fade-rate breaker, which sees a posted order's
+ * exclusive filler address and needs the webhook to bench. Only a quote that WON produces a
+ * posted order, so only winning addresses are recorded (by the hard-quote handler, at the
+ * confirmed post), and there is no per-filler address cap: a filler may quote from as many
+ * addresses as it likes, each costing one read-free conditional write per posted order and
+ * expiring FILLER_ADDRESS_TTL_SECS after its last win. Nothing on the /quote path reads or
+ * writes this table.
+ */
+export interface FillerAddressRepository {
+  /**
+   * Attribute `address` to `filler` because a quote from `filler` carrying `address` won.
+   * First-writer-wins: an address already attributed to a different filler keeps its owner (a
+   * claim from another endpoint is logged and ignored, so one filler cannot poison another's
+   * attribution). Re-recording for the same owner refreshes the TTL.
+   */
+  recordWinningAddress(address: string, filler: string): Promise<void>;
+  /** address -> filler for exactly the addresses asked (keys checksummed); unknown addresses absent. */
+  getAddressToFillerMap(addresses: string[]): Promise<Map<string, string>>;
+  getFillerByAddress(address: string): Promise<string | undefined>;
+}
+
+type AddressItem = {
   pk: string;
-  addresses: string[];
+  filler: string;
+  expiresAt?: number;
 };
 
-// Max distinct on-chain addresses a single filler (webhook endpoint) may register, bounding the
-// size of the per-filler address set item. Registrations beyond the cap are a no-op — the order
-// still quotes and fills, the address just isn't attributed.
-//
-// The no-op is not free: an over-cap address is looked up (miss) and then the owner's set is read
-// on EVERY quote response that carries it, forever, because it can never be registered. With the
-// cap at 3, a filler that legitimately used 4-5 addresses paid two DynamoDB reads per response
-// and read-throttled this table on 2026-09-07 (which, via an un-awaited write in WebhookQuoter,
-// 5xx'd /quote). 100 is far above any real filler's address count (measured 1-5) while still
-// keeping a rotating filler's set item well under the 400KB item limit (~45 bytes per address).
-export const MAX_FILLER_ADDRESSES = 100;
-
-export interface FillerAddressRepository {
-  getFillerAddresses(filler: string): Promise<string[] | undefined>;
-  getFillerByAddress(address: string): Promise<string | undefined>;
-  addNewAddressToFiller(address: string, filler?: string): Promise<void>;
-  getFillerAddressesBatch(fillers: string[]): Promise<Map<string, Set<string>>>;
-  getAddressToFillerMap(fillers: string[]): Promise<Map<string, string>>;
-}
-/*
- * Dynamo repository for managing filler addresses
- * Supports two way lookups: filler -> addr, addr -> fillers
- */
 export class DynamoFillerAddressRepository implements FillerAddressRepository {
   static log: Logger;
 
-  static create(documentClient: DynamoDBDocumentClient): FillerAddressRepository {
+  static create(documentClient: DynamoDBDocumentClient, now: () => number = Date.now): FillerAddressRepository {
     this.log = Logger.createLogger({
       name: 'FillerAddressRepository',
       serializers: Logger.stdSerializers,
@@ -44,185 +58,116 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
 
     const addressTable = new Table({
       name: DYNAMO_TABLE_NAME.FILLER_ADDRESS,
-      partitionKey: 'pk', // generic partition key name to support both filler and address
+      partitionKey: 'pk',
       DocumentClient: documentClient,
     });
 
-    const fillerToAddressEntity = new Entity({
-      name: 'fillerToAddressEntity',
-      attributes: {
-        pk: { partitionKey: true },
-        addresses: { type: 'set', setType: 'string' },
-      },
-      table: addressTable,
-      autoExecute: true,
-    } as const);
-
-    const addressToFillerEntity = new Entity({
+    // The entity name is load-bearing: rows written before per-address TTLs existed carry
+    // entity = 'addressToFillerEntity' and must keep parsing, so no data migration is needed.
+    // (The table also still holds legacy filler -> [addresses] rows keyed by endpoint URL; they
+    // are never requested by address and are simply dead weight until deleted.)
+    const addressEntity = new Entity({
       name: 'addressToFillerEntity',
       attributes: {
         pk: { partitionKey: true },
         filler: { type: 'string' },
+        expiresAt: { type: 'number' },
       },
       table: addressTable,
       autoExecute: true,
     } as const);
 
-    return new DynamoFillerAddressRepository(addressTable, fillerToAddressEntity, addressToFillerEntity);
+    return new DynamoFillerAddressRepository(addressTable, addressEntity, now);
   }
+
   private constructor(
     private readonly _addressTable: Table<'FillerAddress', 'pk', null>,
-    private readonly _fillerToAddressEntity: Entity,
-    private readonly _addressToFillerEntity: Entity
+    private readonly _addressEntity: Entity,
+    private readonly _now: () => number
   ) {}
 
-  async getFillerAddresses(filler: string): Promise<string[] | undefined> {
-    const result = await this._fillerToAddressEntity.get({ pk: filler }, { execute: true, parse: true });
-    if (result.Item?.addresses) {
-      return (result.Item.addresses as string[]).map((addr) => getAddress(addr));
+  async recordWinningAddress(address: string, filler: string): Promise<void> {
+    const addr = getAddress(address);
+    const nowMs = this._now();
+    try {
+      await this._addressEntity.update(
+        { pk: addr, filler, expiresAt: Math.floor(nowMs / 1000) + FILLER_ADDRESS_TTL_SECS },
+        {
+          // unclaimed, or already ours (TTL refresh). Anything else is another filler's address.
+          conditions: [
+            { attr: 'filler', exists: false },
+            { or: true, attr: 'filler', eq: filler },
+          ],
+          execute: true,
+        }
+      );
+    } catch (err) {
+      if ((err as Error)?.name !== 'ConditionalCheckFailedException') {
+        throw err;
+      }
+      DynamoFillerAddressRepository.log.info(
+        { address: addr, attemptedOwner: filler },
+        'address already owned by another filler; ignoring claim'
+      );
     }
-    return undefined;
   }
 
   async getFillerByAddress(address: string): Promise<string | undefined> {
-    const result = await this._addressToFillerEntity.get({ pk: getAddress(address) }, { execute: true, parse: true });
-    return result.Item?.filler;
+    const result = await this._addressEntity.get({ pk: getAddress(address) }, { execute: true, parse: true });
+    return (result.Item as AddressItem | undefined)?.filler;
   }
 
-  async addNewAddressToFiller(address: string, filler?: string): Promise<void> {
-    const addrToAdd = getAddress(address);
-    const existingOwner = await this.getFillerByAddress(addrToAdd);
-    const owner = filler ?? existingOwner;
-    if (!owner) {
-      throw new Error(`Filler not found for address ${addrToAdd}`);
-    }
-
-    // First-writer-wins: an address belongs to whichever filler registered it first. A claim
-    // from a different filler is ignored (prevents attribution poisoning / griefing). A genuine
-    // address migration between endpoints needs a manual override.
-    if (existingOwner && existingOwner !== owner) {
-      DynamoFillerAddressRepository.log.info(
-        { address: addrToAdd, existingOwner, attemptedOwner: owner },
-        'address already owned by another filler; ignoring claim'
+  async getAddressToFillerMap(addresses: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(addresses.map((a) => getAddress(a)))];
+    const resMap = new Map<string, string>();
+    for (let i = 0; i < unique.length; i += BATCH_GET_CHUNK) {
+      const chunk = unique.slice(i, i + BATCH_GET_CHUNK);
+      const { Responses: items } = await this._addressTable.batchGet(
+        chunk.map((addr) => this._addressEntity.getBatch({ pk: addr })),
+        { execute: true, parse: true }
       );
-      return;
+      ((items?.FillerAddress ?? []) as AddressItem[]).forEach((row) => {
+        if (row.filler) {
+          resMap.set(getAddress(row.pk), row.filler);
+        }
+      });
     }
-
-    // Already registered to this owner — idempotent no-op.
-    if (existingOwner === owner) {
-      return;
-    }
-
-    // New address for this owner — enforce the per-filler cap.
-    const fillerAddresses = (await this.getFillerAddresses(owner)) ?? [];
-    if (fillerAddresses.length >= MAX_FILLER_ADDRESSES) {
-      DynamoFillerAddressRepository.log.info(
-        { filler: owner, address: addrToAdd, count: fillerAddresses.length, max: MAX_FILLER_ADDRESSES },
-        'filler address cap reached; ignoring new address'
-      );
-      return;
-    }
-
-    await this._addressToFillerEntity.put({ pk: addrToAdd, filler: owner });
-    if (fillerAddresses.length === 0) {
-      await this._fillerToAddressEntity.put({ pk: owner, addresses: [addrToAdd] });
-    } else {
-      await this._fillerToAddressEntity.update({ pk: owner, addresses: { $add: [addrToAdd] } });
-    }
-  }
-
-  /*
-    @returns a map of filler -> [addresses]
-  */
-  async getFillerAddressesBatch(fillers: string[]): Promise<Map<string, Set<string>>> {
-    const { Responses: items } = await this._addressTable.batchGet(
-      fillers.map((fillerHash) => this._fillerToAddressEntity.getBatch({ pk: fillerHash })),
-      { execute: true, parse: true }
-    );
-
     DynamoFillerAddressRepository.log.info(
-      { fillersAddresses: items, fillers: fillers },
+      { requested: unique.length, resolved: resMap.size },
       'filler addresses from dynamo'
     );
-    const resMap = new Map<string, Set<string>>();
-    items.FillerAddress.forEach((row: DynamoFillerToAddressRow) => {
-      resMap.set(row.pk, new Set<string>(row.addresses.map((addr) => getAddress(addr))));
-    });
     return resMap;
-  }
-
-  async getAddressToFillerMap(fillers: string[]): Promise<Map<string, string>> {
-    const fillerAddresses = await this.getFillerAddressesBatch(fillers);
-    DynamoFillerAddressRepository.log.info(
-      { fillerAddressesMap: [...fillerAddresses.entries()] },
-      'filler addresses map'
-    );
-    const addrToFillerMap = new Map<string, string>();
-    fillerAddresses.forEach((addresses, hash) => {
-      addresses.forEach((addr) => addrToFillerMap.set(addr, hash));
-    });
-    return addrToFillerMap;
   }
 }
 
+/** In-memory fake with the same first-writer-wins semantics, for handler and cron tests. */
 export class MockFillerAddressRepository implements FillerAddressRepository {
-  private readonly _fillerToAddress: Map<string, Set<string>>;
-  private readonly _addressToFiller: Map<string, string>;
+  public readonly addressToFiller = new Map<string, string>();
+  public readonly requestedAddresses: string[][] = [];
 
-  constructor() {
-    this._fillerToAddress = new Map<string, Set<string>>();
-    this._addressToFiller = new Map<string, string>();
-  }
-
-  async getFillerAddresses(filler: string): Promise<string[] | undefined> {
-    return Array.from(this._fillerToAddress.get(filler) || []);
+  async recordWinningAddress(address: string, filler: string): Promise<void> {
+    const addr = getAddress(address);
+    const existingOwner = this.addressToFiller.get(addr);
+    if (existingOwner && existingOwner !== filler) {
+      return;
+    }
+    this.addressToFiller.set(addr, filler);
   }
 
   async getFillerByAddress(address: string): Promise<string | undefined> {
-    return this._addressToFiller.get(address);
+    return this.addressToFiller.get(getAddress(address));
   }
 
-  async addNewAddressToFiller(address: string, filler?: string): Promise<void> {
-    const existingOwner = this._addressToFiller.get(address);
-    const owner = filler ?? existingOwner;
-    if (!owner) {
-      throw new Error(`Filler not found for address ${address}`);
-    }
-    // First-writer-wins: ignore a claim on an address owned by another filler.
-    if (existingOwner && existingOwner !== owner) {
-      return;
-    }
-    // Already registered to this owner — idempotent no-op.
-    if (existingOwner === owner) {
-      return;
-    }
-    // New address for this owner — enforce the per-filler cap.
-    const fillerAddresses = this._fillerToAddress.get(owner) || new Set<string>();
-    if (fillerAddresses.size >= MAX_FILLER_ADDRESSES) {
-      return;
-    }
-    fillerAddresses.add(address);
-    this._fillerToAddress.set(owner, fillerAddresses);
-    this._addressToFiller.set(address, owner);
-  }
-
-  async getFillerAddressesBatch(fillers: string[]): Promise<Map<string, Set<string>>> {
-    const res = new Map<string, Set<string>>();
-    for (const filler of fillers) {
-      const addrs = await this.getFillerAddresses(filler);
-      if (addrs) {
-        res.set(filler, new Set(addrs));
+  async getAddressToFillerMap(addresses: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(addresses.map((a) => getAddress(a)))];
+    this.requestedAddresses.push(unique);
+    const res = new Map<string, string>();
+    for (const addr of unique) {
+      const filler = this.addressToFiller.get(addr);
+      if (filler) {
+        res.set(addr, filler);
       }
     }
     return res;
-  }
-
-  async getAddressToFillerMap(fillers: string[]): Promise<Map<string, string>> {
-    const fillerAddresses = await this.getFillerAddressesBatch(fillers);
-    const addrToFillerMap = new Map<string, string>();
-    fillerAddresses.forEach((addresses, hash) => {
-      addresses.forEach((addr) => addrToFillerMap.set(addr, hash));
-    });
-    return addrToFillerMap;
   }
 }

@@ -440,6 +440,10 @@ export class APIStack extends cdk.Stack {
       deletionProtection: true,
       pointInTimeRecovery: true,
       contributorInsightsEnabled: true,
+      // Address rows expire FILLER_ADDRESS_TTL_SECS after the filler's last win with them, so a
+      // filler that rotates addresses cannot grow the table without bound. Rows written before
+      // the attribute existed have no expiresAt and persist until their next win refreshes them.
+      timeToLiveAttribute: 'expiresAt',
       ...PROD_TABLE_CAPACITY.fillerAddress,
     });
 

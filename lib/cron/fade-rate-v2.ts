@@ -222,6 +222,23 @@ function buildOrderServiceShadow(metrics: MetricsLogger): FadeRateCronDeps['shad
   return (ctx) => runFadeRateShadow(ctx, { source, log: shadowLog, metrics });
 }
 
+/**
+ * Resolves the filler (webhook) behind every address in the fade rows. Looks up exactly the
+ * addresses the rows mention (one BatchGet per 100), then keeps only mappings to endpoints in
+ * the current webhook config: an address whose filler has since been removed from the config
+ * must not resurrect a timestamp row for it.
+ */
+export async function lookupFillersForRows(
+  rows: V2FadesRowType[],
+  fillerEndpoints: string[],
+  fillerAddressRepo: Pick<FillerAddressRepository, 'getAddressToFillerMap'>
+): Promise<Map<string, string>> {
+  const addresses = [...new Set(rows.map((row) => ethers.utils.getAddress(row.fillerAddress)))];
+  const mapped = await fillerAddressRepo.getAddressToFillerMap(addresses);
+  const configured = new Set(fillerEndpoints);
+  return new Map([...mapped.entries()].filter(([, filler]) => configured.has(filler)));
+}
+
 export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCronDeps): Promise<void> {
   const { fadesRepository, webhookProvider, fillerAddressRepo, timestampDB } = deps;
   const log = deps.log ?? defaultLog;
@@ -249,7 +266,7 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
 
   if (result) {
     const fillerEndpoints = webhookProvider.fillerEndpoints();
-    const addressToFillerMap = await fillerAddressRepo.getAddressToFillerMap(fillerEndpoints);
+    const addressToFillerMap = await lookupFillersForRows(result, fillerEndpoints, fillerAddressRepo);
     const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
 
     const now = deps.now ? deps.now() : Math.floor(Date.now() / 1000);

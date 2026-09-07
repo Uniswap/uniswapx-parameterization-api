@@ -21,7 +21,6 @@ import {
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
-import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
 
@@ -64,8 +63,7 @@ export class WebhookQuoter implements Quoter {
     _log: Logger,
     private firehose: FirehoseLogger,
     private webhookProvider: WebhookConfigurationProvider,
-    private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    private repository: FillerAddressRepository
+    private circuitBreakerProvider: CircuitBreakerConfigurationProvider
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
@@ -344,10 +342,12 @@ export class WebhookQuoter implements Quoter {
         })
       );
 
-      // do not await to minimize latency
-      if (response.filler) {
-        this.repository.addNewAddressToFiller(response.filler, endpoint);
-      }
+      // Filler-address attribution is NOT done here: only a winning quote that is then posted
+      // with exclusivity puts a filler address on an order, so the hard-quote handler records
+      // it at the confirmed post (see handlers/hard-quote/record-winning-filler.ts). Doing it
+      // per response cost a DynamoDB round trip for every filler on every quote and throttled
+      // the table on 2026-09-07.
+
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
       const opposingResponse = QuoteResponse.fromRFQ({

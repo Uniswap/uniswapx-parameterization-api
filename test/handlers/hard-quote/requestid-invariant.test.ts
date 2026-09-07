@@ -17,6 +17,7 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { OrderServiceProvider } from '../../../lib/providers/order';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
 import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
 
@@ -144,6 +145,7 @@ describe('hard-quote requestId := quoteId invariant', () => {
             quoters,
             orderServiceProvider,
             postedOrderRepository: new MockPostedOrderRepository(),
+            fillerAddressRepository: new MockFillerAddressRepository(),
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           }),
           getRequestInjected: () => requestInjectedMock,
