@@ -10,10 +10,17 @@ export type DynamoFillerToAddressRow = {
   addresses: string[];
 };
 
-// Max distinct on-chain addresses a single filler (webhook endpoint) may register, bounding
-// Sybil breadth. Registrations beyond the cap are a safe no-op — the order still quotes and
-// fills, the address just isn't attributed — so this can't break quoting.
-export const MAX_FILLER_ADDRESSES = 3;
+// Max distinct on-chain addresses a single filler (webhook endpoint) may register, bounding the
+// size of the per-filler address set item. Registrations beyond the cap are a no-op — the order
+// still quotes and fills, the address just isn't attributed.
+//
+// The no-op is not free: an over-cap address is looked up (miss) and then the owner's set is read
+// on EVERY quote response that carries it, forever, because it can never be registered. With the
+// cap at 3, a filler that legitimately used 4-5 addresses paid two DynamoDB reads per response
+// and read-throttled this table on 2026-09-07 (which, via an un-awaited write in WebhookQuoter,
+// 5xx'd /quote). 100 is far above any real filler's address count (measured 1-5) while still
+// keeping a rotating filler's set item well under the 400KB item limit (~45 bytes per address).
+export const MAX_FILLER_ADDRESSES = 100;
 
 export interface FillerAddressRepository {
   getFillerAddresses(filler: string): Promise<string[] | undefined>;

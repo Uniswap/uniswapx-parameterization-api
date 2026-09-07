@@ -117,21 +117,31 @@ describe('filler address repository test', () => {
   });
 
   it('caps the number of addresses a single filler can register', async () => {
-    const addrs = [
-      '0x0000000000000000000000000000000000000010',
-      '0x0000000000000000000000000000000000000011',
-      '0x0000000000000000000000000000000000000012',
-      '0x0000000000000000000000000000000000000013',
-    ];
-    expect(addrs.length).toBeGreaterThan(MAX_FILLER_ADDRESSES); // guard: test must exceed the cap
+    // MAX_FILLER_ADDRESSES + 1 distinct addresses, disjoint from the fixtures above
+    const addrs = Array.from({ length: MAX_FILLER_ADDRESSES + 1 }, (_, i) =>
+      getAddress(`0x${(0x1000 + i).toString(16).padStart(40, '0')}`)
+    );
     for (const addr of addrs) {
       await repository.addNewAddressToFiller(addr, 'capFiller');
     }
     // only the first MAX_FILLER_ADDRESSES are registered; the rest are ignored
     const registered = (await repository.getFillerAddresses('capFiller')) ?? [];
     expect(registered.length).toEqual(MAX_FILLER_ADDRESSES);
-    expect(registered).toEqual(addrs.slice(0, MAX_FILLER_ADDRESSES).map((a) => getAddress(a)));
+    expect(new Set(registered)).toEqual(new Set(addrs.slice(0, MAX_FILLER_ADDRESSES)));
     // the over-cap address is attributed to no filler
     expect(await repository.getFillerByAddress(addrs[MAX_FILLER_ADDRESSES])).toBeUndefined();
+  });
+
+  it('a filler with more than 3 addresses (the old cap) is fully attributed', async () => {
+    // Regression for 2026-09-07: real fillers use up to 5 addresses; the ones beyond the old cap
+    // of 3 could never register and cost two reads per quote response forever.
+    const addrs = Array.from({ length: 5 }, (_, i) => getAddress(`0x${(0x2000 + i).toString(16).padStart(40, '0')}`));
+    for (const addr of addrs) {
+      await repository.addNewAddressToFiller(addr, 'fiveAddressFiller');
+    }
+    expect(new Set(await repository.getFillerAddresses('fiveAddressFiller'))).toEqual(new Set(addrs));
+    for (const addr of addrs) {
+      expect(await repository.getFillerByAddress(addr)).toEqual('fiveAddressFiller');
+    }
   });
 });
