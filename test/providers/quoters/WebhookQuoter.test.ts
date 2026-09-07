@@ -65,7 +65,13 @@ describe('WebhookQuoter tests', () => {
     },
   ]);
 
-  const logger = { child: jest.fn(() => logger), info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
+  const logger = {
+    child: jest.fn(() => logger),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  } as any;
   const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
   const webhookQuoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository);
 
@@ -273,6 +279,51 @@ describe('WebhookQuoter tests', () => {
       });
     await webhookQuoter.quote(request);
     expect(repository.getFillerAddresses(WEBHOOK_URL)).resolves.toEqual([FILLER]);
+  });
+
+  it('a failed filler-address write does not fail the quote', async () => {
+    // Regression for 2026-09-07: a throttled FillerAddress read rejected the un-awaited
+    // addNewAddressToFiller call, and the unhandled rejection failed the whole Lambda invocation
+    // (5xx on /quote) even though every filler had already answered.
+    const rejectingRepository = {
+      ...new MockFillerAddressRepository(),
+      addNewAddressToFiller: jest.fn().mockRejectedValue(new Error('ProvisionedThroughputExceededException')),
+    } as any;
+    const quoter = new WebhookQuoter(
+      logger,
+      mockFirehoseLogger,
+      webhookProvider,
+      MOCK_V2_CB_PROVIDER,
+      rejectingRepository
+    );
+    const putMetricSpy = jest.spyOn(metric, 'putMetric');
+    mockedAxios.post
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: { ...quote, requestId: (_req as any).requestId },
+        });
+      })
+      .mockImplementationOnce((_endpoint, _req, _options) => {
+        return Promise.resolve({
+          data: {
+            ...quote,
+            tokenIn: request.tokenOut,
+            tokenOut: request.tokenIn,
+          },
+        });
+      });
+
+    const response = await quoter.quote(request);
+    // let the fire-and-forget rejection settle
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(response.length).toEqual(1);
+    expect(rejectingRepository.addNewAddressToFiller).toHaveBeenCalledWith(FILLER, WEBHOOK_URL);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ filler: FILLER, endpoint: WEBHOOK_URL }),
+      expect.stringContaining('failed to record filler address')
+    );
+    expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_FILLER_ADDRESS_RECORD_FAILED, 1, MetricLoggerUnit.Count);
   });
 
   describe('Circuit Breaker v2 tests', () => {

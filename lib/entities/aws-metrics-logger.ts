@@ -71,6 +71,10 @@ export enum Metric {
   RFQ_COUNT_2 = 'RFQ_COUNT_2',
   RFQ_COUNT_3 = 'RFQ_COUNT_3',
   RFQ_COUNT_4_PLUS = 'RFQ_COUNT_4_PLUS',
+  // The fire-and-forget FillerAddress write after a successful quote rejected (e.g. a throttled
+  // DynamoDB read). The quote itself is unaffected; a sustained non-zero rate means fills from
+  // new filler addresses are going unattributed to the fade-rate breaker.
+  RFQ_FILLER_ADDRESS_RECORD_FAILED = 'RFQ_FILLER_ADDRESS_RECORD_FAILED',
 
   // Latency-attribution metrics.
   // Time spent resolving webhook config + circuit-breaker state before fan-out.
