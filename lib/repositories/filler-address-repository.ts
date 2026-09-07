@@ -11,8 +11,10 @@ export type DynamoFillerToAddressRow = {
 };
 
 // Max distinct on-chain addresses a single filler (webhook endpoint) may register, bounding
-// Sybil breadth. Registrations beyond the cap are a safe no-op — the order still quotes and
-// fills, the address just isn't attributed — so this can't break quoting.
+// Sybil breadth. Registrations beyond the cap are a no-op — the order still quotes and fills,
+// the address just isn't attributed. Note the no-op is not free: without the capped-filler
+// cache below, every over-cap attempt costs two DynamoDB reads (address miss + owner's list),
+// and a filler rotating addresses per quote turned that into read throttling on 2026-09-07.
 export const MAX_FILLER_ADDRESSES = 3;
 
 export interface FillerAddressRepository {
@@ -63,6 +65,13 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
 
     return new DynamoFillerAddressRepository(addressTable, fillerToAddressEntity, addressToFillerEntity);
   }
+  // Fillers known to be at MAX_FILLER_ADDRESSES. A capped filler's registrations are no-ops, so
+  // there is nothing to read; skipping the lookups is what keeps a per-quote address rotator
+  // from costing two GetItems per quote forever. Per container, cleared on cold start. This code
+  // path never removes addresses, so an entry can only go stale via a manual table edit, which
+  // a container recycle picks up.
+  private readonly _cappedFillers = new Set<string>();
+
   private constructor(
     private readonly _addressTable: Table<'FillerAddress', 'pk', null>,
     private readonly _fillerToAddressEntity: Entity,
@@ -83,6 +92,12 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
   }
 
   async addNewAddressToFiller(address: string, filler?: string): Promise<void> {
+    // At cap, every outcome below is a no-op (already ours, someone else's, or over the cap), so
+    // answer from memory and touch nothing.
+    if (filler && this._cappedFillers.has(filler)) {
+      return;
+    }
+
     const addrToAdd = getAddress(address);
     const existingOwner = await this.getFillerByAddress(addrToAdd);
     const owner = filler ?? existingOwner;
@@ -109,6 +124,7 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
     // New address for this owner — enforce the per-filler cap.
     const fillerAddresses = (await this.getFillerAddresses(owner)) ?? [];
     if (fillerAddresses.length >= MAX_FILLER_ADDRESSES) {
+      this._cappedFillers.add(owner);
       DynamoFillerAddressRepository.log.info(
         { filler: owner, address: addrToAdd, count: fillerAddresses.length, max: MAX_FILLER_ADDRESSES },
         'filler address cap reached; ignoring new address'
@@ -121,6 +137,9 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
       await this._fillerToAddressEntity.put({ pk: owner, addresses: [addrToAdd] });
     } else {
       await this._fillerToAddressEntity.update({ pk: owner, addresses: { $add: [addrToAdd] } });
+    }
+    if (fillerAddresses.length + 1 >= MAX_FILLER_ADDRESSES) {
+      this._cappedFillers.add(owner);
     }
   }
 

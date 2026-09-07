@@ -134,4 +134,46 @@ describe('filler address repository test', () => {
     // the over-cap address is attributed to no filler
     expect(await repository.getFillerByAddress(addrs[MAX_FILLER_ADDRESSES])).toBeUndefined();
   });
+
+  it('once a filler is at the cap, further registrations make no DynamoDB calls', async () => {
+    // capFiller reached the cap in the previous test (via the write path filling the last slot,
+    // and again via the over-cap read path). Either way the repository must now remember that
+    // and short-circuit: a rotating filler at cap is the 2026-09-07 read-throttle driver.
+    const send = jest.spyOn(documentClient, 'send');
+    try {
+      await repository.addNewAddressToFiller('0x0000000000000000000000000000000000000014', 'capFiller');
+      await repository.addNewAddressToFiller('0x0000000000000000000000000000000000000015', 'capFiller');
+      expect(send).not.toHaveBeenCalled();
+      // and the table is unchanged
+      expect(((await repository.getFillerAddresses('capFiller')) ?? []).length).toEqual(MAX_FILLER_ADDRESSES);
+    } finally {
+      send.mockRestore();
+    }
+  });
+
+  it('a filler below the cap still reads (the cache only covers capped fillers)', async () => {
+    const send = jest.spyOn(documentClient, 'send');
+    try {
+      // filler2 has one address; an idempotent re-add must still consult the table
+      await repository.addNewAddressToFiller(ADDR3, 'filler2');
+      expect(send).toHaveBeenCalled();
+    } finally {
+      send.mockRestore();
+    }
+  });
+
+  it('the cap cache is populated by the write path, not only the over-cap read path', async () => {
+    // register exactly MAX_FILLER_ADDRESSES for a fresh filler; the last write should mark it capped
+    const base = '0x00000000000000000000000000000000000000';
+    for (let i = 0; i < MAX_FILLER_ADDRESSES; i++) {
+      await repository.addNewAddressToFiller(`${base}2${i}`, 'writePathFiller');
+    }
+    const send = jest.spyOn(documentClient, 'send');
+    try {
+      await repository.addNewAddressToFiller(`${base}2${MAX_FILLER_ADDRESSES}`, 'writePathFiller');
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      send.mockRestore();
+    }
+  });
 });

@@ -344,9 +344,18 @@ export class WebhookQuoter implements Quoter {
         })
       );
 
-      // do not await to minimize latency
+      // Fire-and-forget to keep latency down. Attribution is best-effort: a rejection here (a
+      // throttled FillerAddress read took /quote to 5xx on 2026-09-07) must never fail a quote
+      // that has already been obtained, so it is caught and counted rather than left as an
+      // unhandled rejection for the Lambda runtime to turn into an invocation error.
       if (response.filler) {
-        this.repository.addNewAddressToFiller(response.filler, endpoint);
+        this.repository.addNewAddressToFiller(response.filler, endpoint).catch((err) => {
+          metric.putMetric(Metric.RFQ_FILLER_ADDRESS_RECORD_FAILED, 1, MetricLoggerUnit.Count);
+          log.warn(
+            { err, filler: response.filler, endpoint },
+            'failed to record filler address; quote unaffected, attribution skipped'
+          );
+        });
       }
       //if valid quote, log the opposing side as well
       const opposingRequest = request.toOpposingRequest();
