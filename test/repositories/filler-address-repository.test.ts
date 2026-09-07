@@ -155,7 +155,36 @@ describe('filler address repository', () => {
     expect(Number(item?.expiresAt)).toBeGreaterThan(0);
   });
 
-  it('ignores legacy filler -> [addresses] rows, which are keyed by endpoint and never requested', async () => {
+  it('retries UnprocessedKeys from a throttled BatchGet instead of dropping them', async () => {
+    // Simulate DynamoDB serving only the first key of the batch and returning the rest as
+    // UnprocessedKeys; the retry (a real send) must fill in the remainder.
+    const realSend = documentClient.send.bind(documentClient);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const send = jest.spyOn(documentClient, 'send').mockImplementationOnce(async (cmd: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: any = await realSend(cmd);
+      const keys = cmd.input.RequestItems.FillerAddress.Keys;
+      const [served, ...unprocessed] = keys;
+      out.Responses.FillerAddress = out.Responses.FillerAddress.filter((item: { pk: string }) => item.pk === served.pk);
+      out.UnprocessedKeys = { FillerAddress: { Keys: unprocessed } };
+      return out;
+    });
+    try {
+      const res = await repository.getAddressToFillerMap([ADDR1, ADDR2, ADDR3]);
+      expect(res).toEqual(
+        new Map([
+          [ADDR1, FILLER1],
+          [ADDR2, FILLER1],
+          [ADDR3, FILLER2],
+        ])
+      );
+      expect(send).toHaveBeenCalledTimes(2);
+    } finally {
+      send.mockRestore();
+    }
+  });
+
+  it('legacy filler -> [addresses] rows keyed by endpoint do not interfere with address lookups', async () => {
     // Pre-redesign shape; must not break batch lookups that happen to share the table.
     await documentClient.send(
       new PutCommand({

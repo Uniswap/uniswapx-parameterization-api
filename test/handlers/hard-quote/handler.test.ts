@@ -567,7 +567,6 @@ describe('Quote handler', () => {
         getEvent(request),
         {} as unknown as Context
       );
-      await new Promise((resolve) => setImmediate(resolve));
 
       expect(response.statusCode).toEqual(200);
       expect([...addresses.addressToFiller.entries()]).toEqual([[MOCK_FILLER_ADDRESS, 'https://uniswap.org']]);
@@ -582,7 +581,6 @@ describe('Quote handler', () => {
         undefined,
         addresses
       ).handler(getEvent(request), {} as unknown as Context);
-      await new Promise((resolve) => setImmediate(resolve));
 
       expect(response.statusCode).toEqual(200);
       expect(JSON.parse(response.body).filler).toEqual(ethers.constants.AddressZero);
@@ -601,7 +599,6 @@ describe('Quote handler', () => {
         undefined,
         addresses
       ).handler(getEvent(request), {} as unknown as Context);
-      await new Promise((resolve) => setImmediate(resolve));
 
       expect(response.statusCode).toEqual(200);
       expect(JSON.parse(response.body).filler).toEqual(MOCK_FILLER_ADDRESS);

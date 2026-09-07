@@ -6,22 +6,27 @@ import { getAddress } from 'ethers/lib/utils';
 
 import { Metric } from '../../entities/aws-metrics-logger';
 import { QuoteResponse } from '../../entities/QuoteResponse';
+import { FillerAddressRepository } from '../../repositories/filler-address-repository';
 import {
   PostedOrderOutcome,
   PostedOrderRecord,
   PostedOrderRepository,
 } from '../../repositories/posted-order-repository';
 
-// Hard wall on the bookkeeping write. It sits in series with the hard-quote response (the
-// Lambda freezes once the handler returns, so the write cannot be fire-and-forget), and the
-// order-service post before it already spends up to ~9.5s, so this is the ceiling on what a
-// misbehaving DynamoDB may add to a quote. A warm in-region PutItem is single-digit ms.
+// Hard wall on the bookkeeping writes. They sit in series with the hard-quote response (the
+// Lambda freezes once the handler returns, so a write cannot be fire-and-forget), and the
+// order-service post before them already spends up to ~9.5s, so this is the ceiling on what a
+// misbehaving DynamoDB may add to a quote. The two writes run concurrently under one wall; a
+// warm in-region PutItem/UpdateItem is single-digit ms.
 export const POSTED_ORDER_WRITE_TIMEOUT_MS = 500;
 
 export type CosignedOrder = CosignedV2DutchOrder | CosignedV3DutchOrder;
 
 export interface RecordPostedOrderArgs {
   repository: PostedOrderRepository;
+  // Address -> webhook attribution for the fade breaker's legacy (Redshift) path, which sees
+  // only the address. Written alongside the PostedOrders row from the same record.
+  fillerAddressRepository: FillerAddressRepository;
   order: CosignedOrder;
   // The winning RFQ quote, or undefined for an open order. Only RFQ-won orders are recorded.
   quote: QuoteResponse | undefined;
@@ -72,7 +77,7 @@ export function buildPostedOrderRecord(args: BuildPostedOrderRecordArgs): Posted
     chainId: order.chainId,
     fillerAddress,
     // QuoteResponse.endpoint is the RFQ webhook the quote came from — the same string
-    // WebhookQuoter registers the address under in FillerAddress and the breaker keys
+    // recordPostedOrder attributes fillerAddress to in FillerAddress and the breaker keys
     // FillerCBTimestampsV2 by, so no lookup is needed to resolve it.
     filler: quote.endpoint,
     fillerName: quote.fillerName,
@@ -86,13 +91,15 @@ export function buildPostedOrderRecord(args: BuildPostedOrderRecordArgs): Posted
 }
 
 /**
- * Records a confirmed RFQ-won post. Never throws and never takes longer than `timeoutMs`:
- * the record is derived bookkeeping, and losing one row is strictly better than failing or
- * slowing a quote the order service has already accepted. Every failure (including the
- * timeout) is logged and counted; the caller does not need to inspect the result.
+ * Records a confirmed RFQ-won post: the PostedOrders row and, from the same record, the
+ * FillerAddress attribution (fillerAddress -> filler endpoint). Never throws and never takes
+ * longer than `timeoutMs`: both rows are derived bookkeeping, and losing one is strictly
+ * better than failing or slowing a quote the order service has already accepted. Every
+ * failure (including the timeout) is logged and counted per row; the caller does not need
+ * to inspect the result.
  */
 export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<void> {
-  const { repository, order, quote, quoteId, requestId, log, metric } = args;
+  const { repository, fillerAddressRepository, order, quote, quoteId, requestId, log, metric } = args;
   const timeoutMs = args.timeoutMs ?? POSTED_ORDER_WRITE_TIMEOUT_MS;
 
   if (!quote || !exclusiveFillerOf(order)) {
@@ -104,24 +111,54 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
   try {
     const record = buildPostedOrderRecord({ order, quote, quoteId, requestId, postedAtMs: start });
     orderHash = record.orderHash;
-    await withTimeout(repository.putPostedOrder(record), timeoutMs);
-    metric.putMetric(Metric.POSTED_ORDER_RECORDED, 1, MetricLoggerUnit.Count);
-    log.info({ orderHash, filler: record.filler, fillerAddress: record.fillerAddress }, 'Recorded posted order');
+    // Both rows state the same fact (this address, quoting for this webhook, is on this order),
+    // so they are written from one record, concurrently — the response pays the slower write,
+    // not the sum — and each under the same wall. Neither outcome affects the other.
+    const [posted, attributed] = await Promise.allSettled([
+      withTimeout(repository.putPostedOrder(record), timeoutMs, 'posted-order'),
+      withTimeout(
+        fillerAddressRepository.recordWinningAddress(record.fillerAddress, record.filler),
+        timeoutMs,
+        'filler-address'
+      ),
+    ]);
+    if (posted.status === 'fulfilled') {
+      metric.putMetric(Metric.POSTED_ORDER_RECORDED, 1, MetricLoggerUnit.Count);
+      log.info({ orderHash, filler: record.filler, fillerAddress: record.fillerAddress }, 'Recorded posted order');
+    } else {
+      metric.putMetric(Metric.POSTED_ORDER_RECORD_FAILED, 1, MetricLoggerUnit.Count);
+      log.error({ orderHash, error: errorMessage(posted.reason) }, 'Failed to record posted order');
+    }
+    if (attributed.status === 'rejected') {
+      metric.putMetric(Metric.FILLER_ADDRESS_RECORD_FAILED, 1, MetricLoggerUnit.Count);
+      log.warn(
+        {
+          orderHash,
+          filler: record.filler,
+          fillerAddress: record.fillerAddress,
+          error: errorMessage(attributed.reason),
+        },
+        'Failed to record filler address; order unaffected, attribution skipped'
+      );
+    }
   } catch (e) {
+    // Only buildPostedOrderRecord can throw here; the writes are settled above.
     metric.putMetric(Metric.POSTED_ORDER_RECORD_FAILED, 1, MetricLoggerUnit.Count);
-    log.error({ orderHash, error: e instanceof Error ? e.message : e }, 'Failed to record posted order');
+    log.error({ orderHash, error: errorMessage(e) }, 'Failed to record posted order');
   } finally {
     metric.putMetric(Metric.POSTED_ORDER_RECORD_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
   }
 }
 
+const errorMessage = (e: unknown): unknown => (e instanceof Error ? e.message : e);
+
 // Promise.race subscribes to the losing promise too, so a write that fails after the
 // timeout fired is swallowed rather than surfacing as an unhandled rejection. The timer is
 // always cleared so a fast write leaves nothing pending on the event loop.
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`posted-order write timed out after ${ms}ms`)), ms);
+    timer = setTimeout(() => reject(new Error(`${label} write timed out after ${ms}ms`)), ms);
   });
   try {
     return await Promise.race([promise, timeout]);

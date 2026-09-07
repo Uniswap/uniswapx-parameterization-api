@@ -1,5 +1,3 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
@@ -23,8 +21,8 @@ export interface ContainerInjected extends BaseQuoteContainerInjected {
   orderServiceProvider: OrderServiceProvider;
   // Bookkeeping sink for confirmed RFQ-won posts (see posted-order-recorder.ts).
   postedOrderRepository: PostedOrderRepository;
-  // Winning filler address -> webhook attribution for the fade breaker, written only on a
-  // confirmed exclusive post (see record-winning-filler.ts). Hard-quote only: the breaker scores
+  // Winning filler address -> webhook attribution for the fade breaker, written by
+  // recordPostedOrder alongside the PostedOrders row. Hard-quote only: the breaker scores
   // V2/V3 orders and every one of those is cosigned here, so /quote never touches this table.
   fillerAddressRepository: FillerAddressRepository;
 }
@@ -41,17 +39,13 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const base = buildQuoteContainerInjected(log, stage);
 
-    const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-      marshallOptions: { convertEmptyValues: true },
-      unmarshallOptions: { wrapNumbers: true },
-    });
-
     return {
       ...base,
       orderServiceProvider: new UniswapXServiceProvider(log, orderServiceUrl),
-      // Builds its own bounded DynamoDB client; construction is lazy (no I/O).
+      // Both build their own bounded DynamoDB client (the writes sit in series with the
+      // response); construction is lazy (no I/O).
       postedOrderRepository: DynamoPostedOrderRepository.create(),
-      fillerAddressRepository: DynamoFillerAddressRepository.create(documentClient),
+      fillerAddressRepository: DynamoFillerAddressRepository.create(),
     };
   }
 

@@ -71,9 +71,10 @@ export enum Metric {
   RFQ_COUNT_2 = 'RFQ_COUNT_2',
   RFQ_COUNT_3 = 'RFQ_COUNT_3',
   RFQ_COUNT_4_PLUS = 'RFQ_COUNT_4_PLUS',
-  // The fire-and-forget FillerAddress write for a winning quote rejected (e.g. a throttled
-  // DynamoDB call). The quote itself is unaffected; a sustained non-zero rate means fills from
-  // new filler addresses are going unattributed to the fade-rate breaker.
+  // The bounded FillerAddress attribution write made alongside the PostedOrders row failed or
+  // timed out (e.g. a throttled DynamoDB call). The response is unaffected; a sustained
+  // non-zero rate means fills from new filler addresses are going unattributed on the
+  // breaker's Redshift path. Sibling of POSTED_ORDER_RECORD_FAILED.
   FILLER_ADDRESS_RECORD_FAILED = 'FILLER_ADDRESS_RECORD_FAILED',
 
   // Latency-attribution metrics.

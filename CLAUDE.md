@@ -62,8 +62,8 @@ full harness design, per-filler duty-cycle/allowed-fades metrics, and baseline n
 
 Extract query (matches the breaker's fade semantics from `V2_FADE_RATE_SQL`, but with **no
 24h window, no latest-100 cap, and no row limit** — the replay applies windowing itself).
-**Keep the `faded` CASE in sync with `V2_FADE_RATE_SQL`** — e.g. #461 changed Dutch_V3 to
-`fillTimeBlocks > 0` (a fill at the decay-start block is _not_ a fade); an extract using the
+**Keep the `faded` CASE in sync with `V2_FADE_RATE_SQL`** — e.g. #461 changed Dutch*V3 to
+`fillTimeBlocks > 0` (a fill at the decay-start block is \_not* a fade); an extract using the
 old `>= 0` inflates V3 fade rates and mis-calibrates every knob. The raw columns are included
 so the replay can recompute `faded` locally if the semantics change again:
 
@@ -106,6 +106,8 @@ Post-processing the replay must do itself (deliberately not in the SQL):
   drift from the code.
 - **Aggregate addresses to fillers** with the `FillerAddress` DynamoDB table
   (`aws dynamodb scan --table-name FillerAddress`) — the breaker scores per filler hash, not
-  per address. Per-address replay is a usable approximation but under-counts multi-address
-  fillers.
+  per address. Use the per-address rows (`pk` = checksummed address, `filler` = endpoint);
+  ignore the legacy rows keyed by endpoint URL with an `addresses` set, which stopped being
+  updated when attribution moved to per-address rows. Per-address replay is a usable
+  approximation but under-counts multi-address fillers.
 - Dedupe on `quoteId` (the `archivedorders` join can rarely fan out).

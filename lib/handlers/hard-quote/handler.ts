@@ -28,7 +28,6 @@ import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
 import { ContainerInjected, RequestInjected } from './injector';
 import { recordPostedOrder } from './posted-order-recorder';
-import { recordWinningFiller } from './record-winning-filler';
 import {
   HardQuoteRequestBody,
   HardQuoteRequestBodyJoi,
@@ -144,10 +143,13 @@ export class QuoteHandler extends APIGLambdaHandler<
           metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
           // 200 and 201 (the latter also covers a post whose timeout was reconciled as
           // accepted) are the only confirmed posts, so this is the only place the
-          // fade-breaker bookkeeping row is written. Bounded and non-throwing; it runs
-          // before QUOTE_LATENCY is stamped so the alarmed metric keeps including it.
+          // fade-breaker bookkeeping rows are written: the PostedOrders row and, for the
+          // winning exclusive filler, its address -> webhook attribution. Bounded and
+          // non-throwing; it runs before QUOTE_LATENCY is stamped so the alarmed metric keeps
+          // including it.
           await recordPostedOrder({
             repository: postedOrderRepository,
+            fillerAddressRepository,
             order: cosignedOrder,
             quote: bestQuote ?? undefined,
             quoteId: postedQuoteId,
@@ -155,13 +157,6 @@ export class QuoteHandler extends APIGLambdaHandler<
             log,
             metric,
           });
-          // The confirmed post is the one point where "this filler's address is on an order"
-          // is certain, so attribution for the breaker's address -> webhook lookup happens
-          // here, for the winner only and only if it earned exclusivity (an open order carries
-          // no filler address to attribute). Fire-and-forget; cannot fail the response.
-          if (bestQuote && cosignedOrder.info.cosignerData.exclusiveFiller !== ethers.constants.AddressZero) {
-            recordWinningFiller({ repository: fillerAddressRepository, quote: bestQuote, log, metric });
-          }
           metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
           const hardResponse = createHardQuoteResponse(request, cosignedOrder);
           if (!bestQuote) {
