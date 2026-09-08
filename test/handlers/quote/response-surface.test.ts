@@ -9,6 +9,7 @@ import { ContainerInjected, PostQuoteRequestBody, RequestInjected } from '../../
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { ProtocolVersion } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { fakeContext } from '../../fakes';
 
 /**
  * Response-surface snapshots for POST /quote.
@@ -45,6 +46,7 @@ const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
 describe('/quote response surface', () => {
+  const fakes = fakeContext('test');
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
@@ -52,6 +54,7 @@ describe('/quote response surface', () => {
         // Surfaces as the `id` field of every handler-level error body below.
         requestId: 'test',
         metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 

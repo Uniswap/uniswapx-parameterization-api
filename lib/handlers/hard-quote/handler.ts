@@ -1,7 +1,6 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
 import { KmsSigner } from '@uniswap/signer';
-import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import {
   CosignedV2DutchOrder,
   CosignedV3DutchOrder,
@@ -49,7 +48,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     params: APIHandleRequestParams<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>
   ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
-      requestInjected: { log, metric },
+      requestInjected: { ctx, log, metric },
       containerInjected: {
         quoters,
         orderServiceProvider,
@@ -59,9 +58,10 @@ export class QuoteHandler extends APIGLambdaHandler<
       },
       requestBody,
     } = params;
+    const { logger, metrics } = ctx;
     const start = Date.now();
 
-    metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
+    metrics.increment(Metric.QUOTE_REQUESTED);
 
     // QUOTE_LATENCY below fires only on successful order posts (and is alarmed on). The
     // finally makes this metric cover every exit path — no-quote throws, cosigner
@@ -84,12 +84,12 @@ export class QuoteHandler extends APIGLambdaHandler<
 
       // we dont have access to the cosigner key, throw
       if (request.order.info.cosigner !== cosignerAddress) {
-        log.error({ cosignerInReq: request.order.info.cosigner, expected: cosignerAddress }, 'Unknown cosigner');
+        logger.error({ cosignerInReq: request.order.info.cosigner, expected: cosignerAddress }, 'Unknown cosigner');
         throw new UnknownOrderCosignerError();
       }
       // Instead of decoding the order, we rely on frontend passing in the requestId
       //   from indicative quote
-      log.info({
+      logger.info({
         eventType: 'HardRequest',
         body: {
           requestId: request.requestId,
@@ -110,6 +110,9 @@ export class QuoteHandler extends APIGLambdaHandler<
 
       let bestQuote;
       if (!requestBody.forceOpenOrder) {
+        // The quote path below the handler still takes the bunyan logger and the
+        // smart-order-router IMetric positionally (moved to ctx in a later PR); both are the
+        // same objects ctx wraps, so its logs and metrics are unchanged.
         const result = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, provider, RESPONSE_LOG_TYPE);
         bestQuote = result.bestQuote;
         if (!bestQuote && !requestBody.allowNoQuote) {
@@ -122,17 +125,17 @@ export class QuoteHandler extends APIGLambdaHandler<
       let cosignerData: CosignerData | V3CosignerData;
       if (bestQuote) {
         cosignerData = await getCosignerData(request, bestQuote, orderType, provider);
-        log.info({ bestQuote: bestQuote }, 'bestQuote');
+        logger.info({ bestQuote: bestQuote }, 'bestQuote');
       } else {
         cosignerData = await getDefaultCosignerData(request, orderType, provider);
-        log.info({ cosignerData: cosignerData }, 'open order with default cosignerData');
+        logger.info({ cosignerData: cosignerData }, 'open order with default cosignerData');
       }
 
       const cosignedOrder = await createCosignedOrder(cosigner, request, cosignerData);
       // if no quote and creating open order, create random new quoteId
       const postedQuoteId = bestQuote?.quoteId ?? request.quoteId ?? request.requestId;
       try {
-        metric.putMetric(Metric.QUOTE_POST_ATTEMPT, 1, MetricLoggerUnit.Count);
+        metrics.increment(Metric.QUOTE_POST_ATTEMPT);
         const response = await orderServiceProvider.postOrder({
           order: cosignedOrder,
           signature: request.innerSig,
@@ -140,7 +143,7 @@ export class QuoteHandler extends APIGLambdaHandler<
           requestId: request.requestId,
         });
         if (response.statusCode == 200 || response.statusCode == 201) {
-          metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
+          metrics.increment(Metric.QUOTE_200);
           // 200 and 201 (the latter also covers a post whose timeout was reconciled as
           // accepted) are the only confirmed posts, so this is the only place the
           // fade-breaker bookkeeping rows are written: the PostedOrders row and, for the
@@ -154,15 +157,14 @@ export class QuoteHandler extends APIGLambdaHandler<
             quote: bestQuote ?? undefined,
             quoteId: postedQuoteId,
             requestId: request.requestId,
-            log,
-            metric,
+            ctx,
           });
-          metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+          metrics.histogram(Metric.QUOTE_LATENCY, Date.now() - start);
           const hardResponse = createHardQuoteResponse(request, cosignedOrder);
           if (!bestQuote) {
             // The RFQ responses are logged in getBestQuote()
             // we log the Open Orders here
-            log.info({
+            logger.info({
               eventType: RESPONSE_LOG_TYPE,
               body: {
                 ...hardResponse.toLog(),
@@ -176,11 +178,11 @@ export class QuoteHandler extends APIGLambdaHandler<
           };
         } else {
           const error = response as ErrorResponse;
-          log.error({ error: error }, 'Error posting order');
+          logger.error({ error: error }, 'Error posting order');
 
           // user error should not be alerted on
           if (error.detail != POST_ORDER_ERROR_REASON.INSUFFICIENT_FUNDS) {
-            metric.putMetric(Metric.QUOTE_POST_ERROR, 1, MetricLoggerUnit.Count);
+            metrics.increment(Metric.QUOTE_POST_ERROR);
           }
           // Only a 4xx from the order service is a genuine rejection of the
           // order. Anything else (timeouts, 5xx) is indeterminate — the order
@@ -188,13 +190,13 @@ export class QuoteHandler extends APIGLambdaHandler<
           // rewriting it to 400 makes clients treat a live, fillable order as
           // rejected.
           if (error.statusCode >= 400 && error.statusCode < 500) {
-            metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
+            metrics.increment(Metric.QUOTE_400);
             return {
               ...error,
               statusCode: 400,
             };
           }
-          metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
+          metrics.increment(Metric.QUOTE_500);
           return {
             ...error,
             statusCode: 500,
@@ -204,7 +206,7 @@ export class QuoteHandler extends APIGLambdaHandler<
         throw new OrderPostError((e as Error).message);
       }
     } finally {
-      metric.putMetric(Metric.QUOTE_E2E_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+      metrics.histogram(Metric.QUOTE_E2E_LATENCY, Date.now() - start);
     }
   }
 

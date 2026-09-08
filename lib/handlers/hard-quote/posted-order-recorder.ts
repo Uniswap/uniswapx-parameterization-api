@@ -1,11 +1,10 @@
-import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { CosignedV2DutchOrder, CosignedV3DutchOrder, OrderType } from '@uniswap/uniswapx-sdk';
-import Logger from 'bunyan';
 import { ethers } from 'ethers';
 import { getAddress } from 'ethers/lib/utils';
 
 import { Metric } from '../../entities/aws-metrics-logger';
 import { QuoteResponse } from '../../entities/QuoteResponse';
+import { Context } from '../../observability';
 import { FillerAddressRepository } from '../../repositories/filler-address-repository';
 import {
   PostedOrderOutcome,
@@ -34,9 +33,10 @@ export interface RecordPostedOrderArgs {
   // The quoteId actually sent to the order service (may differ from quote.quoteId only when
   // there was no quote, in which case nothing is recorded anyway).
   quoteId: string;
+  // The order's requestId (from the request body, echoed in the row), not ctx.requestId (the
+  // Lambda invocation id).
   requestId: string;
-  log: Logger;
-  metric: IMetric;
+  ctx: Context;
   timeoutMs?: number;
 }
 
@@ -100,7 +100,8 @@ export function buildPostedOrderRecord(args: BuildPostedOrderRecordArgs): Posted
  * to inspect the result.
  */
 export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<void> {
-  const { repository, fillerAddressRepository, order, quote, quoteId, requestId, log, metric } = args;
+  const { repository, fillerAddressRepository, order, quote, quoteId, requestId, ctx } = args;
+  const { logger, metrics } = ctx;
   const timeoutMs = args.timeoutMs ?? POSTED_ORDER_WRITE_TIMEOUT_MS;
 
   if (!quote || !exclusiveFillerOf(order)) {
@@ -124,15 +125,15 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
       ),
     ]);
     if (posted.status === 'fulfilled') {
-      metric.putMetric(Metric.POSTED_ORDER_RECORDED, 1, MetricLoggerUnit.Count);
-      log.info({ orderHash, filler: record.filler, fillerAddress: record.fillerAddress }, 'Recorded posted order');
+      metrics.increment(Metric.POSTED_ORDER_RECORDED);
+      logger.info({ orderHash, filler: record.filler, fillerAddress: record.fillerAddress }, 'Recorded posted order');
     } else {
-      metric.putMetric(Metric.POSTED_ORDER_RECORD_FAILED, 1, MetricLoggerUnit.Count);
-      log.error({ orderHash, error: errorMessage(posted.reason) }, 'Failed to record posted order');
+      metrics.increment(Metric.POSTED_ORDER_RECORD_FAILED);
+      logger.error({ orderHash, error: errorMessage(posted.reason) }, 'Failed to record posted order');
     }
     if (attributed.status === 'rejected') {
-      metric.putMetric(Metric.FILLER_ADDRESS_RECORD_FAILED, 1, MetricLoggerUnit.Count);
-      log.warn(
+      metrics.increment(Metric.FILLER_ADDRESS_RECORD_FAILED);
+      logger.warn(
         {
           orderHash,
           filler: record.filler,
@@ -144,8 +145,8 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
     } else if (attributed.value.outcome === 'owned_by_other') {
       // The write itself succeeded in reaching DynamoDB; the address stays with its first
       // owner, so this filler's fades on it bench nobody until that row expires or is deleted.
-      metric.putMetric(Metric.FILLER_ADDRESS_CLAIM_REJECTED, 1, MetricLoggerUnit.Count);
-      log.warn(
+      metrics.increment(Metric.FILLER_ADDRESS_CLAIM_REJECTED);
+      logger.warn(
         {
           orderHash,
           filler: record.filler,
@@ -157,10 +158,10 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
     }
   } catch (e) {
     // Only buildPostedOrderRecord can throw here; the writes are settled above.
-    metric.putMetric(Metric.POSTED_ORDER_RECORD_FAILED, 1, MetricLoggerUnit.Count);
-    log.error({ orderHash, error: errorMessage(e) }, 'Failed to record posted order');
+    metrics.increment(Metric.POSTED_ORDER_RECORD_FAILED);
+    logger.error({ orderHash, error: errorMessage(e) }, 'Failed to record posted order');
   } finally {
-    metric.putMetric(Metric.POSTED_ORDER_RECORD_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+    metrics.histogram(Metric.POSTED_ORDER_RECORD_LATENCY, Date.now() - start);
   }
 }
 

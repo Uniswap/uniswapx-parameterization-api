@@ -1,5 +1,4 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import {
   CosignedV2DutchOrder,
   CosignedV3DutchOrder,
@@ -8,7 +7,6 @@ import {
   V3CosignerData,
   V3DutchOrderBuilder,
 } from '@uniswap/uniswapx-sdk';
-import { default as Logger } from 'bunyan';
 import { BigNumber, ethers } from 'ethers';
 
 import { Metric, QuoteRequest, QuoteResponse } from '../../../lib/entities';
@@ -29,10 +27,8 @@ import {
   PostedOrderRecord,
   PostedOrderRepository,
 } from '../../../lib/repositories/posted-order-repository';
+import { fakeContext } from '../../fakes';
 import { CHAIN_ID, getOrder, TOKEN_IN, TOKEN_OUT } from '../../fixtures/hard-quote';
-
-const logger = Logger.createLogger({ name: 'test' });
-logger.level(Logger.FATAL);
 
 const FILLER = '0x0000000000000000000000000000000000000001';
 const ENDPOINT = 'https://filler.example/rfq';
@@ -43,23 +39,6 @@ const NOW_S = Math.floor(Date.now() / 1000);
 const RAW_AMOUNT = BigNumber.from('1000000000000000000');
 // fromUnsignedOrder stores the cosignature verbatim; hash() does not verify it.
 const DUMMY_COSIGNATURE = `0x${'11'.repeat(65)}`;
-
-/** Hand-written IMetric that records every putMetric call. */
-class RecordingMetric {
-  public readonly puts: { key: string; value: number; unit?: MetricLoggerUnit }[] = [];
-  putMetric(key: string, value: number, unit?: MetricLoggerUnit): void {
-    this.puts.push({ key, value, unit });
-  }
-  putDimensions(): void {
-    return;
-  }
-  setProperty(): void {
-    return;
-  }
-  count(key: string): number {
-    return this.puts.filter((p) => p.key === key).length;
-  }
-}
 
 /** Fake repository whose put either throws or never settles. */
 class FailingRepository extends MockPostedOrderRepository {
@@ -214,7 +193,7 @@ describe('recordPostedOrder', () => {
     args: Partial<Parameters<typeof recordPostedOrder>[0]> = {},
     fillerAddressRepository: FillerAddressRepository = new MockFillerAddressRepository()
   ) => {
-    const metric = new RecordingMetric();
+    const { ctx, metrics } = fakeContext();
     const promise = recordPostedOrder({
       repository,
       fillerAddressRepository,
@@ -222,25 +201,24 @@ describe('recordPostedOrder', () => {
       quote: quote(),
       quoteId: QUOTE_ID,
       requestId: REQUEST_ID,
-      log: logger,
-      metric,
+      ctx,
       ...args,
     });
-    return { promise, metric };
+    return { promise, metrics };
   };
 
   it('writes the record and emits the success metric and latency', async () => {
     const repository = new MockPostedOrderRepository();
-    const { promise, metric } = run(repository);
+    const { promise, metrics } = run(repository);
     await promise;
 
     expect(repository.records.size).toEqual(1);
     const [record] = repository.records.values();
     expect(record.filler).toEqual(ENDPOINT);
     expect(record.outcome).toEqual(PostedOrderOutcome.PENDING);
-    expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
-    expect(metric.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(0);
-    expect(metric.count(Metric.POSTED_ORDER_RECORD_LATENCY)).toEqual(1);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(0);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORD_LATENCY)).toEqual(1);
   });
 
   it('skips open orders (no quote) and non-exclusive orders without emitting either metric', async () => {
@@ -251,28 +229,28 @@ describe('recordPostedOrder', () => {
     await nonImproving.promise;
 
     expect(repository.records.size).toEqual(0);
-    for (const { metric } of [openOrder, nonImproving]) {
-      expect(metric.puts).toEqual([]);
+    for (const { metrics } of [openOrder, nonImproving]) {
+      expect(metrics.calls).toEqual([]);
     }
   });
 
   it('swallows a repository error, emitting the failure metric', async () => {
-    const { promise, metric } = run(new FailingRepository('throw'));
+    const { promise, metrics } = run(new FailingRepository('throw'));
     await expect(promise).resolves.toBeUndefined();
 
-    expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(0);
-    expect(metric.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
-    expect(metric.count(Metric.POSTED_ORDER_RECORD_LATENCY)).toEqual(1);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(0);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORD_LATENCY)).toEqual(1);
   });
 
   it('attributes the exclusive filler address to the quote endpoint alongside the record', async () => {
     const addresses = new MockFillerAddressRepository();
-    const { promise, metric } = run(new MockPostedOrderRepository(), {}, addresses);
+    const { promise, metrics } = run(new MockPostedOrderRepository(), {}, addresses);
     await promise;
 
     expect([...addresses.addressToFiller.entries()]).toEqual([[FILLER, ENDPOINT]]);
-    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
-    expect(metric.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(0);
+    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metrics.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(0);
   });
 
   it('records no address for open or non-exclusive orders', async () => {
@@ -292,27 +270,27 @@ describe('recordPostedOrder', () => {
       throw new Error('ProvisionedThroughputExceededException');
     };
     const repository = new MockPostedOrderRepository();
-    const { promise, metric } = run(repository, {}, addresses);
+    const { promise, metrics } = run(repository, {}, addresses);
     await expect(promise).resolves.toBeUndefined();
 
     expect(repository.records.size).toEqual(1);
-    expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
-    expect(metric.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(0);
-    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(0);
+    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
   });
 
   it('a refused claim (address owned by another endpoint) is counted on its own metric, not as a write failure', async () => {
     const addresses = new MockFillerAddressRepository();
     await addresses.recordWinningAddress(FILLER, 'https://first-owner.example/rfq');
     const repository = new MockPostedOrderRepository();
-    const { promise, metric } = run(repository, {}, addresses);
+    const { promise, metrics } = run(repository, {}, addresses);
     await expect(promise).resolves.toBeUndefined();
 
     expect(addresses.addressToFiller.get(FILLER)).toEqual('https://first-owner.example/rfq');
     expect(repository.records.size).toEqual(1);
-    expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
-    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
-    expect(metric.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(1);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metrics.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(1);
   });
 
   it('a hung attribution write is bounded by the same wall and does not delay the record beyond it', async () => {
@@ -320,35 +298,35 @@ describe('recordPostedOrder', () => {
     addresses.recordWinningAddress = () => new Promise<WinningAddressClaim>(() => undefined);
     const repository = new MockPostedOrderRepository();
     const start = Date.now();
-    const { promise, metric } = run(repository, { timeoutMs: 50 }, addresses);
+    const { promise, metrics } = run(repository, { timeoutMs: 50 }, addresses);
     await promise;
 
     expect(Date.now() - start).toBeLessThan(500);
     expect(repository.records.size).toEqual(1);
-    expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
-    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
   });
 
   it('a failing record write does not prevent the attribution', async () => {
     const addresses = new MockFillerAddressRepository();
-    const { promise, metric } = run(new FailingRepository('throw'), {}, addresses);
+    const { promise, metrics } = run(new FailingRepository('throw'), {}, addresses);
     await promise;
 
     expect([...addresses.addressToFiller.entries()]).toEqual([[FILLER, ENDPOINT]]);
-    expect(metric.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
-    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
+    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
   });
 
   it('gives up on a hung write at the timeout and counts it as a failure', async () => {
     const start = Date.now();
-    const { promise, metric } = run(new FailingRepository('hang'), { timeoutMs: 50 });
+    const { promise, metrics } = run(new FailingRepository('hang'), { timeoutMs: 50 });
     await expect(promise).resolves.toBeUndefined();
 
     const elapsed = Date.now() - start;
     expect(elapsed).toBeGreaterThanOrEqual(45);
     expect(elapsed).toBeLessThan(1_000);
-    expect(metric.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
-    const latency = metric.puts.find((p) => p.key === Metric.POSTED_ORDER_RECORD_LATENCY);
+    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
+    const latency = metrics.calls.find((c) => c.name === Metric.POSTED_ORDER_RECORD_LATENCY);
     expect(latency?.value).toBeGreaterThanOrEqual(45);
   });
 });

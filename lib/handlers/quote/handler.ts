@@ -1,5 +1,4 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { MetricLoggerUnit } from '@uniswap/smart-order-router';
 import Joi from 'joi';
 
 import { Metric, QuoteRequest } from '../../entities';
@@ -27,13 +26,14 @@ export class QuoteHandler extends APIGLambdaHandler<
     params: APIHandleRequestParams<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>
   ): Promise<ErrorResponse | Response<PostQuoteResponseWithAllQuotes>> {
     const {
-      requestInjected: { log, metric },
+      requestInjected: { ctx, log, metric },
       requestBody,
       containerInjected: { quoters, chainIdRpcMap },
     } = params;
+    const { logger, metrics } = ctx;
     const start = Date.now();
 
-    metric.putMetric(Metric.QUOTE_REQUESTED, 1, MetricLoggerUnit.Count);
+    metrics.increment(Metric.QUOTE_REQUESTED);
 
     // QUOTE_LATENCY below fires only on 200s (and is alarmed on), so it cannot see slow
     // 404s — which take the full webhook fan-out just like successes. The finally makes
@@ -42,7 +42,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
 
       const request = QuoteRequest.fromRequestBody(requestBody);
-      log.info({
+      logger.info({
         eventType: 'QuoteRequest',
         body: {
           requestId: request.requestId,
@@ -59,16 +59,19 @@ export class QuoteHandler extends APIGLambdaHandler<
         },
       });
 
+      // The quote path below the handler still takes the bunyan logger and the
+      // smart-order-router IMetric positionally (moved to ctx in a later PR); both are the
+      // same objects ctx wraps, so its logs and metrics are unchanged.
       const { bestQuote, allQuotes } = await getBestQuote(quoters, request, log, metric, provider);
       if (!bestQuote) {
-        metric.putMetric(Metric.QUOTE_404, 1, MetricLoggerUnit.Count);
+        metrics.increment(Metric.QUOTE_404);
         throw new NoQuotesAvailable();
       }
 
-      log.info({ bestQuote: bestQuote }, 'bestQuote');
+      logger.info({ bestQuote: bestQuote }, 'bestQuote');
 
-      metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
-      metric.putMetric(Metric.QUOTE_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+      metrics.increment(Metric.QUOTE_200);
+      metrics.histogram(Metric.QUOTE_LATENCY, Date.now() - start);
       return {
         statusCode: 200,
         body: {
@@ -77,7 +80,7 @@ export class QuoteHandler extends APIGLambdaHandler<
         },
       };
     } finally {
-      metric.putMetric(Metric.QUOTE_E2E_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+      metrics.histogram(Metric.QUOTE_E2E_LATENCY, Date.now() - start);
     }
   }
 
