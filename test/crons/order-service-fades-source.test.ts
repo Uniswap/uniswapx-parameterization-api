@@ -11,6 +11,7 @@ import {
   buildFadeRows,
   Classification,
   classifyOutcome,
+  DEFAULT_FADE_ROW_POLICY,
   EXCLUDED_TESTNET_CHAIN_IDS,
   FADE_WINDOW_SECS,
   fadedForScoring,
@@ -263,6 +264,37 @@ describe('OrderServiceFadesSource', () => {
           status.fillBlock !== undefined && status.fillBlock >= 0 ? status.fillBlock : undefined
         );
         expect(classification.resolution.fillTimestamp).toBe(status.fillTimestamp);
+      }
+    });
+  });
+
+  describe('terminal-status policy (production parity)', () => {
+    const rowsFor = (record: PostedOrderRecord) => buildFadeRows([record], { now: NOW });
+
+    it('defaults to NOT counting cancelled / insufficient-funds / error as fades', () => {
+      expect(DEFAULT_FADE_ROW_POLICY).toEqual({ countNeverFilledTerminalAsFade: false });
+      for (const s of [ORDER_STATUS.CANCELLED, ORDER_STATUS.INSUFFICIENT_FUNDS, ORDER_STATUS.ERROR]) {
+        expect(rowsFor(resolved(v2(), status('h', s)))).toEqual([]);
+        expect(rowsFor(resolved(v3(), status('h', s)))).toEqual([]);
+      }
+    });
+
+    it('always counts an expiry as a fade, for both order types', () => {
+      for (const policy of [{ countNeverFilledTerminalAsFade: false }, { countNeverFilledTerminalAsFade: true }]) {
+        for (const record of [
+          resolved(v2(), status('h', ORDER_STATUS.EXPIRED)),
+          resolved(v3(), status('h', ORDER_STATUS.EXPIRED)),
+        ]) {
+          expect(buildFadeRows([record], { now: NOW, policy }).map((r) => r.faded)).toEqual([1]);
+        }
+      }
+    });
+
+    it('a fill without timing contributes no row under either policy', () => {
+      for (const policy of [{ countNeverFilledTerminalAsFade: false }, { countNeverFilledTerminalAsFade: true }]) {
+        expect(
+          buildFadeRows([resolved(v3(), status('h', ORDER_STATUS.FILLED, { fillBlock: -1 }))], { now: NOW, policy })
+        ).toEqual([]);
       }
     });
   });
