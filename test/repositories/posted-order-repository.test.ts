@@ -190,4 +190,38 @@ describe('DynamoPostedOrderRepository', () => {
       expect(await repo.getPostedOrder('0xdoesnotexist')).toBeUndefined();
     });
   });
+
+  describe('pagination', () => {
+    // A 2-item page stands in for DynamoDB's 1MB page: production hit this with a filler that
+    // completes >1,600 orders in 24h, whose newest rows fell off the (deadline-ascending) first
+    // page and were silently missing from the fade rows.
+    const paged = DynamoPostedOrderRepository.create(documentClient, { pageSize: 2 });
+    const FILLER_P = 'https://filler-paged.example/rfq';
+    const rows = Array.from({ length: 7 }, (_, i) =>
+      record({ orderHash: `0xp${i}`, filler: FILLER_P, fillerName: 'paged', deadline: NOW - 1_000 + i })
+    );
+
+    beforeAll(async () => {
+      for (const r of rows) await paged.putPostedOrder(r);
+    });
+
+    it('getFillerOrdersByDeadline drains every page', async () => {
+      const got = await paged.getFillerOrdersByDeadline(FILLER_P, NOW - 1_000, NOW - 994);
+      expect(got.map((r) => r.orderHash)).toEqual(rows.map((r) => r.orderHash));
+    });
+
+    it('getPendingPastDeadline drains pages up to the requested limit, oldest first', async () => {
+      const got = await paged.getPendingPastDeadline(NOW - 990, 5);
+      const mine = got.filter((r) => r.filler === FILLER_P);
+      expect(got.length).toBeLessThanOrEqual(5);
+      // Every returned row precedes every omitted one (ascending deadline across pages).
+      const omitted = rows.filter((r) => !mine.some((g) => g.orderHash === r.orderHash));
+      expect(Math.max(...mine.map((r) => r.deadline))).toBeLessThan(Math.min(...omitted.map((r) => r.deadline)));
+    });
+
+    it('getPendingPastDeadline without a limit returns everything across pages', async () => {
+      const got = (await paged.getPendingPastDeadline(NOW - 990)).filter((r) => r.filler === FILLER_P);
+      expect(got).toHaveLength(7);
+    });
+  });
 });

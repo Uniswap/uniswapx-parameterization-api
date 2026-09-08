@@ -60,8 +60,8 @@ export type Classification =
   // The order service still says `open` even though the deadline has passed: its status
   // poller has not caught up yet. Leave the row pending and ask again next run.
   | { kind: 'still-open' }
-  // A status we cannot score (unknown status string, a fill without timing, an unknown order
-  // type). Left pending so it is visible as a count; it expires with the row's TTL.
+  // A status we cannot score (unknown status string, unknown order type). Left pending so it is
+  // visible as a count; it expires with the row's TTL.
   | { kind: 'unclassifiable'; reason: string };
 
 /**
@@ -71,6 +71,7 @@ export type Classification =
  *   status              | Dutch_V2                                | Dutch_V3
  *   --------------------|-----------------------------------------|----------------------------------
  *   filled              | faded iff fillTimestamp > decayStartTime| faded iff fillBlock > decayStartBlock
+ *   filled, no timing   | recorded, no verdict (see below)        | recorded, no verdict
  *   expired             | faded                                   | faded
  *   cancelled / insufficient-funds / error | recorded, no verdict (scored by policy flag; the SQL's
  *                       |   `fillTimestamp IS NULL` branch counts these as fades today)
@@ -78,6 +79,12 @@ export type Classification =
  *
  * A fill AT the decay-start block/time is not a fade: the exclusive filler still paid the
  * undecayed price (the SQL's `fillTimeBlocks > 0` / `decayStartTime < fillTimestamp`).
+ *
+ * "Filled, no timing": when the order service fails to process a fill event it still marks the
+ * order `filled`, with `fillBlock: -1`, no fillTimestamp and an empty txHash (check-order-status
+ * catch path). Such a fill is terminal — so it is recorded and stops being re-fetched — but it
+ * carries no verdict: it is neither a fade nor a clean fill and contributes no row, which is
+ * also what the Redshift path sees (no Fill Info log is ever emitted for it).
  */
 export function classifyOutcome(
   record: PostedOrderRecord,
@@ -97,22 +104,25 @@ export function classifyOutcome(
     case ORDER_STATUS.ERROR:
       return { kind: 'resolved', resolution: { ...base, outcome: PostedOrderOutcome.ERROR } };
     case ORDER_STATUS.FILLED: {
-      const timing = { fillBlock: status.fillBlock, fillTimestamp: status.fillTimestamp };
+      if (record.orderType !== OrderType.Dutch_V3 && record.orderType !== OrderType.Dutch_V2) {
+        return { kind: 'unclassifiable', reason: `unknown order type ${record.orderType}` };
+      }
+      const fillBlock = status.fillBlock !== undefined && status.fillBlock >= 0 ? status.fillBlock : undefined;
+      const timing = { ...(fillBlock !== undefined && { fillBlock }), fillTimestamp: status.fillTimestamp };
+      const filled = { ...base, ...timing, outcome: PostedOrderOutcome.FILLED as const };
       if (record.orderType === OrderType.Dutch_V3) {
-        if (status.fillBlock === undefined || record.decayStartBlock === undefined) {
-          return { kind: 'unclassifiable', reason: 'Dutch_V3 fill without fillBlock/decayStartBlock' };
+        if (fillBlock === undefined || record.decayStartBlock === undefined) {
+          return { kind: 'resolved', resolution: filled }; // filled, no verdict
         }
-        const faded = status.fillBlock > record.decayStartBlock ? 1 : 0;
-        return { kind: 'resolved', resolution: { ...base, ...timing, outcome: PostedOrderOutcome.FILLED, faded } };
+        return { kind: 'resolved', resolution: { ...filled, faded: fillBlock > record.decayStartBlock ? 1 : 0 } };
       }
-      if (record.orderType === OrderType.Dutch_V2) {
-        if (status.fillTimestamp === undefined || record.decayStartTime === undefined) {
-          return { kind: 'unclassifiable', reason: 'Dutch_V2 fill without fillTimestamp/decayStartTime' };
-        }
-        const faded = status.fillTimestamp > record.decayStartTime ? 1 : 0;
-        return { kind: 'resolved', resolution: { ...base, ...timing, outcome: PostedOrderOutcome.FILLED, faded } };
+      if (status.fillTimestamp === undefined || record.decayStartTime === undefined) {
+        return { kind: 'resolved', resolution: filled }; // filled, no verdict
       }
-      return { kind: 'unclassifiable', reason: `unknown order type ${record.orderType}` };
+      return {
+        kind: 'resolved',
+        resolution: { ...filled, faded: status.fillTimestamp > record.decayStartTime ? 1 : 0 },
+      };
     }
     default:
       return { kind: 'unclassifiable', reason: `unknown order status ${status.orderStatus}` };
@@ -228,6 +238,9 @@ export type ResolutionSummary = {
   // GPA and the order service disagree about what was posted.
   notFound: number;
   unclassifiable: number;
+  // Terminal `filled` orders the service could not attach timing to (fillBlock -1): recorded,
+  // excluded from scoring. A rising count means the order service's fill processing is failing.
+  fillsWithoutVerdict: number;
   failedWrites: number;
   byOutcome: Partial<Record<PostedOrderOutcome, number>>;
 };
@@ -304,6 +317,7 @@ export class OrderServiceFadesSource implements FadesSource {
       stillOpen: 0,
       notFound: 0,
       unclassifiable: 0,
+      fillsWithoutVerdict: 0,
       failedWrites: 0,
       byOutcome: {},
     };
@@ -366,6 +380,13 @@ export class OrderServiceFadesSource implements FadesSource {
               await postedOrders.recordOutcome(record.orderHash, resolution);
               summary.resolved += 1;
               summary.byOutcome[resolution.outcome] = (summary.byOutcome[resolution.outcome] ?? 0) + 1;
+              if (resolution.outcome === PostedOrderOutcome.FILLED && resolution.faded === undefined) {
+                summary.fillsWithoutVerdict += 1;
+                log.warn(
+                  { orderHash: record.orderHash, status },
+                  'filled order without fill timing; recorded without verdict'
+                );
+              }
             } catch (e) {
               summary.failedWrites += 1;
               log.warn(
