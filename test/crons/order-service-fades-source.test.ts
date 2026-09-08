@@ -124,10 +124,12 @@ describe('OrderServiceFadesSource', () => {
         faded: 1,
       },
       {
-        name: 'V2 filled without fillTimestamp -> unclassifiable',
+        name: 'V2 filled without fillTimestamp -> recorded FILLED, no verdict',
         record: v2(),
         status: status('h', ORDER_STATUS.FILLED, { fillBlock: 1 }),
-        expected: 'unclassifiable',
+        expected: 'resolved',
+        outcome: PostedOrderOutcome.FILLED,
+        faded: undefined,
       },
       // Dutch_V3 fills decay by block: fillTimeBlocks = fillBlock - decayStartBlock must be > 0.
       {
@@ -163,16 +165,28 @@ describe('OrderServiceFadesSource', () => {
         faded: 0,
       },
       {
-        name: 'V3 filled without fillBlock -> unclassifiable',
+        name: 'V3 filled without fillBlock -> recorded FILLED, no verdict',
         record: v3(),
         status: status('h', ORDER_STATUS.FILLED, { fillTimestamp: NOW }),
-        expected: 'unclassifiable',
+        expected: 'resolved',
+        outcome: PostedOrderOutcome.FILLED,
+        faded: undefined,
       },
       {
-        name: 'V3 record missing decayStartBlock -> unclassifiable',
+        name: 'V3 filled with the order service fillBlock -1 sentinel (fill event unprocessed) -> no verdict, not a clean fill',
+        record: v3(),
+        status: status('h', ORDER_STATUS.FILLED, { fillBlock: -1 }),
+        expected: 'resolved',
+        outcome: PostedOrderOutcome.FILLED,
+        faded: undefined,
+      },
+      {
+        name: 'V3 record missing decayStartBlock -> recorded FILLED, no verdict',
         record: v3({ decayStartBlock: undefined }),
         status: status('h', ORDER_STATUS.FILLED, { fillBlock: DECAY_START_BLOCK + 5 }),
-        expected: 'unclassifiable',
+        expected: 'resolved',
+        outcome: PostedOrderOutcome.FILLED,
+        faded: undefined,
       },
       {
         name: 'unknown order type fill -> unclassifiable',
@@ -244,7 +258,10 @@ describe('OrderServiceFadesSource', () => {
         expect(classification.resolution.faded).toBe(faded);
         expect(classification.resolution.orderStatus).toBe(status.orderStatus);
         expect(classification.resolution.resolvedAt).toBe(NOW);
-        expect(classification.resolution.fillBlock).toBe(status.fillBlock);
+        // the -1 sentinel is not real timing and is not persisted as such
+        expect(classification.resolution.fillBlock).toBe(
+          status.fillBlock !== undefined && status.fillBlock >= 0 ? status.fillBlock : undefined
+        );
         expect(classification.resolution.fillTimestamp).toBe(status.fillTimestamp);
       }
     });
@@ -506,13 +523,29 @@ describe('OrderServiceFadesSource', () => {
     });
 
     it('leaves unclassifiable orders pending and counts them', async () => {
-      const [fillNoTiming] = await seed(v3());
-      service.seed(status(fillNoTiming.orderHash, ORDER_STATUS.FILLED));
+      const [weird] = await seed(v3());
+      service.seed(status(weird.orderHash, 'settling'));
 
       const summary = await source.resolvePendingOutcomes(NOW);
 
       expect(summary).toMatchObject({ resolved: 0, unclassifiable: 1 });
-      expect(await repo.getPostedOrder(fillNoTiming.orderHash)).toMatchObject({ outcome: PostedOrderOutcome.PENDING });
+      expect(await repo.getPostedOrder(weird.orderHash)).toMatchObject({ outcome: PostedOrderOutcome.PENDING });
+    });
+
+    it('records a fill without timing as FILLED with no verdict, counts it, and never scores it', async () => {
+      const [sentinel] = await seed(v3({ deadline: NOW - 500 }));
+      service.seed(status(sentinel.orderHash, ORDER_STATUS.FILLED, { fillBlock: -1 }));
+
+      const rows = await source.getFades();
+
+      expect(source.lastResolution).toMatchObject({ resolved: 1, fillsWithoutVerdict: 1, unclassifiable: 0 });
+      const stored = await repo.getPostedOrder(sentinel.orderHash);
+      expect(stored).toMatchObject({ outcome: PostedOrderOutcome.FILLED, orderStatus: 'filled' });
+      expect(stored).not.toHaveProperty('faded');
+      expect(stored).not.toHaveProperty('fillBlock');
+      expect(rows).toEqual([]);
+      // Not re-fetched next run.
+      expect(await repo.getPendingPastDeadline(NOW)).toEqual([]);
     });
 
     it('batches at the order service cap and never exceeds it', async () => {

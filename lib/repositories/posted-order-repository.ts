@@ -138,10 +138,23 @@ type PostedOrderItem = PostedOrderRecord & {
   ttl: number;
 };
 
+// One page of a dynamodb-toolbox query: items plus a `next` that is present only while DynamoDB
+// reported a LastEvaluatedKey (i.e. the 1MB page or the Limit cut the result short).
+type QueryPage = { Items?: unknown[]; next?: () => Promise<QueryPage> };
+
+export type DynamoPostedOrderRepositoryOptions = {
+  // Items requested per DynamoDB page. Production leaves this unset (DynamoDB's 1MB page);
+  // tests set it small to exercise pagination without writing a megabyte of rows.
+  pageSize?: number;
+};
+
 export class DynamoPostedOrderRepository implements PostedOrderRepository {
   static PARTITION_KEY = 'orderHash';
 
-  static create(documentClient: DynamoDBDocumentClient = postedOrderDocumentClient()): PostedOrderRepository {
+  static create(
+    documentClient: DynamoDBDocumentClient = postedOrderDocumentClient(),
+    options: DynamoPostedOrderRepositoryOptions = {}
+  ): PostedOrderRepository {
     const table = new Table({
       name: DYNAMO_TABLE_NAME.POSTED_ORDERS,
       partitionKey: DynamoPostedOrderRepository.PARTITION_KEY,
@@ -182,10 +195,38 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
       autoExecute: true,
     } as const);
 
-    return new DynamoPostedOrderRepository(entity);
+    return new DynamoPostedOrderRepository(entity, options.pageSize);
   }
 
-  private constructor(private readonly entity: Entity) {}
+  private constructor(private readonly entity: Entity, private readonly pageSize?: number) {}
+
+  /**
+   * Drains every page of an index query. A single DynamoDB page is at most 1MB (~1,600 of these
+   * rows), and a high-volume filler completes more than that in 24h — an unpaginated read would
+   * silently drop its most recent orders (deadline-ascending index), exactly the ones the
+   * breaker scores. `max` caps the total; DynamoDB's Limit alone cannot, because a Limit page can
+   * still be cut short by the size cap.
+   */
+  private async queryAll(
+    partitionKey: string,
+    options: Record<string, unknown>,
+    max?: number
+  ): Promise<PostedOrderItem[]> {
+    const pageLimit = this.pageSize ?? max;
+    const items: PostedOrderItem[] = [];
+    let page = (await this.entity.query(partitionKey, {
+      ...options,
+      ...(pageLimit !== undefined && { limit: pageLimit }),
+      execute: true,
+      parse: true,
+    })) as QueryPage;
+    for (;;) {
+      items.push(...((page.Items ?? []) as PostedOrderItem[]));
+      if (max !== undefined && items.length >= max) return items.slice(0, max);
+      if (!page.next) return items;
+      page = await page.next();
+    }
+  }
 
   public async putPostedOrder(record: PostedOrderRecord): Promise<void> {
     const item: PostedOrderItem = {
@@ -202,24 +243,17 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
   }
 
   public async getPendingPastDeadline(now: number, limit?: number): Promise<PostedOrderRecord[]> {
-    const { Items } = await this.entity.query(PENDING_INDEX_KEY, {
-      index: POSTED_ORDERS_INDEX.PENDING_DEADLINE,
-      lt: now,
-      ...(limit !== undefined && { limit }),
-      execute: true,
-      parse: true,
-    });
-    return ((Items ?? []) as PostedOrderItem[]).map(toRecord);
+    const items = await this.queryAll(
+      PENDING_INDEX_KEY,
+      { index: POSTED_ORDERS_INDEX.PENDING_DEADLINE, lt: now },
+      limit
+    );
+    return items.map(toRecord);
   }
 
   public async getFillerOrdersByDeadline(filler: string, from: number, to: number): Promise<PostedOrderRecord[]> {
-    const { Items } = await this.entity.query(filler, {
-      index: POSTED_ORDERS_INDEX.FILLER_DEADLINE,
-      between: [from, to],
-      execute: true,
-      parse: true,
-    });
-    return ((Items ?? []) as PostedOrderItem[]).map(toRecord);
+    const items = await this.queryAll(filler, { index: POSTED_ORDERS_INDEX.FILLER_DEADLINE, between: [from, to] });
+    return items.map(toRecord);
   }
 
   public async recordOutcome(orderHash: string, resolution: PostedOrderResolution): Promise<void> {
