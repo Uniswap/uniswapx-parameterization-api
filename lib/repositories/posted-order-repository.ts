@@ -112,15 +112,17 @@ export const POSTED_ORDER_MAX_ATTEMPTS = 1;
  * Bounded document client for the posted-orders write path. Numbers are read back native
  * (wrapNumbers:false) because the sort keys are unix seconds / block numbers, and undefined
  * optional attributes (the unused decay-start field) are dropped rather than rejected.
+ * `maxAttempts` is the SDK's own retry budget; the sibling FillerAddress write allows one retry
+ * under the same per-request ceilings.
  */
-export function postedOrderDocumentClient(): DynamoDBDocumentClient {
+export function postedOrderDocumentClient(maxAttempts: number = POSTED_ORDER_MAX_ATTEMPTS): DynamoDBDocumentClient {
   return DynamoDBDocumentClient.from(
     new DynamoDBClient({
       requestHandler: {
         connectionTimeout: POSTED_ORDER_CONNECTION_TIMEOUT_MS,
         requestTimeout: POSTED_ORDER_REQUEST_TIMEOUT_MS,
       },
-      maxAttempts: POSTED_ORDER_MAX_ATTEMPTS,
+      maxAttempts,
     }),
     {
       marshallOptions: { convertEmptyValues: true, removeUndefinedValues: true },

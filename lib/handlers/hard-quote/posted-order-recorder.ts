@@ -12,6 +12,7 @@ import {
   PostedOrderRecord,
   PostedOrderRepository,
 } from '../../repositories/posted-order-repository';
+import { withTimeout } from '../../util/time';
 
 // Hard wall on the bookkeeping writes. They sit in series with the hard-quote response (the
 // Lambda freezes once the handler returns, so a write cannot be fire-and-forget), and the
@@ -140,6 +141,19 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
         },
         'Failed to record filler address; order unaffected, attribution skipped'
       );
+    } else if (attributed.value.outcome === 'owned_by_other') {
+      // The write itself succeeded in reaching DynamoDB; the address stays with its first
+      // owner, so this filler's fades on it bench nobody until that row expires or is deleted.
+      metric.putMetric(Metric.FILLER_ADDRESS_CLAIM_REJECTED, 1, MetricLoggerUnit.Count);
+      log.warn(
+        {
+          orderHash,
+          filler: record.filler,
+          fillerAddress: record.fillerAddress,
+          existingOwner: attributed.value.existingOwner,
+        },
+        'Filler address already attributed to another endpoint; claim refused, order unaffected'
+      );
     }
   } catch (e) {
     // Only buildPostedOrderRecord can throw here; the writes are settled above.
@@ -151,18 +165,3 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
 }
 
 const errorMessage = (e: unknown): unknown => (e instanceof Error ? e.message : e);
-
-// Promise.race subscribes to the losing promise too, so a write that fails after the
-// timeout fired is swallowed rather than surfacing as an unhandled rejection. The timer is
-// always cleared so a fast write leaves nothing pending on the event loop.
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} write timed out after ${ms}ms`)), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}

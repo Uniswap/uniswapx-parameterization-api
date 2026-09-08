@@ -226,17 +226,56 @@ function buildOrderServiceShadow(metrics: MetricsLogger): FadeRateCronDeps['shad
  * Resolves the filler (webhook) behind every address in the fade rows. Looks up exactly the
  * addresses the rows mention (one BatchGet per 100), then keeps only mappings to endpoints in
  * the current webhook config: an address whose filler has since been removed from the config
- * must not resurrect a timestamp row for it.
+ * must not resurrect a timestamp row for it. Both kinds of gap — an address with no row and a
+ * row pointing at an unconfigured endpoint — leave that address's fades benching nobody, so
+ * each is logged with its count.
  */
 export async function lookupFillersForRows(
   rows: V2FadesRowType[],
   fillerEndpoints: string[],
-  fillerAddressRepo: Pick<FillerAddressRepository, 'getAddressToFillerMap'>
+  fillerAddressRepo: Pick<FillerAddressRepository, 'getAddressToFillerMap'>,
+  log: Logger
 ): Promise<Map<string, string>> {
   const addresses = [...new Set(rows.map((row) => ethers.utils.getAddress(row.fillerAddress)))];
+  if (addresses.length === 0) {
+    return new Map();
+  }
   const mapped = await fillerAddressRepo.getAddressToFillerMap(addresses);
   const configured = new Set(fillerEndpoints);
+  const unconfigured = [...mapped.entries()].filter(([, filler]) => !configured.has(filler));
+  const unattributed = addresses.filter((address) => !mapped.has(address));
+  if (unconfigured.length > 0 || unattributed.length > 0) {
+    log.warn(
+      {
+        unattributedAddresses: unattributed.length,
+        unconfiguredAddresses: unconfigured.length,
+        unconfiguredEndpoints: [...new Set(unconfigured.map(([, filler]) => filler))],
+      },
+      'fade rows whose address resolves to no configured filler; their fades bench nobody this run'
+    );
+  }
   return new Map([...mapped.entries()].filter(([, filler]) => configured.has(filler)));
+}
+
+/**
+ * The real run's address map, extended for any address in `rows` it does not cover. The
+ * shadow's rows come from a different source and can name addresses the Redshift rows do not
+ * (a batch load Redshift has not caught up with, or rows past its row cap); scoring them with
+ * the Redshift-derived map alone would silently drop exactly the rows only the new source has.
+ */
+async function extendFillerMapForRows(
+  base: Map<string, string>,
+  rows: V2FadesRowType[],
+  fillerEndpoints: string[],
+  fillerAddressRepo: Pick<FillerAddressRepository, 'getAddressToFillerMap'>,
+  log: Logger
+): Promise<Map<string, string>> {
+  const uncovered = rows.filter((row) => !base.has(ethers.utils.getAddress(row.fillerAddress)));
+  if (uncovered.length === 0) {
+    return base;
+  }
+  const extra = await lookupFillersForRows(uncovered, fillerEndpoints, fillerAddressRepo, log);
+  return new Map([...base, ...extra]);
 }
 
 export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCronDeps): Promise<void> {
@@ -266,8 +305,10 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
 
   if (result) {
     const fillerEndpoints = webhookProvider.fillerEndpoints();
-    const addressToFillerMap = await lookupFillersForRows(result, fillerEndpoints, fillerAddressRepo);
-    const fillerTimestamps = await timestampDB.getFillerTimestampsMap(fillerEndpoints);
+    const [addressToFillerMap, fillerTimestamps] = await Promise.all([
+      lookupFillersForRows(result, fillerEndpoints, fillerAddressRepo, log),
+      timestampDB.getFillerTimestampsMap(fillerEndpoints),
+    ]);
 
     const now = deps.now ? deps.now() : Math.floor(Date.now() / 1000);
 
@@ -305,10 +346,15 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
           redshiftRows: result,
           realUpdates: updatedTimestamps,
           now,
-          score: (rows) =>
+          score: async (rows) =>
             calculateNewTimestamps(
               fillerTimestamps,
-              getFillersFadeStats(rows, addressToFillerMap, fillerTimestamps, now),
+              getFillersFadeStats(
+                rows,
+                await extendFillerMapForRows(addressToFillerMap, rows, fillerEndpoints, fillerAddressRepo, log),
+                fillerTimestamps,
+                now
+              ),
               now
             ),
         });

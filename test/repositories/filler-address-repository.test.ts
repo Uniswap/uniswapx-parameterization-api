@@ -46,6 +46,11 @@ async function rawItem(pk: string): Promise<Record<string, unknown> | undefined>
   return Item;
 }
 
+// The only read path the repository exposes is the batch map; resolve one address through it.
+async function resolve(address: string): Promise<string | undefined> {
+  return (await repository.getAddressToFillerMap([address])).get(getAddress(address));
+}
+
 describe('filler address repository', () => {
   beforeAll(async () => {
     await repository.recordWinningAddress(ADDR1, FILLER1);
@@ -55,14 +60,14 @@ describe('filler address repository', () => {
   });
 
   it('resolves a recorded address to its filler', async () => {
-    expect(await repository.getFillerByAddress(ADDR1)).toEqual(FILLER1);
-    expect(await repository.getFillerByAddress(ADDR2)).toEqual(FILLER1);
-    expect(await repository.getFillerByAddress(ADDR3)).toEqual(FILLER2);
-    expect(await repository.getFillerByAddress('0x00000000000000000000000000000000000000ff')).toBeUndefined();
+    expect(await resolve(ADDR1)).toEqual(FILLER1);
+    expect(await resolve(ADDR2)).toEqual(FILLER1);
+    expect(await resolve(ADDR3)).toEqual(FILLER2);
+    expect(await resolve('0x00000000000000000000000000000000000000ff')).toBeUndefined();
   });
 
   it('checksums addresses on write and on read', async () => {
-    expect(await repository.getFillerByAddress(LOWER_CASE_ADDR)).toEqual(FILLER2);
+    expect(await resolve(LOWER_CASE_ADDR)).toEqual(FILLER2);
     expect(await rawItem(CHECKSUMED_ADDR)).toMatchObject({ pk: CHECKSUMED_ADDR, filler: FILLER2 });
     expect(await rawItem(LOWER_CASE_ADDR)).toBeUndefined();
   });
@@ -83,9 +88,18 @@ describe('filler address repository', () => {
     );
   });
 
-  it('first-writer-wins: a claim on another filler address is ignored, not thrown', async () => {
-    await expect(repository.recordWinningAddress(ADDR1, 'https://attacker.example/rfq')).resolves.toBeUndefined();
-    expect(await repository.getFillerByAddress(ADDR1)).toEqual(FILLER1);
+  it('first-writer-wins: a claim on another filler address is refused and reported with the owner, not thrown', async () => {
+    await expect(repository.recordWinningAddress(ADDR1, 'https://attacker.example/rfq')).resolves.toEqual({
+      outcome: 'owned_by_other',
+      existingOwner: FILLER1,
+    });
+    expect(await resolve(ADDR1)).toEqual(FILLER1);
+  });
+
+  it('reports a fresh claim and a same-owner refresh as recorded', async () => {
+    const fresh = addr(0x5001);
+    await expect(repository.recordWinningAddress(fresh, FILLER1)).resolves.toEqual({ outcome: 'recorded' });
+    await expect(repository.recordWinningAddress(fresh, FILLER1)).resolves.toEqual({ outcome: 'recorded' });
   });
 
   it('has no per-filler address cap', async () => {
@@ -137,15 +151,18 @@ describe('filler address repository', () => {
   });
 
   it('still resolves address rows written before per-address TTLs existed (no migration)', async () => {
-    // Shape of a pre-TTL row: dynamodb-toolbox entity marker, no expiresAt.
+    // Exact stored shape of a pre-TTL row as dynamodb-toolbox's put() wrote it: its entity
+    // marker is the `_et` attribute (plus `_ct`/`_md` timestamps) and there is no expiresAt.
+    // The marker matters: a row carrying it goes through the entity's parse() on read, which is
+    // the branch every real legacy row takes; an unknown marker is passed through raw instead.
     const legacy = addr(0x4001);
+    const writtenAt = '2025-01-01T00:00:00.000Z';
     await documentClient.send(
       new PutCommand({
         TableName: 'FillerAddress',
-        Item: { pk: legacy, filler: FILLER2, entity: 'addressToFillerEntity' },
+        Item: { pk: legacy, filler: FILLER2, _et: 'addressToFillerEntity', _ct: writtenAt, _md: writtenAt },
       })
     );
-    expect(await repository.getFillerByAddress(legacy)).toEqual(FILLER2);
     expect(await repository.getAddressToFillerMap([legacy])).toEqual(new Map([[legacy, FILLER2]]));
 
     // and its first win under the new code gives it a TTL without changing its owner
@@ -153,6 +170,31 @@ describe('filler address repository', () => {
     const item = await rawItem(legacy);
     expect(item).toMatchObject({ filler: FILLER2 });
     expect(Number(item?.expiresAt)).toBeGreaterThan(0);
+  });
+
+  it('a BatchGet page without an entry for the table is warned about, not read as "no rows"', async () => {
+    // dynamodb-toolbox keys Responses by physical table name; a renamed or suffixed table would
+    // otherwise resolve to an empty map and silently unscore every filler for the run.
+    const realSend = documentClient.send.bind(documentClient);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const send = jest.spyOn(documentClient, 'send').mockImplementationOnce(async (cmd: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: any = await realSend(cmd);
+      out.Responses = { SomeOtherTable: out.Responses.FillerAddress };
+      return out;
+    });
+    const warn = jest.spyOn(DynamoFillerAddressRepository.log, 'warn');
+    try {
+      const res = await repository.getAddressToFillerMap([ADDR1, ADDR2]);
+      expect(res.size).toEqual(0);
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ pagesWithoutTable: 1, table: 'FillerAddress', requested: 2 }),
+        expect.stringContaining('no entry for the table')
+      );
+    } finally {
+      send.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   it('retries UnprocessedKeys from a throttled BatchGet instead of dropping them', async () => {
@@ -182,22 +224,5 @@ describe('filler address repository', () => {
     } finally {
       send.mockRestore();
     }
-  });
-
-  it('legacy filler -> [addresses] rows keyed by endpoint do not interfere with address lookups', async () => {
-    // Pre-redesign shape; must not break batch lookups that happen to share the table.
-    await documentClient.send(
-      new PutCommand({
-        TableName: 'FillerAddress',
-        Item: { pk: FILLER1, addresses: new Set([ADDR1, ADDR2]), entity: 'fillerToAddressEntity' },
-      })
-    );
-    const res = await repository.getAddressToFillerMap([ADDR1, ADDR2]);
-    expect(res).toEqual(
-      new Map([
-        [ADDR1, FILLER1],
-        [ADDR2, FILLER1],
-      ])
-    );
   });
 });

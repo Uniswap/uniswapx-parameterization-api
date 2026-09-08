@@ -175,7 +175,7 @@ describe('fade-rate shadow', () => {
       redshiftRows: [row(ADDR_A, 1, NOW - 100, SINCE + 1), row(ADDR_A, 1, NOW - 50, SINCE - 1)],
       realUpdates: [update('fillerA', { blockUntilTimestamp: NOW + 900, consecutiveBlocks: 1 })],
       // Scorer stand-in: one filler, blocked iff any fade in the rows it is given.
-      score: (rows) =>
+      score: async (rows) =>
         rows.length === 0
           ? []
           : [
@@ -262,7 +262,7 @@ describe('fade-rate shadow', () => {
     it('a throwing scorer (classification/comparison bug) is contained the same way', async () => {
       const { metrics, calls } = recordingMetrics();
       const context = ctx({
-        score: () => {
+        score: async () => {
           throw new TypeError('bug');
         },
       });

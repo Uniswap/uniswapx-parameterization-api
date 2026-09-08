@@ -21,6 +21,7 @@ import { ProtocolVersion } from '../../../lib/providers';
 import {
   FillerAddressRepository,
   MockFillerAddressRepository,
+  WinningAddressClaim,
 } from '../../../lib/repositories/filler-address-repository';
 import {
   MockPostedOrderRepository,
@@ -271,6 +272,7 @@ describe('recordPostedOrder', () => {
 
     expect([...addresses.addressToFiller.entries()]).toEqual([[FILLER, ENDPOINT]]);
     expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metric.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(0);
   });
 
   it('records no address for open or non-exclusive orders', async () => {
@@ -299,9 +301,23 @@ describe('recordPostedOrder', () => {
     expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
   });
 
+  it('a refused claim (address owned by another endpoint) is counted on its own metric, not as a write failure', async () => {
+    const addresses = new MockFillerAddressRepository();
+    await addresses.recordWinningAddress(FILLER, 'https://first-owner.example/rfq');
+    const repository = new MockPostedOrderRepository();
+    const { promise, metric } = run(repository, {}, addresses);
+    await expect(promise).resolves.toBeUndefined();
+
+    expect(addresses.addressToFiller.get(FILLER)).toEqual('https://first-owner.example/rfq');
+    expect(repository.records.size).toEqual(1);
+    expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metric.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(1);
+  });
+
   it('a hung attribution write is bounded by the same wall and does not delay the record beyond it', async () => {
     const addresses = new MockFillerAddressRepository();
-    addresses.recordWinningAddress = () => new Promise<void>(() => undefined);
+    addresses.recordWinningAddress = () => new Promise<WinningAddressClaim>(() => undefined);
     const repository = new MockPostedOrderRepository();
     const start = Date.now();
     const { promise, metric } = run(repository, { timeoutMs: 50 }, addresses);

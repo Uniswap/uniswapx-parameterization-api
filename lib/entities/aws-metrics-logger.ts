@@ -76,6 +76,12 @@ export enum Metric {
   // non-zero rate means fills from new filler addresses are going unattributed on the
   // breaker's Redshift path. Sibling of POSTED_ORDER_RECORD_FAILED.
   FILLER_ADDRESS_RECORD_FAILED = 'FILLER_ADDRESS_RECORD_FAILED',
+  // The attribution write reached DynamoDB but the address is already attributed to a different
+  // endpoint, so the claim was refused (first-writer-wins). Distinct from RECORD_FAILED because
+  // the fix is different: not a DynamoDB problem but a filler quoting from another filler's
+  // address, or a filler whose webhook URL changed — its fades are unscored until the row is
+  // deleted by hand or expires.
+  FILLER_ADDRESS_CLAIM_REJECTED = 'FILLER_ADDRESS_CLAIM_REJECTED',
 
   // Latency-attribution metrics.
   // Time spent resolving webhook config + circuit-breaker state before fan-out.

@@ -440,10 +440,11 @@ export class APIStack extends cdk.Stack {
       deletionProtection: true,
       pointInTimeRecovery: true,
       contributorInsightsEnabled: true,
-      // Address rows expire FILLER_ADDRESS_TTL_SECS after the filler's last win with them, so
-      // rows written from now on cannot grow the table without bound. Rows written before the
-      // attribute existed have no expiresAt: they get one on their next win, and an address
-      // that never wins again keeps its row until a one-off backfill stamps it.
+      // Address rows carry expiresAt and expire FILLER_ADDRESS_TTL_SECS after the owning
+      // filler's last win with them (a refused claim by another endpoint does not refresh it),
+      // so the table cannot grow without bound. A row without expiresAt gets one on its owner's
+      // next win; an address that never wins again keeps its row until a one-off backfill
+      // stamps it.
       timeToLiveAttribute: 'expiresAt',
       ...PROD_TABLE_CAPACITY.fillerAddress,
     });

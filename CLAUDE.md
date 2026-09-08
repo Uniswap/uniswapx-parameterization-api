@@ -62,8 +62,8 @@ full harness design, per-filler duty-cycle/allowed-fades metrics, and baseline n
 
 Extract query (matches the breaker's fade semantics from `V2_FADE_RATE_SQL`, but with **no
 24h window, no latest-100 cap, and no row limit** — the replay applies windowing itself).
-**Keep the `faded` CASE in sync with `V2_FADE_RATE_SQL`** — e.g. #461 changed Dutch*V3 to
-`fillTimeBlocks > 0` (a fill at the decay-start block is \_not* a fade); an extract using the
+**Keep the `faded` CASE in sync with `V2_FADE_RATE_SQL`** — e.g. #461 changed Dutch_V3 to
+`fillTimeBlocks > 0` (a fill at the decay-start block is _not_ a fade); an extract using the
 old `>= 0` inflates V3 fade rates and mis-calibrates every knob. The raw columns are included
 so the replay can recompute `faded` locally if the semantics change again:
 
