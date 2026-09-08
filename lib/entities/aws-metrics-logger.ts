@@ -139,9 +139,14 @@ export enum Metric {
   // Fillers with fade stats evaluated in a cron run (sample-health denominator)
   CIRCUIT_BREAKER_V2_FILLERS_EVALUATED = 'CIRCUIT_BREAKER_V2_FILLERS_EVALUATED',
 
-  // Shadow evaluation of the order-service fades source (lib/cron/fade-rate-shadow.ts). Runs
-  // after the Redshift path each cron, writes nothing. Exactly one of SUCCESS / FAILURE fires
-  // per run; DURATION is the wall time it added to the cron (budgeted, see the runner).
+  // 1 when the order-service/PostedOrders source produced this run's block decisions, 0 when
+  // Redshift did (FADES_SOURCE). Charts the switch position next to the decision metrics, whose
+  // EMF records also carry it as the `fadesSource` property.
+  CIRCUIT_BREAKER_PRIMARY_IS_ORDER_SERVICE = 'CIRCUIT_BREAKER_PRIMARY_IS_ORDER_SERVICE',
+
+  // Shadow evaluation of whichever fades source is NOT primary (lib/cron/fade-rate-shadow.ts).
+  // Runs after the primary path each cron, writes nothing. Exactly one of SUCCESS / FAILURE
+  // fires per run; DURATION is the wall time it added to the cron (budgeted, see the runner).
   CIRCUIT_BREAKER_SHADOW_SUCCESS = 'CIRCUIT_BREAKER_SHADOW_SUCCESS',
   CIRCUIT_BREAKER_SHADOW_FAILURE = 'CIRCUIT_BREAKER_SHADOW_FAILURE',
   CIRCUIT_BREAKER_SHADOW_DURATION = 'CIRCUIT_BREAKER_SHADOW_DURATION',

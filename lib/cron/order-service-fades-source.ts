@@ -73,8 +73,8 @@ export type Classification =
  *   filled              | faded iff fillTimestamp > decayStartTime| faded iff fillBlock > decayStartBlock
  *   filled, no timing   | recorded, no verdict (see below)        | recorded, no verdict
  *   expired             | faded                                   | faded
- *   cancelled / insufficient-funds / error | recorded, no verdict (scored by policy flag; the SQL's
- *                       |   `fillTimestamp IS NULL` branch counts these as fades today)
+ *   cancelled / insufficient-funds / error | recorded, no verdict (scored by policy flag; excluded
+ *                       |   by default, as production's SQL effectively excludes them)
  *   open                | not terminal: stays pending             | stays pending
  *
  * A fill AT the decay-start block/time is not a fade: the exclusive filler still paid the
@@ -130,14 +130,15 @@ export function classifyOutcome(
 }
 
 export type FadeRowPolicy = {
-  // PARITY FLAG. The SQL scores every never-filled order as a fade (`fillTimestamp IS NULL`),
-  // which includes cancelled, insufficient-funds and error orders alongside expiries. `true`
-  // reproduces that; `false` drops those orders from the rows entirely (neither fade nor
-  // clean fill), which is the candidate behavior change to decide on after the shadow.
+  // PARITY FLAG for cancelled / insufficient-funds / error orders. The SQL reads as if it scored
+  // every never-filled order as a fade (`fillTimestamp IS NULL`), but in production those three
+  // never reach `archivedorders` with token columns, so the permissioned-token filter drops them
+  // and they contribute no row at all. `false` reproduces that (the default); `true` scores them
+  // as fades. Expiries are not governed by this flag: they always count as fades.
   countNeverFilledTerminalAsFade: boolean;
 };
 
-export const DEFAULT_FADE_ROW_POLICY: FadeRowPolicy = { countNeverFilledTerminalAsFade: true };
+export const DEFAULT_FADE_ROW_POLICY: FadeRowPolicy = { countNeverFilledTerminalAsFade: false };
 
 /**
  * The 0/1 the row builder scores an order as, or undefined when the order contributes no row

@@ -9,7 +9,8 @@ import {
   SHADOW_TIME_BUDGET_MS,
   ShadowContext,
 } from '../../lib/cron/fade-rate-shadow';
-import { OrderServiceFadesSource } from '../../lib/cron/order-service-fades-source';
+import { FadesScoringSource, FadesSourceKind, orderServiceScoringSource } from '../../lib/cron/fades-sources';
+import { OrderServiceFadesSource, ResolutionSummary } from '../../lib/cron/order-service-fades-source';
 import { Metric } from '../../lib/entities';
 import { MockOrderStatusProvider } from '../../lib/providers/order';
 import { ToUpdateTimestampRow, V2FadesRowType } from '../../lib/repositories';
@@ -162,45 +163,74 @@ describe('fade-rate shadow', () => {
   });
 
   describe('runFadeRateShadow', () => {
-    const emptySource = () =>
-      new OrderServiceFadesSource({
-        postedOrders: new MockPostedOrderRepository(),
-        orderStatus: new MockOrderStatusProvider(),
-        fillerEndpoints: () => [],
-        log,
-        now: () => NOW,
-      });
+    // A shadow source stand-in: canned rows (or an error / a hang), records the deadline it was given.
+    class FakeShadowSource implements FadesScoringSource {
+      public deadlineMs?: number;
+      constructor(
+        public readonly kind: FadesSourceKind,
+        private readonly rows: V2FadesRowType[] | Error | 'hang',
+        private readonly resolution?: ResolutionSummary
+      ) {}
+      fetchRows(): Promise<V2FadesRowType[]> {
+        if (this.rows === 'hang') return new Promise<never>(() => undefined);
+        if (this.rows instanceof Error) return Promise.reject(this.rows);
+        return Promise.resolve(this.rows);
+      }
+      setDeadline(deadlineMs: number): void {
+        this.deadlineMs = deadlineMs;
+      }
+      lastResolution(): ResolutionSummary | undefined {
+        return this.resolution;
+      }
+    }
+    const resolutionSummary = (): ResolutionSummary => ({
+      pendingPastDeadline: 3,
+      batches: 1,
+      failedBatches: 0,
+      skippedBatches: 0,
+      resolved: 3,
+      stillOpen: 0,
+      notFound: 0,
+      unclassifiable: 0,
+      fillsWithoutVerdict: 0,
+      failedWrites: 0,
+      byOutcome: {},
+    });
+
+    // Scorer stand-in: one filler, blocked iff any fade in the rows it is given.
+    const score = async (rows: V2FadesRowType[]) =>
+      rows.length === 0
+        ? []
+        : [
+            update(
+              'fillerA',
+              rows.some((r) => r.faded) ? { blockUntilTimestamp: NOW + 900, consecutiveBlocks: 1 } : {}
+            ),
+          ];
 
     const ctx = (overrides: Partial<ShadowContext> = {}): ShadowContext => ({
-      redshiftRows: [row(ADDR_A, 1, NOW - 100, SINCE + 1), row(ADDR_A, 1, NOW - 50, SINCE - 1)],
+      primary: 'redshift',
+      primaryRows: [row(ADDR_A, 1, NOW - 100, SINCE + 1), row(ADDR_A, 1, NOW - 50, SINCE - 1)],
       realUpdates: [update('fillerA', { blockUntilTimestamp: NOW + 900, consecutiveBlocks: 1 })],
-      // Scorer stand-in: one filler, blocked iff any fade in the rows it is given.
-      score: async (rows) =>
-        rows.length === 0
-          ? []
-          : [
-              update(
-                'fillerA',
-                rows.some((r) => r.faded) ? { blockUntilTimestamp: NOW + 900, consecutiveBlocks: 1 } : {}
-              ),
-            ],
+      score,
       now: NOW,
       ...overrides,
     });
 
     it('emits the comparison metrics and a success marker, and returns the report', async () => {
       const { metrics, calls } = recordingMetrics();
-      // The new side has no rows (nothing in PostedOrders): the shadow scorer emits nothing, so
-      // production's block is "only real"; restricted to the floor the old side has one fade.
-      const report = await runFadeRateShadow(ctx(), { source: emptySource(), log, metrics, compareSince: SINCE });
+      // The shadow (order service) has no rows: its scorer emits nothing, so production's block
+      // is "only real"; restricted to the floor the primary side has one fade.
+      const shadow = new FakeShadowSource('order-service', [], resolutionSummary());
+      const report = await runFadeRateShadow(ctx(), { shadow, log, metrics, compareSince: SINCE });
 
-      expect(report).toBeDefined();
+      expect(report).toMatchObject({ primary: 'redshift', shadow: 'order-service' });
       expect(report?.rows).toMatchObject({ oldRows: 1, newRows: 0, oldFades: 1, newFades: 0, onlyNew: [] });
       expect(report?.rows.onlyOld).toEqual([`${ADDR_A.toLowerCase()}:${NOW - 100}`]);
       expect(report?.decisionsVsProduction).toMatchObject({ agree: 0, disagree: 0, onlyReal: ['fillerA'] });
       expect(report?.decisionsVsRestricted).toMatchObject({ agree: 0, disagree: 0, onlyReal: ['fillerA'] });
       expect(report?.wouldBlock).toBe(0);
-      expect(report?.resolution).toMatchObject({ pendingPastDeadline: 0, resolved: 0 });
+      expect(report?.resolution).toMatchObject({ pendingPastDeadline: 3, resolved: 3 });
 
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_SUCCESS]).toEqual([1]);
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_FAILURE]).toBeUndefined();
@@ -211,16 +241,51 @@ describe('fade-rate shadow', () => {
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_DECISION_AGREE]).toEqual([0]);
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE]).toEqual([0]);
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_WOULD_BLOCK]).toEqual([0]);
-      expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_PENDING_PAST_DEADLINE]).toEqual([0]);
+      expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_PENDING_PAST_DEADLINE]).toEqual([3]);
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_DURATION]).toHaveLength(1);
     });
 
-    it('scores the new rows with the injected production scorer and compares against both baselines', async () => {
-      const { metrics } = recordingMetrics();
-      const source = emptySource();
-      source.getFades = async () => [row(ADDR_A, 1, NOW - 100, SINCE + 1)];
+    it('keeps "old" = Redshift and "new" = order service when the roles are swapped', async () => {
+      const { metrics, calls } = recordingMetrics();
+      const primaryRows = [row(ADDR_A, 0, NOW - 100, SINCE + 1)]; // order-service primary: clean
+      const redshiftShadow = new FakeShadowSource('redshift', [row(ADDR_A, 1, NOW - 100, SINCE + 1)]);
+      const resolution = resolutionSummary();
 
-      const report = await runFadeRateShadow(ctx(), { source, log, metrics, compareSince: SINCE });
+      const report = await runFadeRateShadow(
+        ctx({
+          primary: 'order-service',
+          primaryRows,
+          primaryResolution: resolution,
+          realUpdates: await score(primaryRows),
+        }),
+        { shadow: redshiftShadow, log, metrics, compareSince: SINCE }
+      );
+
+      expect(report).toMatchObject({ primary: 'order-service', shadow: 'redshift' });
+      // Redshift saw a fade the order service did not: reported as an old-side fade.
+      expect(report?.rows).toMatchObject({
+        oldRows: 1,
+        newRows: 1,
+        oldFades: 1,
+        newFades: 0,
+        onlyOld: [],
+        onlyNew: [],
+      });
+      expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_FADES_OLD]).toEqual([1]);
+      expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_FADES_NEW]).toEqual([0]);
+      // Shadow (Redshift) would block, production (order service) did not.
+      expect(report?.decisionsVsProduction).toMatchObject({ agree: 0, disagree: 1 });
+      expect(report?.decisionsVsRestricted).toMatchObject({ agree: 0, disagree: 1 });
+      expect(report?.wouldBlock).toBe(1);
+      // The resolution summary is the primary's (order service) when it is primary.
+      expect(report?.resolution).toBe(resolution);
+    });
+
+    it('scores the shadow rows with the injected production scorer and compares against both baselines', async () => {
+      const { metrics } = recordingMetrics();
+      const shadow = new FakeShadowSource('order-service', [row(ADDR_A, 1, NOW - 100, SINCE + 1)]);
+
+      const report = await runFadeRateShadow(ctx(), { shadow, log, metrics, compareSince: SINCE });
 
       expect(report?.rows).toMatchObject({ oldRows: 1, newRows: 1, onlyOld: [], onlyNew: [] });
       expect(report?.decisionsVsProduction).toMatchObject({ agree: 1, disagree: 0 });
@@ -233,25 +298,40 @@ describe('fade-rate shadow', () => {
       expect(SHADOW_TIME_BUDGET_MS).toBe(60_000);
     });
 
-    it('hands the source a wallclock deadline derived from the budget', async () => {
+    it('hands the shadow source a wallclock deadline derived from the budget', async () => {
       const { metrics } = recordingMetrics();
-      const source = emptySource();
+      const shadow = new FakeShadowSource('order-service', []);
       const before = Date.now();
 
-      await runFadeRateShadow(ctx(), { source, log, metrics, budgetMs: 1234 });
+      await runFadeRateShadow(ctx(), { shadow, log, metrics, budgetMs: 1234 });
 
-      expect(source.deadlineMs).toBeGreaterThanOrEqual(before + 1234);
-      expect(source.deadlineMs).toBeLessThanOrEqual(Date.now() + 1234);
+      expect(shadow.deadlineMs).toBeGreaterThanOrEqual(before + 1234);
+      expect(shadow.deadlineMs).toBeLessThanOrEqual(Date.now() + 1234);
     });
 
-    it('a throwing source is logged and counted as a failure, never thrown', async () => {
-      const { metrics, calls } = recordingMetrics();
-      const source = emptySource();
-      source.getFades = async () => {
-        throw new Error('DynamoDB unavailable');
-      };
+    it('propagates the deadline into a real OrderServiceFadesSource through its adapter', async () => {
+      const { metrics } = recordingMetrics();
+      const source = new OrderServiceFadesSource({
+        postedOrders: new MockPostedOrderRepository(),
+        orderStatus: new MockOrderStatusProvider(),
+        fillerEndpoints: () => [],
+        log,
+        now: () => NOW,
+      });
+      const before = Date.now();
 
-      await expect(runFadeRateShadow(ctx(), { source, log, metrics })).resolves.toBeUndefined();
+      await runFadeRateShadow(ctx(), { shadow: orderServiceScoringSource(source), log, metrics, budgetMs: 500 });
+
+      expect(source.deadlineMs).toBeGreaterThanOrEqual(before + 500);
+    });
+
+    it('a throwing shadow source (e.g. Redshift not connectable) is logged and counted, never thrown', async () => {
+      const { metrics, calls } = recordingMetrics();
+      const shadow = new FakeShadowSource('redshift', new Error('Redshift endpoint is not connectable'));
+
+      await expect(
+        runFadeRateShadow(ctx({ primary: 'order-service' }), { shadow, log, metrics })
+      ).resolves.toBeUndefined();
 
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_FAILURE]).toEqual([1]);
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_SUCCESS]).toBeUndefined();
@@ -267,17 +347,18 @@ describe('fade-rate shadow', () => {
         },
       });
 
-      await expect(runFadeRateShadow(context, { source: emptySource(), log, metrics })).resolves.toBeUndefined();
+      await expect(
+        runFadeRateShadow(context, { shadow: new FakeShadowSource('order-service', []), log, metrics })
+      ).resolves.toBeUndefined();
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_FAILURE]).toEqual([1]);
     });
 
-    it('a source that hangs is cut off at the budget and counted as a failure', async () => {
+    it('a shadow source that hangs is cut off at the budget and counted as a failure', async () => {
       const { metrics, calls } = recordingMetrics();
-      const source = emptySource();
-      source.getFades = () => new Promise<never>(() => undefined);
+      const shadow = new FakeShadowSource('redshift', 'hang');
 
       const started = Date.now();
-      await expect(runFadeRateShadow(ctx(), { source, log, metrics, budgetMs: 30 })).resolves.toBeUndefined();
+      await expect(runFadeRateShadow(ctx(), { shadow, log, metrics, budgetMs: 30 })).resolves.toBeUndefined();
 
       expect(Date.now() - started).toBeLessThan(1000);
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_FAILURE]).toEqual([1]);
