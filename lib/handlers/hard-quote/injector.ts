@@ -5,6 +5,7 @@ import { default as Logger } from 'bunyan';
 import { HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
 import { OrderServiceProvider, UniswapXServiceProvider } from '../../providers';
+import { DynamoFillerAddressRepository, FillerAddressRepository } from '../../repositories/filler-address-repository';
 import { DynamoPostedOrderRepository, PostedOrderRepository } from '../../repositories/posted-order-repository';
 import { ApiInjector } from '../base/api-handler';
 import {
@@ -20,6 +21,10 @@ export interface ContainerInjected extends BaseQuoteContainerInjected {
   orderServiceProvider: OrderServiceProvider;
   // Bookkeeping sink for confirmed RFQ-won posts (see posted-order-recorder.ts).
   postedOrderRepository: PostedOrderRepository;
+  // Winning filler address -> webhook attribution for the fade breaker, written by
+  // recordPostedOrder alongside the PostedOrders row. Hard-quote only: the breaker scores
+  // V2/V3 orders and every one of those is cosigned here, so /quote never touches this table.
+  fillerAddressRepository: FillerAddressRepository;
 }
 
 export interface RequestInjected extends BaseQuoteRequestInjected {}
@@ -37,8 +42,10 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     return {
       ...base,
       orderServiceProvider: new UniswapXServiceProvider(log, orderServiceUrl),
-      // Builds its own bounded DynamoDB client; construction is lazy (no I/O).
+      // Both build their own bounded DynamoDB client (the writes sit in series with the
+      // response); construction is lazy (no I/O).
       postedOrderRepository: DynamoPostedOrderRepository.create(),
+      fillerAddressRepository: DynamoFillerAddressRepository.create(),
     };
   }
 

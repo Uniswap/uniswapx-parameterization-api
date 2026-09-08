@@ -22,6 +22,10 @@ import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
 import {
+  FillerAddressRepository,
+  MockFillerAddressRepository,
+} from '../../../lib/repositories/filler-address-repository';
+import {
   MockPostedOrderRepository,
   PostedOrderOutcome,
   PostedOrderRepository,
@@ -75,7 +79,8 @@ describe('Quote handler', () => {
 
   const injectorPromiseMock = (
     quoters: Quoter[],
-    postedOrderRepository: PostedOrderRepository = new MockPostedOrderRepository()
+    postedOrderRepository: PostedOrderRepository = new MockPostedOrderRepository(),
+    fillerAddressRepository: FillerAddressRepository = new MockFillerAddressRepository()
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
@@ -84,6 +89,7 @@ describe('Quote handler', () => {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
             postedOrderRepository,
+            fillerAddressRepository,
             // Mock chainIdRpcMap
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
@@ -92,8 +98,11 @@ describe('Quote handler', () => {
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
     );
 
-  const getQuoteHandler = (quoters: Quoter[], postedOrderRepository?: PostedOrderRepository) =>
-    new HardQuoteHandler('quote', injectorPromiseMock(quoters, postedOrderRepository));
+  const getQuoteHandler = (
+    quoters: Quoter[],
+    postedOrderRepository?: PostedOrderRepository,
+    fillerAddressRepository?: FillerAddressRepository
+  ) => new HardQuoteHandler('quote', injectorPromiseMock(quoters, postedOrderRepository, fillerAddressRepository));
 
   const getEvent = (request: HardQuoteRequestBody): APIGatewayProxyEvent =>
     ({
@@ -547,6 +556,52 @@ describe('Quote handler', () => {
       expect(response.statusCode).toEqual(200);
       expect(JSON.parse(response.body).filler).toEqual(ethers.constants.AddressZero);
       expect(repository.records.size).toEqual(0);
+    });
+
+    it('attributes the winning filler address to its endpoint on a confirmed exclusive post', async () => {
+      const addresses = new MockFillerAddressRepository();
+      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters, undefined, addresses).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+
+      expect(response.statusCode).toEqual(200);
+      expect([...addresses.addressToFiller.entries()]).toEqual([[MOCK_FILLER_ADDRESS, 'https://uniswap.org']]);
+    });
+
+    it('attributes nothing when the order posts open (no exclusive filler)', async () => {
+      const addresses = new MockFillerAddressRepository();
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(
+        [new MockQuoter(logger, 1, 1)],
+        undefined,
+        addresses
+      ).handler(getEvent(request), {} as unknown as Context);
+
+      expect(response.statusCode).toEqual(200);
+      expect(JSON.parse(response.body).filler).toEqual(ethers.constants.AddressZero);
+      expect(addresses.addressToFiller.size).toEqual(0);
+    });
+
+    it('a failing filler-address write does not affect the response', async () => {
+      const addresses = new MockFillerAddressRepository();
+      addresses.recordWinningAddress = async () => {
+        throw new Error('ProvisionedThroughputExceededException');
+      };
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(
+        [new MockQuoter(logger, 2, 1)],
+        undefined,
+        addresses
+      ).handler(getEvent(request), {} as unknown as Context);
+
+      expect(response.statusCode).toEqual(200);
+      expect(JSON.parse(response.body).filler).toEqual(MOCK_FILLER_ADDRESS);
     });
 
     it('a failing repository does not affect the response', async () => {

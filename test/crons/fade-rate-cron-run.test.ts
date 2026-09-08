@@ -99,8 +99,8 @@ const ROWS: V2FadesRowType[] = [
 
 async function fillerAddresses(): Promise<MockFillerAddressRepository> {
   const repo = new MockFillerAddressRepository();
-  await repo.addNewAddressToFiller(ADDR_A, FILLER_A);
-  await repo.addNewAddressToFiller(ADDR_B, FILLER_B);
+  await repo.recordWinningAddress(ADDR_A, FILLER_A);
+  await repo.recordWinningAddress(ADDR_B, FILLER_B);
   return repo;
 }
 
@@ -170,6 +170,31 @@ describe('runFadeRateCron', () => {
     expect(baseline.calls[Metric.CIRCUIT_BREAKER_SHADOW_FAILURE]).toBeUndefined();
   });
 
+  it('resolves fillers by the addresses in the rows and drops mappings to endpoints no longer configured', async () => {
+    const ADDR_C = '0x00000000000000000000000000000000000000C1';
+    const REMOVED_FILLER = 'https://removed.example/rfq';
+    const addresses = await fillerAddresses();
+    await addresses.recordWinningAddress(ADDR_C, REMOVED_FILLER);
+    const rows = [...ROWS, ...Array.from({ length: 5 }, (_, i) => row(ADDR_C, 1, NOW - 100 - i))];
+    const timestamps = new FakeTimestampRepository();
+    const { metrics } = recordingMetrics();
+
+    await runFadeRateCron(metrics, {
+      fadesRepository: new FakeFadesRepository(rows),
+      webhookProvider: new FakeWebhookProvider([FILLER_A, FILLER_B]),
+      fillerAddressRepo: addresses,
+      timestampDB: timestamps,
+      now: () => NOW,
+      log,
+    });
+
+    // exactly the distinct addresses in the rows were looked up (no per-endpoint scan)
+    expect(addresses.requestedAddresses).toEqual([[ADDR_A, ADDR_B, ADDR_C]]);
+    // ADDR_C's filler is not in the webhook config, so its fades bench nobody
+    const written = timestamps.writes.flat().map((w) => w.hash);
+    expect(written).toEqual([FILLER_A, FILLER_B]);
+  });
+
   it('a throwing shadow does not fail the cron', async () => {
     await expect(
       run(async () => {
@@ -210,10 +235,43 @@ describe('runFadeRateCron', () => {
     // The scorer the shadow gets is the production scoring closed over the same stored state:
     // re-scoring the Redshift rows reproduces the real decisions exactly, and scoring a clean
     // set produces no block — while the write log still shows exactly one real write.
-    expect(received?.score(ROWS)).toEqual(timestamps.writes[0]);
-    const clean = received?.score(ROWS.map((r) => ({ ...r, faded: 0 })));
+    expect(await received?.score(ROWS)).toEqual(timestamps.writes[0]);
+    const clean = await received?.score(ROWS.map((r) => ({ ...r, faded: 0 })));
     expect(clean?.every((r) => r.blockUntilTimestamp === UNBLOCKED_BLOCK_UNTIL_TIMESTAMP)).toBe(true);
     expect(timestamps.writes).toHaveLength(1);
+  });
+
+  it("the shadow's scorer resolves addresses its rows name that the Redshift rows do not", async () => {
+    // Filler C won only orders Redshift has not loaded yet: its address is absent from ROWS,
+    // so the real run never looked it up. The shadow's rows do carry it, and its 5/5 fades
+    // must produce a block decision for C, not vanish for want of an address mapping.
+    const FILLER_C = 'https://filler-c.example/rfq';
+    const ADDR_C = '0x00000000000000000000000000000000000000C1';
+    const addresses = await fillerAddresses();
+    await addresses.recordWinningAddress(ADDR_C, FILLER_C);
+    let received: ShadowContext | undefined;
+    const { metrics } = recordingMetrics();
+
+    await runFadeRateCron(metrics, {
+      fadesRepository: new FakeFadesRepository(ROWS),
+      webhookProvider: new FakeWebhookProvider([FILLER_A, FILLER_B, FILLER_C]),
+      fillerAddressRepo: addresses,
+      timestampDB: new FakeTimestampRepository(),
+      shadow: async (ctx) => {
+        received = ctx;
+      },
+      now: () => NOW,
+      log,
+    });
+
+    const shadowRows = [...ROWS, ...Array.from({ length: 5 }, (_, i) => row(ADDR_C, 1, NOW - 100 - i))];
+    const decisions = await received?.score(shadowRows);
+    expect(decisions?.map((d) => d.hash).sort()).toEqual([FILLER_A, FILLER_B, FILLER_C].sort());
+    expect(decisions?.find((d) => d.hash === FILLER_C)?.blockUntilTimestamp).toEqual(NOW + BASE_BLOCK_SECS);
+    // The real run looked up exactly the Redshift addresses; the shadow added exactly the one
+    // it was missing, and re-scoring Redshift rows alone asks for nothing more.
+    await received?.score(ROWS);
+    expect(addresses.requestedAddresses).toEqual([[ADDR_A, ADDR_B], [ADDR_C]]);
   });
 
   it('the shadow context carries no handle to the timestamp repository', async () => {

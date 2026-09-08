@@ -19,6 +19,11 @@ import {
 } from '../../../lib/handlers/hard-quote/posted-order-recorder';
 import { ProtocolVersion } from '../../../lib/providers';
 import {
+  FillerAddressRepository,
+  MockFillerAddressRepository,
+  WinningAddressClaim,
+} from '../../../lib/repositories/filler-address-repository';
+import {
   MockPostedOrderRepository,
   PostedOrderOutcome,
   PostedOrderRecord,
@@ -204,10 +209,15 @@ describe('buildPostedOrderRecord', () => {
 });
 
 describe('recordPostedOrder', () => {
-  const run = (repository: PostedOrderRepository, args: Partial<Parameters<typeof recordPostedOrder>[0]> = {}) => {
+  const run = (
+    repository: PostedOrderRepository,
+    args: Partial<Parameters<typeof recordPostedOrder>[0]> = {},
+    fillerAddressRepository: FillerAddressRepository = new MockFillerAddressRepository()
+  ) => {
     const metric = new RecordingMetric();
     const promise = recordPostedOrder({
       repository,
+      fillerAddressRepository,
       order: v2Order(FILLER),
       quote: quote(),
       quoteId: QUOTE_ID,
@@ -253,6 +263,80 @@ describe('recordPostedOrder', () => {
     expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(0);
     expect(metric.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
     expect(metric.count(Metric.POSTED_ORDER_RECORD_LATENCY)).toEqual(1);
+  });
+
+  it('attributes the exclusive filler address to the quote endpoint alongside the record', async () => {
+    const addresses = new MockFillerAddressRepository();
+    const { promise, metric } = run(new MockPostedOrderRepository(), {}, addresses);
+    await promise;
+
+    expect([...addresses.addressToFiller.entries()]).toEqual([[FILLER, ENDPOINT]]);
+    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metric.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(0);
+  });
+
+  it('records no address for open or non-exclusive orders', async () => {
+    const addresses = new MockFillerAddressRepository();
+    await run(
+      new MockPostedOrderRepository(),
+      { quote: undefined, order: v2Order(ethers.constants.AddressZero) },
+      addresses
+    ).promise;
+    await run(new MockPostedOrderRepository(), { order: v2Order(ethers.constants.AddressZero) }, addresses).promise;
+    expect(addresses.addressToFiller.size).toEqual(0);
+  });
+
+  it('a failing attribution write is counted on its own metric and does not affect the record', async () => {
+    const addresses = new MockFillerAddressRepository();
+    addresses.recordWinningAddress = async () => {
+      throw new Error('ProvisionedThroughputExceededException');
+    };
+    const repository = new MockPostedOrderRepository();
+    const { promise, metric } = run(repository, {}, addresses);
+    await expect(promise).resolves.toBeUndefined();
+
+    expect(repository.records.size).toEqual(1);
+    expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metric.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(0);
+    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
+  });
+
+  it('a refused claim (address owned by another endpoint) is counted on its own metric, not as a write failure', async () => {
+    const addresses = new MockFillerAddressRepository();
+    await addresses.recordWinningAddress(FILLER, 'https://first-owner.example/rfq');
+    const repository = new MockPostedOrderRepository();
+    const { promise, metric } = run(repository, {}, addresses);
+    await expect(promise).resolves.toBeUndefined();
+
+    expect(addresses.addressToFiller.get(FILLER)).toEqual('https://first-owner.example/rfq');
+    expect(repository.records.size).toEqual(1);
+    expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metric.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(1);
+  });
+
+  it('a hung attribution write is bounded by the same wall and does not delay the record beyond it', async () => {
+    const addresses = new MockFillerAddressRepository();
+    addresses.recordWinningAddress = () => new Promise<WinningAddressClaim>(() => undefined);
+    const repository = new MockPostedOrderRepository();
+    const start = Date.now();
+    const { promise, metric } = run(repository, { timeoutMs: 50 }, addresses);
+    await promise;
+
+    expect(Date.now() - start).toBeLessThan(500);
+    expect(repository.records.size).toEqual(1);
+    expect(metric.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
+  });
+
+  it('a failing record write does not prevent the attribution', async () => {
+    const addresses = new MockFillerAddressRepository();
+    const { promise, metric } = run(new FailingRepository('throw'), {}, addresses);
+    await promise;
+
+    expect([...addresses.addressToFiller.entries()]).toEqual([[FILLER, ENDPOINT]]);
+    expect(metric.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
+    expect(metric.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
   });
 
   it('gives up on a hung write at the timeout and counts it as a failure', async () => {

@@ -17,7 +17,6 @@ import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
-import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MOCK_V2_CB_PROVIDER } from '../../fixtures';
 
 jest.mock('axios');
@@ -35,7 +34,6 @@ const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
 const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
-const repository = new MockFillerAddressRepository();
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
@@ -253,7 +251,7 @@ describe('Quote handler', () => {
         { endpoint: 'https://foo.org', headers: {}, name: 'foo', hash: '0xfoo' },
       ]);
 
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
@@ -353,7 +351,7 @@ describe('Quote handler', () => {
           hash: '0xfoo',
         },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
@@ -424,7 +422,7 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -447,7 +445,7 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -473,7 +471,7 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER),
         new MockQuoter(logger, 1, 1),
         new MockQuoter(logger, 1, 2),
       ];
@@ -504,7 +502,7 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -559,7 +557,7 @@ describe('Quote handler', () => {
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');

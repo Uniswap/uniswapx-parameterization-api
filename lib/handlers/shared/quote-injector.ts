@@ -3,8 +3,6 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { Context } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, RPC_HEADERS, WEBHOOK_CONFIG_BUCKET } from '../../constants';
 import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
@@ -12,7 +10,6 @@ import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
 import { Quoter, WebhookQuoter } from '../../quoters';
-import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
 import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
 import { STAGE } from '../../util/stage';
 import { ApiRInj } from '../base/api-handler';
@@ -85,17 +82,7 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
 
   const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
-  const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-    marshallOptions: {
-      convertEmptyValues: true,
-    },
-    unmarshallOptions: {
-      wrapNumbers: true,
-    },
-  });
-  const repository = DynamoFillerAddressRepository.create(documentClient);
-
-  const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, repository)];
+  const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider)];
 
   return {
     quoters,

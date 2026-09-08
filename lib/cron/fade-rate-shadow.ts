@@ -4,6 +4,7 @@ import Logger from 'bunyan';
 import { Metric } from '../entities/aws-metrics-logger';
 import { ToUpdateTimestampRow, V2FadesRowType } from '../repositories';
 import { UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../repositories/timestamp-repository';
+import { withTimeout } from '../util/time';
 import { OrderServiceFadesSource, ResolutionSummary } from './order-service-fades-source';
 
 // Wall-time ceiling on everything the shadow adds to a cron run (order-service batches,
@@ -22,13 +23,14 @@ export const POSTED_ORDERS_LIVE_SINCE = 1_788_557_340;
 /**
  * What the cron hands the shadow after the real path has written. `score` is the production
  * scoring code (getFillersFadeStats + calculateNewTimestamps) closed over the stored breaker
- * state and address map the real run used, with metrics disabled — so shadow decisions differ
- * from the real ones only through the rows.
+ * state the real run used, with metrics disabled. It resolves the filler behind every address
+ * the rows it is given name (the real run's map, extended for addresses only these rows
+ * mention) — so shadow decisions differ from the real ones only through the rows.
  */
 export type ShadowContext = {
   redshiftRows: V2FadesRowType[];
   realUpdates: ToUpdateTimestampRow[];
-  score: (rows: V2FadesRowType[]) => ToUpdateTimestampRow[];
+  score: (rows: V2FadesRowType[]) => Promise<ToUpdateTimestampRow[]>;
   now: number;
 };
 
@@ -174,7 +176,7 @@ export async function runFadeRateShadow(ctx: ShadowContext, deps: ShadowDeps): P
   source.deadlineMs = start + budgetMs;
 
   try {
-    const report = await withTimeout(evaluate(ctx, source, since, start), budgetMs);
+    const report = await withTimeout(evaluate(ctx, source, since, start), budgetMs, 'fade shadow');
     emit(metrics, report);
     metrics.putMetric(Metric.CIRCUIT_BREAKER_SHADOW_SUCCESS, 1, Unit.Count);
     log.info(
@@ -209,8 +211,10 @@ async function evaluate(
 ): Promise<ShadowReport> {
   const newRows = await source.getFades();
   const rows = compareFadeRows(ctx.redshiftRows, newRows, since);
-  const shadowUpdates = ctx.score(newRows);
-  const restrictedRealUpdates = ctx.score(ctx.redshiftRows.filter((row) => row.postTimestamp >= since));
+  const [shadowUpdates, restrictedRealUpdates] = await Promise.all([
+    ctx.score(newRows),
+    ctx.score(ctx.redshiftRows.filter((row) => row.postTimestamp >= since)),
+  ]);
   return {
     durationMs: Date.now() - start,
     resolution: source.lastResolution,
@@ -243,18 +247,4 @@ function emit(metrics: MetricsLogger, report: ShadowReport): void {
   put(Metric.CIRCUIT_BREAKER_SHADOW_DECISION_AGREE_RESTRICTED, report.decisionsVsRestricted.agree);
   put(Metric.CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE_RESTRICTED, report.decisionsVsRestricted.disagree);
   put(Metric.CIRCUIT_BREAKER_SHADOW_WOULD_BLOCK, report.wouldBlock);
-}
-
-// Promise.race keeps subscribing to the loser, so a source that fails after the budget fired
-// is swallowed rather than surfacing as an unhandled rejection; the timer is always cleared.
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`fade shadow exceeded its ${ms}ms budget`)), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }

@@ -50,7 +50,13 @@ export class QuoteHandler extends APIGLambdaHandler<
   ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
       requestInjected: { log, metric },
-      containerInjected: { quoters, orderServiceProvider, chainIdRpcMap, postedOrderRepository },
+      containerInjected: {
+        quoters,
+        orderServiceProvider,
+        chainIdRpcMap,
+        postedOrderRepository,
+        fillerAddressRepository,
+      },
       requestBody,
     } = params;
     const start = Date.now();
@@ -137,10 +143,13 @@ export class QuoteHandler extends APIGLambdaHandler<
           metric.putMetric(Metric.QUOTE_200, 1, MetricLoggerUnit.Count);
           // 200 and 201 (the latter also covers a post whose timeout was reconciled as
           // accepted) are the only confirmed posts, so this is the only place the
-          // fade-breaker bookkeeping row is written. Bounded and non-throwing; it runs
-          // before QUOTE_LATENCY is stamped so the alarmed metric keeps including it.
+          // fade-breaker bookkeeping rows are written: the PostedOrders row and, for the
+          // winning exclusive filler, its address -> webhook attribution. Bounded and
+          // non-throwing; it runs before QUOTE_LATENCY is stamped so the alarmed metric keeps
+          // including it.
           await recordPostedOrder({
             repository: postedOrderRepository,
+            fillerAddressRepository,
             order: cosignedOrder,
             quote: bestQuote ?? undefined,
             quoteId: postedQuoteId,

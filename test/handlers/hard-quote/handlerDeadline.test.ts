@@ -16,6 +16,7 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
 import { getOrder } from '../../fixtures/hard-quote';
 
@@ -66,6 +67,7 @@ describe('Hard quote handler - order deadline validation', () => {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
             postedOrderRepository: new MockPostedOrderRepository(),
+            fillerAddressRepository: new MockFillerAddressRepository(),
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
         },
