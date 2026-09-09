@@ -259,7 +259,7 @@ export class APIStack extends cdk.Stack {
       memorySize: 2048,
       bundling: LAMBDA_BUNDLING,
       environment: {
-        VERSION: '6',
+        VERSION: '7',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
@@ -291,7 +291,7 @@ export class APIStack extends cdk.Stack {
       memorySize: 2048,
       bundling: LAMBDA_BUNDLING,
       environment: {
-        VERSION: '6',
+        VERSION: '7',
         NODE_OPTIONS: '--enable-source-maps',
         REGION: region,
         KMS_KEY_ID: kmsStack.key.keyId,
