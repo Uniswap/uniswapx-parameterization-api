@@ -49,6 +49,8 @@ export enum Metric {
 
   QUOTE_POST_ERROR = 'QUOTE_POST_ERROR',
   QUOTE_POST_ATTEMPT = 'QUOTE_POST_ATTEMPT',
+  // Hard quote rejected before the auction because its outputs span multiple tokens.
+  QUOTE_MIXED_OUTPUT_TOKENS = 'QUOTE_MIXED_OUTPUT_TOKENS',
 
   // Bookkeeping for the PostedOrders table (hard-quote path). One of the pair fires per
   // confirmed RFQ-won post, so RECORDED + RECORD_FAILED should track QUOTE_200 for exclusive

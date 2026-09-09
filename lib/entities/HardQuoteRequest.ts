@@ -100,6 +100,36 @@ export class HardQuoteRequest {
     return utils.getAddress(this.order.info.outputs[0].token);
   }
 
+  /**
+   * Whether every output pays outputs[0].token.
+   *
+   * `totalOutputAmountStart` below sums the outputs as raw integers, and `toCleanJSON`
+   * sends quoters that one scalar alongside a single `tokenOut` taken from outputs[0].
+   * Both are only meaningful when the outputs agree on a token: otherwise the amount
+   * mixes assets of different denominations, and the quoter prices something the order
+   * does not contain. Multi-output orders are the normal case, since fee outputs use the
+   * swapper output's token.
+   */
+  public get hasUniformOutputTokens(): boolean {
+    const tokenOut = this.tokenOut;
+    for (const output of this.order.info.outputs) {
+      if (utils.getAddress(output.token) !== tokenOut) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  public get outputTokens(): string[] {
+    const tokens: string[] = [];
+    for (const output of this.order.info.outputs) {
+      tokens.push(utils.getAddress(output.token));
+    }
+
+    return tokens;
+  }
+
   public get totalOutputAmountStart(): BigNumber {
     let amount = BigNumber.from(0);
     for (const output of this.order.info.outputs) {
