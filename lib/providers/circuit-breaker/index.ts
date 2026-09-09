@@ -5,6 +5,9 @@ export interface EndpointStatuses {
   disabled: {
     webhook: WebhookConfiguration;
     blockUntil: number;
+    // hashes of the faded orders that caused the block;
+    // absent on block entries written before hashes were persisted
+    fadedOrderHashes?: string[];
   }[];
 }
 

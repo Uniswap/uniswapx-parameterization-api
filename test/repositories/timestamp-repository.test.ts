@@ -47,6 +47,7 @@ describe('Dynamo TimestampRepo tests', () => {
         fadeWindowStart: 4,
         consecutiveBlocks: 1,
         consecutiveCleanRuns: 4,
+        fadedOrderHashes: ['0xfaded1', '0xfaded2'],
       },
     ];
 
@@ -60,6 +61,8 @@ describe('Dynamo TimestampRepo tests', () => {
     expect(row?.fadeWindowStart).toBe(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
     expect(row?.consecutiveBlocks).toBe(0);
     expect(row?.consecutiveCleanRuns).toBe(0); // missing attribute (pre-migration row) reads as 0
+    // written without fadedOrderHashes (legacy shape) — reads back as undefined
+    expect(row?.fadedOrderHashes).toBeUndefined();
 
     row = await repo.getFillerTimestamps('0x2');
     expect(row).toBeDefined();
@@ -75,6 +78,7 @@ describe('Dynamo TimestampRepo tests', () => {
     expect(row?.fadeWindowStart).toBe(4);
     expect(row?.consecutiveBlocks).toBe(1);
     expect(row?.consecutiveCleanRuns).toBe(4);
+    expect(row?.fadedOrderHashes).toEqual(['0xfaded1', '0xfaded2']);
   });
 
   it('should batch get timestamps', async () => {
@@ -105,6 +109,7 @@ describe('Dynamo TimestampRepo tests', () => {
           fadeWindowStart: 4,
           consecutiveBlocks: 1,
           consecutiveCleanRuns: 4,
+          fadedOrderHashes: ['0xfaded1', '0xfaded2'],
         },
       ])
     );

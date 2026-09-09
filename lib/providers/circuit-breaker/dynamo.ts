@@ -66,6 +66,7 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
             return {
               webhook: e,
               blockUntil: fillerTimestamps.get(e.endpoint)!.blockUntilTimestamp,
+              fadedOrderHashes: fillerTimestamps.get(e.endpoint)!.fadedOrderHashes,
             };
           });
 

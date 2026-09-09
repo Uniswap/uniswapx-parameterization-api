@@ -32,6 +32,7 @@ const FILLER_TIMESTAMPS: FillerTimestamps = new Map([
       fadeWindowStart: now + 1000,
       consecutiveBlocks: 0,
       consecutiveCleanRuns: 0,
+      fadedOrderHashes: ['0xfaded1', '0xfaded2'],
     },
   ],
   [
@@ -114,6 +115,7 @@ describe('V2CircuitBreakerProvider', () => {
             hash: '0xfiller3',
           },
           blockUntil: now + 1000,
+          fadedOrderHashes: ['0xfaded1', '0xfaded2'],
         },
         {
           webhook: {
@@ -121,6 +123,7 @@ describe('V2CircuitBreakerProvider', () => {
             endpoint: 'filler5',
             hash: '0xfiller5',
           },
+          // no fadedOrderHashes: legacy block entry written before hashes were persisted
           blockUntil: now + 100,
         },
       ],

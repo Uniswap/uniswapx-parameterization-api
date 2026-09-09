@@ -38,6 +38,10 @@ export type TimestampRepoRow = {
   // while unblocked and escalated. consecutiveBlocks decays one level per
   // CLEAN_RUNS_PER_DECAY of these; any new fade resets the streak, idle runs freeze it.
   consecutiveCleanRuns: number;
+  // hashes of the faded orders that caused the current block; absent on rows written
+  // before this field existed. Deliberately optional on writes: omitting it on the
+  // full-item put is how an expired block's hashes are cleared.
+  fadedOrderHashes?: string[];
 };
 
 // Rows round-trip as native numbers now (number-typed attributes read via a wrapNumbers:false
