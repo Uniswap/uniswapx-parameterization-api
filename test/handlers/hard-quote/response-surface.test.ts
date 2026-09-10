@@ -20,6 +20,7 @@ import { MockQuoter, Quoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
 import { ErrorCode } from '../../../lib/util/errors';
+import { fakeContext } from '../../fakes';
 import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
 
 /**
@@ -76,6 +77,8 @@ describe('/hard-quote response surface', () => {
     jest.clearAllMocks();
   });
 
+  const fakes = fakeContext('test');
+
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
@@ -83,6 +86,7 @@ describe('/hard-quote response surface', () => {
         // Surfaces as the `id` field of every handler-level error body below.
         requestId: 'test',
         metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 

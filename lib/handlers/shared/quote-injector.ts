@@ -1,11 +1,12 @@
 import { IMetric, setGlobalLogger, setGlobalMetric } from '@uniswap/smart-order-router';
 import { MetricsLogger } from 'aws-embedded-metrics';
-import { Context } from 'aws-lambda';
+import { Context as LambdaContext } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, RPC_HEADERS, WEBHOOK_CONFIG_BUCKET } from '../../constants';
 import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
+import { Context, EmfMetrics } from '../../observability';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
@@ -23,7 +24,12 @@ export interface BaseQuoteContainerInjected {
 
 /** Per-request state shared by both quote Lambdas. */
 export interface BaseQuoteRequestInjected extends ApiRInj {
+  // Still consumed by the quote path (getBestQuote and below), which is moved to `ctx` in a
+  // later PR; the handlers themselves no longer read it.
   metric: IMetric;
+  // The explicit per-request logger/metrics the handler layer uses. Same underlying bunyan
+  // child and MetricsLogger as `log`/`metric`, so nothing is emitted twice.
+  ctx: Context;
 }
 
 /**
@@ -98,13 +104,20 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
  * argument would make easy to swap silently.
  *
  * The call order is load-bearing: `setDimensions` REPLACES the dimension-set list while
- * `putDimensions` APPENDS one, so the per-chain set must be added second. `setGlobalMetric`
- * must run because WebhookQuoter emits every RFQ_* metric through the smart-order-router
- * module global rather than the injected IMetric.
+ * `putDimensions` APPENDS one, so the per-chain set must be added second.
+ *
+ * Two views of the same request-scoped state are returned, deliberately:
+ * - `ctx` is the explicit per-request Context the handler layer reads. It is the seam for
+ *   the concurrent (ECS) runtime, where a module global holding request state is a
+ *   cross-request leak.
+ * - `setGlobalLogger`/`setGlobalMetric` must still run because WebhookQuoter and the S3
+ *   webhook config provider read the smart-order-router module globals, and getBestQuote
+ *   takes the bunyan logger and IMetric positionally. Those consumers move to `ctx` in the
+ *   follow-up PRs; only then do the globals go.
  */
 export function buildQuoteRequestInjected<ReqBody extends { tokenInChainId: number }>(params: {
   requestBody: ReqBody;
-  context: Context;
+  context: LambdaContext;
   log: Logger;
   metricsLogger: MetricsLogger;
   metricDimension: Record<string, string>;
@@ -135,9 +148,18 @@ export function buildQuoteRequestInjected<ReqBody extends { tokenInChainId: numb
   const metric = new AWSMetricsLogger(metricsLogger);
   setGlobalMetric(metric);
 
+  // Same child logger and the same, already-dimensioned MetricsLogger as the globals above:
+  // a handler metric lands in the same EMF blob under the same dimension sets as before.
+  const ctx: Context = {
+    logger: log,
+    metrics: new EmfMetrics(metricsLogger, log),
+    requestId,
+  };
+
   return {
     log,
     metric,
     requestId,
+    ctx,
   };
 }

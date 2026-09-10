@@ -6,7 +6,8 @@ import { default as Logger } from 'bunyan';
 import { ethers, Wallet } from 'ethers';
 
 import { KmsSigner } from '@uniswap/signer';
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
+import { POST_ORDER_ERROR_REASON } from '../../../lib/constants';
+import { AWSMetricsLogger, Metric } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -19,6 +20,7 @@ import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository, PostedOrderOutcome } from '../../../lib/repositories/posted-order-repository';
 import { ErrorCode } from '../../../lib/util/errors';
+import { fakeContext } from '../../fakes';
 import { getOrder } from '../../fixtures/hard-quote';
 
 jest.mock('axios');
@@ -52,12 +54,21 @@ describe('Quote handler order post error mapping', () => {
   }));
   (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
 
+  const fakes = fakeContext('test');
+
+  afterEach(() => {
+    // One ctx is shared across the describe; every test starts from empty recordings.
+    fakes.metrics.reset();
+    fakes.logger.reset();
+  });
+
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         requestId: 'test',
         metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 
@@ -154,6 +165,51 @@ describe('Quote handler order post error mapping', () => {
     expect(JSON.parse(response.body)).toMatchObject({
       detail: 'Onchain validation failed: InsufficientFunds',
     });
+    // Counted as a rejection, not a confirmed post: no QUOTE_200 and no alarmed QUOTE_LATENCY.
+    expect(fakes.metrics.names()).toEqual(expect.arrayContaining([Metric.QUOTE_POST_ATTEMPT, Metric.QUOTE_400]));
+    expect(fakes.metrics.names()).not.toContain(Metric.QUOTE_200);
+    expect(fakes.metrics.count(Metric.QUOTE_LATENCY)).toEqual(0);
+  });
+
+  it('counts a rejection as QUOTE_POST_ERROR unless the swapper was short of funds', async () => {
+    await postOrderWith({ statusCode: 400, errorCode: ErrorCode.ValidationError, detail: 'rejected' });
+    expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
+      ['increment', Metric.QUOTE_REQUESTED],
+      ['increment', Metric.QUOTE_POST_ATTEMPT],
+      ['increment', Metric.QUOTE_POST_ERROR],
+      ['increment', Metric.QUOTE_400],
+      ['histogram', Metric.QUOTE_E2E_LATENCY],
+    ]);
+
+    fakes.metrics.reset();
+    // A user error, not an alertable service error.
+    await postOrderWith({
+      statusCode: 400,
+      errorCode: ErrorCode.ValidationError,
+      detail: POST_ORDER_ERROR_REASON.INSUFFICIENT_FUNDS,
+    });
+    expect(fakes.metrics.count(Metric.QUOTE_POST_ERROR)).toEqual(0);
+    expect(fakes.metrics.count(Metric.QUOTE_400)).toEqual(1);
+  });
+
+  it('counts an indeterminate outcome as QUOTE_POST_ERROR and QUOTE_500, and logs it at error level', async () => {
+    await postOrderWith({
+      statusCode: 500,
+      errorCode: ErrorCode.InternalError,
+      detail: 'timed out',
+      data: { hash: '0xabc' },
+    });
+    expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
+      ['increment', Metric.QUOTE_REQUESTED],
+      ['increment', Metric.QUOTE_POST_ATTEMPT],
+      ['increment', Metric.QUOTE_POST_ERROR],
+      ['increment', Metric.QUOTE_500],
+      ['histogram', Metric.QUOTE_E2E_LATENCY],
+    ]);
+    const [errorLog] = fakes.logger.atLevel('error');
+    expect(errorLog.msg).toEqual('Error posting order');
+    expect(errorLog.bindings).toEqual({ requestId: 'test' });
+    expect(errorLog.fields.error).toMatchObject({ statusCode: 500, detail: 'timed out' });
   });
 
   it('records nothing when the order service rejects the order', async () => {

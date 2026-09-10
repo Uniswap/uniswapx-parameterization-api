@@ -141,6 +141,19 @@ describe('shared quote injector wiring', () => {
       // The child logger is what carries requestBody/requestId onto every downstream log line.
       expect(requestInjected.log).not.toBe(log);
       expect(requestInjected.log.fields.requestId).toEqual('req-1');
+
+      // ctx is a second view of the same request-scoped state, not a second copy of it: the
+      // handler layer's logger IS that child logger, and its metrics forward to the request's
+      // MetricsLogger (the one carrying the dimension sets asserted above), as the same
+      // (name, value, unit) the IMetric path produced.
+      expect(requestInjected.ctx.requestId).toEqual('req-1');
+      expect(requestInjected.ctx.logger).toBe(requestInjected.log);
+      requestInjected.ctx.metrics.increment('QUOTE_REQUESTED');
+      requestInjected.ctx.metrics.histogram('QUOTE_LATENCY', 250);
+      expect(metricsLogger.putMetric.mock.calls).toEqual([
+        ['QUOTE_REQUESTED', 1, 'Count'],
+        ['QUOTE_LATENCY', 250, 'Milliseconds'],
+      ]);
     });
   });
 });
