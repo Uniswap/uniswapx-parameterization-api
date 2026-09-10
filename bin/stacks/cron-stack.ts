@@ -12,7 +12,12 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 import { ITopic } from 'aws-cdk-lib/aws-sns';
-import { DYNAMO_TABLE_NAME, FADE_RATE_BUCKET } from '../../lib/constants';
+import {
+  DYNAMO_TABLE_NAME,
+  FADE_RATE_BUCKET,
+  FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV,
+  FADES_SOURCE_ENV,
+} from '../../lib/constants';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
@@ -91,6 +96,12 @@ export class CronStack extends cdk.NestedStack {
           stage: stage,
           ...envVars,
           ...(orderServiceUrl && { ORDER_SERVICE_URL: orderServiceUrl }),
+          // Which fades source is authoritative for block decisions; the other runs as a shadow.
+          // Reverting to the Redshift-computed breaker is changing this one value to 'redshift'.
+          [FADES_SOURCE_ENV]: 'order-service',
+          // Cancelled / insufficient-funds / error orders are not fades (production parity);
+          // 'true' would score them as fades. Expiries always count.
+          [FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV]: 'false',
         },
       });
       // The shared Lambda role already carries AmazonDynamoDBFullAccess; the explicit grant
