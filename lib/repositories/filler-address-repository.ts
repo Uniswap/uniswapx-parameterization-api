@@ -10,7 +10,7 @@ import { postedOrderDocumentClient } from './posted-order-repository';
 
 /**
  * How long an address -> filler attribution lives after the filler last won a quote with it.
- * The fade breaker only looks back 24h (V2FadesRepository) and the backtest extract 28d, so
+ * The fade breaker only looks back 24h (OrderServiceFadesSource) and the backtest extract 28d, so
  * a 30d TTL keeps every attribution either of them can ask about while letting the addresses
  * of a filler that rotates per quote age out instead of accumulating forever.
  */
@@ -42,15 +42,16 @@ export type WinningAddressClaim = { outcome: 'recorded' } | { outcome: 'owned_by
  * Maps on-chain filler addresses to the RFQ webhook (filler) that quotes with them.
  *
  * One item per address (pk = checksummed address, filler = webhook endpoint, expiresAt = TTL).
- * The mapping has one runtime reader: the fade-rate breaker's Redshift path, which sees a
- * posted order's exclusive filler address and needs the webhook to bench (the backtest extract
- * described in CLAUDE.md scans the table offline). Only a quote that WON produces a posted
+ * The mapping has one runtime reader: the fade-rate breaker, whose rows are keyed by a posted
+ * order's exclusive filler address and which needs the webhook to bench (lookupFillersForRows in
+ * lib/cron/fade-rate-v2.ts; the backtest extract described in CLAUDE.md scans the table offline). Only a quote that WON produces a posted
  * order, so only winning addresses are recorded (by recordPostedOrder, alongside the
  * PostedOrders row, at the confirmed post), and there is no per-filler address cap: a filler
  * may quote from as many addresses as it likes, each costing one read-free conditional write
  * per posted order and expiring FILLER_ADDRESS_TTL_SECS after its last win. Nothing on the
- * /quote path reads or writes this table. (The PostedOrders row already carries the endpoint
- * per order; this table exists only until the Redshift path is retired.)
+ * /quote path reads or writes this table. (The PostedOrders row also carries the endpoint per
+ * order, frozen at post time; attributing through this table at read time is what lets a
+ * filler's history follow an endpoint rename.)
  */
 export interface FillerAddressRepository {
   /**

@@ -2,7 +2,6 @@ import { secondsToBlocks } from '@uniswap/sdk-core';
 import { ChainId } from './util/chains';
 
 export const WEBHOOK_CONFIG_BUCKET = 'rfq-config';
-export const FADE_RATE_BUCKET = 'fade-rate-config';
 export const PRODUCTION_S3_KEY = 'production.json';
 export const BETA_S3_KEY = 'beta.json';
 
@@ -31,9 +30,8 @@ export const POSTED_ORDERS_INDEX = {
 export const POSTED_ORDER_TTL_SECS = 48 * 60 * 60;
 
 // Fade circuit breaker configuration, read by lib/cron/fade-rate-v2.ts and set on the cron Lambda
-// in bin/stacks/cron-stack.ts. Both are deliberately env-driven so operating the breaker (which
-// source is authoritative; how never-filled terminal orders are scored) is a config change.
-export const FADES_SOURCE_ENV = 'FADES_SOURCE';
+// in bin/stacks/cron-stack.ts. Env-driven so how never-filled terminal orders are scored is a
+// config change, not a deploy of new code.
 export const FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV = 'FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE';
 
 export const DYNAMO_TABLE_KEY = {

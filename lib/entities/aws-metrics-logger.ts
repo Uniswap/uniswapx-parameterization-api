@@ -120,24 +120,8 @@ export enum Metric {
   // Fillers with fade stats evaluated in a cron run (sample-health denominator)
   CIRCUIT_BREAKER_V2_FILLERS_EVALUATED = 'CIRCUIT_BREAKER_V2_FILLERS_EVALUATED',
 
-  // 1 when the order-service/PostedOrders source produced this run's block decisions, 0 when
-  // Redshift did (FADES_SOURCE). Charts the switch position next to the decision metrics, whose
-  // EMF records also carry it as the `fadesSource` property.
-  CIRCUIT_BREAKER_PRIMARY_IS_ORDER_SERVICE = 'CIRCUIT_BREAKER_PRIMARY_IS_ORDER_SERVICE',
-
-  // Shadow evaluation of whichever fades source is NOT primary (lib/cron/fade-rate-shadow.ts).
-  // Runs after the primary path each cron, writes nothing. Exactly one of SUCCESS / FAILURE
-  // fires per run; DURATION is the wall time it added to the cron (budgeted, see the runner).
-  CIRCUIT_BREAKER_SHADOW_SUCCESS = 'CIRCUIT_BREAKER_SHADOW_SUCCESS',
-  CIRCUIT_BREAKER_SHADOW_FAILURE = 'CIRCUIT_BREAKER_SHADOW_FAILURE',
-  CIRCUIT_BREAKER_SHADOW_DURATION = 'CIRCUIT_BREAKER_SHADOW_DURATION',
-  // The shadow was not run this invocation because the Lambda had too little time left after
-  // the primary (see fade-rate-v2.ts). Distinct from FAILURE: nothing broke, the run was long.
-  CIRCUIT_BREAKER_SHADOW_SKIPPED = 'CIRCUIT_BREAKER_SHADOW_SKIPPED',
-
   // Health of the order-service outcome resolution (lib/cron/order-service-fades-source.ts),
-  // emitted whichever role that source plays. Replaces the CIRCUIT_BREAKER_SHADOW_* resolution
-  // series, whose names stopped describing the data once the source became primary.
+  // the breaker's only input since the Redshift path was retired.
   // Pending orders past their deadline at the start of the run, and whether that read hit its cap
   // (sustained saturation = resolution cannot keep up; a give-up path keeps it from wedging).
   CIRCUIT_BREAKER_ORDER_RESOLUTION_PENDING_PAST_DEADLINE = 'CIRCUIT_BREAKER_ORDER_RESOLUTION_PENDING_PAST_DEADLINE',
@@ -159,26 +143,6 @@ export enum Metric {
   CIRCUIT_BREAKER_ORDER_RESOLUTION_FAILED_WRITES = 'CIRCUIT_BREAKER_ORDER_RESOLUTION_FAILED_WRITES',
   CIRCUIT_BREAKER_ORDER_RESOLUTION_FAILED_BATCHES = 'CIRCUIT_BREAKER_ORDER_RESOLUTION_FAILED_BATCHES',
   CIRCUIT_BREAKER_ORDER_RESOLUTION_SKIPPED_BATCHES = 'CIRCUIT_BREAKER_ORDER_RESOLUTION_SKIPPED_BATCHES',
-  // Row-level comparison, both sides restricted to orders posted since PostedOrders went
-  // live. ONLY_OLD / ONLY_NEW are (fillerAddress, deadline) keys present on one side only.
-  CIRCUIT_BREAKER_SHADOW_ROWS_OLD = 'CIRCUIT_BREAKER_SHADOW_ROWS_OLD',
-  CIRCUIT_BREAKER_SHADOW_ROWS_NEW = 'CIRCUIT_BREAKER_SHADOW_ROWS_NEW',
-  CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_OLD = 'CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_OLD',
-  CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_NEW = 'CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_NEW',
-  CIRCUIT_BREAKER_SHADOW_FADES_OLD = 'CIRCUIT_BREAKER_SHADOW_FADES_OLD',
-  CIRCUIT_BREAKER_SHADOW_FADES_NEW = 'CIRCUIT_BREAKER_SHADOW_FADES_NEW',
-  // Block decisions the shadow would have made vs. the decisions the primary actually wrote this
-  // run (per filler: blocked?, blockUntil, consecutiveBlocks). The RESTRICTED pair re-scores BOTH
-  // sides' rows above the comparison floor before comparing (apples to apples); before the
-  // source flip only the Redshift side was floored, so pre-flip history of the RESTRICTED series
-  // is not a baseline for post-flip values.
-  CIRCUIT_BREAKER_SHADOW_DECISION_AGREE = 'CIRCUIT_BREAKER_SHADOW_DECISION_AGREE',
-  CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE = 'CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE',
-  CIRCUIT_BREAKER_SHADOW_DECISION_AGREE_RESTRICTED = 'CIRCUIT_BREAKER_SHADOW_DECISION_AGREE_RESTRICTED',
-  CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE_RESTRICTED = 'CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE_RESTRICTED',
-  // Fillers the SHADOW source would have benched after this run — i.e. the order service while
-  // Redshift was primary, and Redshift once the order service is primary.
-  CIRCUIT_BREAKER_SHADOW_WOULD_BLOCK = 'CIRCUIT_BREAKER_SHADOW_WOULD_BLOCK',
 }
 
 type MetricNeedingContext =

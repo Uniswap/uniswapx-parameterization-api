@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 
 import { OrderServiceOrderStatus, OrderStatusProvider } from '../providers/order';
 import { ORDER_SERVICE_MAX_ORDER_HASHES } from '../providers/order/uniswapxService';
-import { ORDERS_PER_FILLER_LIMIT, V2FadesRowType } from '../repositories/fades-repository';
+import { ORDERS_PER_FILLER_LIMIT, V2FadesRowType } from '../repositories/fade-rows';
 import {
   PostedOrderOutcome,
   PostedOrderRecord,
@@ -13,20 +13,25 @@ import {
 } from '../repositories/posted-order-repository';
 
 /**
- * What the fade cron consumes: per-order rows in the shape of V2_FADE_RATE_SQL's result.
- * V2FadesRepository (Redshift) satisfies this structurally; OrderServiceFadesSource is the
- * GPA-owned implementation. Everything downstream (getFillersFadeStats, calculateNewTimestamps)
- * is shared, so the two sources can only differ in the rows they produce.
+ * What the fade cron consumes: per-order rows (V2FadesRowType) plus the two hooks the cron uses
+ * around them. OrderServiceFadesSource is the implementation; the interface exists so the cron
+ * can be exercised with a fake. Row semantics are inherited from the retired Redshift fade SQL
+ * (git history: lib/repositories/fades-repository.ts), reproduced here so the scoring code in
+ * fade-rate-v2.ts did not change when the source did.
  */
 export interface FadesSource {
   getFades(): Promise<V2FadesRowType[]>;
+  // Wallclock (ms) after which best-effort work stops; set by the cron from the Lambda deadline.
+  deadlineMs?: number;
+  // Outcome-resolution summary of the last getFades().
+  readonly lastResolution?: ResolutionSummary;
 }
 
-// Rolling window on order completion time, mirroring the view's
-// `deadline >= GETDATE() - INTERVAL '24 HOURS'`.
+// Rolling window on order completion time (the retired Redshift view's
+// `deadline >= GETDATE() - INTERVAL '24 HOURS'`).
 export const FADE_WINDOW_SECS = 24 * 60 * 60;
-// Testnets the view drops: goerli, polygon goerli, optimism goerli, arbitrum goerli. Kept as
-// the same literal list as V2_CREATE_VIEW_SQL so the two sources cannot drift apart.
+// Testnets the breaker ignores: goerli, polygon goerli, optimism goerli, arbitrum goerli (the
+// retired Redshift view's literal list, kept so historical backtests line up).
 export const EXCLUDED_TESTNET_CHAIN_IDS: readonly number[] = [5, 8001, 420, 421613];
 // Pending orders resolved per cron run. At ORDER_SERVICE_MAX_ORDER_HASHES per request this is
 // 20 requests; anything beyond it waits for the next run (the pending index is oldest-first,
@@ -53,8 +58,8 @@ export const ORDER_STATUS = {
   ERROR: 'error',
 } as const;
 
-// Lowercased permissioned-token addresses, compared chain-agnostically exactly as the SQL's
-// `LOWER(tokenIn) NOT IN (...)` does.
+// Lowercased permissioned-token addresses, compared chain-agnostically (the retired Redshift
+// SQL's `LOWER(tokenIn) NOT IN (...)`).
 const PERMISSIONED_TOKEN_ADDRESSES = new Set(PERMISSIONED_TOKENS.map((token) => token.address.toLowerCase()));
 
 export function isPermissionedToken(address: string): boolean {
@@ -72,8 +77,8 @@ export type Classification =
   | { kind: 'unclassifiable'; reason: string };
 
 /**
- * Maps an order-service status onto the breaker's fade rule for one posted order. Mirrors the
- * `faded` CASE in V2_FADE_RATE_SQL:
+ * Maps an order-service status onto the breaker's fade rule for one posted order (the `faded`
+ * CASE of the retired Redshift fade SQL, plus the outcomes that SQL could not see):
  *
  *   status              | Dutch_V2                                | Dutch_V3
  *   --------------------|-----------------------------------------|----------------------------------
@@ -81,18 +86,18 @@ export type Classification =
  *   filled, no timing   | recorded, no verdict (see below)        | recorded, no verdict
  *   expired             | faded                                   | faded
  *   cancelled / insufficient-funds / error | recorded, no verdict (scored by policy flag; excluded
- *                       |   by default, as production's SQL effectively excludes them)
+ *                       |   by default, as the retired Redshift breaker effectively did)
  *   open                | not terminal: stays pending             | stays pending
  *   (any of the above unresolved for MAX_RESOLUTION_ATTEMPTS runs) -> UNRESOLVED: recorded, no row
  *
  * A fill AT the decay-start block/time is not a fade: the exclusive filler still paid the
- * undecayed price (the SQL's `fillTimeBlocks > 0` / `decayStartTime < fillTimestamp`).
+ * undecayed price (`fillTimeBlocks > 0` / `decayStartTime < fillTimestamp` in the old SQL).
  *
  * "Filled, no timing": when the order service fails to process a fill event it still marks the
  * order `filled`, with `fillBlock: -1`, no fillTimestamp and an empty txHash (check-order-status
  * catch path). Such a fill is terminal — so it is recorded and stops being re-fetched — but it
- * carries no verdict: it is neither a fade nor a clean fill and contributes no row, which is
- * also what the Redshift path sees (no Fill Info log is ever emitted for it).
+ * carries no verdict: it is neither a fade nor a clean fill and contributes no row (the
+ * retired Redshift path never saw these either — no Fill Info log is emitted for them).
  */
 export function classifyOutcome(
   record: PostedOrderRecord,
@@ -138,11 +143,11 @@ export function classifyOutcome(
 }
 
 export type FadeRowPolicy = {
-  // PARITY FLAG for cancelled / insufficient-funds / error orders. The SQL reads as if it scored
-  // every never-filled order as a fade (`fillTimestamp IS NULL`), but in production those three
-  // never reach `archivedorders` with token columns, so the permissioned-token filter drops them
-  // and they contribute no row at all. `false` reproduces that (the default); `true` scores them
-  // as fades. Expiries are not governed by this flag: they always count as fades.
+  // POLICY FLAG for cancelled / insufficient-funds / error orders. The retired Redshift SQL read
+  // as if it scored every never-filled order as a fade (`fillTimestamp IS NULL`), but those
+  // three never reached `archivedorders` with token columns, so its permissioned-token filter
+  // dropped them and they contributed no row. `false` keeps that (the default); `true` scores
+  // them as fades. Expiries are not governed by this flag: they always count as fades.
   countNeverFilledTerminalAsFade: boolean;
 };
 
@@ -171,20 +176,20 @@ export function fadedForScoring(record: PostedOrderRecord, policy: FadeRowPolicy
 }
 
 /**
- * Rebuilds V2_FADE_RATE_SQL's rows from PostedOrders records, in the SQL's order of operations:
+ * Builds the breaker's rows from PostedOrders records, in the retired Redshift SQL's order of
+ * operations (kept so the scoring code and its backtests still describe what runs):
  *
  *  1. completed orders only (deadline < now) — in-flight orders never consume window slots;
  *  2. the ORDERS_PER_FILLER_LIMIT most recently posted orders per filler ADDRESS (the view
  *     partitions by the exclusive filler address, before any other filter — so a permissioned
  *     token order or a not-yet-resolved order still occupies a slot);
  *  3. then the 24h completion window, testnets, the zero filler, missing quoteId, the
- *     permissioned-token lists (both legs), and orders with no recorded outcome (the SQL's
- *     LEFT JOIN drops rows that have not landed in archivedorders yet).
+ *     permissioned-token lists (both legs), and orders with no recorded outcome (the old SQL's
+ *     LEFT JOIN likewise dropped rows that had not landed in archivedorders).
  *
- * Output rows are exactly V2FadesRowType, ordered by filler address then deadline desc like
- * the SQL. `postTimestamp` is GPA's post-confirmation time; the SQL's `createdat` is the order
- * service's, which can trail or lead by a second or two — callers match rows on
- * (fillerAddress, deadline), not on postTimestamp.
+ * Output rows are exactly V2FadesRowType, ordered by filler address then deadline desc.
+ * `postTimestamp` is GPA's post-confirmation time (the old SQL's `createdat` was the order
+ * service's, a second or two apart).
  */
 export function buildFadeRows(
   records: PostedOrderRecord[],
@@ -274,7 +279,7 @@ export interface OrderServiceFadesSourceDeps {
 /**
  * Fade rows from GPA-owned data. Each getFades() first resolves pending orders past their
  * deadline against the order service (persisting outcomes so every order is fetched once),
- * then rebuilds the SQL's per-filler rows from the 24h window of resolved orders.
+ * then builds the per-filler rows from the 24h window of resolved orders.
  */
 export class OrderServiceFadesSource implements FadesSource {
   public lastResolution?: ResolutionSummary;
