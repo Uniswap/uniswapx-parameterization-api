@@ -20,6 +20,10 @@ export enum PostedOrderOutcome {
   CANCELLED = 'CANCELLED',
   INSUFFICIENT_FUNDS = 'INSUFFICIENT_FUNDS',
   ERROR = 'ERROR',
+  // The cron gave up: the order service never reported a usable terminal status within
+  // MAX_RESOLUTION_ATTEMPTS. Terminal for the breaker (no row, no re-fetch) so one class of
+  // unresolvable orders cannot occupy the oldest-first pending read and starve newer ones.
+  UNRESOLVED = 'UNRESOLVED',
 }
 
 /**
@@ -79,6 +83,10 @@ export type PostedOrderRecord = {
   fillTimestamp?: number;
   faded?: number;
   resolvedAt?: number;
+  // Cron runs that asked the order service about this order without getting a usable terminal
+  // status (still open, unknown hash, unclassifiable). Drives the give-up in the fades source.
+  resolutionAttempts?: number;
+  lastAttemptAt?: number;
 };
 
 export interface PostedOrderRepository {
@@ -94,6 +102,11 @@ export interface PostedOrderRepository {
    * creating a phantom row) when the order is unknown, e.g. already expired by TTL.
    */
   recordOutcome(orderHash: string, resolution: PostedOrderResolution): Promise<void>;
+  /**
+   * Counts one more run in which the order could not be resolved and returns the new count.
+   * The row stays pending. Rejects when the order is unknown (e.g. already expired by TTL).
+   */
+  recordUnresolvedAttempt(orderHash: string, attemptedAt: number): Promise<number>;
 }
 
 // Constant partition key of the sparse pending index. Present only while outcome is
@@ -138,10 +151,23 @@ type PostedOrderItem = PostedOrderRecord & {
   ttl: number;
 };
 
+// One page of a dynamodb-toolbox query: items plus a `next` that is present only while DynamoDB
+// reported a LastEvaluatedKey (i.e. the 1MB page or the Limit cut the result short).
+type QueryPage = { Items?: unknown[]; next?: () => Promise<QueryPage> };
+
+export type DynamoPostedOrderRepositoryOptions = {
+  // Items requested per DynamoDB page. Production leaves this unset (DynamoDB's 1MB page);
+  // tests set it small to exercise pagination without writing a megabyte of rows.
+  pageSize?: number;
+};
+
 export class DynamoPostedOrderRepository implements PostedOrderRepository {
   static PARTITION_KEY = 'orderHash';
 
-  static create(documentClient: DynamoDBDocumentClient = postedOrderDocumentClient()): PostedOrderRepository {
+  static create(
+    documentClient: DynamoDBDocumentClient = postedOrderDocumentClient(),
+    options: DynamoPostedOrderRepositoryOptions = {}
+  ): PostedOrderRepository {
     const table = new Table({
       name: DYNAMO_TABLE_NAME.POSTED_ORDERS,
       partitionKey: DynamoPostedOrderRepository.PARTITION_KEY,
@@ -175,6 +201,8 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
         fillTimestamp: { type: 'number' },
         faded: { type: 'number' },
         resolvedAt: { type: 'number' },
+        resolutionAttempts: { type: 'number' },
+        lastAttemptAt: { type: 'number' },
         pending: { type: 'string' },
         ttl: { type: 'number', required: true },
       },
@@ -182,10 +210,38 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
       autoExecute: true,
     } as const);
 
-    return new DynamoPostedOrderRepository(entity);
+    return new DynamoPostedOrderRepository(entity, options.pageSize);
   }
 
-  private constructor(private readonly entity: Entity) {}
+  private constructor(private readonly entity: Entity, private readonly pageSize?: number) {}
+
+  /**
+   * Drains every page of an index query. A single DynamoDB page is at most 1MB (~1,600 of these
+   * rows), and a high-volume filler completes more than that in 24h — an unpaginated read would
+   * silently drop its most recent orders (deadline-ascending index), exactly the ones the
+   * breaker scores. `max` caps the total; DynamoDB's Limit alone cannot, because a Limit page can
+   * still be cut short by the size cap.
+   */
+  private async queryAll(
+    partitionKey: string,
+    options: Record<string, unknown>,
+    max?: number
+  ): Promise<PostedOrderItem[]> {
+    const pageLimit = this.pageSize ?? max;
+    const items: PostedOrderItem[] = [];
+    let page = (await this.entity.query(partitionKey, {
+      ...options,
+      ...(pageLimit !== undefined && { limit: pageLimit }),
+      execute: true,
+      parse: true,
+    })) as QueryPage;
+    for (;;) {
+      items.push(...((page.Items ?? []) as PostedOrderItem[]));
+      if (max !== undefined && items.length >= max) return items.slice(0, max);
+      if (!page.next) return items;
+      page = await page.next();
+    }
+  }
 
   public async putPostedOrder(record: PostedOrderRecord): Promise<void> {
     const item: PostedOrderItem = {
@@ -202,24 +258,17 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
   }
 
   public async getPendingPastDeadline(now: number, limit?: number): Promise<PostedOrderRecord[]> {
-    const { Items } = await this.entity.query(PENDING_INDEX_KEY, {
-      index: POSTED_ORDERS_INDEX.PENDING_DEADLINE,
-      lt: now,
-      ...(limit !== undefined && { limit }),
-      execute: true,
-      parse: true,
-    });
-    return ((Items ?? []) as PostedOrderItem[]).map(toRecord);
+    const items = await this.queryAll(
+      PENDING_INDEX_KEY,
+      { index: POSTED_ORDERS_INDEX.PENDING_DEADLINE, lt: now },
+      limit
+    );
+    return items.map(toRecord);
   }
 
   public async getFillerOrdersByDeadline(filler: string, from: number, to: number): Promise<PostedOrderRecord[]> {
-    const { Items } = await this.entity.query(filler, {
-      index: POSTED_ORDERS_INDEX.FILLER_DEADLINE,
-      between: [from, to],
-      execute: true,
-      parse: true,
-    });
-    return ((Items ?? []) as PostedOrderItem[]).map(toRecord);
+    const items = await this.queryAll(filler, { index: POSTED_ORDERS_INDEX.FILLER_DEADLINE, between: [from, to] });
+    return items.map(toRecord);
   }
 
   public async recordOutcome(orderHash: string, resolution: PostedOrderResolution): Promise<void> {
@@ -243,7 +292,22 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
       }
     );
   }
+
+  public async recordUnresolvedAttempt(orderHash: string, attemptedAt: number): Promise<number> {
+    const result = (await this.entity.update(
+      { orderHash, resolutionAttempts: { $add: 1 }, lastAttemptAt: attemptedAt },
+      {
+        conditions: { attr: DynamoPostedOrderRepository.PARTITION_KEY, exists: true },
+        returnValues: 'UPDATED_NEW',
+        execute: true,
+      }
+    )) as UpdatedNew;
+    return result.Attributes?.resolutionAttempts ?? 0;
+  }
 }
+
+// Shape of an UpdateItem response with ReturnValues=UPDATED_NEW as dynamodb-toolbox parses it.
+type UpdatedNew = { Attributes?: { resolutionAttempts?: number } };
 
 // Picks the record fields out of a stored item, dropping the index/TTL attributes and the
 // toolbox bookkeeping (entity, created, modified) so callers see exactly PostedOrderRecord.
@@ -269,6 +333,8 @@ function toRecord(item: PostedOrderItem): PostedOrderRecord {
     ...(item.fillTimestamp !== undefined && { fillTimestamp: item.fillTimestamp }),
     ...(item.faded !== undefined && { faded: item.faded }),
     ...(item.resolvedAt !== undefined && { resolvedAt: item.resolvedAt }),
+    ...(item.resolutionAttempts !== undefined && { resolutionAttempts: item.resolutionAttempts }),
+    ...(item.lastAttemptAt !== undefined && { lastAttemptAt: item.lastAttemptAt }),
   };
 }
 
@@ -312,5 +378,15 @@ export class MockPostedOrderRepository implements PostedOrderRepository {
       ...(fillTimestamp !== undefined && { fillTimestamp }),
       ...(faded !== undefined && { faded }),
     });
+  }
+
+  async recordUnresolvedAttempt(orderHash: string, attemptedAt: number): Promise<number> {
+    const existing = this.records.get(orderHash);
+    if (!existing) {
+      throw new Error(`The conditional request failed: no posted order ${orderHash}`);
+    }
+    const resolutionAttempts = (existing.resolutionAttempts ?? 0) + 1;
+    this.records.set(orderHash, { ...existing, resolutionAttempts, lastAttemptAt: attemptedAt });
+    return resolutionAttempts;
   }
 }

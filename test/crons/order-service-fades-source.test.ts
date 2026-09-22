@@ -11,11 +11,13 @@ import {
   buildFadeRows,
   Classification,
   classifyOutcome,
+  DEFAULT_FADE_ROW_POLICY,
   EXCLUDED_TESTNET_CHAIN_IDS,
   FADE_WINDOW_SECS,
   fadedForScoring,
   MAX_CONSECUTIVE_BATCH_FAILURES,
   MAX_PENDING_RESOLUTIONS_PER_RUN,
+  MAX_RESOLUTION_ATTEMPTS,
   ORDER_STATUS,
   OrderServiceFadesSource,
 } from '../../lib/cron/order-service-fades-source';
@@ -124,10 +126,12 @@ describe('OrderServiceFadesSource', () => {
         faded: 1,
       },
       {
-        name: 'V2 filled without fillTimestamp -> unclassifiable',
+        name: 'V2 filled without fillTimestamp -> recorded FILLED, no verdict',
         record: v2(),
         status: status('h', ORDER_STATUS.FILLED, { fillBlock: 1 }),
-        expected: 'unclassifiable',
+        expected: 'resolved',
+        outcome: PostedOrderOutcome.FILLED,
+        faded: undefined,
       },
       // Dutch_V3 fills decay by block: fillTimeBlocks = fillBlock - decayStartBlock must be > 0.
       {
@@ -163,16 +167,28 @@ describe('OrderServiceFadesSource', () => {
         faded: 0,
       },
       {
-        name: 'V3 filled without fillBlock -> unclassifiable',
+        name: 'V3 filled without fillBlock -> recorded FILLED, no verdict',
         record: v3(),
         status: status('h', ORDER_STATUS.FILLED, { fillTimestamp: NOW }),
-        expected: 'unclassifiable',
+        expected: 'resolved',
+        outcome: PostedOrderOutcome.FILLED,
+        faded: undefined,
       },
       {
-        name: 'V3 record missing decayStartBlock -> unclassifiable',
+        name: 'V3 filled with the order service fillBlock -1 sentinel (fill event unprocessed) -> no verdict, not a clean fill',
+        record: v3(),
+        status: status('h', ORDER_STATUS.FILLED, { fillBlock: -1 }),
+        expected: 'resolved',
+        outcome: PostedOrderOutcome.FILLED,
+        faded: undefined,
+      },
+      {
+        name: 'V3 record missing decayStartBlock -> recorded FILLED, no verdict',
         record: v3({ decayStartBlock: undefined }),
         status: status('h', ORDER_STATUS.FILLED, { fillBlock: DECAY_START_BLOCK + 5 }),
-        expected: 'unclassifiable',
+        expected: 'resolved',
+        outcome: PostedOrderOutcome.FILLED,
+        faded: undefined,
       },
       {
         name: 'unknown order type fill -> unclassifiable',
@@ -244,8 +260,42 @@ describe('OrderServiceFadesSource', () => {
         expect(classification.resolution.faded).toBe(faded);
         expect(classification.resolution.orderStatus).toBe(status.orderStatus);
         expect(classification.resolution.resolvedAt).toBe(NOW);
-        expect(classification.resolution.fillBlock).toBe(status.fillBlock);
+        // the -1 sentinel is not real timing and is not persisted as such
+        expect(classification.resolution.fillBlock).toBe(
+          status.fillBlock !== undefined && status.fillBlock >= 0 ? status.fillBlock : undefined
+        );
         expect(classification.resolution.fillTimestamp).toBe(status.fillTimestamp);
+      }
+    });
+  });
+
+  describe('terminal-status policy (production parity)', () => {
+    const rowsFor = (record: PostedOrderRecord) => buildFadeRows([record], { now: NOW });
+
+    it('defaults to NOT counting cancelled / insufficient-funds / error as fades', () => {
+      expect(DEFAULT_FADE_ROW_POLICY).toEqual({ countNeverFilledTerminalAsFade: false });
+      for (const s of [ORDER_STATUS.CANCELLED, ORDER_STATUS.INSUFFICIENT_FUNDS, ORDER_STATUS.ERROR]) {
+        expect(rowsFor(resolved(v2(), status('h', s)))).toEqual([]);
+        expect(rowsFor(resolved(v3(), status('h', s)))).toEqual([]);
+      }
+    });
+
+    it('always counts an expiry as a fade, for both order types', () => {
+      for (const policy of [{ countNeverFilledTerminalAsFade: false }, { countNeverFilledTerminalAsFade: true }]) {
+        for (const record of [
+          resolved(v2(), status('h', ORDER_STATUS.EXPIRED)),
+          resolved(v3(), status('h', ORDER_STATUS.EXPIRED)),
+        ]) {
+          expect(buildFadeRows([record], { now: NOW, policy }).map((r) => r.faded)).toEqual([1]);
+        }
+      }
+    });
+
+    it('a fill without timing contributes no row under either policy', () => {
+      for (const policy of [{ countNeverFilledTerminalAsFade: false }, { countNeverFilledTerminalAsFade: true }]) {
+        expect(
+          buildFadeRows([resolved(v3(), status('h', ORDER_STATUS.FILLED, { fillBlock: -1 }))], { now: NOW, policy })
+        ).toEqual([]);
       }
     });
   });
@@ -269,6 +319,12 @@ describe('OrderServiceFadesSource', () => {
       expect(fadedForScoring(cancelled, policy)).toBeUndefined();
       expect(fadedForScoring(insufficient, policy)).toBeUndefined();
       expect(fadedForScoring(errored, policy)).toBeUndefined();
+    });
+
+    it('an UNRESOLVED order contributes no row under either policy', () => {
+      const unresolved: PostedOrderRecord = { ...v2(), outcome: PostedOrderOutcome.UNRESOLVED, orderStatus: 'open' };
+      expect(fadedForScoring(unresolved, { countNeverFilledTerminalAsFade: true })).toBeUndefined();
+      expect(fadedForScoring(unresolved, { countNeverFilledTerminalAsFade: false })).toBeUndefined();
     });
 
     it('the flag does not touch definitive outcomes or pending rows', () => {
@@ -494,25 +550,107 @@ describe('OrderServiceFadesSource', () => {
       expect(await repo.getPostedOrder(expired.orderHash)).toEqual(after);
     });
 
-    it('leaves still-open and not-found orders pending, and counts them', async () => {
+    it('leaves still-open and not-found orders pending, counts them, and records the attempt on each', async () => {
       const [open, missing] = await seed(v2(), v2());
       service.seed(status(open.orderHash, ORDER_STATUS.OPEN));
 
       const summary = await source.resolvePendingOutcomes(NOW);
 
-      expect(summary).toMatchObject({ pendingPastDeadline: 2, resolved: 0, stillOpen: 1, notFound: 1 });
+      expect(summary).toMatchObject({ pendingPastDeadline: 2, resolved: 0, stillOpen: 1, notFound: 1, givenUp: 0 });
       expect(await repo.getPendingPastDeadline(NOW)).toHaveLength(2);
-      expect(await repo.getPostedOrder(missing.orderHash)).toMatchObject({ outcome: PostedOrderOutcome.PENDING });
+      for (const hash of [open.orderHash, missing.orderHash]) {
+        expect(await repo.getPostedOrder(hash)).toMatchObject({
+          outcome: PostedOrderOutcome.PENDING,
+          resolutionAttempts: 1,
+          lastAttemptAt: NOW,
+        });
+      }
+      await source.resolvePendingOutcomes(NOW + 600);
+      expect(await repo.getPostedOrder(open.orderHash)).toMatchObject({
+        resolutionAttempts: 2,
+        lastAttemptAt: NOW + 600,
+      });
+    });
+
+    it.each([
+      ['still open', () => v2(), (h: string) => status(h, ORDER_STATUS.OPEN), 'open'],
+      ['not found', () => v2(), undefined, 'not-found'],
+      ['unclassifiable', () => v3(), (h: string) => status(h, 'settling'), 'settling'],
+    ])(
+      'gives up on an order that stays %s for MAX_RESOLUTION_ATTEMPTS runs: UNRESOLVED, out of the pending index, no row',
+      async (_name, make, mkStatus, expectedStatus) => {
+        const [stuck] = await seed({ ...make(), deadline: NOW - 500, resolutionAttempts: MAX_RESOLUTION_ATTEMPTS - 1 });
+        if (mkStatus) service.seed(mkStatus(stuck.orderHash));
+
+        const rows = await source.getFades();
+
+        expect(source.lastResolution).toMatchObject({ givenUp: 1, resolved: 0 });
+        expect(source.lastResolution?.byOutcome).toEqual({ [PostedOrderOutcome.UNRESOLVED]: 1 });
+        expect(await repo.getPostedOrder(stuck.orderHash)).toMatchObject({
+          outcome: PostedOrderOutcome.UNRESOLVED,
+          orderStatus: expectedStatus,
+          resolvedAt: NOW,
+          resolutionAttempts: MAX_RESOLUTION_ATTEMPTS,
+        });
+        expect(await repo.getPendingPastDeadline(NOW)).toEqual([]);
+        expect(rows).toEqual([]);
+        // and the next run does not ask about it again
+        service.batches.length = 0;
+        await source.resolvePendingOutcomes(NOW + 600);
+        expect(service.batches).toEqual([]);
+      }
+    );
+
+    it('a stuck class of orders cannot starve newer ones past the give-up horizon', async () => {
+      // Twice the per-run cap of permanently-open orders, older than everything else, plus one
+      // fresh expiry. Oldest-first intake means the expiry is invisible until the stuck rows
+      // yield; after MAX_RESOLUTION_ATTEMPTS runs they do, and the expiry gets resolved.
+      const stuck = await seed(
+        ...Array.from({ length: MAX_PENDING_RESOLUTIONS_PER_RUN * 2 }, (_, i) => v2({ deadline: NOW - 100_000 + i }))
+      );
+      const [expiry] = await seed(v2({ deadline: NOW - 10 }));
+      service.seed(
+        ...stuck.map((r) => status(r.orderHash, ORDER_STATUS.OPEN)),
+        status(expiry.orderHash, ORDER_STATUS.EXPIRED)
+      );
+
+      let runs = 0;
+      while ((await repo.getPostedOrder(expiry.orderHash))?.outcome === PostedOrderOutcome.PENDING && runs < 100) {
+        const summary = await source.resolvePendingOutcomes(NOW + runs * 600);
+        expect(summary.pendingSaturated).toBe(runs < MAX_RESOLUTION_ATTEMPTS * 2);
+        runs += 1;
+      }
+      expect(await repo.getPostedOrder(expiry.orderHash)).toMatchObject({
+        outcome: PostedOrderOutcome.EXPIRED,
+        faded: 1,
+      });
+      expect(runs).toBeLessThanOrEqual(MAX_RESOLUTION_ATTEMPTS * 2 + 1);
     });
 
     it('leaves unclassifiable orders pending and counts them', async () => {
-      const [fillNoTiming] = await seed(v3());
-      service.seed(status(fillNoTiming.orderHash, ORDER_STATUS.FILLED));
+      const [weird] = await seed(v3());
+      service.seed(status(weird.orderHash, 'settling'));
 
       const summary = await source.resolvePendingOutcomes(NOW);
 
       expect(summary).toMatchObject({ resolved: 0, unclassifiable: 1 });
-      expect(await repo.getPostedOrder(fillNoTiming.orderHash)).toMatchObject({ outcome: PostedOrderOutcome.PENDING });
+      expect(await repo.getPostedOrder(weird.orderHash)).toMatchObject({ outcome: PostedOrderOutcome.PENDING });
+    });
+
+    it('records a fill without timing as FILLED with no verdict, counts it, and never scores it', async () => {
+      const [sentinel] = await seed(v3({ deadline: NOW - 500 }));
+      service.seed(status(sentinel.orderHash, ORDER_STATUS.FILLED, { fillBlock: -1 }));
+
+      const rows = await source.getFades();
+
+      expect(source.lastResolution).toMatchObject({ resolved: 1, fillsWithoutVerdict: 1, unclassifiable: 0 });
+      const stored = await repo.getPostedOrder(sentinel.orderHash);
+      expect(stored).toMatchObject({ outcome: PostedOrderOutcome.FILLED, orderStatus: 'filled' });
+      expect(stored).not.toHaveProperty('faded');
+      expect(stored).not.toHaveProperty('fillBlock');
+      expect(rows).toEqual([]);
+      // Not re-fetched next run.
+      expect(await repo.getPendingPastDeadline(NOW)).toEqual([]);
     });
 
     it('batches at the order service cap and never exceeds it', async () => {
@@ -539,6 +677,7 @@ describe('OrderServiceFadesSource', () => {
       const summary = await source.resolvePendingOutcomes(NOW);
 
       expect(summary.pendingPastDeadline).toBe(MAX_PENDING_RESOLUTIONS_PER_RUN);
+      expect(summary.pendingSaturated).toBe(true);
       const leftover = await repo.getPendingPastDeadline(NOW);
       expect(leftover.map((r) => r.orderHash)).toEqual([records[records.length - 1].orderHash]);
     });
