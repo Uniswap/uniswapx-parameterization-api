@@ -135,12 +135,12 @@ describe('Quote handler', () => {
     expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
 
     // The handler's own metrics go through ctx.metrics: the same names the IMetric path emitted,
-    // counts as increments and latencies as histograms, in the same order.
+    // counts through count() and latencies through timer(), in the same order.
     expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
-      ['increment', Metric.QUOTE_REQUESTED],
-      ['increment', Metric.QUOTE_200],
-      ['histogram', Metric.QUOTE_LATENCY],
-      ['histogram', Metric.QUOTE_E2E_LATENCY],
+      ['count', Metric.QUOTE_REQUESTED],
+      ['count', Metric.QUOTE_200],
+      ['timer', Metric.QUOTE_LATENCY],
+      ['timer', Metric.QUOTE_E2E_LATENCY],
     ]);
     // ...and its request log line goes through ctx.logger with the same event and body.
     const requestLog = fakes.logger.atLevel('info').find((r) => r.fields.eventType === 'QuoteRequest');
@@ -164,7 +164,7 @@ describe('Quote handler', () => {
       const response = await getQuoteHandler(quoters).handler(getEvent(request), {} as unknown as Context);
 
       expect(response.statusCode).toEqual(200);
-      expect(fakes.metrics.count(Metric.QUOTE_E2E_LATENCY)).toEqual(1);
+      expect(fakes.metrics.emitted(Metric.QUOTE_E2E_LATENCY)).toEqual(1);
     });
 
     it('is emitted on the 404 (no quotes) path, which QUOTE_LATENCY misses', async () => {
@@ -174,9 +174,9 @@ describe('Quote handler', () => {
 
       expect(response.statusCode).toEqual(404);
       expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
-        ['increment', Metric.QUOTE_REQUESTED],
-        ['increment', Metric.QUOTE_404],
-        ['histogram', Metric.QUOTE_E2E_LATENCY],
+        ['count', Metric.QUOTE_REQUESTED],
+        ['count', Metric.QUOTE_404],
+        ['timer', Metric.QUOTE_E2E_LATENCY],
       ]);
     });
   });

@@ -1,15 +1,14 @@
-import { Logger } from '../../lib/observability';
+import { LogExtra, Logger } from '../../lib/observability';
 
-export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
 export interface LogRecord {
   level: LogLevel;
-  /** Bindings accumulated through child(), root first. */
-  bindings: Record<string, unknown>;
-  /** The fields object of a `(fields, msg)` call; `{}` for a bare `(msg)` call. */
+  msg: string;
+  /** The extras passed after the message, merged left to right; an Error lands under `err`. */
   fields: Record<string, unknown>;
-  msg: string | undefined;
-  args: unknown[];
+  /** Bindings in force when the line was logged: the constructor's plus every setDefaultExtra. */
+  bindings: Record<string, unknown>;
 }
 
 /**
@@ -18,20 +17,39 @@ export interface LogRecord {
  */
 export class FakeLogger implements Logger {
   public readonly records: LogRecord[];
+  public bindings: Record<string, unknown>;
 
-  constructor(public readonly bindings: Record<string, unknown> = {}, records: LogRecord[] = []) {
+  constructor(bindings: Record<string, unknown> = {}, records: LogRecord[] = []) {
+    this.bindings = { ...bindings };
     this.records = records;
   }
 
-  public trace = this.at('trace');
-  public debug = this.at('debug');
-  public info = this.at('info');
-  public warn = this.at('warn');
-  public error = this.at('error');
-  public fatal = this.at('fatal');
+  public debug(msg: string, ...extra: LogExtra[]): void {
+    this.record('debug', msg, extra);
+  }
 
-  public child(bindings: Record<string, unknown>): FakeLogger {
-    return new FakeLogger({ ...this.bindings, ...bindings }, this.records);
+  public info(msg: string, ...extra: LogExtra[]): void {
+    this.record('info', msg, extra);
+  }
+
+  public warn(msg: string, ...extra: LogExtra[]): void {
+    this.record('warn', msg, extra);
+  }
+
+  public error(msg: string, ...extra: LogExtra[]): void {
+    this.record('error', msg, extra);
+  }
+
+  public fatal(msg: string, ...extra: LogExtra[]): void {
+    this.record('fatal', msg, extra);
+  }
+
+  public child(): FakeLogger {
+    return new FakeLogger(this.bindings, this.records);
+  }
+
+  public setDefaultExtra(...extra: LogExtra[]): void {
+    this.bindings = { ...this.bindings, ...mergeExtra(extra) };
   }
 
   /** Records at `level`, in emission order. */
@@ -43,21 +61,14 @@ export class FakeLogger implements Logger {
     this.records.length = 0;
   }
 
-  private at(level: LogLevel) {
-    return (first: string | object, ...rest: unknown[]): void => {
-      if (typeof first === 'string') {
-        this.records.push({ level, bindings: this.bindings, fields: {}, msg: first, args: rest });
-        return;
-      }
-      const [msg, ...args] = rest;
-      const hasMsg = typeof msg === 'string';
-      this.records.push({
-        level,
-        bindings: this.bindings,
-        fields: first as Record<string, unknown>,
-        msg: hasMsg ? msg : undefined,
-        args: hasMsg ? args : rest,
-      });
-    };
+  private record(level: LogLevel, msg: string, extra: LogExtra[]): void {
+    this.records.push({ level, msg, fields: mergeExtra(extra), bindings: { ...this.bindings } });
   }
+}
+
+function mergeExtra(extra: LogExtra[]): Record<string, unknown> {
+  return extra.reduce<Record<string, unknown>>(
+    (fields, item) => Object.assign(fields, item instanceof Error ? { err: item } : item),
+    {}
+  );
 }

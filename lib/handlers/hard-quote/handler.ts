@@ -61,7 +61,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     const { logger, metrics } = ctx;
     const start = Date.now();
 
-    metrics.increment(Metric.QUOTE_REQUESTED);
+    await metrics.count(Metric.QUOTE_REQUESTED);
 
     // QUOTE_LATENCY below fires only on successful order posts (and is alarmed on). The
     // finally makes this metric cover every exit path — no-quote throws, cosigner
@@ -84,12 +84,15 @@ export class QuoteHandler extends APIGLambdaHandler<
 
       // we dont have access to the cosigner key, throw
       if (request.order.info.cosigner !== cosignerAddress) {
-        logger.error({ cosignerInReq: request.order.info.cosigner, expected: cosignerAddress }, 'Unknown cosigner');
+        logger.error('Unknown cosigner', { cosignerInReq: request.order.info.cosigner, expected: cosignerAddress });
         throw new UnknownOrderCosignerError();
       }
       // Instead of decoding the order, we rely on frontend passing in the requestId
       //   from indicative quote
-      logger.info({
+      // Analytics event line: the CloudWatch subscription filter keys on eventType, not the
+      // message. The message is empty on purpose — bunyan writes `"msg":""` for a fields-only
+      // call, so the record is byte-identical to the one this replaces.
+      logger.info('', {
         eventType: 'HardRequest',
         body: {
           requestId: request.requestId,
@@ -125,17 +128,17 @@ export class QuoteHandler extends APIGLambdaHandler<
       let cosignerData: CosignerData | V3CosignerData;
       if (bestQuote) {
         cosignerData = await getCosignerData(request, bestQuote, orderType, provider);
-        logger.info({ bestQuote: bestQuote }, 'bestQuote');
+        logger.info('bestQuote', { bestQuote });
       } else {
         cosignerData = await getDefaultCosignerData(request, orderType, provider);
-        logger.info({ cosignerData: cosignerData }, 'open order with default cosignerData');
+        logger.info('open order with default cosignerData', { cosignerData });
       }
 
       const cosignedOrder = await createCosignedOrder(cosigner, request, cosignerData);
       // if no quote and creating open order, create random new quoteId
       const postedQuoteId = bestQuote?.quoteId ?? request.quoteId ?? request.requestId;
       try {
-        metrics.increment(Metric.QUOTE_POST_ATTEMPT);
+        await metrics.count(Metric.QUOTE_POST_ATTEMPT);
         const response = await orderServiceProvider.postOrder({
           order: cosignedOrder,
           signature: request.innerSig,
@@ -143,7 +146,7 @@ export class QuoteHandler extends APIGLambdaHandler<
           requestId: request.requestId,
         });
         if (response.statusCode == 200 || response.statusCode == 201) {
-          metrics.increment(Metric.QUOTE_200);
+          await metrics.count(Metric.QUOTE_200);
           // 200 and 201 (the latter also covers a post whose timeout was reconciled as
           // accepted) are the only confirmed posts, so this is the only place the
           // fade-breaker bookkeeping rows are written: the PostedOrders row and, for the
@@ -159,12 +162,13 @@ export class QuoteHandler extends APIGLambdaHandler<
             requestId: request.requestId,
             ctx,
           });
-          metrics.histogram(Metric.QUOTE_LATENCY, Date.now() - start);
+          await metrics.timer(Metric.QUOTE_LATENCY, Date.now() - start);
           const hardResponse = createHardQuoteResponse(request, cosignedOrder);
           if (!bestQuote) {
             // The RFQ responses are logged in getBestQuote()
             // we log the Open Orders here
-            logger.info({
+            // Analytics event line (see the HardRequest line above for why the message is empty).
+            logger.info('', {
               eventType: RESPONSE_LOG_TYPE,
               body: {
                 ...hardResponse.toLog(),
@@ -178,11 +182,11 @@ export class QuoteHandler extends APIGLambdaHandler<
           };
         } else {
           const error = response as ErrorResponse;
-          logger.error({ error: error }, 'Error posting order');
+          logger.error('Error posting order', { error });
 
           // user error should not be alerted on
           if (error.detail != POST_ORDER_ERROR_REASON.INSUFFICIENT_FUNDS) {
-            metrics.increment(Metric.QUOTE_POST_ERROR);
+            await metrics.count(Metric.QUOTE_POST_ERROR);
           }
           // Only a 4xx from the order service is a genuine rejection of the
           // order. Anything else (timeouts, 5xx) is indeterminate — the order
@@ -190,13 +194,13 @@ export class QuoteHandler extends APIGLambdaHandler<
           // rewriting it to 400 makes clients treat a live, fillable order as
           // rejected.
           if (error.statusCode >= 400 && error.statusCode < 500) {
-            metrics.increment(Metric.QUOTE_400);
+            await metrics.count(Metric.QUOTE_400);
             return {
               ...error,
               statusCode: 400,
             };
           }
-          metrics.increment(Metric.QUOTE_500);
+          await metrics.count(Metric.QUOTE_500);
           return {
             ...error,
             statusCode: 500,
@@ -206,7 +210,8 @@ export class QuoteHandler extends APIGLambdaHandler<
         throw new OrderPostError((e as Error).message);
       }
     } finally {
-      metrics.histogram(Metric.QUOTE_E2E_LATENCY, Date.now() - start);
+      // Fire-and-forget: a metric failure must never replace the handler's outcome.
+      void metrics.timer(Metric.QUOTE_E2E_LATENCY, Date.now() - start);
     }
   }
 

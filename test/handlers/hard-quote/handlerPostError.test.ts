@@ -168,17 +168,17 @@ describe('Quote handler order post error mapping', () => {
     // Counted as a rejection, not a confirmed post: no QUOTE_200 and no alarmed QUOTE_LATENCY.
     expect(fakes.metrics.names()).toEqual(expect.arrayContaining([Metric.QUOTE_POST_ATTEMPT, Metric.QUOTE_400]));
     expect(fakes.metrics.names()).not.toContain(Metric.QUOTE_200);
-    expect(fakes.metrics.count(Metric.QUOTE_LATENCY)).toEqual(0);
+    expect(fakes.metrics.emitted(Metric.QUOTE_LATENCY)).toEqual(0);
   });
 
   it('counts a rejection as QUOTE_POST_ERROR unless the swapper was short of funds', async () => {
     await postOrderWith({ statusCode: 400, errorCode: ErrorCode.ValidationError, detail: 'rejected' });
     expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
-      ['increment', Metric.QUOTE_REQUESTED],
-      ['increment', Metric.QUOTE_POST_ATTEMPT],
-      ['increment', Metric.QUOTE_POST_ERROR],
-      ['increment', Metric.QUOTE_400],
-      ['histogram', Metric.QUOTE_E2E_LATENCY],
+      ['count', Metric.QUOTE_REQUESTED],
+      ['count', Metric.QUOTE_POST_ATTEMPT],
+      ['count', Metric.QUOTE_POST_ERROR],
+      ['count', Metric.QUOTE_400],
+      ['timer', Metric.QUOTE_E2E_LATENCY],
     ]);
 
     fakes.metrics.reset();
@@ -188,8 +188,8 @@ describe('Quote handler order post error mapping', () => {
       errorCode: ErrorCode.ValidationError,
       detail: POST_ORDER_ERROR_REASON.INSUFFICIENT_FUNDS,
     });
-    expect(fakes.metrics.count(Metric.QUOTE_POST_ERROR)).toEqual(0);
-    expect(fakes.metrics.count(Metric.QUOTE_400)).toEqual(1);
+    expect(fakes.metrics.emitted(Metric.QUOTE_POST_ERROR)).toEqual(0);
+    expect(fakes.metrics.emitted(Metric.QUOTE_400)).toEqual(1);
   });
 
   it('counts an indeterminate outcome as QUOTE_POST_ERROR and QUOTE_500, and logs it at error level', async () => {
@@ -200,11 +200,11 @@ describe('Quote handler order post error mapping', () => {
       data: { hash: '0xabc' },
     });
     expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
-      ['increment', Metric.QUOTE_REQUESTED],
-      ['increment', Metric.QUOTE_POST_ATTEMPT],
-      ['increment', Metric.QUOTE_POST_ERROR],
-      ['increment', Metric.QUOTE_500],
-      ['histogram', Metric.QUOTE_E2E_LATENCY],
+      ['count', Metric.QUOTE_REQUESTED],
+      ['count', Metric.QUOTE_POST_ATTEMPT],
+      ['count', Metric.QUOTE_POST_ERROR],
+      ['count', Metric.QUOTE_500],
+      ['timer', Metric.QUOTE_E2E_LATENCY],
     ]);
     const [errorLog] = fakes.logger.atLevel('error');
     expect(errorLog.msg).toEqual('Error posting order');

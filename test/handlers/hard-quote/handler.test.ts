@@ -160,14 +160,14 @@ describe('Quote handler', () => {
     expect(cosignedOrder.info.cosignerData.outputOverrides[0]).toEqual(BigNumber.from(0));
 
     // The handler's own metrics go through ctx.metrics: the same names the IMetric path emitted,
-    // counts as increments and latencies as histograms, in the same order. No exclusivity was
+    // counts through count() and latencies through timer(), in the same order. No exclusivity was
     // granted, so the recorder emitted nothing.
     expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
-      ['increment', Metric.QUOTE_REQUESTED],
-      ['increment', Metric.QUOTE_POST_ATTEMPT],
-      ['increment', Metric.QUOTE_200],
-      ['histogram', Metric.QUOTE_LATENCY],
-      ['histogram', Metric.QUOTE_E2E_LATENCY],
+      ['count', Metric.QUOTE_REQUESTED],
+      ['count', Metric.QUOTE_POST_ATTEMPT],
+      ['count', Metric.QUOTE_200],
+      ['timer', Metric.QUOTE_LATENCY],
+      ['timer', Metric.QUOTE_E2E_LATENCY],
     ]);
   });
 
@@ -339,13 +339,13 @@ describe('Quote handler', () => {
       {} as unknown as Context
     );
     expect(ok.statusCode).toEqual(200);
-    expect(fakes.metrics.count(Metric.QUOTE_E2E_LATENCY)).toEqual(1);
+    expect(fakes.metrics.emitted(Metric.QUOTE_E2E_LATENCY)).toEqual(1);
 
     const notFound = await getQuoteHandler([]).handler(getEvent(request), {} as unknown as Context);
     expect(notFound.statusCode).toEqual(404);
-    expect(fakes.metrics.count(Metric.QUOTE_E2E_LATENCY)).toEqual(2);
+    expect(fakes.metrics.emitted(Metric.QUOTE_E2E_LATENCY)).toEqual(2);
     // The alarmed QUOTE_LATENCY still fires only on the confirmed post.
-    expect(fakes.metrics.count(Metric.QUOTE_LATENCY)).toEqual(1);
+    expect(fakes.metrics.emitted(Metric.QUOTE_LATENCY)).toEqual(1);
   });
 
   describe('getCosignerData', () => {
@@ -564,13 +564,13 @@ describe('Quote handler', () => {
       // The recorder's bookkeeping metrics ride the same ctx, and land before the alarmed
       // QUOTE_LATENCY so that metric keeps including the write.
       expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
-        ['increment', Metric.QUOTE_REQUESTED],
-        ['increment', Metric.QUOTE_POST_ATTEMPT],
-        ['increment', Metric.QUOTE_200],
-        ['increment', Metric.POSTED_ORDER_RECORDED],
-        ['histogram', Metric.POSTED_ORDER_RECORD_LATENCY],
-        ['histogram', Metric.QUOTE_LATENCY],
-        ['histogram', Metric.QUOTE_E2E_LATENCY],
+        ['count', Metric.QUOTE_REQUESTED],
+        ['count', Metric.QUOTE_POST_ATTEMPT],
+        ['count', Metric.QUOTE_200],
+        ['count', Metric.POSTED_ORDER_RECORDED],
+        ['timer', Metric.POSTED_ORDER_RECORD_LATENCY],
+        ['timer', Metric.QUOTE_LATENCY],
+        ['timer', Metric.QUOTE_E2E_LATENCY],
       ]);
     });
 

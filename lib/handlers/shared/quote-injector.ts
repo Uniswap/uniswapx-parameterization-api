@@ -6,7 +6,7 @@ import { default as bunyan, default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, RPC_HEADERS, WEBHOOK_CONFIG_BUCKET } from '../../constants';
 import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
-import { Context, EmfMetrics } from '../../observability';
+import { BunyanLogger, Context, EmfMetrics } from '../../observability';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
@@ -148,11 +148,13 @@ export function buildQuoteRequestInjected<ReqBody extends { tokenInChainId: numb
   const metric = new AWSMetricsLogger(metricsLogger);
   setGlobalMetric(metric);
 
-  // Same child logger and the same, already-dimensioned MetricsLogger as the globals above:
-  // a handler metric lands in the same EMF blob under the same dimension sets as before.
+  // Same child logger (behind the message-first adapter) and the same, already-dimensioned
+  // MetricsLogger as the globals above: a handler log line or metric lands exactly where it did
+  // before, with the same bindings and dimension sets.
+  const logger = new BunyanLogger(log);
   const ctx: Context = {
-    logger: log,
-    metrics: new EmfMetrics(metricsLogger, log),
+    logger,
+    metrics: new EmfMetrics(metricsLogger, logger),
     requestId,
   };
 

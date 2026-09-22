@@ -125,43 +125,38 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
       ),
     ]);
     if (posted.status === 'fulfilled') {
-      metrics.increment(Metric.POSTED_ORDER_RECORDED);
-      logger.info({ orderHash, filler: record.filler, fillerAddress: record.fillerAddress }, 'Recorded posted order');
+      await metrics.count(Metric.POSTED_ORDER_RECORDED);
+      logger.info('Recorded posted order', { orderHash, filler: record.filler, fillerAddress: record.fillerAddress });
     } else {
-      metrics.increment(Metric.POSTED_ORDER_RECORD_FAILED);
-      logger.error({ orderHash, error: errorMessage(posted.reason) }, 'Failed to record posted order');
+      await metrics.count(Metric.POSTED_ORDER_RECORD_FAILED);
+      logger.error('Failed to record posted order', { orderHash, error: errorMessage(posted.reason) });
     }
     if (attributed.status === 'rejected') {
-      metrics.increment(Metric.FILLER_ADDRESS_RECORD_FAILED);
-      logger.warn(
-        {
-          orderHash,
-          filler: record.filler,
-          fillerAddress: record.fillerAddress,
-          error: errorMessage(attributed.reason),
-        },
-        'Failed to record filler address; order unaffected, attribution skipped'
-      );
+      await metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED);
+      logger.warn('Failed to record filler address; order unaffected, attribution skipped', {
+        orderHash,
+        filler: record.filler,
+        fillerAddress: record.fillerAddress,
+        error: errorMessage(attributed.reason),
+      });
     } else if (attributed.value.outcome === 'owned_by_other') {
       // The write itself succeeded in reaching DynamoDB; the address stays with its first
       // owner, so this filler's fades on it bench nobody until that row expires or is deleted.
-      metrics.increment(Metric.FILLER_ADDRESS_CLAIM_REJECTED);
-      logger.warn(
-        {
-          orderHash,
-          filler: record.filler,
-          fillerAddress: record.fillerAddress,
-          existingOwner: attributed.value.existingOwner,
-        },
-        'Filler address already attributed to another endpoint; claim refused, order unaffected'
-      );
+      await metrics.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED);
+      logger.warn('Filler address already attributed to another endpoint; claim refused, order unaffected', {
+        orderHash,
+        filler: record.filler,
+        fillerAddress: record.fillerAddress,
+        existingOwner: attributed.value.existingOwner,
+      });
     }
   } catch (e) {
     // Only buildPostedOrderRecord can throw here; the writes are settled above.
-    metrics.increment(Metric.POSTED_ORDER_RECORD_FAILED);
-    logger.error({ orderHash, error: errorMessage(e) }, 'Failed to record posted order');
+    // Fire-and-forget in catch/finally: bookkeeping metrics never alter the outcome.
+    void metrics.count(Metric.POSTED_ORDER_RECORD_FAILED);
+    logger.error('Failed to record posted order', { orderHash, error: errorMessage(e) });
   } finally {
-    metrics.histogram(Metric.POSTED_ORDER_RECORD_LATENCY, Date.now() - start);
+    void metrics.timer(Metric.POSTED_ORDER_RECORD_LATENCY, Date.now() - start);
   }
 }
 

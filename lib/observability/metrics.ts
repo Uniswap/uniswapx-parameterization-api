@@ -1,44 +1,28 @@
-/** Outcome tag, reserved so success/failure is spelled one way across every metric. */
-export type MetricStatus = 'success' | 'failure';
-
 /**
- * Why a `failure` fired. A closed set — extend the enum rather than passing an ad-hoc string —
- * so a per-reason breakdown stays enumerable on a dashboard. Grounded in the request path's
- * existing failure exits: no RFQ quote came back; the swapper's order failed validation
- * (unknown cosigner, deadline too close); a dependency timed out; a dependency refused the
- * request (order-service 4xx, a FillerAddress claim owned by another endpoint); a dependency
- * failed (order-service 5xx, a DynamoDB error).
+ * Per-call options, the monorepo's MetricOptions (backend `packages/lib/uni/interface.ts`):
+ * `tags` are `key:value` strings and `dimensions` is the map form of the same. The monorepo
+ * requires a `status:success|failure` tag on every operation and a `reason:<enum>` tag on
+ * failures; call sites add those as they move onto ctx. The EMF adapter drops both (see
+ * EmfMetrics); the StatsD sink applies them.
  */
-export enum MetricReason {
-  NoQuotes = 'no_quotes',
-  Validation = 'validation',
-  Timeout = 'timeout',
-  Rejected = 'rejected',
-  Upstream = 'upstream',
-}
+export type MetricOptions = {
+  sampleRate: number;
+  tags: Array<string>;
+  dimensions: Record<string, string>;
+};
 
 /**
- * StatsD/Datadog-style tags. `status` and `reason` are reserved with fixed vocabularies; any
- * other key is free-form. The EMF adapter drops tags (see EmfMetrics for why); the StatsD sink
- * that replaces it on ECS honours them.
- */
-export interface MetricTags {
-  status?: MetricStatus;
-  reason?: MetricReason;
-  [tag: string]: string | undefined;
-}
-
-/**
- * The metrics surface the request path depends on, shaped like a StatsD/Datadog client so the
- * sink can change without touching call sites. The three kinds are exactly the EMF units the
- * handlers emit today (see EmfMetrics): increment -> Count, histogram -> Milliseconds,
- * gauge -> None.
+ * The subset of the monorepo's IMetrics this service uses — same method names, signatures and
+ * Promise<void> return — so an IMetrics is assignable to it and the port swaps the type, not
+ * the call sites. Kinds follow the monorepo's rule: `count` for occurrences, `timer` for
+ * durations only, `gauge` for levels. Under EMF they are the units the handlers have always
+ * emitted: count -> Count, timer -> Milliseconds, gauge -> None.
+ *
+ * Call-site discipline (the monorepo lints it with no-floating-promises): `await` in the main
+ * flow, `void` inside catch/finally so a sink failure can never change the outcome.
  */
 export interface Metrics {
-  /** Count an occurrence; `value` defaults to 1. */
-  increment(name: string, value?: number, tags?: MetricTags): void;
-  /** Record a point-in-time level (unitless). */
-  gauge(name: string, value: number, tags?: MetricTags): void;
-  /** Record a duration, in milliseconds. */
-  histogram(name: string, value: number, tags?: MetricTags): void;
+  count(name: string, val?: number, opts?: Partial<MetricOptions>): Promise<void>;
+  timer(name: string, val: number, opts?: Partial<MetricOptions>): Promise<void>;
+  gauge(name: string, val: number, opts?: Partial<MetricOptions>): Promise<void>;
 }

@@ -1,32 +1,36 @@
-import { Metrics, MetricTags } from '../../lib/observability';
+import { MetricOptions, Metrics } from '../../lib/observability';
 
-export type MetricKind = 'increment' | 'gauge' | 'histogram';
+export type MetricKind = 'count' | 'timer' | 'gauge';
 
 export interface RecordedMetric {
   kind: MetricKind;
   name: string;
   value: number;
-  tags: MetricTags | undefined;
+  opts: Partial<MetricOptions> | undefined;
 }
 
-/** In-memory Metrics that records every call, for asserting on what a code path emitted. */
+/**
+ * In-memory Metrics that records every call, for asserting on what a code path emitted. Records
+ * synchronously inside the async methods, like the real sinks, so a `void`-ed call is visible
+ * as soon as the caller continues.
+ */
 export class FakeMetrics implements Metrics {
   public readonly calls: RecordedMetric[] = [];
 
-  public increment(name: string, value = 1, tags?: MetricTags): void {
-    this.calls.push({ kind: 'increment', name, value, tags });
+  public async count(name: string, val = 1, opts?: Partial<MetricOptions>): Promise<void> {
+    this.calls.push({ kind: 'count', name, value: val, opts });
   }
 
-  public gauge(name: string, value: number, tags?: MetricTags): void {
-    this.calls.push({ kind: 'gauge', name, value, tags });
+  public async timer(name: string, val: number, opts?: Partial<MetricOptions>): Promise<void> {
+    this.calls.push({ kind: 'timer', name, value: val, opts });
   }
 
-  public histogram(name: string, value: number, tags?: MetricTags): void {
-    this.calls.push({ kind: 'histogram', name, value, tags });
+  public async gauge(name: string, val: number, opts?: Partial<MetricOptions>): Promise<void> {
+    this.calls.push({ kind: 'gauge', name, value: val, opts });
   }
 
   /** Number of calls, of any kind, that emitted `name`. */
-  public count(name: string): number {
+  public emitted(name: string): number {
     return this.calls.filter((c) => c.name === name).length;
   }
 

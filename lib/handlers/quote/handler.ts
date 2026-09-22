@@ -33,7 +33,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     const { logger, metrics } = ctx;
     const start = Date.now();
 
-    metrics.increment(Metric.QUOTE_REQUESTED);
+    await metrics.count(Metric.QUOTE_REQUESTED);
 
     // QUOTE_LATENCY below fires only on 200s (and is alarmed on), so it cannot see slow
     // 404s — which take the full webhook fan-out just like successes. The finally makes
@@ -42,7 +42,10 @@ export class QuoteHandler extends APIGLambdaHandler<
       const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
 
       const request = QuoteRequest.fromRequestBody(requestBody);
-      logger.info({
+      // Analytics event line: the CloudWatch subscription filter keys on eventType, not the
+      // message. The message is empty on purpose — bunyan writes `"msg":""` for a fields-only
+      // call, so the record is byte-identical to the one this replaces.
+      logger.info('', {
         eventType: 'QuoteRequest',
         body: {
           requestId: request.requestId,
@@ -64,14 +67,14 @@ export class QuoteHandler extends APIGLambdaHandler<
       // same objects ctx wraps, so its logs and metrics are unchanged.
       const { bestQuote, allQuotes } = await getBestQuote(quoters, request, log, metric, provider);
       if (!bestQuote) {
-        metrics.increment(Metric.QUOTE_404);
+        await metrics.count(Metric.QUOTE_404);
         throw new NoQuotesAvailable();
       }
 
-      logger.info({ bestQuote: bestQuote }, 'bestQuote');
+      logger.info('bestQuote', { bestQuote });
 
-      metrics.increment(Metric.QUOTE_200);
-      metrics.histogram(Metric.QUOTE_LATENCY, Date.now() - start);
+      await metrics.count(Metric.QUOTE_200);
+      await metrics.timer(Metric.QUOTE_LATENCY, Date.now() - start);
       return {
         statusCode: 200,
         body: {
@@ -80,7 +83,8 @@ export class QuoteHandler extends APIGLambdaHandler<
         },
       };
     } finally {
-      metrics.histogram(Metric.QUOTE_E2E_LATENCY, Date.now() - start);
+      // Fire-and-forget: a metric failure must never replace the handler's outcome.
+      void metrics.timer(Metric.QUOTE_E2E_LATENCY, Date.now() - start);
     }
   }
 

@@ -216,9 +216,9 @@ describe('recordPostedOrder', () => {
     const [record] = repository.records.values();
     expect(record.filler).toEqual(ENDPOINT);
     expect(record.outcome).toEqual(PostedOrderOutcome.PENDING);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(0);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORD_LATENCY)).toEqual(1);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(0);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORD_LATENCY)).toEqual(1);
   });
 
   it('skips open orders (no quote) and non-exclusive orders without emitting either metric', async () => {
@@ -238,9 +238,9 @@ describe('recordPostedOrder', () => {
     const { promise, metrics } = run(new FailingRepository('throw'));
     await expect(promise).resolves.toBeUndefined();
 
-    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(0);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORD_LATENCY)).toEqual(1);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORDED)).toEqual(0);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORD_LATENCY)).toEqual(1);
   });
 
   it('attributes the exclusive filler address to the quote endpoint alongside the record', async () => {
@@ -249,8 +249,8 @@ describe('recordPostedOrder', () => {
     await promise;
 
     expect([...addresses.addressToFiller.entries()]).toEqual([[FILLER, ENDPOINT]]);
-    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
-    expect(metrics.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(0);
+    expect(metrics.emitted(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metrics.emitted(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(0);
   });
 
   it('records no address for open or non-exclusive orders', async () => {
@@ -274,9 +274,9 @@ describe('recordPostedOrder', () => {
     await expect(promise).resolves.toBeUndefined();
 
     expect(repository.records.size).toEqual(1);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(0);
-    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(0);
+    expect(metrics.emitted(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
   });
 
   it('a refused claim (address owned by another endpoint) is counted on its own metric, not as a write failure', async () => {
@@ -288,9 +288,9 @@ describe('recordPostedOrder', () => {
 
     expect(addresses.addressToFiller.get(FILLER)).toEqual('https://first-owner.example/rfq');
     expect(repository.records.size).toEqual(1);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
-    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
-    expect(metrics.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(1);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metrics.emitted(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metrics.emitted(Metric.FILLER_ADDRESS_CLAIM_REJECTED)).toEqual(1);
   });
 
   it('a hung attribution write is bounded by the same wall and does not delay the record beyond it', async () => {
@@ -303,8 +303,8 @@ describe('recordPostedOrder', () => {
 
     expect(Date.now() - start).toBeLessThan(500);
     expect(repository.records.size).toEqual(1);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
-    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORDED)).toEqual(1);
+    expect(metrics.emitted(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(1);
   });
 
   it('a failing record write does not prevent the attribution', async () => {
@@ -313,8 +313,8 @@ describe('recordPostedOrder', () => {
     await promise;
 
     expect([...addresses.addressToFiller.entries()]).toEqual([[FILLER, ENDPOINT]]);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
-    expect(metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
+    expect(metrics.emitted(Metric.FILLER_ADDRESS_RECORD_FAILED)).toEqual(0);
   });
 
   it('gives up on a hung write at the timeout and counts it as a failure', async () => {
@@ -325,7 +325,7 @@ describe('recordPostedOrder', () => {
     const elapsed = Date.now() - start;
     expect(elapsed).toBeGreaterThanOrEqual(45);
     expect(elapsed).toBeLessThan(1_000);
-    expect(metrics.count(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
+    expect(metrics.emitted(Metric.POSTED_ORDER_RECORD_FAILED)).toEqual(1);
     const latency = metrics.calls.find((c) => c.name === Metric.POSTED_ORDER_RECORD_LATENCY);
     expect(latency?.value).toBeGreaterThanOrEqual(45);
   });
