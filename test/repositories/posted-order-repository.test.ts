@@ -224,4 +224,25 @@ describe('DynamoPostedOrderRepository', () => {
       expect(got).toHaveLength(7);
     });
   });
+
+  describe('recordUnresolvedAttempt', () => {
+    it('increments the attempt counter, returns the new count, and leaves the row pending', async () => {
+      await repo.putPostedOrder(record({ orderHash: '0x20', deadline: NOW - 100 }));
+
+      expect(await repo.recordUnresolvedAttempt('0x20', NOW)).toBe(1);
+      expect(await repo.recordUnresolvedAttempt('0x20', NOW + 600)).toBe(2);
+
+      expect(await repo.getPostedOrder('0x20')).toMatchObject({
+        outcome: PostedOrderOutcome.PENDING,
+        resolutionAttempts: 2,
+        lastAttemptAt: NOW + 600,
+      });
+      expect((await repo.getPendingPastDeadline(NOW)).map((r) => r.orderHash)).toContain('0x20');
+    });
+
+    it('rejects for an unknown order hash', async () => {
+      await expect(repo.recordUnresolvedAttempt('0xnope', NOW)).rejects.toThrow();
+      expect(await repo.getPostedOrder('0xnope')).toBeUndefined();
+    });
+  });
 });

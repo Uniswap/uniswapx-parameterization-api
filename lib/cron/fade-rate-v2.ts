@@ -30,7 +30,7 @@ import { DynamoFillerAddressRepository, FillerAddressRepository } from '../repos
 import { DynamoPostedOrderRepository } from '../repositories/posted-order-repository';
 import { TimestampRepository, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
-import { runFadeRateShadow } from './fade-rate-shadow';
+import { runFadeRateShadow, SHADOW_TIME_BUDGET_MS } from './fade-rate-shadow';
 import {
   FadesScoringSource,
   FadesSourceKind,
@@ -38,7 +38,13 @@ import {
   parseFadesSource,
   redshiftScoringSource,
 } from './fades-sources';
-import { OrderServiceFadesSource } from './order-service-fades-source';
+import { OrderServiceFadesSource, ResolutionSummary } from './order-service-fades-source';
+
+// Time kept in hand at the end of an invocation so the shadow's budget can never run the Lambda
+// into its own timeout: a run that did its job correctly must not surface as a cron error.
+export const LAMBDA_EXIT_MARGIN_MS = 30_000;
+// Below this the shadow is not worth starting (a Redshift statement alone takes seconds).
+export const MIN_SHADOW_BUDGET_MS = 5_000;
 
 // Re-exported for existing importers; the sentinel lives with the repository that owns the
 // stored value's parse/write semantics.
@@ -127,6 +133,11 @@ export const CLEAN_RUNS_PER_DECAY = 6;
 // CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES fires when an address's window no longer reaches
 // back to this horizon, so volume growth surfaces on the dashboard rather than as a stuck
 // recovery.
+// TODO(fades-source flip): this lag exists for Redshift's hourly batch load. With
+// FADES_SOURCE=order-service an unresolved order contributes no row at all (there is no
+// NULL-fill window), so the 2h is pure delay on newCompletions/newFades — and therefore on
+// consecutiveCleanRuns decay — and on chronicRate. First tuning constant to revisit once the flip
+// has bedded in; deliberately unchanged by the flip itself.
 export const STREAK_FINALITY_LAG_SECS = 2 * 60 * 60;
 // Cap on the block backoff: both the stored consecutiveBlocks counter and the duration
 // exponent stop growing here, so a single block/extension increment is at most
@@ -167,9 +178,11 @@ const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 const fillerAddressRepo = DynamoFillerAddressRepository.create(documentClient);
 const timestampDB = TimestampRepository.create();
 
-export const handler: ScheduledHandler = metricScope((metrics) => async (_event: EventBridgeEvent<string, void>) => {
-  await main(metrics);
-});
+export const handler: ScheduledHandler = metricScope(
+  (metrics) => async (_event: EventBridgeEvent<string, void>, context) => {
+    await main(metrics, () => context.getRemainingTimeInMillis());
+  }
+);
 
 /**
  * Everything the cron run touches, injectable so the run can be exercised end to end with
@@ -191,9 +204,13 @@ export type FadeRateCronDeps = {
   log?: Logger;
   shadowCompareSince?: number;
   shadowBudgetMs?: number;
+  // Milliseconds left in the Lambda invocation. When present, the primary's best-effort work
+  // (order-service resolution) is given everything but a shadow reserve and the exit margin, and
+  // the shadow's budget is clamped to what remains; without it the fixed budgets apply.
+  remainingTimeMs?: () => number;
 };
 
-async function main(metrics: MetricsLogger) {
+async function main(metrics: MetricsLogger, remainingTimeMs: () => number) {
   const sharedConfig: SharedConfigs = {
     Database: checkDefined(process.env.REDSHIFT_DATABASE),
     ClusterIdentifier: checkDefined(process.env.REDSHIFT_CLUSTER_IDENTIFIER),
@@ -213,6 +230,7 @@ async function main(metrics: MetricsLogger) {
     webhookProvider,
     fillerAddressRepo,
     timestampDB,
+    remainingTimeMs,
   });
 }
 
@@ -331,6 +349,12 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
   setGlobalMetric(new AWSMetricsLogger(metrics));
 
   await webhookProvider.fetchEndpoints();
+  // The primary's best-effort work (order-service outcome resolution) may not eat the whole
+  // invocation: what it does not resolve now, it resolves next run.
+  if (deps.remainingTimeMs) {
+    const primaryBudgetMs = Math.max(0, deps.remainingTimeMs() - SHADOW_TIME_BUDGET_MS - LAMBDA_EXIT_MARGIN_MS);
+    primary.setDeadline?.(Date.now() + primaryBudgetMs);
+  }
   /*
    primary rows: one per recently completed order
         | fillerAddress |    faded  |   postTimestamp |   deadline   |
@@ -378,7 +402,13 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
   // logging off), writes nothing and notifies nobody. Guarded so that nothing it does — a Redshift
   // connectivity error, an order-service timeout, a bug — can fail the cron or touch the
   // decisions above; the runner itself already never throws, this covers the wiring around it.
-  if (shadow) {
+  const shadowBudgetMs = deps.remainingTimeMs
+    ? Math.min(deps.shadowBudgetMs ?? SHADOW_TIME_BUDGET_MS, deps.remainingTimeMs() - LAMBDA_EXIT_MARGIN_MS)
+    : deps.shadowBudgetMs;
+  if (shadow && shadowBudgetMs !== undefined && shadowBudgetMs < MIN_SHADOW_BUDGET_MS) {
+    metrics.putMetric(Metric.CIRCUIT_BREAKER_SHADOW_SKIPPED, 1, Unit.Count);
+    log.warn({ shadow: shadow.kind, shadowBudgetMs }, 'skipping the fade shadow: not enough invocation time left');
+  } else if (shadow) {
     try {
       await runFadeRateShadow(
         {
@@ -404,7 +434,7 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
           log: log.child({ shadow: shadow.kind }),
           metrics,
           compareSince: deps.shadowCompareSince,
-          budgetMs: deps.shadowBudgetMs,
+          budgetMs: shadowBudgetMs,
         }
       );
     } catch (e) {
@@ -415,6 +445,28 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
       );
     }
   }
+
+  // Order-service resolution health, whichever role that source played this run (absent when the
+  // source is not configured or, as the shadow, did not get to run).
+  const resolution = deps.orderService?.lastResolution?.();
+  if (resolution) {
+    emitOrderResolutionMetrics(metrics, resolution);
+  }
+}
+
+export function emitOrderResolutionMetrics(metrics: MetricsLogger, r: ResolutionSummary): void {
+  const put = (metric: Metric, value: number) => metrics.putMetric(metric, value, Unit.Count);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_PENDING_PAST_DEADLINE, r.pendingPastDeadline);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_PENDING_SATURATED, r.pendingSaturated ? 1 : 0);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_RESOLVED, r.resolved);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_STILL_OPEN, r.stillOpen);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_NOT_FOUND, r.notFound);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_UNCLASSIFIABLE, r.unclassifiable);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_FILLS_WITHOUT_VERDICT, r.fillsWithoutVerdict);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_GIVEN_UP, r.givenUp);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_FAILED_WRITES, r.failedWrites);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_FAILED_BATCHES, r.failedBatches);
+  put(Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_SKIPPED_BATCHES, r.skippedBatches);
 }
 
 function newConsecutiveBlocks(consecutiveBlocks?: number): number {

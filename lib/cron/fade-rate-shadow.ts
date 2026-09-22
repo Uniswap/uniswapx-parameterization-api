@@ -86,7 +86,8 @@ export type ShadowReport = {
   rows: RowComparison;
   // Shadow decisions vs. what the primary actually wrote this run.
   decisionsVsProduction: DecisionComparison;
-  // Both sides' rows restricted to the comparison floor and re-scored, then compared.
+  // Both sides' rows restricted to the comparison floor and re-scored, then compared. (Until the
+  // source flip only the Redshift side was floored, so the series has no pre-flip baseline.)
   decisionsVsRestricted: DecisionComparison;
   wouldBlock: number;
 };
@@ -254,13 +255,8 @@ async function evaluate(
 function emit(metrics: MetricsLogger, report: ShadowReport): void {
   const put = (metric: Metric, value: number, unit: Unit = Unit.Count) => metrics.putMetric(metric, value, unit);
   put(Metric.CIRCUIT_BREAKER_SHADOW_DURATION, report.durationMs, Unit.Milliseconds);
-  if (report.resolution) {
-    put(Metric.CIRCUIT_BREAKER_SHADOW_PENDING_PAST_DEADLINE, report.resolution.pendingPastDeadline);
-    put(Metric.CIRCUIT_BREAKER_SHADOW_RESOLVED, report.resolution.resolved);
-    put(Metric.CIRCUIT_BREAKER_SHADOW_STILL_OPEN, report.resolution.stillOpen);
-    put(Metric.CIRCUIT_BREAKER_SHADOW_NOT_FOUND, report.resolution.notFound);
-    put(Metric.CIRCUIT_BREAKER_SHADOW_UNCLASSIFIABLE, report.resolution.unclassifiable);
-  }
+  // Resolution health is emitted by the cron as CIRCUIT_BREAKER_ORDER_RESOLUTION_*, whichever
+  // role the order-service source plays; the report keeps a copy for the log line only.
   put(Metric.CIRCUIT_BREAKER_SHADOW_ROWS_OLD, report.rows.oldRows);
   put(Metric.CIRCUIT_BREAKER_SHADOW_ROWS_NEW, report.rows.newRows);
   put(Metric.CIRCUIT_BREAKER_SHADOW_ROWS_ONLY_OLD, report.rows.onlyOld.length);

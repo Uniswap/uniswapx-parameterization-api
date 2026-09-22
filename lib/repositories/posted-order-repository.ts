@@ -20,6 +20,10 @@ export enum PostedOrderOutcome {
   CANCELLED = 'CANCELLED',
   INSUFFICIENT_FUNDS = 'INSUFFICIENT_FUNDS',
   ERROR = 'ERROR',
+  // The cron gave up: the order service never reported a usable terminal status within
+  // MAX_RESOLUTION_ATTEMPTS. Terminal for the breaker (no row, no re-fetch) so one class of
+  // unresolvable orders cannot occupy the oldest-first pending read and starve newer ones.
+  UNRESOLVED = 'UNRESOLVED',
 }
 
 /**
@@ -79,6 +83,10 @@ export type PostedOrderRecord = {
   fillTimestamp?: number;
   faded?: number;
   resolvedAt?: number;
+  // Cron runs that asked the order service about this order without getting a usable terminal
+  // status (still open, unknown hash, unclassifiable). Drives the give-up in the fades source.
+  resolutionAttempts?: number;
+  lastAttemptAt?: number;
 };
 
 export interface PostedOrderRepository {
@@ -94,6 +102,11 @@ export interface PostedOrderRepository {
    * creating a phantom row) when the order is unknown, e.g. already expired by TTL.
    */
   recordOutcome(orderHash: string, resolution: PostedOrderResolution): Promise<void>;
+  /**
+   * Counts one more run in which the order could not be resolved and returns the new count.
+   * The row stays pending. Rejects when the order is unknown (e.g. already expired by TTL).
+   */
+  recordUnresolvedAttempt(orderHash: string, attemptedAt: number): Promise<number>;
 }
 
 // Constant partition key of the sparse pending index. Present only while outcome is
@@ -188,6 +201,8 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
         fillTimestamp: { type: 'number' },
         faded: { type: 'number' },
         resolvedAt: { type: 'number' },
+        resolutionAttempts: { type: 'number' },
+        lastAttemptAt: { type: 'number' },
         pending: { type: 'string' },
         ttl: { type: 'number', required: true },
       },
@@ -277,7 +292,22 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
       }
     );
   }
+
+  public async recordUnresolvedAttempt(orderHash: string, attemptedAt: number): Promise<number> {
+    const result = (await this.entity.update(
+      { orderHash, resolutionAttempts: { $add: 1 }, lastAttemptAt: attemptedAt },
+      {
+        conditions: { attr: DynamoPostedOrderRepository.PARTITION_KEY, exists: true },
+        returnValues: 'UPDATED_NEW',
+        execute: true,
+      }
+    )) as UpdatedNew;
+    return result.Attributes?.resolutionAttempts ?? 0;
+  }
 }
+
+// Shape of an UpdateItem response with ReturnValues=UPDATED_NEW as dynamodb-toolbox parses it.
+type UpdatedNew = { Attributes?: { resolutionAttempts?: number } };
 
 // Picks the record fields out of a stored item, dropping the index/TTL attributes and the
 // toolbox bookkeeping (entity, created, modified) so callers see exactly PostedOrderRecord.
@@ -303,6 +333,8 @@ function toRecord(item: PostedOrderItem): PostedOrderRecord {
     ...(item.fillTimestamp !== undefined && { fillTimestamp: item.fillTimestamp }),
     ...(item.faded !== undefined && { faded: item.faded }),
     ...(item.resolvedAt !== undefined && { resolvedAt: item.resolvedAt }),
+    ...(item.resolutionAttempts !== undefined && { resolutionAttempts: item.resolutionAttempts }),
+    ...(item.lastAttemptAt !== undefined && { lastAttemptAt: item.lastAttemptAt }),
   };
 }
 
@@ -346,5 +378,15 @@ export class MockPostedOrderRepository implements PostedOrderRepository {
       ...(fillTimestamp !== undefined && { fillTimestamp }),
       ...(faded !== undefined && { faded }),
     });
+  }
+
+  async recordUnresolvedAttempt(orderHash: string, attemptedAt: number): Promise<number> {
+    const existing = this.records.get(orderHash);
+    if (!existing) {
+      throw new Error(`The conditional request failed: no posted order ${orderHash}`);
+    }
+    const resolutionAttempts = (existing.resolutionAttempts ?? 0) + 1;
+    this.records.set(orderHash, { ...existing, resolutionAttempts, lastAttemptAt: attemptedAt });
+    return resolutionAttempts;
   }
 }

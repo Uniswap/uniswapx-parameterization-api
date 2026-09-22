@@ -185,6 +185,7 @@ describe('fade-rate shadow', () => {
     }
     const resolutionSummary = (): ResolutionSummary => ({
       pendingPastDeadline: 3,
+      pendingSaturated: false,
       batches: 1,
       failedBatches: 0,
       skippedBatches: 0,
@@ -193,6 +194,7 @@ describe('fade-rate shadow', () => {
       notFound: 0,
       unclassifiable: 0,
       fillsWithoutVerdict: 0,
+      givenUp: 0,
       failedWrites: 0,
       byOutcome: {},
     });
@@ -241,7 +243,8 @@ describe('fade-rate shadow', () => {
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_DECISION_AGREE]).toEqual([0]);
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_DECISION_DISAGREE]).toEqual([0]);
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_WOULD_BLOCK]).toEqual([0]);
-      expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_PENDING_PAST_DEADLINE]).toEqual([3]);
+      // Resolution health is the cron's to emit (CIRCUIT_BREAKER_ORDER_RESOLUTION_*), not the shadow's.
+      expect(Object.keys(calls).some((k) => k.includes('RESOLUTION'))).toBe(false);
       expect(calls[Metric.CIRCUIT_BREAKER_SHADOW_DURATION]).toHaveLength(1);
     });
 

@@ -35,6 +35,13 @@ export const MAX_PENDING_RESOLUTIONS_PER_RUN = 1000;
 // Consecutive failed status batches after which the run stops calling the order service: the
 // remaining batches would only burn the time budget against a service that is down.
 export const MAX_CONSECUTIVE_BATCH_FAILURES = 3;
+// Runs an order may stay unresolved (still open past its deadline, unknown to the order service,
+// or unclassifiable) before the cron records it UNRESOLVED and stops asking. At the 10-minute
+// cadence this is ~3h: far longer than status-poller lag or a transient 404, far shorter than the
+// 48h TTL. Without it, one persistent unresolvable class (say, a new order type) would fill the
+// oldest-first pending read up to MAX_PENDING_RESOLUTIONS_PER_RUN and no newer order would ever
+// be resolved — every filler would drift to the Laplace prior with the cron reporting success.
+export const MAX_RESOLUTION_ATTEMPTS = 18;
 
 /** Order-service `orderStatus` values the classifier understands. */
 export const ORDER_STATUS = {
@@ -76,6 +83,7 @@ export type Classification =
  *   cancelled / insufficient-funds / error | recorded, no verdict (scored by policy flag; excluded
  *                       |   by default, as production's SQL effectively excludes them)
  *   open                | not terminal: stays pending             | stays pending
+ *   (any of the above unresolved for MAX_RESOLUTION_ATTEMPTS runs) -> UNRESOLVED: recorded, no row
  *
  * A fill AT the decay-start block/time is not a fade: the exclusive filler still paid the
  * undecayed price (the SQL's `fillTimeBlocks > 0` / `decayStartTime < fillTimestamp`).
@@ -155,6 +163,8 @@ export function fadedForScoring(record: PostedOrderRecord, policy: FadeRowPolicy
     case PostedOrderOutcome.INSUFFICIENT_FUNDS:
     case PostedOrderOutcome.ERROR:
       return policy.countNeverFilledTerminalAsFade ? 1 : undefined;
+    case PostedOrderOutcome.UNRESOLVED:
+      return undefined;
     default:
       return undefined;
   }
@@ -228,6 +238,9 @@ export type ResolutionSummary = {
   // Pending orders past their deadline at the start of the run (capped at
   // MAX_PENDING_RESOLUTIONS_PER_RUN, so a value at the cap means a backlog).
   pendingPastDeadline: number;
+  // The read hit MAX_PENDING_RESOLUTIONS_PER_RUN: there were more past-deadline pending orders
+  // than one run looks at. Transient after an outage; sustained means resolution cannot keep up.
+  pendingSaturated: boolean;
   batches: number;
   failedBatches: number;
   // Batches never sent because the time budget ran out or the service kept failing.
@@ -242,6 +255,8 @@ export type ResolutionSummary = {
   // Terminal `filled` orders the service could not attach timing to (fillBlock -1): recorded,
   // excluded from scoring. A rising count means the order service's fill processing is failing.
   fillsWithoutVerdict: number;
+  // Orders recorded UNRESOLVED this run after MAX_RESOLUTION_ATTEMPTS runs without a usable status.
+  givenUp: number;
   failedWrites: number;
   byOutcome: Partial<Record<PostedOrderOutcome, number>>;
 };
@@ -311,6 +326,7 @@ export class OrderServiceFadesSource implements FadesSource {
     const { postedOrders, orderStatus, log } = this.deps;
     const summary: ResolutionSummary = {
       pendingPastDeadline: 0,
+      pendingSaturated: false,
       batches: 0,
       failedBatches: 0,
       skippedBatches: 0,
@@ -319,12 +335,43 @@ export class OrderServiceFadesSource implements FadesSource {
       notFound: 0,
       unclassifiable: 0,
       fillsWithoutVerdict: 0,
+      givenUp: 0,
       failedWrites: 0,
       byOutcome: {},
     };
 
     const pending = await postedOrders.getPendingPastDeadline(now, MAX_PENDING_RESOLUTIONS_PER_RUN);
     summary.pendingPastDeadline = pending.length;
+    summary.pendingSaturated = pending.length >= MAX_PENDING_RESOLUTIONS_PER_RUN;
+
+    // One more failed attempt for an order that stays pending; after MAX_RESOLUTION_ATTEMPTS it
+    // is recorded UNRESOLVED so it leaves the pending index instead of blocking newer orders.
+    const noteUnresolved = async (
+      record: PostedOrderRecord,
+      status: OrderServiceOrderStatus | undefined,
+      reason: string
+    ) => {
+      try {
+        const attempts = await postedOrders.recordUnresolvedAttempt(record.orderHash, now);
+        if (attempts >= MAX_RESOLUTION_ATTEMPTS) {
+          await postedOrders.recordOutcome(record.orderHash, {
+            outcome: PostedOrderOutcome.UNRESOLVED,
+            orderStatus: status?.orderStatus ?? 'not-found',
+            resolvedAt: now,
+          });
+          summary.givenUp += 1;
+          summary.byOutcome[PostedOrderOutcome.UNRESOLVED] =
+            (summary.byOutcome[PostedOrderOutcome.UNRESOLVED] ?? 0) + 1;
+          log.warn({ orderHash: record.orderHash, status, reason, attempts }, 'giving up on unresolved order');
+        }
+      } catch (e) {
+        summary.failedWrites += 1;
+        log.warn(
+          { orderHash: record.orderHash, error: e instanceof Error ? e.message : e },
+          'failed to record unresolved attempt'
+        );
+      }
+    };
 
     const batches = chunk(pending, ORDER_SERVICE_MAX_ORDER_HASHES);
     let consecutiveFailures = 0;
@@ -361,12 +408,14 @@ export class OrderServiceFadesSource implements FadesSource {
         const status = byHash.get(record.orderHash.toLowerCase());
         if (!status) {
           summary.notFound += 1;
+          await noteUnresolved(record, undefined, 'not found');
           return;
         }
         const classification = classifyOutcome(record, status, now);
         switch (classification.kind) {
           case 'still-open':
             summary.stillOpen += 1;
+            await noteUnresolved(record, status, 'still open');
             return;
           case 'unclassifiable':
             summary.unclassifiable += 1;
@@ -374,6 +423,7 @@ export class OrderServiceFadesSource implements FadesSource {
               { orderHash: record.orderHash, status, reason: classification.reason },
               'unclassifiable order outcome'
             );
+            await noteUnresolved(record, status, classification.reason);
             return;
           case 'resolved': {
             const { resolution } = classification;

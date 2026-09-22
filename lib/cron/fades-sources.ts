@@ -13,11 +13,17 @@ import { OrderServiceFadesSource, ResolutionSummary } from './order-service-fade
 export type FadesSourceKind = 'order-service' | 'redshift';
 export const FADES_SOURCE_KINDS: readonly FadesSourceKind[] = ['order-service', 'redshift'];
 export const DEFAULT_FADES_SOURCE: FadesSourceKind = 'order-service';
+// Where an UNRECOGNISED switch value lands. The switch exists so an operator can fall back to
+// the path that ran in production for over a year; a fat-fingered revert (or a value rendered
+// empty by templating) must therefore resolve toward Redshift, never toward the source being
+// backed out of.
+export const FALLBACK_FADES_SOURCE: FadesSourceKind = 'redshift';
 
 /**
- * Reads the primary-source switch. Unset means the default. An unrecognised value also means the
- * default, loudly: a typo in an env var must not take the breaker down (a failed cron leaves
- * stale blocks expiring with nothing renewing them), but it must be visible in the logs.
+ * Reads the primary-source switch. Unset means the default. An unrecognised value is not the
+ * default: it resolves to the long-running Redshift path (see FALLBACK_FADES_SOURCE), loudly.
+ * Neither case fails the cron — a failed cron leaves stale blocks expiring with nothing
+ * renewing them — but both are visible in the logs and on CIRCUIT_BREAKER_PRIMARY_IS_ORDER_SERVICE.
  */
 export function parseFadesSource(value: string | undefined, log?: Logger): FadesSourceKind {
   const normalized = value?.trim().toLowerCase();
@@ -27,10 +33,10 @@ export function parseFadesSource(value: string | undefined, log?: Logger): Fades
   const kind = FADES_SOURCE_KINDS.find((k) => k === normalized);
   if (!kind) {
     log?.warn(
-      { [FADES_SOURCE_ENV]: value, fallback: DEFAULT_FADES_SOURCE },
-      'unrecognised fades source; using default'
+      { [FADES_SOURCE_ENV]: value, fallback: FALLBACK_FADES_SOURCE },
+      'unrecognised fades source; falling back to the Redshift path'
     );
-    return DEFAULT_FADES_SOURCE;
+    return FALLBACK_FADES_SOURCE;
   }
   return kind;
 }

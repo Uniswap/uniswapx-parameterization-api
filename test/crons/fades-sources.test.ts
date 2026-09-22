@@ -3,6 +3,7 @@ import Logger from 'bunyan';
 import {
   DEFAULT_FADES_SOURCE,
   FADES_SOURCE_KINDS,
+  FALLBACK_FADES_SOURCE,
   orderServiceScoringSource,
   parseFadesSource,
   redshiftScoringSource,
@@ -30,7 +31,7 @@ describe('fades sources', () => {
       expect(parseFadesSource('ORDER-SERVICE')).toBe('order-service');
     });
 
-    it('falls back to the default on an unrecognised value instead of failing the cron', () => {
+    it('an unrecognised value falls back to REDSHIFT (the revert direction), never to the promoted source', () => {
       const warnings: unknown[] = [];
       const warnLog = Logger.createLogger({ name: 'test' });
       warnLog.level(Logger.FATAL);
@@ -39,8 +40,14 @@ describe('fades sources', () => {
         return true;
       }) as typeof warnLog.warn;
 
-      expect(parseFadesSource('redshfit', warnLog)).toBe('order-service');
-      expect(warnings).toHaveLength(1);
+      expect(FALLBACK_FADES_SOURCE).toBe('redshift');
+      expect(parseFadesSource('redshfit', warnLog)).toBe('redshift');
+      expect(parseFadesSource('order_service', warnLog)).toBe('redshift');
+      expect(parseFadesSource('rs', warnLog)).toBe('redshift');
+      expect(warnings).toHaveLength(3);
+      // Unset is a different case: it means "not configured", so it takes the default.
+      expect(parseFadesSource(undefined, warnLog)).toBe('order-service');
+      expect(warnings).toHaveLength(3);
     });
   });
 

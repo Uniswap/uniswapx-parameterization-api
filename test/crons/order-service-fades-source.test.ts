@@ -17,6 +17,7 @@ import {
   fadedForScoring,
   MAX_CONSECUTIVE_BATCH_FAILURES,
   MAX_PENDING_RESOLUTIONS_PER_RUN,
+  MAX_RESOLUTION_ATTEMPTS,
   ORDER_STATUS,
   OrderServiceFadesSource,
 } from '../../lib/cron/order-service-fades-source';
@@ -320,6 +321,12 @@ describe('OrderServiceFadesSource', () => {
       expect(fadedForScoring(errored, policy)).toBeUndefined();
     });
 
+    it('an UNRESOLVED order contributes no row under either policy', () => {
+      const unresolved: PostedOrderRecord = { ...v2(), outcome: PostedOrderOutcome.UNRESOLVED, orderStatus: 'open' };
+      expect(fadedForScoring(unresolved, { countNeverFilledTerminalAsFade: true })).toBeUndefined();
+      expect(fadedForScoring(unresolved, { countNeverFilledTerminalAsFade: false })).toBeUndefined();
+    });
+
     it('the flag does not touch definitive outcomes or pending rows', () => {
       for (const flag of [true, false]) {
         const policy = { countNeverFilledTerminalAsFade: flag };
@@ -543,15 +550,81 @@ describe('OrderServiceFadesSource', () => {
       expect(await repo.getPostedOrder(expired.orderHash)).toEqual(after);
     });
 
-    it('leaves still-open and not-found orders pending, and counts them', async () => {
+    it('leaves still-open and not-found orders pending, counts them, and records the attempt on each', async () => {
       const [open, missing] = await seed(v2(), v2());
       service.seed(status(open.orderHash, ORDER_STATUS.OPEN));
 
       const summary = await source.resolvePendingOutcomes(NOW);
 
-      expect(summary).toMatchObject({ pendingPastDeadline: 2, resolved: 0, stillOpen: 1, notFound: 1 });
+      expect(summary).toMatchObject({ pendingPastDeadline: 2, resolved: 0, stillOpen: 1, notFound: 1, givenUp: 0 });
       expect(await repo.getPendingPastDeadline(NOW)).toHaveLength(2);
-      expect(await repo.getPostedOrder(missing.orderHash)).toMatchObject({ outcome: PostedOrderOutcome.PENDING });
+      for (const hash of [open.orderHash, missing.orderHash]) {
+        expect(await repo.getPostedOrder(hash)).toMatchObject({
+          outcome: PostedOrderOutcome.PENDING,
+          resolutionAttempts: 1,
+          lastAttemptAt: NOW,
+        });
+      }
+      await source.resolvePendingOutcomes(NOW + 600);
+      expect(await repo.getPostedOrder(open.orderHash)).toMatchObject({
+        resolutionAttempts: 2,
+        lastAttemptAt: NOW + 600,
+      });
+    });
+
+    it.each([
+      ['still open', () => v2(), (h: string) => status(h, ORDER_STATUS.OPEN), 'open'],
+      ['not found', () => v2(), undefined, 'not-found'],
+      ['unclassifiable', () => v3(), (h: string) => status(h, 'settling'), 'settling'],
+    ])(
+      'gives up on an order that stays %s for MAX_RESOLUTION_ATTEMPTS runs: UNRESOLVED, out of the pending index, no row',
+      async (_name, make, mkStatus, expectedStatus) => {
+        const [stuck] = await seed({ ...make(), deadline: NOW - 500, resolutionAttempts: MAX_RESOLUTION_ATTEMPTS - 1 });
+        if (mkStatus) service.seed(mkStatus(stuck.orderHash));
+
+        const rows = await source.getFades();
+
+        expect(source.lastResolution).toMatchObject({ givenUp: 1, resolved: 0 });
+        expect(source.lastResolution?.byOutcome).toEqual({ [PostedOrderOutcome.UNRESOLVED]: 1 });
+        expect(await repo.getPostedOrder(stuck.orderHash)).toMatchObject({
+          outcome: PostedOrderOutcome.UNRESOLVED,
+          orderStatus: expectedStatus,
+          resolvedAt: NOW,
+          resolutionAttempts: MAX_RESOLUTION_ATTEMPTS,
+        });
+        expect(await repo.getPendingPastDeadline(NOW)).toEqual([]);
+        expect(rows).toEqual([]);
+        // and the next run does not ask about it again
+        service.batches.length = 0;
+        await source.resolvePendingOutcomes(NOW + 600);
+        expect(service.batches).toEqual([]);
+      }
+    );
+
+    it('a stuck class of orders cannot starve newer ones past the give-up horizon', async () => {
+      // Twice the per-run cap of permanently-open orders, older than everything else, plus one
+      // fresh expiry. Oldest-first intake means the expiry is invisible until the stuck rows
+      // yield; after MAX_RESOLUTION_ATTEMPTS runs they do, and the expiry gets resolved.
+      const stuck = await seed(
+        ...Array.from({ length: MAX_PENDING_RESOLUTIONS_PER_RUN * 2 }, (_, i) => v2({ deadline: NOW - 100_000 + i }))
+      );
+      const [expiry] = await seed(v2({ deadline: NOW - 10 }));
+      service.seed(
+        ...stuck.map((r) => status(r.orderHash, ORDER_STATUS.OPEN)),
+        status(expiry.orderHash, ORDER_STATUS.EXPIRED)
+      );
+
+      let runs = 0;
+      while ((await repo.getPostedOrder(expiry.orderHash))?.outcome === PostedOrderOutcome.PENDING && runs < 100) {
+        const summary = await source.resolvePendingOutcomes(NOW + runs * 600);
+        expect(summary.pendingSaturated).toBe(runs < MAX_RESOLUTION_ATTEMPTS * 2);
+        runs += 1;
+      }
+      expect(await repo.getPostedOrder(expiry.orderHash)).toMatchObject({
+        outcome: PostedOrderOutcome.EXPIRED,
+        faded: 1,
+      });
+      expect(runs).toBeLessThanOrEqual(MAX_RESOLUTION_ATTEMPTS * 2 + 1);
     });
 
     it('leaves unclassifiable orders pending and counts them', async () => {
@@ -604,6 +677,7 @@ describe('OrderServiceFadesSource', () => {
       const summary = await source.resolvePendingOutcomes(NOW);
 
       expect(summary.pendingPastDeadline).toBe(MAX_PENDING_RESOLUTIONS_PER_RUN);
+      expect(summary.pendingSaturated).toBe(true);
       const leftover = await repo.getPendingPastDeadline(NOW);
       expect(leftover.map((r) => r.orderHash)).toEqual([records[records.length - 1].orderHash]);
     });

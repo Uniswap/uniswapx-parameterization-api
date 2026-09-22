@@ -1,8 +1,16 @@
 import { createMetricsLogger, MetricsLogger, Unit } from 'aws-embedded-metrics';
 import Logger from 'bunyan';
 
-import { BASE_BLOCK_SECS, FadeRateCronDeps, runFadeRateCron } from '../../lib/cron/fade-rate-v2';
+import { SHADOW_TIME_BUDGET_MS } from '../../lib/cron/fade-rate-shadow';
+import {
+  BASE_BLOCK_SECS,
+  FadeRateCronDeps,
+  LAMBDA_EXIT_MARGIN_MS,
+  MIN_SHADOW_BUDGET_MS,
+  runFadeRateCron,
+} from '../../lib/cron/fade-rate-v2';
 import { FadesScoringSource, FadesSourceKind } from '../../lib/cron/fades-sources';
+import { ResolutionSummary } from '../../lib/cron/order-service-fades-source';
 import { Metric } from '../../lib/entities';
 import {
   BaseTimestampRepository,
@@ -30,11 +38,15 @@ const row = (fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRowT
 class FakeSource implements FadesScoringSource {
   public calls = 0;
   public deadlineMs?: number;
+  public resolution?: ResolutionSummary;
   constructor(
     public readonly kind: FadesSourceKind,
     private readonly rows: V2FadesRowType[] | Error,
     private readonly order?: string[]
   ) {}
+  lastResolution(): ResolutionSummary | undefined {
+    return this.resolution;
+  }
   async fetchRows(): Promise<V2FadesRowType[]> {
     this.calls += 1;
     this.order?.push(`fetch:${this.kind}`);
@@ -162,6 +174,24 @@ type RunOptions = {
   orderService?: V2FadesRowType[] | Error | 'absent';
   addresses?: MockFillerAddressRepository;
   endpoints?: string[];
+  resolution?: ResolutionSummary;
+  remainingTimeMs?: () => number;
+};
+
+const RESOLUTION: ResolutionSummary = {
+  pendingPastDeadline: 7,
+  pendingSaturated: false,
+  batches: 1,
+  failedBatches: 0,
+  skippedBatches: 0,
+  resolved: 5,
+  stillOpen: 1,
+  notFound: 0,
+  unclassifiable: 0,
+  fillsWithoutVerdict: 1,
+  givenUp: 0,
+  failedWrites: 0,
+  byOutcome: {},
 };
 
 async function run(opts: RunOptions) {
@@ -171,6 +201,7 @@ async function run(opts: RunOptions) {
     opts.orderService === 'absent' || opts.orderService === undefined
       ? undefined
       : new FakeSource('order-service', opts.orderService, order);
+  if (orderService) orderService.resolution = opts.resolution;
   const webhooks = new FakeWebhookProvider(opts.endpoints ?? [FILLER_A, FILLER_B]);
   const timestamps = new FakeTimestampRepository(new Map(), order);
   const { metrics, calls, properties } = recordingMetrics();
@@ -186,6 +217,7 @@ async function run(opts: RunOptions) {
     now: () => NOW,
     log,
     shadowCompareSince: 0,
+    remainingTimeMs: opts.remainingTimeMs,
   };
   const result = await runFadeRateCron(metrics, deps);
   return { result, redshift, orderService, webhooks, timestamps, calls, properties, records, order, addresses };
@@ -354,6 +386,85 @@ describe('runFadeRateCron', () => {
       expect(report?.wouldBlock).toBe(2);
       // and nothing about C reached the table
       expect(r.timestamps.writes.flat().map((w) => w.hash)).toEqual([FILLER_A, FILLER_B]);
+    });
+  });
+
+  describe('order-service resolution health metrics', () => {
+    it.each<FadesSourceKind>(['order-service', 'redshift'])(
+      'are emitted from the order-service source whichever role it plays: primary=%s',
+      async (primary) => {
+        const r = await run({ primary, orderService: CLEAN_ROWS, redshift: CLEAN_ROWS, resolution: RESOLUTION });
+        expect(r.calls[Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_PENDING_PAST_DEADLINE]).toEqual([7]);
+        expect(r.calls[Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_PENDING_SATURATED]).toEqual([0]);
+        expect(r.calls[Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_RESOLVED]).toEqual([5]);
+        expect(r.calls[Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_STILL_OPEN]).toEqual([1]);
+        expect(r.calls[Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_FILLS_WITHOUT_VERDICT]).toEqual([1]);
+        expect(r.calls[Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_GIVEN_UP]).toEqual([0]);
+        expect(r.calls[Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_FAILED_WRITES]).toEqual([0]);
+      }
+    );
+
+    it('are absent when the order-service source is not configured or produced no summary', async () => {
+      const none = await run({ primary: 'redshift', redshift: CLEAN_ROWS, orderService: 'absent' });
+      const noSummary = await run({ primary: 'redshift', redshift: CLEAN_ROWS, orderService: new Error('down') });
+      for (const r of [none, noSummary]) {
+        expect(Object.keys(r.calls).some((k) => k.includes('ORDER_RESOLUTION'))).toBe(false);
+      }
+    });
+  });
+
+  describe('time budget against the Lambda deadline', () => {
+    it('without a remaining-time source the primary is unbudgeted and the shadow gets the fixed budget', async () => {
+      const before = Date.now();
+      const r = await run({ primary: 'order-service', orderService: BLOCKING_ROWS, redshift: CLEAN_ROWS });
+      expect(r.orderService?.deadlineMs).toBeUndefined();
+      expect(r.redshift.deadlineMs).toBeGreaterThanOrEqual(before + SHADOW_TIME_BUDGET_MS);
+    });
+
+    it('gives the primary everything but the shadow reserve and exit margin, and clamps the shadow to what is left', async () => {
+      const remaining = 200_000;
+      const before = Date.now();
+      const r = await run({
+        primary: 'order-service',
+        orderService: BLOCKING_ROWS,
+        redshift: CLEAN_ROWS,
+        remainingTimeMs: () => remaining,
+      });
+      const primaryBudget = remaining - SHADOW_TIME_BUDGET_MS - LAMBDA_EXIT_MARGIN_MS;
+      expect(r.orderService?.deadlineMs).toBeGreaterThanOrEqual(before + primaryBudget);
+      expect(r.orderService?.deadlineMs).toBeLessThanOrEqual(Date.now() + primaryBudget);
+      // remaining - margin (170s) exceeds the fixed budget, so the shadow keeps the fixed 60s.
+      expect(r.redshift.deadlineMs).toBeGreaterThanOrEqual(before + SHADOW_TIME_BUDGET_MS);
+      expect(r.redshift.deadlineMs).toBeLessThanOrEqual(Date.now() + SHADOW_TIME_BUDGET_MS);
+      expect(r.timestamps.writes).toEqual([BLOCK_A_DECISIONS]);
+    });
+
+    it('shrinks the shadow budget when the invocation is running long', async () => {
+      const remaining = LAMBDA_EXIT_MARGIN_MS + 20_000;
+      const before = Date.now();
+      const r = await run({
+        primary: 'order-service',
+        orderService: BLOCKING_ROWS,
+        redshift: CLEAN_ROWS,
+        remainingTimeMs: () => remaining,
+      });
+      expect(r.redshift.deadlineMs).toBeGreaterThanOrEqual(before + 20_000);
+      expect(r.redshift.deadlineMs).toBeLessThanOrEqual(Date.now() + 20_000);
+      expect(r.calls[Metric.CIRCUIT_BREAKER_SHADOW_SUCCESS]).toEqual([1]);
+    });
+
+    it('skips the shadow entirely, counted, when too little time is left; the primary write is untouched', async () => {
+      const r = await run({
+        primary: 'order-service',
+        orderService: BLOCKING_ROWS,
+        redshift: CLEAN_ROWS,
+        remainingTimeMs: () => LAMBDA_EXIT_MARGIN_MS + MIN_SHADOW_BUDGET_MS - 1,
+      });
+      expect(r.timestamps.writes).toEqual([BLOCK_A_DECISIONS]);
+      expect(r.redshift.calls).toBe(0);
+      expect(r.calls[Metric.CIRCUIT_BREAKER_SHADOW_SKIPPED]).toEqual([1]);
+      expect(r.calls[Metric.CIRCUIT_BREAKER_SHADOW_SUCCESS]).toBeUndefined();
+      expect(r.calls[Metric.CIRCUIT_BREAKER_SHADOW_FAILURE]).toBeUndefined();
     });
   });
 
