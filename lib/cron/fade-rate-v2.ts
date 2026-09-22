@@ -30,6 +30,7 @@ import { DynamoFillerAddressRepository, FillerAddressRepository } from '../repos
 import { DynamoPostedOrderRepository } from '../repositories/posted-order-repository';
 import { TimestampRepository, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
+import { flushStdout } from '../util/stdout';
 import { runFadeRateShadow, SHADOW_TIME_BUDGET_MS } from './fade-rate-shadow';
 import {
   FadesScoringSource,
@@ -180,7 +181,15 @@ const timestampDB = TimestampRepository.create();
 
 export const handler: ScheduledHandler = metricScope(
   (metrics) => async (_event: EventBridgeEvent<string, void>, context) => {
-    await main(metrics, () => context.getRemainingTimeInMillis());
+    try {
+      await main(metrics, () => context.getRemainingTimeInMillis());
+    } finally {
+      // The run's last log lines are large (the shadow report follows a ~160 KB Redshift result
+      // line). Without this, Lambda freezes the process with the stdout pipe still draining and
+      // those lines are truncated or lost — observed on most runs right after the source flip,
+      // while the (synchronously written) EMF metrics survived.
+      await flushStdout();
+    }
   }
 );
 
