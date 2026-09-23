@@ -74,6 +74,28 @@ export class OrderDeadlineExpired extends CustomError {
   }
 }
 
+export class MixedOutputTokensError extends CustomError {
+  private static MESSAGE =
+    'All order outputs must pay the same token. A hard quote is priced as a single tokenOut and a single summed amount, so an order whose outputs span multiple tokens cannot be quoted.';
+
+  constructor(message?: string) {
+    super(message ?? MixedOutputTokensError.MESSAGE);
+    // Set the prototype explicitly.
+    Object.setPrototypeOf(this, MixedOutputTokensError.prototype);
+  }
+
+  toJSON(id?: string): APIGatewayProxyResult {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({
+        errorCode: ErrorCode.ValidationError,
+        detail: this.message,
+        id,
+      }),
+    };
+  }
+}
+
 export class UnknownOrderCosignerError extends CustomError {
   private static MESSAGE = 'Unknown cosigner';
 
