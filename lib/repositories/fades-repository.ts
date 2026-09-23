@@ -76,18 +76,21 @@ export class V2FadesRepository extends BaseRedshiftRepository {
   }
 }
 
-const V2_CREATE_VIEW_SQL = `
+// Exported for testing.
+export const V2_CREATE_VIEW_SQL = `
 DROP VIEW IF EXISTS latestRfqsV2;
 
-CREATE OR REPLACE VIEW latestRfqsV2 
+CREATE OR REPLACE VIEW latestRfqsV2
 AS (
 WITH latestOrdersV2 AS (
   SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY filler ORDER BY createdat DESC) AS row_num FROM postedorders
     WHERE ordertype IN ('${OrderType.Dutch_V2}', '${OrderType.Dutch_V3}')
     AND deadline < EXTRACT(EPOCH FROM GETDATE()) -- completed orders only, BEFORE numbering: in-flight orders must not consume latest-N slots
+    AND deadline >= EXTRACT(EPOCH FROM (GETDATE() - INTERVAL '24 HOURS')) -- bound the row set to the 24-hour lookback window BEFORE any LIMIT truncation
   )
   WHERE row_num <= ${ORDERS_PER_FILLER_LIMIT}
+  ORDER BY deadline DESC, quoteid -- deterministic truncation if the safety LIMIT below is ever hit
   LIMIT ${FADE_QUERY_ROW_LIMIT}
 )
 SELECT
@@ -110,8 +113,9 @@ ORDER BY rfqFiller, deadline DESC
 LIMIT ${FADE_QUERY_ROW_LIMIT} 
 `;
 
-const V2_FADE_RATE_SQL = `
-SELECT 
+// Exported for testing.
+export const V2_FADE_RATE_SQL = `
+SELECT
     rfqFiller,
     postTimestamp,
     deadline,
