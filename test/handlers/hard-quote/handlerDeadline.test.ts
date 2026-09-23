@@ -1,12 +1,10 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { KmsSigner } from '@uniswap/signer';
 import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { ethers, Wallet } from 'ethers';
 
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -16,6 +14,9 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
+import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
+import { fakeContext } from '../../fakes';
 import { getOrder } from '../../fixtures/hard-quote';
 
 jest.mock('axios');
@@ -46,12 +47,14 @@ describe('Hard quote handler - order deadline validation', () => {
   }));
   (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
 
+  const fakes = fakeContext('test');
+
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 
@@ -64,6 +67,8 @@ describe('Hard quote handler - order deadline validation', () => {
           return {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
+            postedOrderRepository: new MockPostedOrderRepository(),
+            fillerAddressRepository: new MockFillerAddressRepository(),
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
         },

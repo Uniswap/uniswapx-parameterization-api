@@ -7,12 +7,10 @@ import {
   UnsignedV3DutchOrderInfo,
   V3DutchOrderBuilder,
 } from '@uniswap/uniswapx-sdk';
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { BigNumber, ethers, Wallet } from 'ethers';
 import { getV3BlockBuffer } from '../../../lib/constants';
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -23,6 +21,9 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
+import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
+import { fakeContext } from '../../fakes';
 
 jest.mock('axios');
 jest.mock('@aws-sdk/client-kms');
@@ -106,12 +107,13 @@ describe('Quote handler', () => {
   (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
 
   // Creating mocks for all the handler dependencies.
+  const fakes = fakeContext('test');
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 
@@ -124,6 +126,8 @@ describe('Quote handler', () => {
           return {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
+            postedOrderRepository: new MockPostedOrderRepository(),
+            fillerAddressRepository: new MockFillerAddressRepository(),
             // The V3 path calls provider.getBlockNumber() to derive decayStartBlock. A real
             // StaticJsonRpcProvider here defaults to http://localhost:8545, so the call fails
             // and the handler returns 500 -- which is why this suite was skipped rather than

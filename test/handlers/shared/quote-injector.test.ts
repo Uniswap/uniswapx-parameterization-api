@@ -88,11 +88,22 @@ describe('shared quote injector wiring', () => {
       expect(mainnet.network.chainId).toEqual(1);
     });
 
+    it('keeps filler-address attribution out of the quoter and on the hard-quote container only', () => {
+      expect(quoter.repository).toBeUndefined();
+      if (expectsOrderService) {
+        expect(container.fillerAddressRepository).toBeDefined();
+      } else {
+        expect(container.fillerAddressRepository).toBeUndefined();
+      }
+    });
+
     it('provides the order service only where it is needed', () => {
       if (expectsOrderService) {
         expect(container.orderServiceProvider).toBeDefined();
+        expect(container.postedOrderRepository).toBeDefined();
       } else {
         expect(container.orderServiceProvider).toBeUndefined();
+        expect(container.postedOrderRepository).toBeUndefined();
       }
     });
   });
@@ -130,6 +141,22 @@ describe('shared quote injector wiring', () => {
       // The child logger is what carries requestBody/requestId onto every downstream log line.
       expect(requestInjected.log).not.toBe(log);
       expect(requestInjected.log.fields.requestId).toEqual('req-1');
+
+      // ctx is a second view of the same request-scoped state, not a second copy of it: the
+      // handler layer's logger writes through that same child logger (message-first in, bunyan's
+      // fields-first out), and its metrics forward to the request's MetricsLogger (the one
+      // carrying the dimension sets asserted above) as the same (name, value, unit) the IMetric
+      // path produced.
+      expect(requestInjected.ctx.requestId).toEqual('req-1');
+      const childInfo = jest.spyOn(requestInjected.log, 'info');
+      requestInjected.ctx.logger.info('bestQuote', { bestQuote: 'q' });
+      expect(childInfo).toHaveBeenCalledWith({ bestQuote: 'q' }, 'bestQuote');
+      await requestInjected.ctx.metrics.count('QUOTE_REQUESTED');
+      await requestInjected.ctx.metrics.timer('QUOTE_LATENCY', 250);
+      expect(metricsLogger.putMetric.mock.calls).toEqual([
+        ['QUOTE_REQUESTED', 1, 'Count'],
+        ['QUOTE_LATENCY', 250, 'Milliseconds'],
+      ]);
     });
   });
 });

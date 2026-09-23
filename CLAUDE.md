@@ -106,6 +106,8 @@ Post-processing the replay must do itself (deliberately not in the SQL):
   drift from the code.
 - **Aggregate addresses to fillers** with the `FillerAddress` DynamoDB table
   (`aws dynamodb scan --table-name FillerAddress`) — the breaker scores per filler hash, not
-  per address. Per-address replay is a usable approximation but under-counts multi-address
-  fillers.
+  per address. Use the per-address rows (`pk` = checksummed address, `filler` = endpoint);
+  ignore the legacy rows keyed by endpoint URL with an `addresses` set, which stopped being
+  updated when attribution moved to per-address rows. Per-address replay is a usable
+  approximation but under-counts multi-address fillers.
 - Dedupe on `quoteId` (the `archivedorders` join can rarely fan out).

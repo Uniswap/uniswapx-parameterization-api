@@ -1,18 +1,14 @@
-import { IMetric, setGlobalLogger, setGlobalMetric } from '@uniswap/smart-order-router';
 import { MetricsLogger } from 'aws-embedded-metrics';
-import { Context } from 'aws-lambda';
+import { Context as LambdaContext } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, RPC_HEADERS, WEBHOOK_CONFIG_BUCKET } from '../../constants';
-import { AWSMetricsLogger } from '../../entities/aws-metrics-logger';
+import { BunyanLogger, Context, EmfMetrics } from '../../observability';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
 import { Quoter, WebhookQuoter } from '../../quoters';
-import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
 import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
 import { STAGE } from '../../util/stage';
 import { ApiRInj } from '../base/api-handler';
@@ -26,7 +22,9 @@ export interface BaseQuoteContainerInjected {
 
 /** Per-request state shared by both quote Lambdas. */
 export interface BaseQuoteRequestInjected extends ApiRInj {
-  metric: IMetric;
+  // The per-request logger/metrics every layer of the request path takes explicitly. Its logger
+  // wraps the same bunyan child as `log`.
+  ctx: Context;
 }
 
 /**
@@ -85,17 +83,7 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
 
   const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
-  const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-    marshallOptions: {
-      convertEmptyValues: true,
-    },
-    unmarshallOptions: {
-      wrapNumbers: true,
-    },
-  });
-  const repository = DynamoFillerAddressRepository.create(documentClient);
-
-  const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, repository)];
+  const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider)];
 
   return {
     quoters,
@@ -111,13 +99,16 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
  * argument would make easy to swap silently.
  *
  * The call order is load-bearing: `setDimensions` REPLACES the dimension-set list while
- * `putDimensions` APPENDS one, so the per-chain set must be added second. `setGlobalMetric`
- * must run because WebhookQuoter emits every RFQ_* metric through the smart-order-router
- * module global rather than the injected IMetric.
+ * `putDimensions` APPENDS one, so the per-chain set must be added second.
+ *
+ * `ctx` is the only channel request-scoped observability travels through: the handlers, the
+ * quoters and the webhook config provider all take it explicitly. Nothing is published to a
+ * module global, which on a concurrent runtime (ECS) would leak one request's logger and
+ * metrics into another. `log` stays on the result for the base handler's own lines.
  */
 export function buildQuoteRequestInjected<ReqBody extends { tokenInChainId: number }>(params: {
   requestBody: ReqBody;
-  context: Context;
+  context: LambdaContext;
   log: Logger;
   metricsLogger: MetricsLogger;
   metricDimension: Record<string, string>;
@@ -130,7 +121,6 @@ export function buildQuoteRequestInjected<ReqBody extends { tokenInChainId: numb
     requestBody,
     requestId,
   });
-  setGlobalLogger(log);
 
   metricsLogger.setNamespace('Uniswap');
   metricsLogger.setDimensions(metricDimension);
@@ -145,12 +135,20 @@ export function buildQuoteRequestInjected<ReqBody extends { tokenInChainId: numb
   // hard emit the same metric names, their dimensionless streams merge into a single
   // series per metric.
   metricsLogger.putDimensions({});
-  const metric = new AWSMetricsLogger(metricsLogger);
-  setGlobalMetric(metric);
+
+  // The child logger (behind the message-first adapter) and the already-dimensioned
+  // MetricsLogger: every request-path log line and metric lands with these bindings and under
+  // these dimension sets.
+  const logger = new BunyanLogger(log);
+  const ctx: Context = {
+    logger,
+    metrics: new EmfMetrics(metricsLogger, logger),
+    requestId,
+  };
 
   return {
     log,
-    metric,
     requestId,
+    ctx,
   };
 }

@@ -15,7 +15,7 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 import { KmsStack } from './kms-stack';
 
-import { DYNAMO_TABLE_NAME } from '../../lib/constants';
+import { DYNAMO_TABLE_NAME, POSTED_ORDERS_INDEX } from '../../lib/constants';
 import {
   HardQuoteMetricDimension,
   Metric,
@@ -259,7 +259,7 @@ export class APIStack extends cdk.Stack {
       memorySize: 2048,
       bundling: LAMBDA_BUNDLING,
       environment: {
-        VERSION: '6',
+        VERSION: '7',
         NODE_OPTIONS: '--enable-source-maps',
         ...props.envVars,
         stage,
@@ -291,7 +291,7 @@ export class APIStack extends cdk.Stack {
       memorySize: 2048,
       bundling: LAMBDA_BUNDLING,
       environment: {
-        VERSION: '6',
+        VERSION: '7',
         NODE_OPTIONS: '--enable-source-maps',
         REGION: region,
         KMS_KEY_ID: kmsStack.key.keyId,
@@ -346,28 +346,11 @@ export class APIStack extends cdk.Stack {
     });
 
     hardQuote.addMethod('POST', hardQuoteLambdaIntegration, {
-      apiKeyRequired: false, // TODO: Set to true once Trading API has integrated
-    });
-
-    /* add auth keys */
-    // No method currently sets apiKeyRequired; these exist for the hard-quote
-    // gating TODO above. Unrelated to the WAF's `x-api-key` byte-match, which
-    // matches a hand-managed Secrets Manager value, not an API Gateway key.
-    const tradingAPIKey = api.addApiKey('TradingAPIKey', {
-      apiKeyName: 'tradingAPIKey',
-      description: 'API Key for trading endpoints',
-    });
-    const devAPIKey = api.addApiKey('DevAPIKey', {
-      apiKeyName: 'devAPIKey',
-      description: 'API Key for development use',
-    });
-    const plan = api.addUsagePlan('AccessPlan', {
-      name: 'AccessPlan',
-    });
-    plan.addApiKey(tradingAPIKey);
-    plan.addApiKey(devAPIKey);
-    plan.addApiStage({
-      stage: api.deploymentStage,
+      // Explicitly the default: no API Gateway key gating on any method. Request
+      // gating is the entry gateway's job after the monorepo migration. Unrelated
+      // to the WAF's `x-api-key` byte-match above, which matches a hand-managed
+      // Secrets Manager value, not an API Gateway key.
+      apiKeyRequired: false,
     });
 
     /*
@@ -389,6 +372,36 @@ export class APIStack extends cdk.Stack {
       chatbotSNSArn,
     });
 
+    /* posted-orders table: the hard-quote Lambda writes one row per confirmed RFQ-won post
+       (lib/handlers/hard-quote/posted-order-recorder.ts); the fade-rate cron resolves outcomes
+       into it and reads the 24h window back (lib/cron/order-service-fades-source.ts). Derived
+       and rebuildable bookkeeping with a 48h TTL, so on-demand capacity and no PITR. Both
+       indexes sort by deadline: "completed" for the breaker means the deadline has passed. */
+    const postedOrdersTable = new aws_dynamo.Table(this, 'PostedOrdersTable', {
+      tableName: DYNAMO_TABLE_NAME.POSTED_ORDERS,
+      partitionKey: {
+        name: 'orderHash',
+        type: aws_dynamo.AttributeType.STRING,
+      },
+      billingMode: aws_dynamo.BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: 'ttl',
+      deletionProtection: true,
+    });
+    // Sparse: `pending` is only present while the outcome is unresolved.
+    postedOrdersTable.addGlobalSecondaryIndex({
+      indexName: POSTED_ORDERS_INDEX.PENDING_DEADLINE,
+      partitionKey: { name: 'pending', type: aws_dynamo.AttributeType.STRING },
+      sortKey: { name: 'deadline', type: aws_dynamo.AttributeType.NUMBER },
+    });
+    postedOrdersTable.addGlobalSecondaryIndex({
+      indexName: POSTED_ORDERS_INDEX.FILLER_DEADLINE,
+      partitionKey: { name: 'filler', type: aws_dynamo.AttributeType.STRING },
+      sortKey: { name: 'deadline', type: aws_dynamo.AttributeType.NUMBER },
+    });
+    // The shared Lambda role already carries AmazonDynamoDBFullAccess; the explicit grant
+    // documents the dependency and keeps the write working if that policy is ever narrowed.
+    postedOrdersTable.grantWriteData(hardQuoteLambda);
+
     new CronStack(this, 'CronStack', {
       RsDatabase: analyticsStack.dbName,
       RsClusterIdentifier: analyticsStack.clusterId,
@@ -396,6 +409,8 @@ export class APIStack extends cdk.Stack {
       lambdaRole: lambdaRole,
       chatbotSNSArn: chatbotSNSArn,
       stage: stage,
+      postedOrdersTable,
+      orderServiceUrl: props.envVars.ORDER_SERVICE_URL,
     });
 
     /* filler addr table */
@@ -408,6 +423,12 @@ export class APIStack extends cdk.Stack {
       deletionProtection: true,
       pointInTimeRecovery: true,
       contributorInsightsEnabled: true,
+      // Address rows carry expiresAt and expire FILLER_ADDRESS_TTL_SECS after the owning
+      // filler's last win with them (a refused claim by another endpoint does not refresh it),
+      // so the table cannot grow without bound. A row without expiresAt gets one on its owner's
+      // next win; an address that never wins again keeps its row until a one-off backfill
+      // stamps it.
+      timeToLiveAttribute: 'expiresAt',
       ...PROD_TABLE_CAPACITY.fillerAddress,
     });
 

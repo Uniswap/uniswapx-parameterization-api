@@ -1,12 +1,10 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { KmsSigner } from '@uniswap/signer';
 import { CosignedV2DutchOrder, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { ethers, Wallet } from 'ethers';
 
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -17,7 +15,10 @@ import {
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { OrderServiceProvider } from '../../../lib/providers/order';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
+import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
 import { ErrorCode } from '../../../lib/util/errors';
+import { fakeContext } from '../../fakes';
 import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
 
 /**
@@ -74,13 +75,15 @@ describe('/hard-quote response surface', () => {
     jest.clearAllMocks();
   });
 
+  const fakes = fakeContext('test');
+
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         // Surfaces as the `id` field of every handler-level error body below.
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 
@@ -93,6 +96,8 @@ describe('/hard-quote response surface', () => {
         getContainerInjected: () => ({
           quoters,
           orderServiceProvider,
+          postedOrderRepository: new MockPostedOrderRepository(),
+          fillerAddressRepository: new MockFillerAddressRepository(),
           chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
         }),
         getRequestInjected: () => requestInjectedMock,

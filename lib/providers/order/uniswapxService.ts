@@ -1,8 +1,14 @@
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, AxiosInstance } from 'axios';
 import Logger from 'bunyan';
 
 import { CosignedV2DutchOrder, CosignedV3DutchOrder, OrderType } from '@uniswap/uniswapx-sdk';
-import { OrderServiceProvider, PostOrderArgs, UniswapXServiceResponse } from '.';
+import {
+  OrderServiceOrderStatus,
+  OrderServiceProvider,
+  OrderStatusProvider,
+  PostOrderArgs,
+  UniswapXServiceResponse,
+} from '.';
 import { ErrorResponse } from '../../handlers/base';
 import { ErrorCode } from '../../util/errors';
 
@@ -15,22 +21,62 @@ const ORDER_SERVICE_TIMEOUT_MS = 7000;
 const ORDER_RECONCILE_DELAY_MS = 500;
 const ORDER_RECONCILE_TIMEOUT_MS = 2000;
 
+// GET /orders?orderHashes= accepts at most this many hashes per request (the service's Joi
+// validator rejects longer lists with a 400). Callers batch; this client refuses to exceed it.
+export const ORDER_SERVICE_MAX_ORDER_HASHES = 50;
+// Per-batch ceiling for the status read. It runs in the fade cron (240s Lambda), not on a
+// quote path, but a stalled order service must not eat the cron's whole budget either.
+export const ORDER_STATUS_TIMEOUT_MS = 5000;
+
+// The subset of axios the status read goes through. Injected so tests can substitute a fake
+// without mocking the axios module.
+export type OrderServiceHttp = Pick<AxiosInstance, 'get'>;
+
 const ORDER_TYPE_MAP = new Map<Function, string>([
   [CosignedV2DutchOrder, OrderType.Dutch_V2],
   [CosignedV3DutchOrder, OrderType.Dutch_V3],
 ]);
 
-// Shape of the order service's GET /dutch-auction/orders response; we only need
-// to know whether any order matched during reconciliation.
+// Shape of the order service's GET /dutch-auction/orders response. Reconciliation only needs
+// to know whether any order matched; the fade cron reads status and fill timing per order.
 interface GetOrdersResponse {
   orders?: unknown[];
 }
 
-export class UniswapXServiceProvider implements OrderServiceProvider {
+export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatusProvider {
   private log: Logger;
 
-  constructor(_log: Logger, private uniswapxServiceUrl: string) {
+  constructor(_log: Logger, private uniswapxServiceUrl: string, private readonly http: OrderServiceHttp = axios) {
     this.log = _log.child({ quoter: 'UniswapXOrderService' });
+  }
+
+  /**
+   * Status + fill timing for a batch of order hashes (see OrderStatusProvider). The service
+   * has no pagination on this endpoint, so the batch cap is the only paging there is.
+   */
+  async getOrdersByHashes(orderHashes: string[]): Promise<OrderServiceOrderStatus[]> {
+    if (orderHashes.length === 0) {
+      return [];
+    }
+    if (orderHashes.length > ORDER_SERVICE_MAX_ORDER_HASHES) {
+      throw new Error(
+        `getOrdersByHashes: ${orderHashes.length} hashes exceeds the order service cap of ${ORDER_SERVICE_MAX_ORDER_HASHES}`
+      );
+    }
+    const response = await this.http.get<GetOrdersResponse>(`${this.uniswapxServiceUrl}dutch-auction/orders`, {
+      params: { orderHashes: orderHashes.join(',') },
+      timeout: ORDER_STATUS_TIMEOUT_MS,
+    });
+    const orders = Array.isArray(response.data?.orders) ? response.data.orders : [];
+    const statuses = orders.flatMap((order) => {
+      const status = toOrderStatus(order);
+      if (!status) {
+        this.log.warn({ order }, 'Order service returned an order without hash/status; skipping');
+      }
+      return status ? [status] : [];
+    });
+    this.log.info({ requested: orderHashes.length, returned: statuses.length }, 'Fetched order statuses');
+    return statuses;
   }
 
   async postOrder(args: PostOrderArgs): Promise<ErrorResponse | UniswapXServiceResponse> {
@@ -127,4 +173,22 @@ export class UniswapXServiceProvider implements OrderServiceProvider {
       return false;
     }
   }
+}
+
+// One GET /orders item reduced to the breaker's view. Anything without a hash and status is
+// dropped (the caller treats a missing order as "not found" and retries next run).
+function toOrderStatus(order: unknown): OrderServiceOrderStatus | undefined {
+  if (typeof order !== 'object' || order === null) {
+    return undefined;
+  }
+  const { orderHash, orderStatus, fillBlock, fillTimestamp } = order as Record<string, unknown>;
+  if (typeof orderHash !== 'string' || typeof orderStatus !== 'string') {
+    return undefined;
+  }
+  return {
+    orderHash: orderHash.toLowerCase(),
+    orderStatus,
+    ...(typeof fillBlock === 'number' && { fillBlock }),
+    ...(typeof fillTimestamp === 'number' && { fillTimestamp }),
+  };
 }

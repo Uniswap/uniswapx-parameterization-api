@@ -1,15 +1,13 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
 import { CosignedV2DutchOrder, CosignerData, OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 // import axios from 'axios';
 import { default as Logger } from 'bunyan';
 import { BigNumber, ethers, Wallet } from 'ethers';
 
 import { KmsSigner } from '@uniswap/signer';
-import { HardQuoteRequest, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
+import { HardQuoteRequest, Metric, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -21,6 +19,16 @@ import {
 import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
+import {
+  FillerAddressRepository,
+  MockFillerAddressRepository,
+} from '../../../lib/repositories/filler-address-repository';
+import {
+  MockPostedOrderRepository,
+  PostedOrderOutcome,
+  PostedOrderRepository,
+} from '../../../lib/repositories/posted-order-repository';
+import { fakeContext } from '../../fakes';
 import { getOrder } from '../../fixtures/hard-quote';
 
 jest.mock('axios');
@@ -59,17 +67,20 @@ describe('Quote handler', () => {
   (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
 
   // Creating mocks for all the handler dependencies.
+  const fakes = fakeContext('test');
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 
   const injectorPromiseMock = (
-    quoters: Quoter[]
+    quoters: Quoter[],
+    postedOrderRepository: PostedOrderRepository = new MockPostedOrderRepository(),
+    fillerAddressRepository: FillerAddressRepository = new MockFillerAddressRepository()
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
@@ -77,6 +88,8 @@ describe('Quote handler', () => {
           return {
             quoters,
             orderServiceProvider: new MockOrderServiceProvider(),
+            postedOrderRepository,
+            fillerAddressRepository,
             // Mock chainIdRpcMap
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
           };
@@ -85,7 +98,11 @@ describe('Quote handler', () => {
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
     );
 
-  const getQuoteHandler = (quoters: Quoter[]) => new HardQuoteHandler('quote', injectorPromiseMock(quoters));
+  const getQuoteHandler = (
+    quoters: Quoter[],
+    postedOrderRepository?: PostedOrderRepository,
+    fillerAddressRepository?: FillerAddressRepository
+  ) => new HardQuoteHandler('quote', injectorPromiseMock(quoters, postedOrderRepository, fillerAddressRepository));
 
   const getEvent = (request: HardQuoteRequestBody): APIGatewayProxyEvent =>
     ({
@@ -112,6 +129,9 @@ describe('Quote handler', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    // One ctx is shared across the describe; every test starts from empty recordings.
+    fakes.metrics.reset();
+    fakes.logger.reset();
   });
 
   it('Simple request and response', async () => {
@@ -135,6 +155,19 @@ describe('Quote handler', () => {
     expect(cosignedOrder.info.cosignerData.inputOverride).toEqual(BigNumber.from(0));
     expect(cosignedOrder.info.cosignerData.outputOverrides.length).toEqual(1);
     expect(cosignedOrder.info.cosignerData.outputOverrides[0]).toEqual(BigNumber.from(0));
+
+    // The handler's own metrics go through ctx.metrics: the same names the IMetric path emitted,
+    // counts through count() and latencies through timer(), in the same order. No exclusivity was
+    // granted, so the recorder emitted nothing.
+    expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
+      ['count', Metric.QUOTE_REQUESTED],
+      // getBestQuote's quote-count metric, now through the same ctx
+      ['count', Metric.RFQ_COUNT_1],
+      ['count', Metric.QUOTE_POST_ATTEMPT],
+      ['count', Metric.QUOTE_200],
+      ['timer', Metric.QUOTE_LATENCY],
+      ['timer', Metric.QUOTE_E2E_LATENCY],
+    ]);
   });
 
   it('Pick the greater of two quotes - EXACT_IN', async () => {
@@ -293,11 +326,11 @@ describe('Quote handler', () => {
       detail: 'No quotes available',
       errorCode: 'QUOTE_ERROR',
     });
+    // The 404 itself is counted by the base handler on the raw MetricsLogger, not through ctx.
+    expect(fakes.metrics.names()).toEqual([Metric.QUOTE_REQUESTED, Metric.RFQ_COUNT_0, Metric.QUOTE_E2E_LATENCY]);
   });
 
   it('emits QUOTE_E2E_LATENCY on both the 200 and the no-quote throw path', async () => {
-    const putMetricSpy = jest.spyOn(AWSMetricsLogger.prototype, 'putMetric');
-    const e2eCalls = () => putMetricSpy.mock.calls.filter((c) => c[0] === 'QUOTE_E2E_LATENCY');
     const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
 
     const ok = await getQuoteHandler([new MockQuoter(logger, 1, 1)]).handler(
@@ -305,13 +338,13 @@ describe('Quote handler', () => {
       {} as unknown as Context
     );
     expect(ok.statusCode).toEqual(200);
-    expect(e2eCalls()).toHaveLength(1);
+    expect(fakes.metrics.emitted(Metric.QUOTE_E2E_LATENCY)).toEqual(1);
 
     const notFound = await getQuoteHandler([]).handler(getEvent(request), {} as unknown as Context);
     expect(notFound.statusCode).toEqual(404);
-    expect(e2eCalls()).toHaveLength(2);
-
-    putMetricSpy.mockRestore();
+    expect(fakes.metrics.emitted(Metric.QUOTE_E2E_LATENCY)).toEqual(2);
+    // The alarmed QUOTE_LATENCY still fires only on the confirmed post.
+    expect(fakes.metrics.emitted(Metric.QUOTE_LATENCY)).toEqual(1);
   });
 
   describe('getCosignerData', () => {
@@ -489,6 +522,132 @@ describe('Quote handler', () => {
       await expect(
         getCosignerData(new HardQuoteRequest(request, OrderType.Dutch_V2), getQuoteResponse({}), OrderType.Dutch)
       ).rejects.toThrow('Unsupported order type');
+    });
+  });
+  // Bookkeeping for the fade breaker: one PostedOrders row per confirmed RFQ-won post.
+  describe('posted-order bookkeeping', () => {
+    it('records the posted order when the winning quote earned exclusivity', async () => {
+      const repository = new MockPostedOrderRepository();
+      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+      const order = getOrder({ cosigner: cosignerWallet.address });
+      const request = await getRequest(order);
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters, repository).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      expect(response.statusCode).toEqual(200);
+      const quoteResponse: HardQuoteResponseData = JSON.parse(response.body);
+      const cosignedOrder = CosignedV2DutchOrder.parse(quoteResponse.encodedOrder, CHAIN_ID);
+
+      expect(repository.records.size).toEqual(1);
+      const record = await repository.getPostedOrder(quoteResponse.orderHash);
+      expect(record).toEqual({
+        orderHash: cosignedOrder.hash(),
+        quoteId: quoteResponse.quoteId,
+        requestId: quoteResponse.requestId,
+        chainId: CHAIN_ID,
+        orderType: OrderType.Dutch_V2,
+        fillerAddress: MOCK_FILLER_ADDRESS,
+        // MockQuoter's metadata endpoint: the identity the breaker scores by
+        filler: 'https://uniswap.org',
+        fillerName: 'uniswap',
+        decayStartTime: cosignedOrder.info.cosignerData.decayStartTime,
+        deadline: order.info.deadline,
+        tokenIn: TOKEN_IN,
+        tokenOut: TOKEN_OUT,
+        postedAt: expect.any(Number),
+        outcome: PostedOrderOutcome.PENDING,
+      });
+
+      // The recorder's bookkeeping metrics ride the same ctx, and land before the alarmed
+      // QUOTE_LATENCY so that metric keeps including the write.
+      expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
+        ['count', Metric.QUOTE_REQUESTED],
+        // getBestQuote's quote-count metric, now through the same ctx
+        ['count', Metric.RFQ_COUNT_2],
+        ['count', Metric.QUOTE_POST_ATTEMPT],
+        ['count', Metric.QUOTE_200],
+        ['count', Metric.POSTED_ORDER_RECORDED],
+        ['timer', Metric.POSTED_ORDER_RECORD_LATENCY],
+        ['timer', Metric.QUOTE_LATENCY],
+        ['timer', Metric.QUOTE_E2E_LATENCY],
+      ]);
+    });
+
+    it('records nothing when the quote did not beat the swapper price (no exclusive filler)', async () => {
+      const repository = new MockPostedOrderRepository();
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler([new MockQuoter(logger, 1, 1)], repository).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      expect(response.statusCode).toEqual(200);
+      expect(JSON.parse(response.body).filler).toEqual(ethers.constants.AddressZero);
+      expect(repository.records.size).toEqual(0);
+    });
+
+    it('attributes the winning filler address to its endpoint on a confirmed exclusive post', async () => {
+      const addresses = new MockFillerAddressRepository();
+      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters, undefined, addresses).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+
+      expect(response.statusCode).toEqual(200);
+      expect([...addresses.addressToFiller.entries()]).toEqual([[MOCK_FILLER_ADDRESS, 'https://uniswap.org']]);
+    });
+
+    it('attributes nothing when the order posts open (no exclusive filler)', async () => {
+      const addresses = new MockFillerAddressRepository();
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(
+        [new MockQuoter(logger, 1, 1)],
+        undefined,
+        addresses
+      ).handler(getEvent(request), {} as unknown as Context);
+
+      expect(response.statusCode).toEqual(200);
+      expect(JSON.parse(response.body).filler).toEqual(ethers.constants.AddressZero);
+      expect(addresses.addressToFiller.size).toEqual(0);
+    });
+
+    it('a failing filler-address write does not affect the response', async () => {
+      const addresses = new MockFillerAddressRepository();
+      addresses.recordWinningAddress = async () => {
+        throw new Error('ProvisionedThroughputExceededException');
+      };
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(
+        [new MockQuoter(logger, 2, 1)],
+        undefined,
+        addresses
+      ).handler(getEvent(request), {} as unknown as Context);
+
+      expect(response.statusCode).toEqual(200);
+      expect(JSON.parse(response.body).filler).toEqual(MOCK_FILLER_ADDRESS);
+    });
+
+    it('a failing repository does not affect the response', async () => {
+      const repository = new MockPostedOrderRepository();
+      repository.putPostedOrder = async () => {
+        throw new Error('dynamo is down');
+      };
+      const quoters = [new MockQuoter(logger, 2, 1)];
+      const request = await getRequest(getOrder({ cosigner: cosignerWallet.address }));
+
+      const response: APIGatewayProxyResult = await getQuoteHandler(quoters, repository).handler(
+        getEvent(request),
+        {} as unknown as Context
+      );
+      expect(response.statusCode).toEqual(200);
+      expect(JSON.parse(response.body).filler).toEqual(MOCK_FILLER_ADDRESS);
     });
   });
 });

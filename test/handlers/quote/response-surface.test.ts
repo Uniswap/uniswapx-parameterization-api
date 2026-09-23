@@ -1,14 +1,13 @@
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import { ContainerInjected, PostQuoteRequestBody, RequestInjected } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { ProtocolVersion } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
+import { fakeContext } from '../../fakes';
 
 /**
  * Response-surface snapshots for POST /quote.
@@ -45,13 +44,14 @@ const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
 describe('/quote response surface', () => {
+  const fakes = fakeContext('test');
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         // Surfaces as the `id` field of every handler-level error body below.
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 

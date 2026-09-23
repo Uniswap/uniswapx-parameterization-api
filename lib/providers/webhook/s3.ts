@@ -1,9 +1,9 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { default as Logger } from 'bunyan';
 
 import { WebhookConfiguration, WebhookConfigurationProvider } from '.';
 import { Metric } from '../../entities/aws-metrics-logger';
+import { Context } from '../../observability';
 import { checkDefined } from '../../preconditions/preconditions';
 import { createConfigS3Client } from '../../util/config-s3-client';
 
@@ -28,13 +28,13 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     return this.endpoints.map((endpoint) => endpoint.endpoint);
   }
 
-  async getEndpoints(): Promise<WebhookConfiguration[]> {
+  async getEndpoints(ctx: Context): Promise<WebhookConfiguration[]> {
     if (
       this.endpoints.length === 0 ||
       Date.now() - this.lastUpdatedEndpointsTimestamp > S3WebhookConfigurationProvider.UPDATE_ENDPOINTS_PERIOD_MS
     ) {
       try {
-        await this.fetchEndpoints();
+        await this.fetchEndpoints(ctx);
       } catch (e: any) {
         // Fail open on the cached config: a stalled or failed refresh must never hold
         // or 500 the quote path. The next attempt is at the normal cadence — or on the
@@ -50,7 +50,7 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     return this.endpoints;
   }
 
-  async fetchEndpoints(): Promise<void> {
+  async fetchEndpoints(ctx: Context): Promise<void> {
     const s3Client = createConfigS3Client();
     const s3Res = await s3Client.send(
       new GetObjectCommand({
@@ -64,7 +64,7 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
     const previousEndpoints = this.endpoints;
     this.endpoints = JSON.parse(await s3Body.transformToString()) as WebhookConfiguration[];
     this.log.info({ endpoints: this.endpoints }, `Fetched ${this.endpoints.length} endpoints from S3`);
-    this.detectConfigChange(previousEndpoints);
+    this.detectConfigChange(ctx, previousEndpoints);
   }
 
   /**
@@ -78,14 +78,15 @@ export class S3WebhookConfigurationProvider implements WebhookConfigurationProvi
    * Best-effort by construction: this is observability on the hot quote path, so it
    * must never throw — a malformed config entry degrades to "no marker", not a 500.
    */
-  private detectConfigChange(previousEndpoints: WebhookConfiguration[]): void {
+  private detectConfigChange(ctx: Context, previousEndpoints: WebhookConfiguration[]): void {
     try {
       const signature = configSignature(this.endpoints);
       const previousSignature = this.configSignature;
       this.configSignature = signature;
       if (previousSignature === undefined || previousSignature === signature) return;
 
-      metric.putMetric(Metric.RFQ_CONFIG_CHANGED, 1, MetricLoggerUnit.Count);
+      // Fire-and-forget: this marker is best-effort and must not hold the refresh.
+      void ctx.metrics.count(Metric.RFQ_CONFIG_CHANGED);
       // null-safe: both payloads are unvalidated S3 JSON and may contain null or
       // name-less entries
       const toNames = (endpoints: WebhookConfiguration[]) => new Set(endpoints.map((e) => String(e?.name ?? '')));

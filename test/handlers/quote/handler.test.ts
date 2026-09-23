@@ -1,10 +1,9 @@
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import axios from 'axios';
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
+import { Metric } from '../../../lib/entities';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -17,7 +16,7 @@ import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
-import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
+import { fakeContext } from '../../fakes';
 import { MOCK_V2_CB_PROVIDER } from '../../fixtures';
 
 jest.mock('axios');
@@ -35,16 +34,16 @@ const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
 const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
-const repository = new MockFillerAddressRepository();
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
+  const fakes = fakeContext('test');
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 
@@ -85,6 +84,9 @@ describe('Quote handler', () => {
   });
 
   beforeEach(() => {
+    // One ctx is shared across the describe; every test starts from empty recordings.
+    fakes.metrics.reset();
+    fakes.logger.reset();
     // WebhookQuoter randomizes which side (real vs. opposing) is dispatched first; pin it
     // so the positional axios mocks in these tests (real request first) stay deterministic.
     jest.spyOn(Math, 'random').mockReturnValue(0);
@@ -128,32 +130,55 @@ describe('Quote handler', () => {
     const { allQuotes, ...quoteResponse }: PostQuoteResponseWithAllQuotes = JSON.parse(response.body);
     expect(response.statusCode).toEqual(200);
     expect(responseFromRequest(request, {})).toMatchObject({ ...quoteResponse, quoteId: expect.any(String) });
+
+    // The handler's own metrics go through ctx.metrics: the same names the IMetric path emitted,
+    // counts through count() and latencies through timer(), in the same order.
+    expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
+      ['count', Metric.QUOTE_REQUESTED],
+      // getBestQuote's quote-count metric, now through the same ctx
+      ['count', Metric.RFQ_COUNT_2],
+      ['count', Metric.QUOTE_200],
+      ['timer', Metric.QUOTE_LATENCY],
+      ['timer', Metric.QUOTE_E2E_LATENCY],
+    ]);
+    // ...and its request log line goes through ctx.logger with the same event and body.
+    const requestLog = fakes.logger.atLevel('info').find((r) => r.fields.eventType === 'QuoteRequest');
+    expect(requestLog?.bindings).toEqual({ requestId: 'test' });
+    expect(requestLog?.fields.body).toMatchObject({
+      requestId: REQUEST_ID,
+      tokenInChainId: CHAIN_ID,
+      tokenIn: TOKEN_IN,
+      tokenOut: TOKEN_OUT,
+      amount: amountIn.toString(),
+      type: 'EXACT_INPUT',
+      numOutputs: 1,
+    });
   });
 
   describe('QUOTE_E2E_LATENCY', () => {
-    const e2eCalls = (spy: jest.SpyInstance) => spy.mock.calls.filter((c) => c[0] === 'QUOTE_E2E_LATENCY');
-
     it('is emitted on the 200 path', async () => {
-      const putMetricSpy = jest.spyOn(AWSMetricsLogger.prototype, 'putMetric');
       const quoters = [new MockQuoter(logger, 1, 1)];
       const request = getRequest(ethers.utils.parseEther('1').toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
       const response = await getQuoteHandler(quoters).handler(getEvent(request), {} as unknown as Context);
 
       expect(response.statusCode).toEqual(200);
-      expect(e2eCalls(putMetricSpy)).toHaveLength(1);
+      expect(fakes.metrics.emitted(Metric.QUOTE_E2E_LATENCY)).toEqual(1);
     });
 
     it('is emitted on the 404 (no quotes) path, which QUOTE_LATENCY misses', async () => {
-      const putMetricSpy = jest.spyOn(AWSMetricsLogger.prototype, 'putMetric');
       const request = getRequest(ethers.utils.parseEther('1').toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
       const response = await getQuoteHandler([]).handler(getEvent(request), {} as unknown as Context);
 
       expect(response.statusCode).toEqual(404);
-      expect(e2eCalls(putMetricSpy)).toHaveLength(1);
-      const quoteLatencyCalls = putMetricSpy.mock.calls.filter((c) => c[0] === 'QUOTE_LATENCY');
-      expect(quoteLatencyCalls).toHaveLength(0);
+      expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
+        ['count', Metric.QUOTE_REQUESTED],
+        // getBestQuote's quote-count metric, now through the same ctx
+        ['count', Metric.RFQ_COUNT_0],
+        ['count', Metric.QUOTE_404],
+        ['timer', Metric.QUOTE_E2E_LATENCY],
+      ]);
     });
   });
 
@@ -253,7 +278,7 @@ describe('Quote handler', () => {
         { endpoint: 'https://foo.org', headers: {}, name: 'foo', hash: '0xfoo' },
       ]);
 
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
@@ -353,7 +378,7 @@ describe('Quote handler', () => {
           hash: '0xfoo',
         },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
@@ -424,7 +449,7 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -447,7 +472,7 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository)];
+      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -473,7 +498,7 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER),
         new MockQuoter(logger, 1, 1),
         new MockQuoter(logger, 1, 2),
       ];
@@ -504,7 +529,7 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -559,7 +584,7 @@ describe('Quote handler', () => {
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER, repository),
+        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');

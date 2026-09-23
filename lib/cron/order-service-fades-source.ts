@@ -1,0 +1,467 @@
+import { OrderType, PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
+import Logger from 'bunyan';
+import { ethers } from 'ethers';
+
+import { OrderServiceOrderStatus, OrderStatusProvider } from '../providers/order';
+import { ORDER_SERVICE_MAX_ORDER_HASHES } from '../providers/order/uniswapxService';
+import { ORDERS_PER_FILLER_LIMIT, V2FadesRowType } from '../repositories/fades-repository';
+import {
+  PostedOrderOutcome,
+  PostedOrderRecord,
+  PostedOrderRepository,
+  PostedOrderResolution,
+} from '../repositories/posted-order-repository';
+
+/**
+ * What the fade cron consumes: per-order rows in the shape of V2_FADE_RATE_SQL's result.
+ * V2FadesRepository (Redshift) satisfies this structurally; OrderServiceFadesSource is the
+ * GPA-owned implementation. Everything downstream (getFillersFadeStats, calculateNewTimestamps)
+ * is shared, so the two sources can only differ in the rows they produce.
+ */
+export interface FadesSource {
+  getFades(): Promise<V2FadesRowType[]>;
+}
+
+// Rolling window on order completion time, mirroring the view's
+// `deadline >= GETDATE() - INTERVAL '24 HOURS'`.
+export const FADE_WINDOW_SECS = 24 * 60 * 60;
+// Testnets the view drops: goerli, polygon goerli, optimism goerli, arbitrum goerli. Kept as
+// the same literal list as V2_CREATE_VIEW_SQL so the two sources cannot drift apart.
+export const EXCLUDED_TESTNET_CHAIN_IDS: readonly number[] = [5, 8001, 420, 421613];
+// Pending orders resolved per cron run. At ORDER_SERVICE_MAX_ORDER_HASHES per request this is
+// 20 requests; anything beyond it waits for the next run (the pending index is oldest-first,
+// so a backlog drains in deadline order).
+export const MAX_PENDING_RESOLUTIONS_PER_RUN = 1000;
+// Consecutive failed status batches after which the run stops calling the order service: the
+// remaining batches would only burn the time budget against a service that is down.
+export const MAX_CONSECUTIVE_BATCH_FAILURES = 3;
+// Runs an order may stay unresolved (still open past its deadline, unknown to the order service,
+// or unclassifiable) before the cron records it UNRESOLVED and stops asking. At the 10-minute
+// cadence this is ~3h: far longer than status-poller lag or a transient 404, far shorter than the
+// 48h TTL. Without it, one persistent unresolvable class (say, a new order type) would fill the
+// oldest-first pending read up to MAX_PENDING_RESOLUTIONS_PER_RUN and no newer order would ever
+// be resolved — every filler would drift to the Laplace prior with the cron reporting success.
+export const MAX_RESOLUTION_ATTEMPTS = 18;
+
+/** Order-service `orderStatus` values the classifier understands. */
+export const ORDER_STATUS = {
+  OPEN: 'open',
+  FILLED: 'filled',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+  INSUFFICIENT_FUNDS: 'insufficient-funds',
+  ERROR: 'error',
+} as const;
+
+// Lowercased permissioned-token addresses, compared chain-agnostically exactly as the SQL's
+// `LOWER(tokenIn) NOT IN (...)` does.
+const PERMISSIONED_TOKEN_ADDRESSES = new Set(PERMISSIONED_TOKENS.map((token) => token.address.toLowerCase()));
+
+export function isPermissionedToken(address: string): boolean {
+  return PERMISSIONED_TOKEN_ADDRESSES.has(address.toLowerCase());
+}
+
+export type Classification =
+  // Terminal status with a recordable outcome.
+  | { kind: 'resolved'; resolution: PostedOrderResolution }
+  // The order service still says `open` even though the deadline has passed: its status
+  // poller has not caught up yet. Leave the row pending and ask again next run.
+  | { kind: 'still-open' }
+  // A status we cannot score (unknown status string, unknown order type). Left pending so it is
+  // visible as a count; it expires with the row's TTL.
+  | { kind: 'unclassifiable'; reason: string };
+
+/**
+ * Maps an order-service status onto the breaker's fade rule for one posted order. Mirrors the
+ * `faded` CASE in V2_FADE_RATE_SQL:
+ *
+ *   status              | Dutch_V2                                | Dutch_V3
+ *   --------------------|-----------------------------------------|----------------------------------
+ *   filled              | faded iff fillTimestamp > decayStartTime| faded iff fillBlock > decayStartBlock
+ *   filled, no timing   | recorded, no verdict (see below)        | recorded, no verdict
+ *   expired             | faded                                   | faded
+ *   cancelled / insufficient-funds / error | recorded, no verdict (scored by policy flag; excluded
+ *                       |   by default, as production's SQL effectively excludes them)
+ *   open                | not terminal: stays pending             | stays pending
+ *   (any of the above unresolved for MAX_RESOLUTION_ATTEMPTS runs) -> UNRESOLVED: recorded, no row
+ *
+ * A fill AT the decay-start block/time is not a fade: the exclusive filler still paid the
+ * undecayed price (the SQL's `fillTimeBlocks > 0` / `decayStartTime < fillTimestamp`).
+ *
+ * "Filled, no timing": when the order service fails to process a fill event it still marks the
+ * order `filled`, with `fillBlock: -1`, no fillTimestamp and an empty txHash (check-order-status
+ * catch path). Such a fill is terminal — so it is recorded and stops being re-fetched — but it
+ * carries no verdict: it is neither a fade nor a clean fill and contributes no row, which is
+ * also what the Redshift path sees (no Fill Info log is ever emitted for it).
+ */
+export function classifyOutcome(
+  record: PostedOrderRecord,
+  status: OrderServiceOrderStatus,
+  resolvedAt: number
+): Classification {
+  const base = { orderStatus: status.orderStatus, resolvedAt };
+  switch (status.orderStatus) {
+    case ORDER_STATUS.OPEN:
+      return { kind: 'still-open' };
+    case ORDER_STATUS.EXPIRED:
+      return { kind: 'resolved', resolution: { ...base, outcome: PostedOrderOutcome.EXPIRED, faded: 1 } };
+    case ORDER_STATUS.CANCELLED:
+      return { kind: 'resolved', resolution: { ...base, outcome: PostedOrderOutcome.CANCELLED } };
+    case ORDER_STATUS.INSUFFICIENT_FUNDS:
+      return { kind: 'resolved', resolution: { ...base, outcome: PostedOrderOutcome.INSUFFICIENT_FUNDS } };
+    case ORDER_STATUS.ERROR:
+      return { kind: 'resolved', resolution: { ...base, outcome: PostedOrderOutcome.ERROR } };
+    case ORDER_STATUS.FILLED: {
+      if (record.orderType !== OrderType.Dutch_V3 && record.orderType !== OrderType.Dutch_V2) {
+        return { kind: 'unclassifiable', reason: `unknown order type ${record.orderType}` };
+      }
+      const fillBlock = status.fillBlock !== undefined && status.fillBlock >= 0 ? status.fillBlock : undefined;
+      const timing = { ...(fillBlock !== undefined && { fillBlock }), fillTimestamp: status.fillTimestamp };
+      const filled = { ...base, ...timing, outcome: PostedOrderOutcome.FILLED as const };
+      if (record.orderType === OrderType.Dutch_V3) {
+        if (fillBlock === undefined || record.decayStartBlock === undefined) {
+          return { kind: 'resolved', resolution: filled }; // filled, no verdict
+        }
+        return { kind: 'resolved', resolution: { ...filled, faded: fillBlock > record.decayStartBlock ? 1 : 0 } };
+      }
+      if (status.fillTimestamp === undefined || record.decayStartTime === undefined) {
+        return { kind: 'resolved', resolution: filled }; // filled, no verdict
+      }
+      return {
+        kind: 'resolved',
+        resolution: { ...filled, faded: status.fillTimestamp > record.decayStartTime ? 1 : 0 },
+      };
+    }
+    default:
+      return { kind: 'unclassifiable', reason: `unknown order status ${status.orderStatus}` };
+  }
+}
+
+export type FadeRowPolicy = {
+  // PARITY FLAG for cancelled / insufficient-funds / error orders. The SQL reads as if it scored
+  // every never-filled order as a fade (`fillTimestamp IS NULL`), but in production those three
+  // never reach `archivedorders` with token columns, so the permissioned-token filter drops them
+  // and they contribute no row at all. `false` reproduces that (the default); `true` scores them
+  // as fades. Expiries are not governed by this flag: they always count as fades.
+  countNeverFilledTerminalAsFade: boolean;
+};
+
+export const DEFAULT_FADE_ROW_POLICY: FadeRowPolicy = { countNeverFilledTerminalAsFade: false };
+
+/**
+ * The 0/1 the row builder scores an order as, or undefined when the order contributes no row
+ * (still pending, or a never-filled non-expiry under the policy that excludes them).
+ */
+export function fadedForScoring(record: PostedOrderRecord, policy: FadeRowPolicy): number | undefined {
+  switch (record.outcome) {
+    case PostedOrderOutcome.PENDING:
+      return undefined;
+    case PostedOrderOutcome.FILLED:
+    case PostedOrderOutcome.EXPIRED:
+      return record.faded;
+    case PostedOrderOutcome.CANCELLED:
+    case PostedOrderOutcome.INSUFFICIENT_FUNDS:
+    case PostedOrderOutcome.ERROR:
+      return policy.countNeverFilledTerminalAsFade ? 1 : undefined;
+    case PostedOrderOutcome.UNRESOLVED:
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Rebuilds V2_FADE_RATE_SQL's rows from PostedOrders records, in the SQL's order of operations:
+ *
+ *  1. completed orders only (deadline < now) — in-flight orders never consume window slots;
+ *  2. the ORDERS_PER_FILLER_LIMIT most recently posted orders per filler ADDRESS (the view
+ *     partitions by the exclusive filler address, before any other filter — so a permissioned
+ *     token order or a not-yet-resolved order still occupies a slot);
+ *  3. then the 24h completion window, testnets, the zero filler, missing quoteId, the
+ *     permissioned-token lists (both legs), and orders with no recorded outcome (the SQL's
+ *     LEFT JOIN drops rows that have not landed in archivedorders yet).
+ *
+ * Output rows are exactly V2FadesRowType, ordered by filler address then deadline desc like
+ * the SQL. `postTimestamp` is GPA's post-confirmation time; the SQL's `createdat` is the order
+ * service's, which can trail or lead by a second or two — callers match rows on
+ * (fillerAddress, deadline), not on postTimestamp.
+ */
+export function buildFadeRows(
+  records: PostedOrderRecord[],
+  args: { now: number; policy?: FadeRowPolicy }
+): V2FadesRowType[] {
+  const { now } = args;
+  const policy = args.policy ?? DEFAULT_FADE_ROW_POLICY;
+  const windowStart = now - FADE_WINDOW_SECS;
+
+  const byAddress = new Map<string, PostedOrderRecord[]>();
+  records
+    .filter((record) => record.deadline < now)
+    .forEach((record) => {
+      const key = record.fillerAddress.toLowerCase();
+      byAddress.set(key, [...(byAddress.get(key) ?? []), record]);
+    });
+
+  const rows: V2FadesRowType[] = [];
+  byAddress.forEach((orders) => {
+    orders
+      .sort(byMostRecentlyPosted)
+      .slice(0, ORDERS_PER_FILLER_LIMIT)
+      .forEach((record) => {
+        if (record.deadline < windowStart) return;
+        if (EXCLUDED_TESTNET_CHAIN_IDS.includes(record.chainId)) return;
+        if (record.fillerAddress === ethers.constants.AddressZero) return;
+        if (!record.quoteId) return;
+        if (isPermissionedToken(record.tokenIn) || isPermissionedToken(record.tokenOut)) return;
+        const faded = fadedForScoring(record, policy);
+        if (faded === undefined) return;
+        rows.push({
+          fillerAddress: record.fillerAddress,
+          faded,
+          postTimestamp: record.postedAt,
+          deadline: record.deadline,
+          orderHash: record.orderHash,
+        });
+      });
+  });
+
+  return rows.sort(
+    (a, b) => a.fillerAddress.toLowerCase().localeCompare(b.fillerAddress.toLowerCase()) || b.deadline - a.deadline
+  );
+}
+
+// createdat DESC in the view; ties broken deterministically so a re-run yields the same slots.
+function byMostRecentlyPosted(a: PostedOrderRecord, b: PostedOrderRecord): number {
+  return b.postedAt - a.postedAt || b.deadline - a.deadline || a.orderHash.localeCompare(b.orderHash);
+}
+
+export type ResolutionSummary = {
+  // Pending orders past their deadline at the start of the run (capped at
+  // MAX_PENDING_RESOLUTIONS_PER_RUN, so a value at the cap means a backlog).
+  pendingPastDeadline: number;
+  // The read hit MAX_PENDING_RESOLUTIONS_PER_RUN: there were more past-deadline pending orders
+  // than one run looks at. Transient after an outage; sustained means resolution cannot keep up.
+  pendingSaturated: boolean;
+  batches: number;
+  failedBatches: number;
+  // Batches never sent because the time budget ran out or the service kept failing.
+  skippedBatches: number;
+  resolved: number;
+  // Past the deadline but the service still reports `open`: poller lag. Left pending.
+  stillOpen: number;
+  // The service returned nothing for the hash. Left pending; a persistent count here means
+  // GPA and the order service disagree about what was posted.
+  notFound: number;
+  unclassifiable: number;
+  // Terminal `filled` orders the service could not attach timing to (fillBlock -1): recorded,
+  // excluded from scoring. A rising count means the order service's fill processing is failing.
+  fillsWithoutVerdict: number;
+  // Orders recorded UNRESOLVED this run after MAX_RESOLUTION_ATTEMPTS runs without a usable status.
+  givenUp: number;
+  failedWrites: number;
+  byOutcome: Partial<Record<PostedOrderOutcome, number>>;
+};
+
+export interface OrderServiceFadesSourceDeps {
+  postedOrders: PostedOrderRepository;
+  orderStatus: OrderStatusProvider;
+  // Filler identities (webhook endpoints) to load rows for: the same list the cron scores.
+  fillerEndpoints: () => string[];
+  log: Logger;
+  now?: () => number;
+  policy?: FadeRowPolicy;
+}
+
+/**
+ * Fade rows from GPA-owned data. Each getFades() first resolves pending orders past their
+ * deadline against the order service (persisting outcomes so every order is fetched once),
+ * then rebuilds the SQL's per-filler rows from the 24h window of resolved orders.
+ */
+export class OrderServiceFadesSource implements FadesSource {
+  public lastResolution?: ResolutionSummary;
+  // Wallclock (ms) after which no further order-service batches are started; set by the
+  // caller before each getFades(). Resolution is best-effort per run: what is not resolved
+  // now is resolved next run.
+  public deadlineMs?: number;
+  private readonly now: () => number;
+  private readonly policy: FadeRowPolicy;
+
+  constructor(private readonly deps: OrderServiceFadesSourceDeps) {
+    this.now = deps.now ?? (() => Math.floor(Date.now() / 1000));
+    this.policy = deps.policy ?? DEFAULT_FADE_ROW_POLICY;
+  }
+
+  async getFades(): Promise<V2FadesRowType[]> {
+    const now = this.now();
+    this.lastResolution = await this.resolvePendingOutcomes(now);
+    const records = await this.loadCompletedWindow(now);
+    const rows = buildFadeRows(records, { now, policy: this.policy });
+    this.deps.log.info(
+      { records: records.length, rows: rows.length, resolution: this.lastResolution },
+      'order-service fade rows'
+    );
+    return rows;
+  }
+
+  /** Every order for the scored fillers whose deadline fell in [now - 24h, now). */
+  async loadCompletedWindow(now: number): Promise<PostedOrderRecord[]> {
+    const endpoints = [...new Set(this.deps.fillerEndpoints())];
+    const perFiller = await Promise.all(
+      endpoints.map((filler) =>
+        this.deps.postedOrders.getFillerOrdersByDeadline(filler, now - FADE_WINDOW_SECS, now - 1)
+      )
+    );
+    // Rows are keyed by orderHash, so the union is already distinct per filler; dedupe anyway
+    // in case two endpoint strings ever alias the same filler.
+    const byHash = new Map<string, PostedOrderRecord>();
+    perFiller.flat().forEach((record) => byHash.set(record.orderHash, record));
+    return [...byHash.values()];
+  }
+
+  /**
+   * Resolves pending orders past their deadline: batches of ORDER_SERVICE_MAX_ORDER_HASHES to
+   * the order service, one idempotent outcome write per terminal order. Stops early on the
+   * time budget or repeated service failures; leftovers are picked up next run.
+   */
+  async resolvePendingOutcomes(now: number): Promise<ResolutionSummary> {
+    const { postedOrders, orderStatus, log } = this.deps;
+    const summary: ResolutionSummary = {
+      pendingPastDeadline: 0,
+      pendingSaturated: false,
+      batches: 0,
+      failedBatches: 0,
+      skippedBatches: 0,
+      resolved: 0,
+      stillOpen: 0,
+      notFound: 0,
+      unclassifiable: 0,
+      fillsWithoutVerdict: 0,
+      givenUp: 0,
+      failedWrites: 0,
+      byOutcome: {},
+    };
+
+    const pending = await postedOrders.getPendingPastDeadline(now, MAX_PENDING_RESOLUTIONS_PER_RUN);
+    summary.pendingPastDeadline = pending.length;
+    summary.pendingSaturated = pending.length >= MAX_PENDING_RESOLUTIONS_PER_RUN;
+
+    // One more failed attempt for an order that stays pending; after MAX_RESOLUTION_ATTEMPTS it
+    // is recorded UNRESOLVED so it leaves the pending index instead of blocking newer orders.
+    const noteUnresolved = async (
+      record: PostedOrderRecord,
+      status: OrderServiceOrderStatus | undefined,
+      reason: string
+    ) => {
+      try {
+        const attempts = await postedOrders.recordUnresolvedAttempt(record.orderHash, now);
+        if (attempts >= MAX_RESOLUTION_ATTEMPTS) {
+          await postedOrders.recordOutcome(record.orderHash, {
+            outcome: PostedOrderOutcome.UNRESOLVED,
+            orderStatus: status?.orderStatus ?? 'not-found',
+            resolvedAt: now,
+          });
+          summary.givenUp += 1;
+          summary.byOutcome[PostedOrderOutcome.UNRESOLVED] =
+            (summary.byOutcome[PostedOrderOutcome.UNRESOLVED] ?? 0) + 1;
+          log.warn({ orderHash: record.orderHash, status, reason, attempts }, 'giving up on unresolved order');
+        }
+      } catch (e) {
+        summary.failedWrites += 1;
+        log.warn(
+          { orderHash: record.orderHash, error: e instanceof Error ? e.message : e },
+          'failed to record unresolved attempt'
+        );
+      }
+    };
+
+    const batches = chunk(pending, ORDER_SERVICE_MAX_ORDER_HASHES);
+    let consecutiveFailures = 0;
+    for (let i = 0; i < batches.length; i++) {
+      if (this.deadlineMs !== undefined && Date.now() >= this.deadlineMs) {
+        summary.skippedBatches = batches.length - i;
+        log.warn({ skippedBatches: summary.skippedBatches }, 'order-service resolution stopped: time budget exhausted');
+        break;
+      }
+      if (consecutiveFailures >= MAX_CONSECUTIVE_BATCH_FAILURES) {
+        summary.skippedBatches = batches.length - i;
+        log.warn({ skippedBatches: summary.skippedBatches }, 'order-service resolution stopped: service failing');
+        break;
+      }
+
+      const batch = batches[i];
+      summary.batches += 1;
+      let statuses: OrderServiceOrderStatus[];
+      try {
+        statuses = await orderStatus.getOrdersByHashes(batch.map((record) => record.orderHash));
+        consecutiveFailures = 0;
+      } catch (e) {
+        summary.failedBatches += 1;
+        consecutiveFailures += 1;
+        log.warn(
+          { error: e instanceof Error ? e.message : e, batch: batch.length },
+          'order-service status batch failed'
+        );
+        continue;
+      }
+      const byHash = new Map(statuses.map((status) => [status.orderHash.toLowerCase(), status]));
+
+      const writes = batch.map(async (record) => {
+        const status = byHash.get(record.orderHash.toLowerCase());
+        if (!status) {
+          summary.notFound += 1;
+          await noteUnresolved(record, undefined, 'not found');
+          return;
+        }
+        const classification = classifyOutcome(record, status, now);
+        switch (classification.kind) {
+          case 'still-open':
+            summary.stillOpen += 1;
+            await noteUnresolved(record, status, 'still open');
+            return;
+          case 'unclassifiable':
+            summary.unclassifiable += 1;
+            log.warn(
+              { orderHash: record.orderHash, status, reason: classification.reason },
+              'unclassifiable order outcome'
+            );
+            await noteUnresolved(record, status, classification.reason);
+            return;
+          case 'resolved': {
+            const { resolution } = classification;
+            try {
+              await postedOrders.recordOutcome(record.orderHash, resolution);
+              summary.resolved += 1;
+              summary.byOutcome[resolution.outcome] = (summary.byOutcome[resolution.outcome] ?? 0) + 1;
+              if (resolution.outcome === PostedOrderOutcome.FILLED && resolution.faded === undefined) {
+                summary.fillsWithoutVerdict += 1;
+                log.warn(
+                  { orderHash: record.orderHash, status },
+                  'filled order without fill timing; recorded without verdict'
+                );
+              }
+            } catch (e) {
+              summary.failedWrites += 1;
+              log.warn(
+                { orderHash: record.orderHash, error: e instanceof Error ? e.message : e },
+                'failed to record order outcome'
+              );
+            }
+            return;
+          }
+        }
+      });
+      await Promise.all(writes);
+    }
+
+    log.info({ summary }, 'resolved pending order outcomes');
+    return summary;
+  }
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}

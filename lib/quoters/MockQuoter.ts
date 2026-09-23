@@ -3,6 +3,7 @@ import { BigNumber } from 'ethers';
 
 import { Quoter, QuoterType } from '.';
 import { QuoteRequest, QuoteResponse } from '../entities';
+import { Context } from '../observability';
 
 export const MOCK_FILLER_ADDRESS = '0x0000000000000000000000000000000000000001';
 const METADATA = {
@@ -18,7 +19,7 @@ export class MockQuoter implements Quoter {
     this.log = _log.child({ quoter: 'MockQuoter' });
   }
 
-  public async quote(request: QuoteRequest): Promise<QuoteResponse[]> {
+  public async quote(_ctx: Context, request: QuoteRequest): Promise<QuoteResponse[]> {
     const amountQuoted =
       this.denominator && this.numerator ? request.amount.mul(this.numerator).div(this.denominator) : BigNumber.from(1);
 
