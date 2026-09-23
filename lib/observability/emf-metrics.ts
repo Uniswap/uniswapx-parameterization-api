@@ -8,9 +8,9 @@ import { MetricOptions, Metrics } from './metrics';
  *
  * Delegation, not a new sink: the MetricsLogger passed in is the one the injector has already
  * configured (namespace, the Service / Service+ChainId / dimensionless dimension sets), so a
- * metric emitted here lands in the same EMF blob, under the same dimension sets, as one emitted
- * through the smart-order-router global — and every (name, value, unit) tuple is the one the
- * handlers emitted before the switch: count -> Count, timer -> Milliseconds, gauge -> None.
+ * metric emitted here lands in the same EMF blob, under the same dimension sets, as the
+ * smart-order-router IMetric it replaced — and every (name, value, unit) tuple is the one the
+ * request path emitted before the switch: count -> Count, timer -> Milliseconds, gauge -> None.
  *
  * Tags and dimensions in `opts` are accepted and dropped. EMF has no per-metric tags: dimension
  * sets are the injector's and out of scope here, and EMF properties are per-blob, so two metrics

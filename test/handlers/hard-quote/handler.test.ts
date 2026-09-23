@@ -1,7 +1,6 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
 import { CosignedV2DutchOrder, CosignerData, OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 // import axios from 'axios';
 import { default as Logger } from 'bunyan';
@@ -9,7 +8,6 @@ import { BigNumber, ethers, Wallet } from 'ethers';
 
 import { KmsSigner } from '@uniswap/signer';
 import { HardQuoteRequest, Metric, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -75,7 +73,6 @@ describe('Quote handler', () => {
       resolve({
         log: logger,
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
         ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
@@ -164,6 +161,8 @@ describe('Quote handler', () => {
     // granted, so the recorder emitted nothing.
     expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
       ['count', Metric.QUOTE_REQUESTED],
+      // getBestQuote's quote-count metric, now through the same ctx
+      ['count', Metric.RFQ_COUNT_1],
       ['count', Metric.QUOTE_POST_ATTEMPT],
       ['count', Metric.QUOTE_200],
       ['timer', Metric.QUOTE_LATENCY],
@@ -328,7 +327,7 @@ describe('Quote handler', () => {
       errorCode: 'QUOTE_ERROR',
     });
     // The 404 itself is counted by the base handler on the raw MetricsLogger, not through ctx.
-    expect(fakes.metrics.names()).toEqual([Metric.QUOTE_REQUESTED, Metric.QUOTE_E2E_LATENCY]);
+    expect(fakes.metrics.names()).toEqual([Metric.QUOTE_REQUESTED, Metric.RFQ_COUNT_0, Metric.QUOTE_E2E_LATENCY]);
   });
 
   it('emits QUOTE_E2E_LATENCY on both the 200 and the no-quote throw path', async () => {
@@ -565,6 +564,8 @@ describe('Quote handler', () => {
       // QUOTE_LATENCY so that metric keeps including the write.
       expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
         ['count', Metric.QUOTE_REQUESTED],
+        // getBestQuote's quote-count metric, now through the same ctx
+        ['count', Metric.RFQ_COUNT_2],
         ['count', Metric.QUOTE_POST_ATTEMPT],
         ['count', Metric.QUOTE_200],
         ['count', Metric.POSTED_ORDER_RECORDED],

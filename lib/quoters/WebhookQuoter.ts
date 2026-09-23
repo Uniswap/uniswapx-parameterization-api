@@ -1,5 +1,4 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { ethers } from 'ethers';
@@ -18,6 +17,7 @@ import {
   QuoteResponse,
   WebhookResponseType,
 } from '../entities';
+import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { FirehoseLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
@@ -69,12 +69,13 @@ export class WebhookQuoter implements Quoter {
   }
 
   public async quote(
+    ctx: Context,
     request: QuoteRequest,
     provider?: ethers.providers.StaticJsonRpcProvider
   ): Promise<QuoteResponse[]> {
     const beforeStatuses = Date.now();
-    const statuses = await this.getEndpointStatuses();
-    metric.putMetric(Metric.RFQ_PHASE_ENDPOINT_STATUSES, Date.now() - beforeStatuses, MetricLoggerUnit.Milliseconds);
+    const statuses = await this.getEndpointStatuses(ctx);
+    await ctx.metrics.timer(Metric.RFQ_PHASE_ENDPOINT_STATUSES, Date.now() - beforeStatuses);
 
     // Ignore endpoint status if token is permissioned
     const isPermissionedToken =
@@ -93,17 +94,17 @@ export class WebhookQuoter implements Quoter {
     );
 
     const beforeFanout = Date.now();
-    const outcomes = (await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(e, request, provider)))).filter(
-      (o): o is FetchOutcome => o !== null
-    );
+    const outcomes = (
+      await Promise.all(enabledEndpoints.map((e) => this.fetchQuote(ctx, e, request, provider)))
+    ).filter((o): o is FetchOutcome => o !== null);
     const fanoutWallMs = Date.now() - beforeFanout;
-    metric.putMetric(Metric.RFQ_PHASE_FANOUT, fanoutWallMs, MetricLoggerUnit.Milliseconds);
+    await ctx.metrics.timer(Metric.RFQ_PHASE_FANOUT, fanoutWallMs);
 
     if (outcomes.length > 0) {
       const { wastedWaitMs, stragglerName } = deriveFanoutStats(outcomes, fanoutWallMs);
-      metric.putMetric(Metric.RFQ_WASTED_WAIT, wastedWaitMs, MetricLoggerUnit.Milliseconds);
-      metric.putMetric(Metric.RFQ_STRAGGLER, 1, MetricLoggerUnit.Count);
-      metric.putMetric(metricContext(Metric.RFQ_STRAGGLER, stragglerName), 1, MetricLoggerUnit.Count);
+      await ctx.metrics.timer(Metric.RFQ_WASTED_WAIT, wastedWaitMs);
+      await ctx.metrics.count(Metric.RFQ_STRAGGLER);
+      await ctx.metrics.count(metricContext(Metric.RFQ_STRAGGLER, stragglerName));
     }
 
     // should not await and block
@@ -120,8 +121,8 @@ export class WebhookQuoter implements Quoter {
     return QuoterType.RFQ;
   }
 
-  private async getEndpointStatuses(): Promise<EndpointStatuses> {
-    const endpoints = await this.webhookProvider.getEndpoints();
+  private async getEndpointStatuses(ctx: Context): Promise<EndpointStatuses> {
+    const endpoints = await this.webhookProvider.getEndpoints(ctx);
     return this.circuitBreakerProvider.getEndpointStatuses(endpoints);
   }
 
@@ -129,6 +130,7 @@ export class WebhookQuoter implements Quoter {
   // mismatch); once a webhook request goes out, every path returns a FetchOutcome so the
   // caller can attribute fan-out wall time (response is null on non-quote/invalid/error).
   private async fetchQuote(
+    ctx: Context,
     config: WebhookConfiguration,
     request: QuoteRequest,
     provider?: ethers.providers.StaticJsonRpcProvider
@@ -153,8 +155,8 @@ export class WebhookQuoter implements Quoter {
       return null;
     }
 
-    metric.putMetric(Metric.RFQ_REQUESTED, 1, MetricLoggerUnit.Count);
-    metric.putMetric(metricContext(Metric.RFQ_REQUESTED, name), 1, MetricLoggerUnit.Count);
+    await ctx.metrics.count(Metric.RFQ_REQUESTED);
+    await ctx.metrics.count(metricContext(Metric.RFQ_REQUESTED, name));
 
     const cleanRequest = request.toCleanJSON();
     cleanRequest.quoteId = uuidv4();
@@ -212,12 +214,8 @@ export class WebhookQuoter implements Quoter {
       const hookResponse = realRequestFirst ? firstResponse : secondResponse;
       const opposite = realRequestFirst ? secondResponse : firstResponse;
 
-      metric.putMetric(Metric.RFQ_RESPONSE_TIME, Date.now() - before, MetricLoggerUnit.Milliseconds);
-      metric.putMetric(
-        metricContext(Metric.RFQ_RESPONSE_TIME, name),
-        Date.now() - before,
-        MetricLoggerUnit.Milliseconds
-      );
+      await ctx.metrics.timer(Metric.RFQ_RESPONSE_TIME, Date.now() - before);
+      await ctx.metrics.timer(metricContext(Metric.RFQ_RESPONSE_TIME, name), Date.now() - before);
 
       log.info({ response: hookResponse.data, status: hookResponse.status }, `Raw webhook response from: ${endpoint}`);
       const rawResponse = {
@@ -251,8 +249,8 @@ export class WebhookQuoter implements Quoter {
 
       // RFQ provider explicitly elected not to quote
       if (isNonQuote(request, hookResponse, response)) {
-        metric.putMetric(Metric.RFQ_NON_QUOTE, 1, MetricLoggerUnit.Count);
-        metric.putMetric(metricContext(Metric.RFQ_NON_QUOTE, name), 1, MetricLoggerUnit.Count);
+        await ctx.metrics.count(Metric.RFQ_NON_QUOTE);
+        await ctx.metrics.count(metricContext(Metric.RFQ_NON_QUOTE, name));
         log.info(
           {
             response: hookResponse.data,
@@ -273,8 +271,8 @@ export class WebhookQuoter implements Quoter {
       // RFQ provider response failed validation
       if (validationError || validatePermissionedTokensError) {
         const error = validationError || validatePermissionedTokensError;
-        metric.putMetric(Metric.RFQ_FAIL_VALIDATION, 1, MetricLoggerUnit.Count);
-        metric.putMetric(metricContext(Metric.RFQ_FAIL_VALIDATION, name), 1, MetricLoggerUnit.Count);
+        await ctx.metrics.count(Metric.RFQ_FAIL_VALIDATION);
+        await ctx.metrics.count(metricContext(Metric.RFQ_FAIL_VALIDATION, name));
         log.error(
           {
             error,
@@ -299,8 +297,8 @@ export class WebhookQuoter implements Quoter {
       // id, not the echoed one), so the caller and downstream logs see the real id with no
       // post-hoc fixup needed.
       if (hookResponse.data?.requestId !== realWireRequest.requestId) {
-        metric.putMetric(Metric.RFQ_FAIL_REQUEST_MATCH, 1, MetricLoggerUnit.Count);
-        metric.putMetric(metricContext(Metric.RFQ_FAIL_REQUEST_MATCH, name), 1, MetricLoggerUnit.Count);
+        await ctx.metrics.count(Metric.RFQ_FAIL_REQUEST_MATCH);
+        await ctx.metrics.count(metricContext(Metric.RFQ_FAIL_REQUEST_MATCH, name));
         log.error(
           {
             requestId: request.requestId,
@@ -322,8 +320,8 @@ export class WebhookQuoter implements Quoter {
 
       const quote = request.type === TradeType.EXACT_INPUT ? response.amountOut : response.amountIn;
 
-      metric.putMetric(Metric.RFQ_SUCCESS, 1, MetricLoggerUnit.Count);
-      metric.putMetric(metricContext(Metric.RFQ_SUCCESS, name), 1, MetricLoggerUnit.Count);
+      await ctx.metrics.count(Metric.RFQ_SUCCESS);
+      await ctx.metrics.count(metricContext(Metric.RFQ_SUCCESS, name));
       log.info(
         {
           response: response.toLog(),
@@ -379,8 +377,8 @@ export class WebhookQuoter implements Quoter {
 
       return { response, name, latencyMs: rawResponse.latencyMs, timedOut: false };
     } catch (e) {
-      metric.putMetric(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
-      metric.putMetric(metricContext(Metric.RFQ_FAIL_ERROR, name), 1, MetricLoggerUnit.Count);
+      void ctx.metrics.count(Metric.RFQ_FAIL_ERROR);
+      void ctx.metrics.count(metricContext(Metric.RFQ_FAIL_ERROR, name));
       const errorLatency = {
         responseTime: timestampInMstoISOString(Date.now()),
         latencyMs: Date.now() - before,
@@ -390,8 +388,8 @@ export class WebhookQuoter implements Quoter {
       // times out holds the fan-out open for the full timeout budget — it is the
       // wasted-wait driver, while other errors typically fail fast.
       if (timedOut) {
-        metric.putMetric(Metric.RFQ_TIMEOUT, 1, MetricLoggerUnit.Count);
-        metric.putMetric(metricContext(Metric.RFQ_TIMEOUT, name), 1, MetricLoggerUnit.Count);
+        void ctx.metrics.count(Metric.RFQ_TIMEOUT);
+        void ctx.metrics.count(metricContext(Metric.RFQ_TIMEOUT, name));
       }
       if (e instanceof AxiosError) {
         log.error(

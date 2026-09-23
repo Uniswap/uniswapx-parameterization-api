@@ -1,9 +1,9 @@
 import { S3Client } from '@aws-sdk/client-s3';
-import { metric } from '@uniswap/smart-order-router';
 import { default as Logger } from 'bunyan';
 
 import { Metric } from '../../../lib/entities';
 import { S3WebhookConfigurationProvider, WebhookConfiguration } from '../../../lib/providers';
+import { fakeContext } from '../../fakes';
 
 const mockEndpoints = [
   {
@@ -38,6 +38,11 @@ logger.level(Logger.FATAL);
 describe('S3WebhookConfigurationProvider', () => {
   const bucket = 'test-bucket';
   const key = 'test-key';
+  // The ctx of the call that triggers a refresh; the config-change marker reports through it.
+  const fakes = fakeContext('test');
+  const configChanges = () => fakes.metrics.calls.filter((c) => c.name === Metric.RFQ_CONFIG_CHANGED);
+
+  beforeEach(() => fakes.metrics.reset());
 
   afterEach(() => {
     jest.clearAllMocks();
@@ -49,23 +54,23 @@ describe('S3WebhookConfigurationProvider', () => {
   it('Fetches endpoints', async () => {
     applyMock(mockEndpoints);
     const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-    const endpoints = await provider.getEndpoints();
+    const endpoints = await provider.getEndpoints(fakes.ctx);
     expect(endpoints).toEqual(mockEndpoints);
   });
 
   it('Caches fetched endpoints', async () => {
     applyMock(mockEndpoints);
     const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-    let endpoints = await provider.getEndpoints();
+    let endpoints = await provider.getEndpoints(fakes.ctx);
     expect(endpoints).toEqual(mockEndpoints);
-    endpoints = await provider.getEndpoints();
+    endpoints = await provider.getEndpoints(fakes.ctx);
     expect(endpoints).toEqual(mockEndpoints);
   });
 
   it('Refetches after cache expires', async () => {
     applyMock(mockEndpoints);
     const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-    let endpoints = await provider.getEndpoints();
+    let endpoints = await provider.getEndpoints(fakes.ctx);
     expect(endpoints).toEqual(mockEndpoints);
 
     const updatedEndpoints = [
@@ -82,12 +87,12 @@ describe('S3WebhookConfigurationProvider', () => {
     applyMock(updatedEndpoints);
 
     // still original
-    endpoints = await provider.getEndpoints();
+    endpoints = await provider.getEndpoints(fakes.ctx);
     expect(endpoints).toEqual(mockEndpoints);
 
     // now updates after date changes
     jest.useFakeTimers().setSystemTime(Date.now() + 1000000);
-    endpoints = await provider.getEndpoints();
+    endpoints = await provider.getEndpoints(fakes.ctx);
     expect(endpoints).toEqual(updatedEndpoints);
   });
 
@@ -103,41 +108,41 @@ describe('S3WebhookConfigurationProvider', () => {
     it('keeps serving the cached endpoints and does not throw when the refresh fails', async () => {
       applyMock(mockEndpoints);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
 
       expireCache();
       applyFailure();
-      await expect(provider.getEndpoints()).resolves.toEqual(mockEndpoints);
+      await expect(provider.getEndpoints(fakes.ctx)).resolves.toEqual(mockEndpoints);
     });
 
     it('does not retry on every request after a failed refresh — the next attempt waits for the cadence', async () => {
       applyMock(mockEndpoints);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
 
       expireCache();
       applyFailure();
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
       const sendSpy = jest.spyOn(S3Client.prototype, 'send');
       // initial fetch + the failed refresh
       expect(sendSpy).toHaveBeenCalledTimes(2);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
       expect(sendSpy).toHaveBeenCalledTimes(2);
     });
 
     it('does not throw on a cold-start failure; returns no endpoints and retries on the next request', async () => {
       applyFailure();
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await expect(provider.getEndpoints()).resolves.toEqual([]);
+      await expect(provider.getEndpoints(fakes.ctx)).resolves.toEqual([]);
 
       applyMock(mockEndpoints);
-      await expect(provider.getEndpoints()).resolves.toEqual(mockEndpoints);
+      await expect(provider.getEndpoints(fakes.ctx)).resolves.toEqual(mockEndpoints);
     });
 
     it('fetchEndpoints itself still throws, so the cron sees S3 failures', async () => {
       applyFailure();
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await expect(provider.fetchEndpoints()).rejects.toThrow('TimeoutError');
+      await expect(provider.fetchEndpoints(fakes.ctx)).rejects.toThrow('TimeoutError');
     });
   });
 
@@ -151,55 +156,49 @@ describe('S3WebhookConfigurationProvider', () => {
     });
 
     it('does not emit on the first fetch after cold start', async () => {
-      const putMetricSpy = jest.spyOn(metric, 'putMetric');
       applyMock(mockEndpoints);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
-      expect(putMetricSpy).not.toHaveBeenCalledWith(Metric.RFQ_CONFIG_CHANGED, expect.anything(), expect.anything());
+      await provider.getEndpoints(fakes.ctx);
+      expect(configChanges()).toEqual([]);
     });
 
     it('emits RFQ_CONFIG_CHANGED once when a refresh observes a different config', async () => {
-      const putMetricSpy = jest.spyOn(metric, 'putMetric');
       applyMock(mockEndpoints);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
 
       expireCache();
       applyMock(changedEndpoints);
-      await provider.getEndpoints();
-      const changeCalls = putMetricSpy.mock.calls.filter((c) => c[0] === Metric.RFQ_CONFIG_CHANGED);
-      expect(changeCalls).toHaveLength(1);
+      await provider.getEndpoints(fakes.ctx);
+      expect(configChanges()).toEqual([expect.objectContaining({ kind: 'count', value: 1 })]);
     });
 
     it('does not emit when a refresh returns an identical config', async () => {
-      const putMetricSpy = jest.spyOn(metric, 'putMetric');
       applyMock(mockEndpoints);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
 
       expireCache();
       applyMock(mockEndpoints);
-      await provider.getEndpoints();
-      expect(putMetricSpy).not.toHaveBeenCalledWith(Metric.RFQ_CONFIG_CHANGED, expect.anything(), expect.anything());
+      await provider.getEndpoints(fakes.ctx);
+      expect(configChanges()).toEqual([]);
     });
 
     it('ignores config order differences', async () => {
-      const putMetricSpy = jest.spyOn(metric, 'putMetric');
       applyMock(mockEndpoints);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
 
       expireCache();
       applyMock([...mockEndpoints].reverse());
-      await provider.getEndpoints();
-      expect(putMetricSpy).not.toHaveBeenCalledWith(Metric.RFQ_CONFIG_CHANGED, expect.anything(), expect.anything());
+      await provider.getEndpoints(fakes.ctx);
+      expect(configChanges()).toEqual([]);
     });
 
     it('ignores unknown extra fields and key reordering within entries', async () => {
-      const putMetricSpy = jest.spyOn(metric, 'putMetric');
       applyMock(mockEndpoints);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
 
       expireCache();
       // same fillers, but keys reordered and an unrelated field added by the config repo
@@ -208,32 +207,47 @@ describe('S3WebhookConfigurationProvider', () => {
         return { ...rest, name, comment: 'added by config tooling' };
       }) as unknown as WebhookConfiguration[];
       applyMock(cosmeticallyDifferent);
-      await provider.getEndpoints();
-      expect(putMetricSpy).not.toHaveBeenCalledWith(Metric.RFQ_CONFIG_CHANGED, expect.anything(), expect.anything());
+      await provider.getEndpoints(fakes.ctx);
+      expect(configChanges()).toEqual([]);
     });
 
     it('emits when fan-out-affecting fields change (chainIds)', async () => {
-      const putMetricSpy = jest.spyOn(metric, 'putMetric');
       applyMock(mockEndpoints);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
 
       expireCache();
       applyMock([{ ...mockEndpoints[0], chainIds: [1, 8453] }, mockEndpoints[1]]);
-      await provider.getEndpoints();
-      const changeCalls = putMetricSpy.mock.calls.filter((c) => c[0] === Metric.RFQ_CONFIG_CHANGED);
-      expect(changeCalls).toHaveLength(1);
+      await provider.getEndpoints(fakes.ctx);
+      expect(configChanges()).toEqual([expect.objectContaining({ kind: 'count', value: 1 })]);
+    });
+
+    it('reports the change through the ctx of the call that triggered the refresh', async () => {
+      const first = fakeContext('first-request');
+      const refreshing = fakeContext('refreshing-request');
+      applyMock(mockEndpoints);
+      const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
+      await provider.getEndpoints(first.ctx);
+
+      expireCache();
+      applyMock(changedEndpoints);
+      await provider.getEndpoints(refreshing.ctx);
+
+      expect(refreshing.metrics.calls).toEqual([
+        expect.objectContaining({ kind: 'count', name: Metric.RFQ_CONFIG_CHANGED }),
+      ]);
+      expect(first.metrics.calls).toEqual([]);
     });
 
     it('never throws on malformed config entries — quotes must not 500 over observability', async () => {
       applyMock(mockEndpoints);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
 
       expireCache();
       const malformed = [{ name: 'broken' }, ...mockEndpoints] as unknown as WebhookConfiguration[];
       applyMock(malformed);
-      await expect(provider.getEndpoints()).resolves.toEqual(malformed);
+      await expect(provider.getEndpoints(fakes.ctx)).resolves.toEqual(malformed);
     });
 
     it('never throws when the PREVIOUS payload was malformed (null entry) either', async () => {
@@ -242,11 +256,11 @@ describe('S3WebhookConfigurationProvider', () => {
       const malformed = [null, ...mockEndpoints] as unknown as WebhookConfiguration[];
       applyMock(malformed);
       const provider = new S3WebhookConfigurationProvider(logger, bucket, key);
-      await provider.getEndpoints();
+      await provider.getEndpoints(fakes.ctx);
 
       expireCache();
       applyMock(mockEndpoints);
-      await expect(provider.getEndpoints()).resolves.toEqual(mockEndpoints);
+      await expect(provider.getEndpoints(fakes.ctx)).resolves.toEqual(mockEndpoints);
     });
   });
 });

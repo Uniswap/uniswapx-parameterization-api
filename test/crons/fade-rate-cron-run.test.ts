@@ -12,6 +12,7 @@ import {
 import { FadesScoringSource, FadesSourceKind } from '../../lib/cron/fades-sources';
 import { ResolutionSummary } from '../../lib/cron/order-service-fades-source';
 import { Metric } from '../../lib/entities';
+import { Context } from '../../lib/observability';
 import {
   BaseTimestampRepository,
   TimestampRepoRow,
@@ -60,9 +61,13 @@ class FakeSource implements FadesScoringSource {
 
 class FakeWebhookProvider {
   public fetched = 0;
+  public ctx: Context | undefined;
   constructor(private readonly endpoints: string[]) {}
-  async fetchEndpoints(): Promise<void> {
+  // Stands in for a refresh that observed a config change.
+  async fetchEndpoints(ctx: Context): Promise<void> {
     this.fetched += 1;
+    this.ctx = ctx;
+    await ctx.metrics.count(Metric.RFQ_CONFIG_CHANGED);
   }
   fillerEndpoints(): string[] {
     return this.endpoints;
@@ -484,6 +489,17 @@ describe('runFadeRateCron', () => {
   });
 
   describe('observability', () => {
+    it("hands the webhook config refresh the run's own ctx, so a config change lands in the run's metrics", async () => {
+      const r = await run({ primary: 'order-service', orderService: BLOCKING_ROWS, redshift: BLOCKING_ROWS });
+
+      expect(r.webhooks.fetched).toBe(1);
+      expect(r.calls[Metric.RFQ_CONFIG_CHANGED]).toEqual([1]);
+      expect(r.webhooks.ctx?.requestId).toEqual(expect.any(String));
+      // The ctx logger writes through the run's logger, bindings included.
+      r.webhooks.ctx?.logger.info('from the refresh');
+      expect(r.records.find((rec) => rec.msg === 'from the refresh')).toMatchObject({ fadesSource: 'order-service' });
+    });
+
     it.each<FadesSourceKind>(['order-service', 'redshift'])(
       'tags the run with the primary source: %s',
       async (primary) => {

@@ -1,11 +1,9 @@
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import axios from 'axios';
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 
 import { Metric } from '../../../lib/entities';
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -45,7 +43,6 @@ describe('Quote handler', () => {
       resolve({
         log: logger,
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
         ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
@@ -138,6 +135,8 @@ describe('Quote handler', () => {
     // counts through count() and latencies through timer(), in the same order.
     expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
       ['count', Metric.QUOTE_REQUESTED],
+      // getBestQuote's quote-count metric, now through the same ctx
+      ['count', Metric.RFQ_COUNT_2],
       ['count', Metric.QUOTE_200],
       ['timer', Metric.QUOTE_LATENCY],
       ['timer', Metric.QUOTE_E2E_LATENCY],
@@ -175,6 +174,8 @@ describe('Quote handler', () => {
       expect(response.statusCode).toEqual(404);
       expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
         ['count', Metric.QUOTE_REQUESTED],
+        // getBestQuote's quote-count metric, now through the same ctx
+        ['count', Metric.RFQ_COUNT_0],
         ['count', Metric.QUOTE_404],
         ['timer', Metric.QUOTE_E2E_LATENCY],
       ]);

@@ -1,5 +1,4 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { metric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import axios, { AxiosError } from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
@@ -9,6 +8,7 @@ import { AnalyticsEventType, Metric, metricContext, QuoteRequest, WebhookRespons
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { FirehoseLogger } from '../../../lib/providers/analytics';
 import { WebhookQuoter } from '../../../lib/quoters';
+import { fakeContext } from '../../fakes';
 import {
   MOCK_V2_CB_PROVIDER,
   WEBHOOK_URL,
@@ -30,7 +30,13 @@ const CHAIN_ID = 1;
 const FILLER = '0x0000000000000000000000000000000000000001';
 
 describe('WebhookQuoter tests', () => {
+  // One ctx for the file, reset per test: every metric the quoter emits lands here.
+  const fakes = fakeContext('test');
+  const callsOf = (name: string) => fakes.metrics.calls.filter((c) => c.name === name);
+
   beforeEach(() => {
+    fakes.metrics.reset();
+    fakes.logger.reset();
     // Dispatch order is randomized in WebhookQuoter; pin it so the positional axios mocks
     // below (real response first, opposing second) line up deterministically.
     jest.spyOn(Math, 'random').mockReturnValue(0);
@@ -123,7 +129,7 @@ describe('WebhookQuoter tests', () => {
           },
         });
       });
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
@@ -145,7 +151,7 @@ describe('WebhookQuoter tests', () => {
         .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req))
         .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req));
 
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
 
       const uniswapBodies = mockedAxios.post.mock.calls
         .filter((call) => call[0] === WEBHOOK_URL)
@@ -167,7 +173,7 @@ describe('WebhookQuoter tests', () => {
         .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req))
         .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req));
 
-      const response = await webhookQuoter.quote(request);
+      const response = await webhookQuoter.quote(fakes.ctx, request);
 
       expect(response.length).toEqual(1);
       // the filler echoed the obfuscated wire id, but the caller sees the original requestId
@@ -183,7 +189,7 @@ describe('WebhookQuoter tests', () => {
         .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req))
         .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req));
 
-      const response = await webhookQuoter.quote(request);
+      const response = await webhookQuoter.quote(fakes.ctx, request);
 
       expect(response.length).toEqual(1);
       expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
@@ -195,7 +201,7 @@ describe('WebhookQuoter tests', () => {
         .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req))
         .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req));
 
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
 
       const requestLogs = (logger.info as jest.Mock).mock.calls.filter(
         (call) => typeof call[1] === 'string' && call[1].startsWith('Webhook request to:')
@@ -244,7 +250,7 @@ describe('WebhookQuoter tests', () => {
           },
         });
       });
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
     expect(response.length).toEqual(2);
     expect(['uniswap', 'searcher']).toContain(response[0].fillerName);
     expect(['uniswap', 'searcher']).toContain(response[1].fillerName);
@@ -275,7 +281,7 @@ describe('WebhookQuoter tests', () => {
             },
           });
         });
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
 
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
@@ -317,7 +323,7 @@ describe('WebhookQuoter tests', () => {
           });
         });
 
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         {
@@ -354,7 +360,7 @@ describe('WebhookQuoter tests', () => {
         tokenIn: PERMISSIONED_TOKENS[0].address,
         protocol: ProtocolVersion.V2,
       });
-      await webhookQuoter.quote(permissionedTokenRequest);
+      await webhookQuoter.quote(fakes.ctx, permissionedTokenRequest);
 
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
@@ -397,7 +403,7 @@ describe('WebhookQuoter tests', () => {
         tokenOut: PERMISSIONED_TOKENS[0].address,
         protocol: ProtocolVersion.V2,
       });
-      await webhookQuoter.quote(permissionedTokenRequest);
+      await webhookQuoter.quote(fakes.ctx, permissionedTokenRequest);
 
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
@@ -440,7 +446,7 @@ describe('WebhookQuoter tests', () => {
         tokenIn: PERMISSIONED_TOKENS[0].address,
         protocol: ProtocolVersion.V1, // 1Inch only supports v2
       });
-      await webhookQuoter.quote(permissionedTokenRequest);
+      await webhookQuoter.quote(fakes.ctx, permissionedTokenRequest);
 
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
@@ -502,7 +508,7 @@ describe('WebhookQuoter tests', () => {
           });
         });
 
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
       // blocked
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
@@ -543,7 +549,7 @@ describe('WebhookQuoter tests', () => {
         });
 
       const request = makeQuoteRequest({ protocol: ProtocolVersion.V2 });
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
@@ -586,7 +592,7 @@ describe('WebhookQuoter tests', () => {
         });
 
       const request = makeQuoteRequest({ protocol: ProtocolVersion.V3 });
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
       expect(mockedAxios.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
@@ -628,7 +634,7 @@ describe('WebhookQuoter tests', () => {
           },
         });
       });
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, swapper: request.swapper, quoteId: expect.any(String) });
@@ -673,7 +679,7 @@ describe('WebhookQuoter tests', () => {
           },
         });
       });
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, swapper: request.swapper, quoteId: expect.any(String) });
@@ -712,7 +718,7 @@ describe('WebhookQuoter tests', () => {
           },
         });
       });
-    const response = await quoter.quote(request);
+    const response = await quoter.quote(fakes.ctx, request);
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, quoteId: expect.any(String) });
@@ -725,7 +731,7 @@ describe('WebhookQuoter tests', () => {
     ]);
     const quoter = new WebhookQuoter(logger, mockFirehoseLogger, provider, MOCK_V2_CB_PROVIDER);
 
-    const response = await quoter.quote(request);
+    const response = await quoter.quote(fakes.ctx, request);
 
     expect(response.length).toEqual(0);
 
@@ -758,7 +764,7 @@ describe('WebhookQuoter tests', () => {
         status: 200,
       });
     });
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
 
     expect(logger.error).toHaveBeenCalledWith(
       {
@@ -824,7 +830,7 @@ describe('WebhookQuoter tests', () => {
         status: 200,
       });
     });
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
 
     expect(logger.error).toHaveBeenCalledWith(
       {
@@ -858,7 +864,7 @@ describe('WebhookQuoter tests', () => {
       return Promise.resolve({ data: '', status: 204 });
     });
 
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
 
     expect(logger.info).toHaveBeenCalledWith(
       { response: '', responseStatus: 204 },
@@ -883,7 +889,7 @@ describe('WebhookQuoter tests', () => {
       return Promise.resolve({ data: { ...quote, requestId: (_req as any).requestId }, status: 204 });
     });
 
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
 
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -916,7 +922,7 @@ describe('WebhookQuoter tests', () => {
       return Promise.reject(notFound);
     });
 
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
 
     expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -954,7 +960,7 @@ describe('WebhookQuoter tests', () => {
         status: 200,
       });
     });
-    const response = await webhookQuoter.quote(request);
+    const response = await webhookQuoter.quote(fakes.ctx, request);
 
     expect(response.length).toEqual(0);
     expect(logger.info).toHaveBeenCalledWith(
@@ -998,6 +1004,7 @@ describe('WebhookQuoter tests', () => {
       });
     });
     const response = await webhookQuoter.quote(
+      fakes.ctx,
       new QuoteRequest({
         tokenInChainId: CHAIN_ID,
         tokenOutChainId: CHAIN_ID,
@@ -1035,12 +1042,6 @@ describe('WebhookQuoter tests', () => {
   });
 
   describe('latency instrumentation', () => {
-    let putMetricSpy: jest.SpyInstance;
-
-    beforeEach(() => {
-      putMetricSpy = jest.spyOn(metric, 'putMetric');
-    });
-
     const mockSimpleSuccess = () => {
       mockedAxios.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -1055,33 +1056,19 @@ describe('WebhookQuoter tests', () => {
 
     it('times the pre-fan-out endpoint-status phase', async () => {
       mockSimpleSuccess();
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
 
-      expect(putMetricSpy).toHaveBeenCalledWith(
-        Metric.RFQ_PHASE_ENDPOINT_STATUSES,
-        expect.any(Number),
-        MetricLoggerUnit.Milliseconds
-      );
+      expect(callsOf(Metric.RFQ_PHASE_ENDPOINT_STATUSES).map((c) => c.kind)).toEqual(['timer']);
     });
 
     it('emits fan-out wall time, wasted wait, and exactly one straggler', async () => {
       mockSimpleSuccess();
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
 
-      expect(putMetricSpy).toHaveBeenCalledWith(
-        Metric.RFQ_PHASE_FANOUT,
-        expect.any(Number),
-        MetricLoggerUnit.Milliseconds
-      );
-      expect(putMetricSpy).toHaveBeenCalledWith(
-        Metric.RFQ_WASTED_WAIT,
-        expect.any(Number),
-        MetricLoggerUnit.Milliseconds
-      );
-      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_STRAGGLER, 1, MetricLoggerUnit.Count);
-      const perFillerStragglers = putMetricSpy.mock.calls.filter((c) =>
-        String(c[0]).startsWith(`${Metric.RFQ_STRAGGLER}_`)
-      );
+      expect(callsOf(Metric.RFQ_PHASE_FANOUT).map((c) => c.kind)).toEqual(['timer']);
+      expect(callsOf(Metric.RFQ_WASTED_WAIT).map((c) => c.kind)).toEqual(['timer']);
+      expect(callsOf(Metric.RFQ_STRAGGLER)).toEqual([expect.objectContaining({ kind: 'count', value: 1 })]);
+      const perFillerStragglers = fakes.metrics.calls.filter((c) => c.name.startsWith(`${Metric.RFQ_STRAGGLER}_`));
       expect(perFillerStragglers).toHaveLength(1);
     });
 
@@ -1090,17 +1077,19 @@ describe('WebhookQuoter tests', () => {
       (timeoutError as any).code = 'ECONNABORTED';
       mockedAxios.post.mockRejectedValue(timeoutError);
 
-      const response = await webhookQuoter.quote(request);
+      const response = await webhookQuoter.quote(fakes.ctx, request);
 
       expect(response).toHaveLength(0);
-      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_TIMEOUT, 1, MetricLoggerUnit.Count);
-      expect(putMetricSpy).toHaveBeenCalledWith(
-        metricContext(Metric.RFQ_TIMEOUT, 'uniswap'),
-        1,
-        MetricLoggerUnit.Count
+      expect(fakes.metrics.calls).toContainEqual(
+        expect.objectContaining({ kind: 'count', name: Metric.RFQ_TIMEOUT, value: 1 })
+      );
+      expect(fakes.metrics.calls).toContainEqual(
+        expect.objectContaining({ kind: 'count', name: metricContext(Metric.RFQ_TIMEOUT, 'uniswap'), value: 1 })
       );
       // still counted under the umbrella error metric — RFQ_TIMEOUT is a subset, not a re-bucket
-      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
+      expect(fakes.metrics.calls).toContainEqual(
+        expect.objectContaining({ kind: 'count', name: Metric.RFQ_FAIL_ERROR, value: 1 })
+      );
     });
 
     it('does not emit RFQ_TIMEOUT for non-timeout errors', async () => {
@@ -1108,11 +1097,13 @@ describe('WebhookQuoter tests', () => {
       (httpError as any).code = 'ERR_BAD_RESPONSE';
       mockedAxios.post.mockRejectedValue(httpError);
 
-      await webhookQuoter.quote(request);
+      await webhookQuoter.quote(fakes.ctx, request);
 
-      const timeoutCalls = putMetricSpy.mock.calls.filter((c) => String(c[0]).startsWith(Metric.RFQ_TIMEOUT));
+      const timeoutCalls = fakes.metrics.calls.filter((c) => c.name.startsWith(Metric.RFQ_TIMEOUT));
       expect(timeoutCalls).toHaveLength(0);
-      expect(putMetricSpy).toHaveBeenCalledWith(Metric.RFQ_FAIL_ERROR, 1, MetricLoggerUnit.Count);
+      expect(fakes.metrics.calls).toContainEqual(
+        expect.objectContaining({ kind: 'count', name: Metric.RFQ_FAIL_ERROR, value: 1 })
+      );
     });
 
     it('skips wasted-wait and straggler when no endpoint is eligible', async () => {
@@ -1121,13 +1112,37 @@ describe('WebhookQuoter tests', () => {
       ]);
       const quoter = new WebhookQuoter(logger, mockFirehoseLogger, v1OnlyProvider, MOCK_V2_CB_PROVIDER);
 
-      const response = await quoter.quote(makeQuoteRequest({ protocol: ProtocolVersion.V2 }));
+      const response = await quoter.quote(fakes.ctx, makeQuoteRequest({ protocol: ProtocolVersion.V2 }));
 
       expect(response).toHaveLength(0);
-      const wastedOrStraggler = putMetricSpy.mock.calls.filter(
-        (c) => c[0] === Metric.RFQ_WASTED_WAIT || String(c[0]).startsWith(Metric.RFQ_STRAGGLER)
+      const wastedOrStraggler = fakes.metrics.calls.filter(
+        (c) => c.name === Metric.RFQ_WASTED_WAIT || c.name.startsWith(Metric.RFQ_STRAGGLER)
       );
       expect(wastedOrStraggler).toHaveLength(0);
+    });
+  });
+
+  describe('request isolation', () => {
+    // The point of passing ctx instead of reading a module global: on a concurrent runtime two
+    // in-flight quotes must never report into each other's metrics.
+    it('reports each concurrent quote only into the ctx it was given', async () => {
+      mockedAxios.post.mockImplementation((_endpoint, req) =>
+        Promise.resolve({ data: { ...quote, requestId: (req as { requestId: string }).requestId } })
+      );
+      const a = fakeContext('request-a');
+      const b = fakeContext('request-b');
+
+      await Promise.all([webhookQuoter.quote(a.ctx, request), webhookQuoter.quote(b.ctx, request)]);
+
+      for (const own of [a, b]) {
+        expect(own.metrics.calls.filter((c) => c.name === Metric.RFQ_PHASE_FANOUT)).toHaveLength(1);
+        expect(own.metrics.calls.filter((c) => c.name === Metric.RFQ_PHASE_ENDPOINT_STATUSES)).toHaveLength(1);
+      }
+      const requestedA = a.metrics.calls.filter((c) => c.name === Metric.RFQ_REQUESTED).length;
+      expect(requestedA).toBeGreaterThan(0);
+      expect(b.metrics.calls.filter((c) => c.name === Metric.RFQ_REQUESTED)).toHaveLength(requestedA);
+      // Nothing went to the file-level ctx either.
+      expect(fakes.metrics.calls).toEqual([]);
     });
   });
 });

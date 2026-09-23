@@ -1,10 +1,9 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
-import Logger from 'bunyan';
 import { ethers } from 'ethers';
 
 import { Quoter } from '.';
 import { Metric, QuoteRequest, QuoteResponse } from '../entities';
+import { Context } from '../observability';
 
 export type EventType = 'QuoteResponse' | 'HardResponse';
 
@@ -15,35 +14,38 @@ export interface BestQuoteResult {
 
 // fetch quotes from all quoters and return the best one along with all quotes
 export async function getBestQuote(
+  ctx: Context,
   quoters: Quoter[],
   quoteRequest: QuoteRequest,
-  log: Logger,
-  metric: IMetric,
   provider?: ethers.providers.StaticJsonRpcProvider,
   eventType: EventType = 'QuoteResponse'
 ): Promise<BestQuoteResult> {
-  const responses: QuoteResponse[] = (await Promise.all(quoters.map((q) => q.quote(quoteRequest, provider)))).flat();
+  const responses: QuoteResponse[] = (
+    await Promise.all(quoters.map((q) => q.quote(ctx, quoteRequest, provider)))
+  ).flat();
   switch (responses.length) {
     case 0:
-      metric.putMetric(Metric.RFQ_COUNT_0, 1, MetricLoggerUnit.Count);
+      await ctx.metrics.count(Metric.RFQ_COUNT_0);
       break;
     case 1:
-      metric.putMetric(Metric.RFQ_COUNT_1, 1, MetricLoggerUnit.Count);
+      await ctx.metrics.count(Metric.RFQ_COUNT_1);
       break;
     case 2:
-      metric.putMetric(Metric.RFQ_COUNT_2, 1, MetricLoggerUnit.Count);
+      await ctx.metrics.count(Metric.RFQ_COUNT_2);
       break;
     case 3:
-      metric.putMetric(Metric.RFQ_COUNT_3, 1, MetricLoggerUnit.Count);
+      await ctx.metrics.count(Metric.RFQ_COUNT_3);
       break;
     default:
-      metric.putMetric(Metric.RFQ_COUNT_4_PLUS, 1, MetricLoggerUnit.Count);
+      await ctx.metrics.count(Metric.RFQ_COUNT_4_PLUS);
       break;
   }
 
   // return the response with the highest amountOut value
   const bestQuote = responses.reduce((best: QuoteResponse | null, quote: QuoteResponse) => {
-    log.info({
+    // Analytics event line: the CloudWatch subscription filter keys on eventType, not the message,
+    // and an empty message writes the same record bunyan writes for a fields-only call.
+    ctx.logger.info('', {
       eventType: eventType,
       body: { ...quote.toLog(), offerer: quote.swapper, endpoint: quote.endpoint, fillerName: quote.fillerName },
     });
