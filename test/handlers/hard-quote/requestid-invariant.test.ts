@@ -1,5 +1,3 @@
-import { KMSClient } from '@aws-sdk/client-kms';
-import { KmsSigner } from '@uniswap/signer';
 import { OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
@@ -17,7 +15,7 @@ import { OrderServiceProvider } from '../../../lib/providers/order';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
-import { fakeContext } from '../../fakes';
+import { fakeContext, FakeCosigner } from '../../fakes';
 import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
 
 /**
@@ -44,10 +42,6 @@ import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
  * assertion in this file would be vacuous.
  */
 
-jest.mock('axios');
-jest.mock('@aws-sdk/client-kms');
-jest.mock('@uniswap/signer');
-
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -55,11 +49,9 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
-process.env.KMS_KEY_ID = 'test-key-id';
-process.env.REGION = 'us-east-2';
-
 const swapperWallet = Wallet.createRandom();
 const cosignerWallet = Wallet.createRandom();
+const cosigner = new FakeCosigner(cosignerWallet);
 
 const signedRequest = async (
   order: UnsignedV2DutchOrder,
@@ -111,16 +103,6 @@ describe('hard-quote requestId := quoteId invariant', () => {
   });
 
   describe('handler (where the substituted id becomes externally observable)', () => {
-    beforeEach(() => {
-      (KmsSigner as jest.Mock).mockImplementation(() => ({
-        getAddress: jest.fn().mockResolvedValue(cosignerWallet.address),
-        signDigest: jest
-          .fn()
-          .mockImplementation((digest: string) => cosignerWallet.signMessage(ethers.utils.arrayify(digest))),
-      }));
-      (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
-    });
-
     afterEach(() => {
       jest.clearAllMocks();
     });
@@ -148,6 +130,7 @@ describe('hard-quote requestId := quoteId invariant', () => {
             postedOrderRepository: new MockPostedOrderRepository(),
             fillerAddressRepository: new MockFillerAddressRepository(),
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
+            cosignerFactory: cosigner.factory(),
           }),
           getRequestInjected: () => requestInjectedMock,
         } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)

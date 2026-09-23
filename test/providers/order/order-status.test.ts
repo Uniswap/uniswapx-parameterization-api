@@ -23,6 +23,10 @@ class FakeHttp implements OrderServiceHttp {
     if (this.error) throw this.error;
     return { status: 200, data: this.body };
   };
+  // The status read never posts; fail loudly if that ever changes.
+  post = async (url: string): Promise<never> => {
+    throw new Error(`unexpected POST ${url}`);
+  };
 }
 
 describe('UniswapXServiceProvider getOrdersByHashes', () => {

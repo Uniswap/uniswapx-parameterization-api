@@ -28,9 +28,9 @@ export const ORDER_SERVICE_MAX_ORDER_HASHES = 50;
 // quote path, but a stalled order service must not eat the cron's whole budget either.
 export const ORDER_STATUS_TIMEOUT_MS = 5000;
 
-// The subset of axios the status read goes through. Injected so tests can substitute a fake
-// without mocking the axios module.
-export type OrderServiceHttp = Pick<AxiosInstance, 'get'>;
+// The subset of axios this client uses (the status read, the order post, and its timeout
+// reconciliation). Injected so tests can substitute a fake without mocking the axios module.
+export type OrderServiceHttp = Pick<AxiosInstance, 'get' | 'post'>;
 
 const ORDER_TYPE_MAP = new Map<Function, string>([
   [CosignedV2DutchOrder, OrderType.Dutch_V2],
@@ -93,7 +93,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
       timeout: ORDER_SERVICE_TIMEOUT_MS,
     };
     try {
-      const response = await axios.post(
+      const response = await this.http.post(
         `${this.uniswapxServiceUrl}dutch-auction/order`,
         {
           encodedOrder: order.serialize(),
@@ -163,7 +163,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
     try {
       // Give the order service's in-flight request a moment to persist.
       await new Promise((resolve) => setTimeout(resolve, ORDER_RECONCILE_DELAY_MS));
-      const response = await axios.get<GetOrdersResponse>(`${this.uniswapxServiceUrl}dutch-auction/orders`, {
+      const response = await this.http.get<GetOrdersResponse>(`${this.uniswapxServiceUrl}dutch-auction/orders`, {
         params: { chainId, orderHash },
         timeout: ORDER_RECONCILE_TIMEOUT_MS,
       });

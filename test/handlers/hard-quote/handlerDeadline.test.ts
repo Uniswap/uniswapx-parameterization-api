@@ -1,5 +1,3 @@
-import { KMSClient } from '@aws-sdk/client-kms';
-import { KmsSigner } from '@uniswap/signer';
 import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
@@ -16,12 +14,8 @@ import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
-import { fakeContext } from '../../fakes';
+import { fakeContext, FakeCosigner } from '../../fakes';
 import { getOrder } from '../../fixtures/hard-quote';
-
-jest.mock('axios');
-jest.mock('@aws-sdk/client-kms');
-jest.mock('@uniswap/signer');
 
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const CHAIN_ID = 1;
@@ -29,23 +23,11 @@ const CHAIN_ID = 1;
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
-process.env.KMS_KEY_ID = 'test-key-id';
-process.env.REGION = 'us-east-2';
-
 describe('Hard quote handler - order deadline validation', () => {
   const swapperWallet = Wallet.createRandom();
   const cosignerWallet = Wallet.createRandom();
 
-  const mockGetAddress = jest.fn().mockResolvedValue(cosignerWallet.address);
-  const mockSignDigest = jest
-    .fn()
-    .mockImplementation((digest) => cosignerWallet.signMessage(ethers.utils.arrayify(digest)));
-
-  (KmsSigner as jest.Mock).mockImplementation(() => ({
-    getAddress: mockGetAddress,
-    signDigest: mockSignDigest,
-  }));
-  (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
+  const cosigner = new FakeCosigner(cosignerWallet);
 
   const fakes = fakeContext('test');
 
@@ -70,6 +52,7 @@ describe('Hard quote handler - order deadline validation', () => {
             postedOrderRepository: new MockPostedOrderRepository(),
             fillerAddressRepository: new MockFillerAddressRepository(),
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
+            cosignerFactory: cosigner.factory(),
           };
         },
         getRequestInjected: () => requestInjectedMock,
