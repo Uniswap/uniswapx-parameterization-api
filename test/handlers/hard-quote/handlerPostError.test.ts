@@ -1,13 +1,12 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { ethers, Wallet } from 'ethers';
 
 import { KmsSigner } from '@uniswap/signer';
 import { POST_ORDER_ERROR_REASON } from '../../../lib/constants';
-import { AWSMetricsLogger, Metric } from '../../../lib/entities/aws-metrics-logger';
+import { Metric } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -67,7 +66,6 @@ describe('Quote handler order post error mapping', () => {
       resolve({
         log: logger,
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
         ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
@@ -175,6 +173,8 @@ describe('Quote handler order post error mapping', () => {
     await postOrderWith({ statusCode: 400, errorCode: ErrorCode.ValidationError, detail: 'rejected' });
     expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
       ['count', Metric.QUOTE_REQUESTED],
+      // getBestQuote's quote-count metric, now through the same ctx
+      ['count', Metric.RFQ_COUNT_1],
       ['count', Metric.QUOTE_POST_ATTEMPT],
       ['count', Metric.QUOTE_POST_ERROR],
       ['count', Metric.QUOTE_400],
@@ -201,6 +201,8 @@ describe('Quote handler order post error mapping', () => {
     });
     expect(fakes.metrics.calls.map((c) => [c.kind, c.name])).toEqual([
       ['count', Metric.QUOTE_REQUESTED],
+      // getBestQuote's quote-count metric, now through the same ctx
+      ['count', Metric.RFQ_COUNT_1],
       ['count', Metric.QUOTE_POST_ATTEMPT],
       ['count', Metric.QUOTE_POST_ERROR],
       ['count', Metric.QUOTE_500],

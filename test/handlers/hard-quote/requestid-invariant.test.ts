@@ -1,13 +1,11 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { KmsSigner } from '@uniswap/signer';
 import { OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { ethers, Wallet } from 'ethers';
 
 import { HardQuoteRequest } from '../../../lib/entities';
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -134,7 +132,6 @@ describe('hard-quote requestId := quoteId invariant', () => {
         resolve({
           log: logger,
           requestId: 'test',
-          metric: new AWSMetricsLogger(createMetricsLogger()),
           ctx: fakes.ctx,
         }) as unknown as RequestInjected
     );

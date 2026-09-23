@@ -1,3 +1,5 @@
+import { Context } from '../../observability';
+
 export * from './mock';
 export * from './s3';
 
@@ -24,5 +26,7 @@ export interface WebhookConfiguration {
 }
 
 export interface WebhookConfigurationProvider {
-  getEndpoints(): Promise<WebhookConfiguration[]>;
+  // ctx carries the caller's metrics: a refresh triggered by a quote request reports through
+  // that request, one triggered by the cron through the cron run.
+  getEndpoints(ctx: Context): Promise<WebhookConfiguration[]>;
 }

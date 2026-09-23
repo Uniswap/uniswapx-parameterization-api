@@ -1,6 +1,3 @@
-import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
-import { MetricsLogger as AWSEmbeddedMetricsLogger } from 'aws-embedded-metrics';
-
 export const UniswapXParamServiceMetricDimension = {
   Service: 'UniswapXParameterizationAPI',
 };
@@ -16,22 +13,6 @@ export const SoftQuoteMetricDimension = {
 export const HardQuoteMetricDimension = {
   Service: 'HardQuote',
 };
-
-export class AWSMetricsLogger implements IMetric {
-  constructor(private awsMetricLogger: AWSEmbeddedMetricsLogger) {}
-
-  public setProperty(key: string, value: unknown): void {
-    this.awsMetricLogger.setProperty(key, value);
-  }
-
-  public putDimensions(dimensions: Record<string, string>): void {
-    this.awsMetricLogger.putDimensions(dimensions);
-  }
-
-  public putMetric(key: string, value: number, unit?: MetricLoggerUnit): void {
-    this.awsMetricLogger.putMetric(key, value, unit);
-  }
-}
 
 export enum MetricDimension {
   METHOD = 'method',

@@ -1,12 +1,10 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { KmsSigner } from '@uniswap/signer';
 import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { ethers, Wallet } from 'ethers';
 
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -56,7 +54,6 @@ describe('Hard quote handler - order deadline validation', () => {
       resolve({
         log: logger,
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
         ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );

@@ -7,12 +7,10 @@ import {
   UnsignedV3DutchOrderInfo,
   V3DutchOrderBuilder,
 } from '@uniswap/uniswapx-sdk';
-import { createMetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { BigNumber, ethers, Wallet } from 'ethers';
 import { getV3BlockBuffer } from '../../../lib/constants';
-import { AWSMetricsLogger } from '../../../lib/entities/aws-metrics-logger';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -115,7 +113,6 @@ describe('Quote handler', () => {
       resolve({
         log: logger,
         requestId: 'test',
-        metric: new AWSMetricsLogger(createMetricsLogger()),
         ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );

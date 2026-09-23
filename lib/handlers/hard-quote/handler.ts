@@ -48,7 +48,7 @@ export class QuoteHandler extends APIGLambdaHandler<
     params: APIHandleRequestParams<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>
   ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
-      requestInjected: { ctx, log, metric },
+      requestInjected: { ctx },
       containerInjected: {
         quoters,
         orderServiceProvider,
@@ -113,10 +113,7 @@ export class QuoteHandler extends APIGLambdaHandler<
 
       let bestQuote;
       if (!requestBody.forceOpenOrder) {
-        // The quote path below the handler still takes the bunyan logger and the
-        // smart-order-router IMetric positionally (moved to ctx in a later PR); both are the
-        // same objects ctx wraps, so its logs and metrics are unchanged.
-        const result = await getBestQuote(quoters, request.toQuoteRequest(), log, metric, provider, RESPONSE_LOG_TYPE);
+        const result = await getBestQuote(ctx, quoters, request.toQuoteRequest(), provider, RESPONSE_LOG_TYPE);
         bestQuote = result.bestQuote;
         if (!bestQuote && !requestBody.allowNoQuote) {
           if (!requestBody.allowNoQuote) {

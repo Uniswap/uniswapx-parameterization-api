@@ -1,10 +1,10 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { setGlobalMetric } from '@uniswap/smart-order-router';
 import { metricScope, MetricsLogger, Unit } from 'aws-embedded-metrics';
 import { ScheduledHandler } from 'aws-lambda/trigger/cloudwatch-events';
 import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
+import { randomUUID } from 'crypto';
 
 import { ethers } from 'ethers';
 import {
@@ -14,7 +14,8 @@ import {
   PRODUCTION_S3_KEY,
   WEBHOOK_CONFIG_BUCKET,
 } from '../constants';
-import { AWSMetricsLogger, CircuitBreakerMetricDimension, Metric, metricContext } from '../entities';
+import { CircuitBreakerMetricDimension, Metric, metricContext } from '../entities';
+import { BunyanLogger, Context, EmfMetrics } from '../observability';
 import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../providers';
 import {
@@ -180,7 +181,7 @@ const timestampDB = TimestampRepository.create();
 
 export const handler: ScheduledHandler = metricScope(
   (metrics) => async (_event: EventBridgeEvent<string, void>, context) => {
-    await main(metrics, () => context.getRemainingTimeInMillis());
+    await main(metrics, () => context.getRemainingTimeInMillis(), context.awsRequestId);
   }
 );
 
@@ -208,9 +209,11 @@ export type FadeRateCronDeps = {
   // (order-service resolution) is given everything but a shadow reserve and the exit margin, and
   // the shadow's budget is clamped to what remains; without it the fixed budgets apply.
   remainingTimeMs?: () => number;
+  // The Lambda invocation id, for the run's Context. Absent in tests.
+  requestId?: string;
 };
 
-async function main(metrics: MetricsLogger, remainingTimeMs: () => number) {
+async function main(metrics: MetricsLogger, remainingTimeMs: () => number, requestId: string) {
   const sharedConfig: SharedConfigs = {
     Database: checkDefined(process.env.REDSHIFT_DATABASE),
     ClusterIdentifier: checkDefined(process.env.REDSHIFT_CLUSTER_IDENTIFIER),
@@ -231,6 +234,7 @@ async function main(metrics: MetricsLogger, remainingTimeMs: () => number) {
     fillerAddressRepo,
     timestampDB,
     remainingTimeMs,
+    requestId,
   });
 }
 
@@ -339,16 +343,14 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
     primary.kind === 'order-service' ? 1 : 0,
     Unit.Count
   );
-  // The webhook config provider emits RFQ_CONFIG_CHANGED through the
-  // smart-order-router module-global metric. The quote lambdas bind it per
-  // request in their injector; without this binding here, the cron's
-  // fetchEndpoints() below would observe config changes but publish no
-  // datapoint. Cron emissions land under Service=CircuitBreaker (this logger's
-  // dimensions) — the dashboard's config-change strip charts that stream
-  // alongside the quote lambdas' dimensionless one.
-  setGlobalMetric(new AWSMetricsLogger(metrics));
+  // The webhook config provider reports RFQ_CONFIG_CHANGED through the caller's ctx, so the
+  // refresh below emits into this run's MetricsLogger, under Service=CircuitBreaker — the
+  // dashboard's config-change strip charts that stream alongside the quote lambdas'
+  // dimensionless one.
+  const logger = new BunyanLogger(log);
+  const ctx: Context = { logger, metrics: new EmfMetrics(metrics, logger), requestId: deps.requestId ?? randomUUID() };
 
-  await webhookProvider.fetchEndpoints();
+  await webhookProvider.fetchEndpoints(ctx);
   // The primary's best-effort work (order-service outcome resolution) may not eat the whole
   // invocation: what it does not resolve now, it resolves next run.
   if (deps.remainingTimeMs) {
