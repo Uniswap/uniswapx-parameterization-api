@@ -1,5 +1,3 @@
-import { KMSClient } from '@aws-sdk/client-kms';
-import { KmsSigner } from '@uniswap/signer';
 import { CosignedV2DutchOrder, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
@@ -18,7 +16,7 @@ import { MockQuoter, Quoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
 import { ErrorCode } from '../../../lib/util/errors';
-import { fakeContext } from '../../fakes';
+import { fakeContext, FakeCosigner } from '../../fakes';
 import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
 
 /**
@@ -35,10 +33,6 @@ import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
  * with a value relative to the pinned clock.
  */
 
-jest.mock('axios');
-jest.mock('@aws-sdk/client-kms');
-jest.mock('@uniswap/signer');
-
 const FIXED_NOW_MS = 1_756_800_000_000; // 2025-09-02T08:00:00.000Z
 const FIXED_NOW_S = FIXED_NOW_MS / 1000;
 // Deliberately distinct: the response echoes quoteId AS requestId (see requestid-invariant),
@@ -48,29 +42,19 @@ const REQUEST_ID = 'b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03';
 
 const swapperWallet = new Wallet(`0x${'11'.repeat(32)}`);
 const cosignerWallet = new Wallet(`0x${'22'.repeat(32)}`);
+const cosigner = new FakeCosigner(cosignerWallet);
 
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
-
-process.env.KMS_KEY_ID = 'test-key-id';
-process.env.REGION = 'us-east-2';
 
 describe('/hard-quote response surface', () => {
   let dateNowSpy: jest.SpyInstance;
 
   beforeEach(() => {
     dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(FIXED_NOW_MS);
-    (KmsSigner as jest.Mock).mockImplementation(() => ({
-      getAddress: jest.fn().mockResolvedValue(cosignerWallet.address),
-      signDigest: jest
-        .fn()
-        .mockImplementation((digest: string) => cosignerWallet.signMessage(ethers.utils.arrayify(digest))),
-    }));
-    (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
   });
 
   afterEach(() => {
-    // Not restoreAllMocks(): on jest 29 that also wipes the KmsSigner mockImplementation.
     dateNowSpy.mockRestore();
     jest.clearAllMocks();
   });
@@ -99,6 +83,7 @@ describe('/hard-quote response surface', () => {
           postedOrderRepository: new MockPostedOrderRepository(),
           fillerAddressRepository: new MockFillerAddressRepository(),
           chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
+          cosignerFactory: cosigner.factory(),
         }),
         getRequestInjected: () => requestInjectedMock,
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)

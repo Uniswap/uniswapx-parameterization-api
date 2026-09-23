@@ -15,6 +15,7 @@ import {
   buildQuoteRequestInjected,
   createInjectorLogger,
 } from '../shared/quote-injector';
+import { CosignerFactory, kmsCosignerFactory } from './cosigner';
 import { HardQuoteRequestBody } from './schema';
 
 export interface ContainerInjected extends BaseQuoteContainerInjected {
@@ -25,6 +26,10 @@ export interface ContainerInjected extends BaseQuoteContainerInjected {
   // recordPostedOrder alongside the PostedOrders row. Hard-quote only: the breaker scores
   // V2/V3 orders and every one of those is cosigned here, so /quote never touches this table.
   fillerAddressRepository: FillerAddressRepository;
+  // Builds the request's cosigner. Injected so tests sign with a local wallet instead of
+  // mocking the KMS SDK, and so the client that reaches the key can change without touching
+  // the handler.
+  cosignerFactory: CosignerFactory;
 }
 
 export interface RequestInjected extends BaseQuoteRequestInjected {}
@@ -46,6 +51,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       // response); construction is lazy (no I/O).
       postedOrderRepository: DynamoPostedOrderRepository.create(),
       fillerAddressRepository: DynamoFillerAddressRepository.create(),
+      cosignerFactory: kmsCosignerFactory(),
     };
   }
 

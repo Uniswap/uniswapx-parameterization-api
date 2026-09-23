@@ -1,12 +1,9 @@
-import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
 import { CosignedV2DutchOrder, CosignerData, OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
-// import axios from 'axios';
 import { default as Logger } from 'bunyan';
 import { BigNumber, ethers, Wallet } from 'ethers';
 
-import { KmsSigner } from '@uniswap/signer';
 import { HardQuoteRequest, Metric, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
@@ -28,12 +25,8 @@ import {
   PostedOrderOutcome,
   PostedOrderRepository,
 } from '../../../lib/repositories/posted-order-repository';
-import { fakeContext } from '../../fakes';
+import { fakeContext, FakeCosigner } from '../../fakes';
 import { getOrder } from '../../fixtures/hard-quote';
-
-jest.mock('axios');
-jest.mock('@aws-sdk/client-kms');
-jest.mock('@uniswap/signer');
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 // Deliberately DIFFERENT from QUOTE_ID. These were the same uuid, which made every
@@ -48,23 +41,11 @@ const CHAIN_ID = 1;
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
-process.env.KMS_KEY_ID = 'test-key-id';
-process.env.REGION = 'us-east-2';
-
 describe('Quote handler', () => {
   const swapperWallet = Wallet.createRandom();
   const cosignerWallet = Wallet.createRandom();
 
-  const mockGetAddress = jest.fn().mockResolvedValue(cosignerWallet.address);
-  const mockSignDigest = jest
-    .fn()
-    .mockImplementation((digest) => cosignerWallet.signMessage(ethers.utils.arrayify(digest)));
-
-  (KmsSigner as jest.Mock).mockImplementation(() => ({
-    getAddress: mockGetAddress,
-    signDigest: mockSignDigest,
-  }));
-  (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
+  const cosigner = new FakeCosigner(cosignerWallet);
 
   // Creating mocks for all the handler dependencies.
   const fakes = fakeContext('test');
@@ -92,6 +73,7 @@ describe('Quote handler', () => {
             fillerAddressRepository,
             // Mock chainIdRpcMap
             chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
+            cosignerFactory: cosigner.factory(),
           };
         },
         getRequestInjected: () => requestInjectedMock,

@@ -1,6 +1,4 @@
-import { KMSClient } from '@aws-sdk/client-kms';
 import { TradeType } from '@uniswap/sdk-core';
-import { KmsSigner } from '@uniswap/signer';
 import {
   CosignedV2DutchOrder,
   CosignedV3DutchOrder,
@@ -18,13 +16,13 @@ import { getV3BlockBuffer, POST_ORDER_ERROR_REASON } from '../../constants';
 import { HardQuoteRequest, Metric, QuoteResponse } from '../../entities';
 import { V2HardQuoteResponse } from '../../entities/V2HardQuoteResponse';
 import { V3HardQuoteResponse } from '../../entities/V3HardQuoteResponse';
-import { checkDefined } from '../../preconditions/preconditions';
 import { getBestQuote } from '../../quoters/best-quote';
 import { ChainId } from '../../util/chains';
 import { NoQuotesAvailable, OrderDeadlineExpired, OrderPostError, UnknownOrderCosignerError } from '../../util/errors';
 import { timestampInMstoSeconds } from '../../util/time';
 import { APIGLambdaHandler } from '../base';
 import { APIHandleRequestParams, ErrorResponse, Response } from '../base/api-handler';
+import { Cosigner } from './cosigner';
 import { ContainerInjected, RequestInjected } from './injector';
 import { recordPostedOrder } from './posted-order-recorder';
 import {
@@ -55,6 +53,7 @@ export class QuoteHandler extends APIGLambdaHandler<
         chainIdRpcMap,
         postedOrderRepository,
         fillerAddressRepository,
+        cosignerFactory,
       },
       requestBody,
     } = params;
@@ -75,11 +74,8 @@ export class QuoteHandler extends APIGLambdaHandler<
         requestBody.tokenInChainId
       );
       const request = HardQuoteRequest.fromHardRequestBody(requestBody, orderType);
-      // re-create KmsClient every call to avoid clock skew issue
-      // https://github.com/aws/aws-sdk-js-v3/issues/6400
-      const kmsKeyId = checkDefined(process.env.KMS_KEY_ID, 'KMS_KEY_ID is not defined');
-      const awsRegion = checkDefined(process.env.REGION, 'REGION is not defined');
-      const cosigner = new KmsSigner(new KMSClient({ region: awsRegion }), kmsKeyId);
+      // Built per request (see kmsCosignerFactory for why the KMS client is not reused).
+      const cosigner = cosignerFactory();
       const cosignerAddress = await cosigner.getAddress();
 
       // we dont have access to the cosigner key, throw
@@ -377,7 +373,7 @@ function createHardQuoteResponse(
 }
 
 async function createCosignedOrder(
-  cosigner: KmsSigner,
+  cosigner: Cosigner,
   request: HardQuoteRequest,
   cosignerData: CosignerData | V3CosignerData
 ): Promise<CosignedV2DutchOrder | CosignedV3DutchOrder> {

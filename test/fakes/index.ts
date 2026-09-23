@@ -2,6 +2,8 @@ import { Context } from '../../lib/observability';
 import { FakeLogger } from './fake-logger';
 import { FakeMetrics } from './fake-metrics';
 
+export * from './fake-cosigner';
+export * from './fake-http';
 export * from './fake-logger';
 export * from './fake-metrics';
 

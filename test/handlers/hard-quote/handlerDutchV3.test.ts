@@ -1,6 +1,4 @@
-import { KMSClient } from '@aws-sdk/client-kms';
 import { ChainId, Token } from '@uniswap/sdk-core';
-import { KmsSigner } from '@uniswap/signer';
 import {
   CosignedV3DutchOrder,
   UnsignedV3DutchOrder,
@@ -23,11 +21,7 @@ import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
-import { fakeContext } from '../../fakes';
-
-jest.mock('axios');
-jest.mock('@aws-sdk/client-kms');
-jest.mock('@uniswap/signer');
+import { fakeContext, FakeCosigner } from '../../fakes';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 // Deliberately DIFFERENT from QUOTE_ID. HardQuoteRequest derives
@@ -50,9 +44,6 @@ const CURRENT_BLOCK = 1_000_000;
 
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
-
-process.env.KMS_KEY_ID = 'test-key-id';
-process.env.REGION = 'us-east-2';
 
 // Not exported: nothing outside this file uses it, and exporting a helper from a *.test.ts
 // file is what lets a stray `.only` here silence an unrelated suite (see test/fixtures/hard-quote.ts).
@@ -102,16 +93,7 @@ describe('Quote handler', () => {
   const swapperWallet = Wallet.createRandom();
   const cosignerWallet = Wallet.createRandom();
 
-  const mockGetAddress = jest.fn().mockResolvedValue(cosignerWallet.address);
-  const mockSignDigest = jest
-    .fn()
-    .mockImplementation((digest) => cosignerWallet.signMessage(ethers.utils.arrayify(digest)));
-
-  (KmsSigner as jest.Mock).mockImplementation(() => ({
-    getAddress: mockGetAddress,
-    signDigest: mockSignDigest,
-  }));
-  (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
+  const cosigner = new FakeCosigner(cosignerWallet);
 
   // Creating mocks for all the handler dependencies.
   const fakes = fakeContext('test');
@@ -140,6 +122,7 @@ describe('Quote handler', () => {
             // and the handler returns 500 -- which is why this suite was skipped rather than
             // being blocked on the order service. Duck-typed to keep the test offline.
             chainIdRpcMap: new Map([[CHAIN_ID, makeProvider()]]),
+            cosignerFactory: cosigner.factory(),
           };
         },
         getRequestInjected: () => requestInjectedMock,
