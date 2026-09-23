@@ -49,6 +49,7 @@ export class APIStack extends cdk.Stack {
       chatbotSNSArn?: string;
       stage: string;
       envVars: Record<string, string>;
+      hardQuoteCosignerBackendAccounts?: readonly string[];
     }
   ) {
     super(parent, name, props);
@@ -164,7 +165,9 @@ export class APIStack extends cdk.Stack {
     });
 
     // KMS initialization
-    const kmsStack = new KmsStack(this, `${SERVICE_NAME}HardQuoteCosignerKey-1`);
+    const kmsStack = new KmsStack(this, `${SERVICE_NAME}HardQuoteCosignerKey-1`, {
+      crossAccountSignerAccounts: props.hardQuoteCosignerBackendAccounts,
+    });
 
     /*
      * Firehose Initialization
