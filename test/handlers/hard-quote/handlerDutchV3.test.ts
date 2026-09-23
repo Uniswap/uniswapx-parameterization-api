@@ -25,6 +25,7 @@ import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
+import { fakeContext } from '../../fakes';
 
 jest.mock('axios');
 jest.mock('@aws-sdk/client-kms');
@@ -108,12 +109,14 @@ describe('Quote handler', () => {
   (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
 
   // Creating mocks for all the handler dependencies.
+  const fakes = fakeContext('test');
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         requestId: 'test',
         metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 

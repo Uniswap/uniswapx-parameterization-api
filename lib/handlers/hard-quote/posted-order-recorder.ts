@@ -1,11 +1,10 @@
-import { IMetric, MetricLoggerUnit } from '@uniswap/smart-order-router';
 import { CosignedV2DutchOrder, CosignedV3DutchOrder, OrderType } from '@uniswap/uniswapx-sdk';
-import Logger from 'bunyan';
 import { ethers } from 'ethers';
 import { getAddress } from 'ethers/lib/utils';
 
 import { Metric } from '../../entities/aws-metrics-logger';
 import { QuoteResponse } from '../../entities/QuoteResponse';
+import { Context } from '../../observability';
 import { FillerAddressRepository } from '../../repositories/filler-address-repository';
 import {
   PostedOrderOutcome,
@@ -34,9 +33,10 @@ export interface RecordPostedOrderArgs {
   // The quoteId actually sent to the order service (may differ from quote.quoteId only when
   // there was no quote, in which case nothing is recorded anyway).
   quoteId: string;
+  // The order's requestId (from the request body, echoed in the row), not ctx.requestId (the
+  // Lambda invocation id).
   requestId: string;
-  log: Logger;
-  metric: IMetric;
+  ctx: Context;
   timeoutMs?: number;
 }
 
@@ -100,7 +100,8 @@ export function buildPostedOrderRecord(args: BuildPostedOrderRecordArgs): Posted
  * to inspect the result.
  */
 export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<void> {
-  const { repository, fillerAddressRepository, order, quote, quoteId, requestId, log, metric } = args;
+  const { repository, fillerAddressRepository, order, quote, quoteId, requestId, ctx } = args;
+  const { logger, metrics } = ctx;
   const timeoutMs = args.timeoutMs ?? POSTED_ORDER_WRITE_TIMEOUT_MS;
 
   if (!quote || !exclusiveFillerOf(order)) {
@@ -124,43 +125,38 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
       ),
     ]);
     if (posted.status === 'fulfilled') {
-      metric.putMetric(Metric.POSTED_ORDER_RECORDED, 1, MetricLoggerUnit.Count);
-      log.info({ orderHash, filler: record.filler, fillerAddress: record.fillerAddress }, 'Recorded posted order');
+      await metrics.count(Metric.POSTED_ORDER_RECORDED);
+      logger.info('Recorded posted order', { orderHash, filler: record.filler, fillerAddress: record.fillerAddress });
     } else {
-      metric.putMetric(Metric.POSTED_ORDER_RECORD_FAILED, 1, MetricLoggerUnit.Count);
-      log.error({ orderHash, error: errorMessage(posted.reason) }, 'Failed to record posted order');
+      await metrics.count(Metric.POSTED_ORDER_RECORD_FAILED);
+      logger.error('Failed to record posted order', { orderHash, error: errorMessage(posted.reason) });
     }
     if (attributed.status === 'rejected') {
-      metric.putMetric(Metric.FILLER_ADDRESS_RECORD_FAILED, 1, MetricLoggerUnit.Count);
-      log.warn(
-        {
-          orderHash,
-          filler: record.filler,
-          fillerAddress: record.fillerAddress,
-          error: errorMessage(attributed.reason),
-        },
-        'Failed to record filler address; order unaffected, attribution skipped'
-      );
+      await metrics.count(Metric.FILLER_ADDRESS_RECORD_FAILED);
+      logger.warn('Failed to record filler address; order unaffected, attribution skipped', {
+        orderHash,
+        filler: record.filler,
+        fillerAddress: record.fillerAddress,
+        error: errorMessage(attributed.reason),
+      });
     } else if (attributed.value.outcome === 'owned_by_other') {
       // The write itself succeeded in reaching DynamoDB; the address stays with its first
       // owner, so this filler's fades on it bench nobody until that row expires or is deleted.
-      metric.putMetric(Metric.FILLER_ADDRESS_CLAIM_REJECTED, 1, MetricLoggerUnit.Count);
-      log.warn(
-        {
-          orderHash,
-          filler: record.filler,
-          fillerAddress: record.fillerAddress,
-          existingOwner: attributed.value.existingOwner,
-        },
-        'Filler address already attributed to another endpoint; claim refused, order unaffected'
-      );
+      await metrics.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED);
+      logger.warn('Filler address already attributed to another endpoint; claim refused, order unaffected', {
+        orderHash,
+        filler: record.filler,
+        fillerAddress: record.fillerAddress,
+        existingOwner: attributed.value.existingOwner,
+      });
     }
   } catch (e) {
     // Only buildPostedOrderRecord can throw here; the writes are settled above.
-    metric.putMetric(Metric.POSTED_ORDER_RECORD_FAILED, 1, MetricLoggerUnit.Count);
-    log.error({ orderHash, error: errorMessage(e) }, 'Failed to record posted order');
+    // Fire-and-forget in catch/finally: bookkeeping metrics never alter the outcome.
+    void metrics.count(Metric.POSTED_ORDER_RECORD_FAILED);
+    logger.error('Failed to record posted order', { orderHash, error: errorMessage(e) });
   } finally {
-    metric.putMetric(Metric.POSTED_ORDER_RECORD_LATENCY, Date.now() - start, MetricLoggerUnit.Milliseconds);
+    void metrics.timer(Metric.POSTED_ORDER_RECORD_LATENCY, Date.now() - start);
   }
 }
 

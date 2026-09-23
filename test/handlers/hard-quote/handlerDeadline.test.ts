@@ -18,6 +18,7 @@ import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
 import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
+import { fakeContext } from '../../fakes';
 import { getOrder } from '../../fixtures/hard-quote';
 
 jest.mock('axios');
@@ -48,12 +49,15 @@ describe('Hard quote handler - order deadline validation', () => {
   }));
   (KMSClient as jest.Mock).mockImplementation(() => jest.fn());
 
+  const fakes = fakeContext('test');
+
   const requestInjectedMock: Promise<RequestInjected> = new Promise(
     (resolve) =>
       resolve({
         log: logger,
         requestId: 'test',
         metric: new AWSMetricsLogger(createMetricsLogger()),
+        ctx: fakes.ctx,
       }) as unknown as RequestInjected
   );
 
