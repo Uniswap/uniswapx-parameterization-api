@@ -1,5 +1,4 @@
-import { MetricLoggerUnit } from '@uniswap/smart-order-router';
-import { metricScope, MetricsLogger } from 'aws-embedded-metrics';
+import { metricScope, MetricsLogger, Unit } from 'aws-embedded-metrics';
 import {
   APIGatewayProxyEvent,
   APIGatewayProxyEventQueryStringParameters,
@@ -132,7 +131,7 @@ export abstract class APIGLambdaHandler<
           // Without this the metric lands in the aws-embedded-metrics default namespace.
           metric.setNamespace('Uniswap');
           metric.putDimensions({ [MetricDimension.METHOD]: this.handlerName });
-          metric.putMetric(Metric.HANDLER_DURATION, requestEnd - requestStart, MetricLoggerUnit.Milliseconds);
+          metric.putMetric(Metric.HANDLER_DURATION, requestEnd - requestStart, Unit.Milliseconds);
 
           return {
             ...response,
@@ -176,7 +175,7 @@ export abstract class APIGLambdaHandler<
             requestQueryParams = requestValidation.requestQueryParams;
           } catch (err) {
             log.error({ err }, 'Unexpected error validating request');
-            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
+            metric.putMetric(Metric.QUOTE_500, 1, Unit.Count);
             return INTERNAL_ERROR();
           }
 
@@ -197,7 +196,7 @@ export abstract class APIGLambdaHandler<
             );
           } catch (err) {
             log.error({ err, event: redactEvent(event) }, 'Unexpected error building request injected.');
-            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
+            metric.putMetric(Metric.QUOTE_500, 1, Unit.Count);
             return INTERNAL_ERROR();
           }
 
@@ -241,16 +240,16 @@ export abstract class APIGLambdaHandler<
               if (errorJson.statusCode >= 400 && errorJson.statusCode < 500) {
                 // Expected client error (e.g. expired deadline) — don't log at
                 // error level or it inflates error dashboards / trips alerts.
-                metric.putMetric(Metric.QUOTE_400, 1, MetricLoggerUnit.Count);
+                metric.putMetric(Metric.QUOTE_400, 1, Unit.Count);
                 log.info({ errorJson }, 'Client validation error');
               } else {
-                metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
+                metric.putMetric(Metric.QUOTE_500, 1, Unit.Count);
                 log.error({ errorJson }, 'Unexpected error in handler');
               }
               return errorJson;
             }
             log.error({ err }, 'Unexpected error in handler');
-            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
+            metric.putMetric(Metric.QUOTE_500, 1, Unit.Count);
             return INTERNAL_ERROR(id);
           }
 
@@ -265,7 +264,7 @@ export abstract class APIGLambdaHandler<
             response = responseValidation.response;
           } catch (err) {
             log.error({ err }, 'Unexpected error validating response');
-            metric.putMetric(Metric.QUOTE_500, 1, MetricLoggerUnit.Count);
+            metric.putMetric(Metric.QUOTE_500, 1, Unit.Count);
             return INTERNAL_ERROR(id);
           }
 

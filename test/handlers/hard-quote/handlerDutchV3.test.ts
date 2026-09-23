@@ -1,6 +1,6 @@
 import { KMSClient } from '@aws-sdk/client-kms';
+import { ChainId, Token } from '@uniswap/sdk-core';
 import { KmsSigner } from '@uniswap/signer';
-import { USDT_ARBITRUM, WBTC_ARBITRUM } from '@uniswap/smart-order-router';
 import {
   CosignedV3DutchOrder,
   UnsignedV3DutchOrder,
@@ -34,8 +34,15 @@ const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 // `requestId: _data.quoteId ?? uuidv4()`, so an assertion that the response echoes the
 // requestId proves nothing while the two constants are the same uuid.
 const REQUEST_ID = 'b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03';
-const TOKEN_IN = USDT_ARBITRUM;
-const TOKEN_OUT = WBTC_ARBITRUM;
+// USDT and WBTC on Arbitrum One (previously borrowed from smart-order-router's token list).
+const TOKEN_IN = new Token(ChainId.ARBITRUM_ONE, '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', 6, 'USDT', 'Tether USD');
+const TOKEN_OUT = new Token(
+  ChainId.ARBITRUM_ONE,
+  '0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f',
+  8,
+  'WBTC',
+  'Wrapped BTC'
+);
 const RAW_AMOUNT = BigNumber.from('1000000000000000000');
 const CHAIN_ID = 42161;
 // Arbitrary; the V3 path derives decayStartBlock from it, which the test asserts.
