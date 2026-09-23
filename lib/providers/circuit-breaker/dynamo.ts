@@ -2,57 +2,51 @@ import Logger from 'bunyan';
 
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '.';
 import { BaseTimestampRepository, FillerTimestampMap, TimestampRepository } from '../../repositories';
-import { S3WebhookConfigurationProvider, WebhookConfiguration } from '../webhook';
+import { WebhookConfiguration } from '../webhook';
 
 export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreakerConfigurationProvider {
   private log: Logger;
-  private webhookProvider: S3WebhookConfigurationProvider;
-  private fillerEndpoints: string[] = [];
-  private lastUpdatedTimestamp: number;
-  private timestampDB: BaseTimestampRepository;
   private timestamps: FillerTimestampMap = new Map();
+  // The endpoint set `timestamps` was last fetched for. A different set (a filler added to or
+  // removed from the webhook config) forces a refetch, so a filler that joins mid-container
+  // has its bench state read on the next request instead of being enabled by default.
+  private fetchedFor: string | undefined;
+  private lastUpdatedTimestamp = 0;
 
-  // try to refetch endpoints every 30 seconds
+  // try to refetch timestamps every 30 seconds
   private static UPDATE_PERIOD_MS = 1 * 30000;
 
-  constructor(_log: Logger, _webhookProvider: S3WebhookConfigurationProvider) {
+  // TimestampRepository builds its own wrapNumbers:false client (state is small integers).
+  constructor(_log: Logger, private readonly timestampDB: BaseTimestampRepository = TimestampRepository.create()) {
     this.log = _log.child({ quoter: 'CircuitBreakerConfigurationProvider' });
-    this.webhookProvider = _webhookProvider;
-    this.lastUpdatedTimestamp = Date.now();
-    // TimestampRepository builds its own wrapNumbers:false client (state is small integers).
-    this.timestampDB = TimestampRepository.create();
   }
 
-  private async getFillerEndpoints(): Promise<string[]> {
-    if (this.fillerEndpoints.length === 0) {
-      this.fillerEndpoints = this.webhookProvider.fillerEndpoints();
-      this.lastUpdatedTimestamp = Date.now();
-    }
-    return this.fillerEndpoints;
-  }
-
-  async getConfigurations(): Promise<FillerTimestampMap> {
+  async getConfigurations(endpoints: string[]): Promise<FillerTimestampMap> {
+    const key = endpoints.join('\n');
     if (
-      (await this.getFillerEndpoints()).length === 0 ||
+      key !== this.fetchedFor ||
       Date.now() - this.lastUpdatedTimestamp > DynamoCircuitBreakerConfigurationProvider.UPDATE_PERIOD_MS
     ) {
-      await this.fetchConfigurations();
+      this.timestamps = await this.timestampDB.getFillerTimestampsMap(endpoints);
+      this.fetchedFor = key;
       this.lastUpdatedTimestamp = Date.now();
     }
     this.log.info({ timestamps: Array.from(this.timestamps.entries()) }, 'filler timestamps');
     return this.timestamps;
   }
 
-  async fetchConfigurations(): Promise<void> {
-    this.timestamps = await this.timestampDB.getFillerTimestampsMap(await this.getFillerEndpoints());
-  }
-
   /* add filler to `enabled` array if it's not blocked until a future timestamp;
       add disabled fillers and the `blockUntilTimestamp`s to disabled array */
   async getEndpointStatuses(endpoints: WebhookConfiguration[]): Promise<EndpointStatuses> {
+    if (endpoints.length === 0) {
+      return { enabled: [], disabled: [] };
+    }
     try {
       const now = Math.floor(Date.now() / 1000);
-      const fillerTimestamps = await this.getConfigurations();
+      // Sorted and deduped: the order-insensitive cache key above, and BatchGet rejects
+      // duplicate keys.
+      const fillerEndpoints = [...new Set(endpoints.map((e) => e.endpoint))].sort();
+      const fillerTimestamps = await this.getConfigurations(fillerEndpoints);
       if (fillerTimestamps.size) {
         this.log.info({ fillerTimestamps: [...fillerTimestamps.entries()] }, `Circuit breaker config used`);
         const enabledEndpoints = endpoints.filter((e) => {

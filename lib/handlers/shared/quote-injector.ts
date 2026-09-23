@@ -62,14 +62,8 @@ export function buildChainIdRpcMap(): Map<ChainId, ethers.providers.StaticJsonRp
 /**
  * Builds the RFQ container both quote Lambdas share.
  *
- * INVARIANT: exactly one S3WebhookConfigurationProvider is created here and that same
- * instance is given to both the circuit breaker and the WebhookQuoter. The circuit breaker
- * reads `fillerEndpoints()`, a cache populated only by the quoter's `getEndpoints()` call
- * one line earlier in the request path. Two instances would leave the breaker's timestamp
- * map empty, which fails open — every benched filler silently re-enabled, with no error
- * and no metric. The types do not protect against this: the breaker takes the concrete
- * S3WebhookConfigurationProvider while the quoter takes only the interface, so a split
- * compiles cleanly.
+ * The circuit breaker scores whatever endpoints the quoter hands it per request, so it holds
+ * no reference to the webhook config provider.
  *
  * Construction is synchronous and does no I/O; every client here is lazy. It must stay
  * inside the injector call (not module scope) so BaseInjector.build() keeps caching one
@@ -79,7 +73,7 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
   const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
 
   const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
-  const circuitBreakerProvider = new DynamoCircuitBreakerConfigurationProvider(log, webhookProvider);
+  const circuitBreakerProvider = new DynamoCircuitBreakerConfigurationProvider(log);
 
   const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 

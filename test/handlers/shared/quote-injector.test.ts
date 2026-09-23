@@ -9,13 +9,6 @@ import { SUPPORTED_CHAINS } from '../../../lib/util/chains';
 /**
  * Wiring tests for the shared quote-injector factory.
  *
- * These exist because the container's most important property is not expressible in the
- * type system: the circuit breaker and the WebhookQuoter must hold the SAME
- * S3WebhookConfigurationProvider instance. The breaker takes the concrete class while the
- * quoter takes only the interface, so handing them two separate instances compiles fine
- * and fails silently in production (the breaker's timestamp map stays empty, so it fails
- * open and every benched filler is re-enabled with no error and no metric).
- *
  * buildContainerInjected does no I/O — every AWS client in the graph is constructed lazily
  * and the RPC providers are given an explicit network — so these run offline with no
  * credentials.
@@ -54,16 +47,6 @@ describe('shared quote injector wiring', () => {
     beforeAll(async () => {
       container = (await (makeInjector() as any).build()).getContainerInjected();
       quoter = container.quoters[0];
-    });
-
-    it('shares ONE webhook provider between the circuit breaker and the quoter', () => {
-      expect(quoter.webhookProvider).toBeDefined();
-      expect(quoter.circuitBreakerProvider.webhookProvider).toBeDefined();
-      // Compared as a boolean rather than with toBe(instance): a split yields two
-      // structurally identical providers, so toBe would dump ~2kb of bunyan internals
-      // and report only "serializes to the same string".
-      const sharesOneInstance = quoter.circuitBreakerProvider.webhookProvider === quoter.webhookProvider;
-      expect(sharesOneInstance).toBe(true);
     });
 
     it('shares one firehose logger between the container and the quoter', () => {

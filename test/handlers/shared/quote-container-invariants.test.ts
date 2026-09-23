@@ -6,20 +6,14 @@ import { DynamoCircuitBreakerConfigurationProvider } from '../../../lib/provider
 import { WebhookQuoter } from '../../../lib/quoters';
 
 /**
- * INVARIANT: buildQuoteContainerInjected creates exactly ONE S3WebhookConfigurationProvider
- * and hands that same instance to both the DynamoCircuitBreakerConfigurationProvider and the
- * WebhookQuoter.
+ * Pins the shape of the RFQ container buildQuoteContainerInjected builds: one WebhookQuoter
+ * wired to a Dynamo circuit breaker and an S3 webhook config provider.
  *
- * Why this is pinned by reference equality and not left to the compiler (see the comment on
- * the factory at lib/handlers/shared/quote-injector.ts): the breaker reads
- * `webhookProvider.fillerEndpoints()`, an in-memory cache that is populated only by the
- * quoter calling `getEndpoints()` one line earlier in the request path. Give the breaker its
- * own instance and that cache is always empty, so its timestamp map is empty, so
- * getEndpointStatuses() returns every endpoint as enabled -- the circuit breaker fails OPEN.
- * Every benched filler is silently re-enabled with no error and no metric. The types allow
- * the split: the breaker's constructor takes the concrete S3WebhookConfigurationProvider
- * while WebhookQuoter takes only the WebhookConfigurationProvider interface, so passing two
- * separately constructed (and structurally identical) instances compiles cleanly.
+ * The breaker used to read its filler list from the webhook provider's in-memory cache, which
+ * made sharing one provider instance load-bearing (a split failed the breaker open) and left
+ * the list frozen at the container's first request. It now scores the endpoints the quoter
+ * passes it, so the last test asserts it holds no provider at all: re-adding one would bring
+ * that coupling back.
  *
  * The test drives the shared factory directly rather than an injector so that it survives
  * the injector classes being reshaped, and reaches into private fields via `any` because the
@@ -64,14 +58,11 @@ describe('buildQuoteContainerInjected wiring invariants', () => {
       expect(quoter.webhookProvider).toBeInstanceOf(S3WebhookConfigurationProvider);
     });
 
-    it('the circuit breaker and the quoter hold the SAME S3WebhookConfigurationProvider instance', () => {
-      const breakerProvider = quoter.circuitBreakerProvider.webhookProvider;
-      expect(breakerProvider).toBeDefined();
-      // Compared as a boolean rather than toBe(instance): on failure toBe would dump both
-      // providers' bunyan internals and report only "serializes to the same string", which is
-      // precisely the trap -- a split yields two structurally identical objects.
-      const isSameInstance = breakerProvider === quoter.webhookProvider;
-      expect(isSameInstance).toBe(true);
+    it('the circuit breaker holds no webhook config provider', () => {
+      const providerFields = Object.values(quoter.circuitBreakerProvider).filter(
+        (v) => v instanceof S3WebhookConfigurationProvider
+      );
+      expect(providerFields).toHaveLength(0);
     });
   });
 });
