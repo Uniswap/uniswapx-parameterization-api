@@ -76,7 +76,8 @@ export class V2FadesRepository extends BaseRedshiftRepository {
   }
 }
 
-const V2_CREATE_VIEW_SQL = `
+// Exported for testing.
+export const V2_CREATE_VIEW_SQL = `
 DROP VIEW IF EXISTS latestRfqsV2;
 
 CREATE OR REPLACE VIEW latestRfqsV2 
@@ -91,7 +92,7 @@ WITH latestOrdersV2 AS (
   LIMIT ${FADE_QUERY_ROW_LIMIT}
 )
 SELECT
-    latestOrdersV2.chainid as chainId, latestOrdersV2.ordertype as orderType, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedorders.fillTimeBlocks as fillTimeBlocks, archivedOrders.tokenIn as tokenIn, archivedOrders.tokenOut as tokenOut,
+    latestOrdersV2.chainid as chainId, latestOrdersV2.ordertype as orderType, latestOrdersV2.filler as rfqFiller, latestOrdersV2.startTime as decayStartTime, latestOrdersV2.quoteid, archivedorders.filler as actualFiller, latestOrdersV2.createdat as postTimestamp, latestOrdersV2.deadline as deadline, archivedorders.txhash as txHash, archivedOrders.fillTimestamp as fillTimestamp, archivedorders.fillTimeBlocks as fillTimeBlocks, latestOrdersV2.tokenIn as tokenIn, latestOrdersV2.tokenOut as tokenOut,
     CASE
       WHEN latestOrdersV2.inputstartamount = latestOrdersV2.inputendamount THEN 'EXACT_INPUT'
       ELSE 'EXACT_OUTPUT'
@@ -110,7 +111,8 @@ ORDER BY rfqFiller, deadline DESC
 LIMIT ${FADE_QUERY_ROW_LIMIT} 
 `;
 
-const V2_FADE_RATE_SQL = `
+// Exported for testing.
+export const V2_FADE_RATE_SQL = `
 SELECT 
     rfqFiller,
     postTimestamp,
