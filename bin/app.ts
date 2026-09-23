@@ -9,6 +9,7 @@ import { Construct } from 'constructs';
 import dotenv from 'dotenv';
 
 import { STAGE } from '../lib/util/stage';
+import { HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS } from './config';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
 
@@ -25,10 +26,19 @@ export class APIStage extends Stage {
       chatbotSNSArn?: string;
       stage: string;
       envVars: Record<string, string>;
+      hardQuoteCosignerBackendAccounts?: readonly string[];
     }
   ) {
     super(scope, id, props);
-    const { provisionedConcurrency, internalApiKey, chatbotSNSArn, stage, env, envVars } = props;
+    const {
+      provisionedConcurrency,
+      internalApiKey,
+      chatbotSNSArn,
+      stage,
+      env,
+      envVars,
+      hardQuoteCosignerBackendAccounts,
+    } = props;
 
     const { url } = new APIStack(this, `${SERVICE_NAME}API`, {
       env,
@@ -37,6 +47,7 @@ export class APIStage extends Stage {
       chatbotSNSArn,
       stage,
       envVars,
+      hardQuoteCosignerBackendAccounts,
     });
     this.url = url;
   }
@@ -137,6 +148,7 @@ export class APIPipeline extends Stack {
         ORDER_LOG_SENDER_ACCOUNT: '321377678687',
         BOT_ACCOUNT: '800035746608',
       },
+      hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.BETA],
     });
 
     const betaUsEast2AppStage = pipeline.addStage(betaUsEast2Stage);
@@ -157,6 +169,7 @@ export class APIPipeline extends Stack {
         BOT_ACCOUNT: '456809954954',
       },
       stage: STAGE.PROD,
+      hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.PROD],
     });
 
     const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);
