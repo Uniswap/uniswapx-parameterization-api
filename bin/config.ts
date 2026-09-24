@@ -15,3 +15,11 @@ export const HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS: Record<STAGE.BETA | STAGE.PRO
   [STAGE.BETA]: [BACKEND_DEV_ACCOUNT, BACKEND_STAGING_ACCOUNT],
   [STAGE.PROD]: [BACKEND_PROD_ACCOUNT],
 };
+
+// Backend accounts allowed to reach each stage's market-maker egress proxy over PrivateLink
+// (bin/stacks/egress-proxy.ts). Same mapping as the cosigner key: beta traffic stays with
+// backend dev and staging, prod with backend prod.
+export const EGRESS_PROXY_BACKEND_ACCOUNTS: Record<STAGE.BETA | STAGE.PROD, readonly string[]> = {
+  [STAGE.BETA]: [BACKEND_DEV_ACCOUNT, BACKEND_STAGING_ACCOUNT],
+  [STAGE.PROD]: [BACKEND_PROD_ACCOUNT],
+};

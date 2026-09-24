@@ -27,6 +27,7 @@ import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 import { CronStack } from './cron-stack';
+import { EgressProxy } from './egress-proxy';
 import { FirehoseStack } from './firehose-stack';
 import { LAMBDA_BUNDLING } from './lambda-bundling';
 import { ParamDashboardStack } from './param-dashboard-stack';
@@ -50,6 +51,9 @@ export class APIStack extends cdk.Stack {
       stage: string;
       envVars: Record<string, string>;
       hardQuoteCosignerBackendAccounts?: readonly string[];
+      // Backend accounts that may reach the market-maker egress proxy. Absent (local stack)
+      // means no proxy is created.
+      egressProxyBackendAccounts?: readonly string[];
     }
   ) {
     super(parent, name, props);
@@ -515,6 +519,18 @@ export class APIStack extends cdk.Stack {
     const chatBotTopic = chatbotSNSArn
       ? cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn)
       : undefined;
+
+    if (props.egressProxyBackendAccounts?.length) {
+      const egressProxy = new EgressProxy(this, 'EgressProxy', {
+        vpc,
+        allowedAccounts: props.egressProxyBackendAccounts,
+        chatbotTopic: chatBotTopic,
+      });
+      // The backend uniswapx stack's interface endpoint needs this name, per environment.
+      new CfnOutput(this, 'EgressProxyEndpointServiceName', {
+        value: egressProxy.endpointServiceName,
+      });
+    }
     /* custom metric alarms */
     // Alarm on calls to RFQ providers
     for (const dimension of [SoftQuoteMetricDimension, HardQuoteMetricDimension]) {
