@@ -616,13 +616,15 @@ export class AnalyticsStack extends cdk.NestedStack {
     /* Firehose Alarms */
     // hasRedshift gates the DeliveryToRedshift alarms: an S3-only stream never emits that
     // metric, and with treatMissingData NOT_BREACHING an alarm on it can never leave OK.
+    // fillStream and orderStream are deliberately unmonitored: the order service stopped
+    // producing to them (it writes posted/fill data to data-eng's bucket directly), so zero
+    // records is their expected state and the breaching MissingRecords alarm would page until
+    // the streams themselves are removed.
     const allStreams = [
       { stream: rfqRequestFirehoseStream, hasRedshift: true },
       { stream: hardRequestFirehoseStream, hasRedshift: true },
       { stream: hardResponseFirehoseStream, hasRedshift: true },
       { stream: rfqResponseFirehoseStream, hasRedshift: true },
-      { stream: fillStream, hasRedshift: true },
-      { stream: orderStream, hasRedshift: true },
     ];
 
     allStreams.forEach(({ stream, hasRedshift }) => {
