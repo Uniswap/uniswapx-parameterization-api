@@ -108,6 +108,8 @@ export class AnalyticsStack extends cdk.NestedStack {
         excludeCharacters: '`"@/\\',
       },
       encryptionKey: key,
+      // Outlives the cluster so a cluster restored from its final snapshot can still be logged into.
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
     this.credSecretArn = creds.secretArn;
 
@@ -136,7 +138,15 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
       securityGroups: [subscriptionSG],
       publiclyAccessible: true,
+      // The cluster is being removed. CloudFormation applies the deletion policy already deployed
+      // when a resource leaves the template, so this must ship before the removal: it makes that
+      // deploy take a final snapshot and delete the cluster instead of orphaning it in a VPC that
+      // CloudFormation would then fail to delete.
+      removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
     });
+    // The cluster hands its removal policy to its subnet group, which cannot be snapshotted and
+    // holds no data; let it be deleted with the cluster rather than orphaned.
+    (rsCluster.node.findChild('Subnets') as aws_rs.ClusterSubnetGroup).applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
     this.dbName = RS_DATABASE_NAME;
     this.clusterId = rsCluster.clusterName;
 
