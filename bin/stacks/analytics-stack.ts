@@ -1,41 +1,18 @@
-import * as aws_rs from '@aws-cdk/aws-redshift-alpha';
 import * as cdk from 'aws-cdk-lib';
 import { CfnOutput } from 'aws-cdk-lib';
-import * as aws_ec2 from 'aws-cdk-lib/aws-ec2';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_firehose from 'aws-cdk-lib/aws-kinesisfirehose';
-import * as aws_kms from 'aws-cdk-lib/aws-kms';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as aws_logs from 'aws-cdk-lib/aws-logs';
 import * as aws_s3 from 'aws-cdk-lib/aws-s3';
-import * as sm from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import path from 'path';
 import { LAMBDA_BUNDLING } from './lambda-bundling';
 
-const RS_DATABASE_NAME = 'uniswap_x'; // must be lowercase
-const ADMIN = 'admin';
-const FIREHOSE_IP_ADDRESS_USE2 = '13.58.135.96/27';
 // Pinned to what these streams used as Redshift intermediate-S3 destinations, so object sizes and
 // flush cadence don't change for the data-eng BigQuery load that reads these buckets.
 const QUOTE_ANALYTICS_S3_BUFFERING = { sizeInMBs: 5, intervalInSeconds: 300 };
-
-enum RS_DATA_TYPES {
-  UUID = 'char(36)',
-  ADDRESS = 'char(42)',
-  TX_HASH = 'char(66)',
-  UINT256 = 'varchar(78)',
-  TIMESTAMP = 'char(10)', // unix timestamp in seconds
-  TIMESTAMP_MS = 'char(13)', // unix timestamp in milliseconds
-  BIGINT = 'bigint',
-  INTEGER = 'integer',
-  TERMINAL_STATUS = 'varchar(9)', // 'filled' || 'expired' || 'cancelled
-  TRADE_TYPE = 'varchar(12)', // 'EXACT_INPUT' || 'EXACT_OUTPUT'
-  CALL_DATA = 'varchar(5000)',
-  UnitInETH = 'float8',
-  ORDER_TYPE = 'text', // 'Limit' || 'Dutch'
-}
 
 export interface AnalyticsStackProps extends cdk.NestedStackProps {
   quoteLambda: aws_lambda_nodejs.NodejsFunction;
@@ -53,13 +30,8 @@ export interface AnalyticsStackProps extends cdk.NestedStackProps {
  *      - CloudWatch Subscription Filters for sending relevant logs events about quote requests and responses to Kinesis Firehose
  *      - 'Data Processors': lambda functions to transform the shape of the log events before they are published to Firehose
  *      - Kinesis Firehose Delivery Streams, which batch log events together and write them to S3 buckets that data-eng loads into BigQuery
- *      - Provisioned Redshift Cluster; no stream loads into it any more, and it is removed in a follow-up
  */
 export class AnalyticsStack extends cdk.NestedStack {
-  public readonly clusterId: string;
-  public readonly dbName: string;
-  public readonly credSecretArn: string;
-
   constructor(scope: Construct, id: string, props: AnalyticsStackProps) {
     super(scope, id, props);
     const { quoteLambda, hardQuoteLambda, analyticsStreamArn, stage, chatbotSNSArn } = props;
@@ -85,160 +57,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     botOrderLoaderBucket.grantRead(dsRole);
     botOrderRouterBucket.grantRead(dsRole);
     botOrderBroadcasterBucket.grantRead(dsRole);
-
-    /* Redshift Initialization */
-    const rsRole = new aws_iam.Role(this, 'RedshiftRole', {
-      assumedBy: new aws_iam.ServicePrincipal('redshift.amazonaws.com'),
-      managedPolicies: [
-        aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonRedshiftAllCommandsFullAccess'),
-        aws_iam.ManagedPolicy.fromAwsManagedPolicyName('SecretsManagerReadWrite'),
-      ],
-    });
-
-    const key = new aws_kms.Key(this, 'RedshiftCredsKey', {
-      enableKeyRotation: false,
-    });
-
-    const creds = new sm.Secret(this, 'RsCreds', {
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify({ username: 'admin' }),
-        generateStringKey: 'password',
-        excludePunctuation: true,
-        includeSpace: false,
-        excludeCharacters: '`"@/\\',
-      },
-      encryptionKey: key,
-      // Outlives the cluster so a cluster restored from its final snapshot can still be logged into.
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-    });
-    this.credSecretArn = creds.secretArn;
-
-    const vpc = new aws_ec2.Vpc(this, 'RsVpc', {});
-
-    const subscriptionSG = new aws_ec2.SecurityGroup(this, 'SubscriptionSG', {
-      vpc: vpc,
-      allowAllOutbound: true,
-    });
-
-    // single node of DC2.large provides 0.16TB SSD storage space,
-    // which should be sufficient for prototype
-    const rsCluster = new aws_rs.Cluster(this, 'ParametrizationCluster', {
-      masterUser: {
-        masterUsername: ADMIN,
-        masterPassword: creds.secretValueFromJson('password'),
-      },
-      vpc: vpc,
-      clusterType: aws_rs.ClusterType.SINGLE_NODE,
-      nodeType: aws_rs.NodeType.DC2_LARGE,
-      defaultDatabaseName: RS_DATABASE_NAME,
-      encrypted: false,
-      roles: [rsRole],
-      vpcSubnets: {
-        subnetType: aws_ec2.SubnetType.PUBLIC,
-      },
-      securityGroups: [subscriptionSG],
-      publiclyAccessible: true,
-      // The cluster is being removed. CloudFormation applies the deletion policy already deployed
-      // when a resource leaves the template, so this must ship before the removal: it makes that
-      // deploy take a final snapshot and delete the cluster instead of orphaning it in a VPC that
-      // CloudFormation would then fail to delete.
-      removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
-    });
-    // The cluster hands its removal policy to its subnet group, which cannot be snapshotted and
-    // holds no data; let it be deleted with the cluster rather than orphaned.
-    (rsCluster.node.findChild('Subnets') as aws_rs.ClusterSubnetGroup).applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
-    this.dbName = RS_DATABASE_NAME;
-    this.clusterId = rsCluster.clusterName;
-
-    // docs.aws.amazon.com/firehose/latest/dev/controlling-access.html#using-iam-rs-vpc
-    subscriptionSG.addIngressRule(
-      aws_ec2.Peer.ipv4(FIREHOSE_IP_ADDRESS_USE2),
-      aws_ec2.Port.tcp(rsCluster.clusterEndpoint.port)
-    );
-
-    new aws_rs.Table(this, 'RfqRequestTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'RfqRequests',
-      tableColumns: [
-        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amount', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'type', dataType: RS_DATA_TYPES.TRADE_TYPE },
-        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
-      ],
-    });
-
-    new aws_rs.Table(this, 'HardRequestTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'HardRequests',
-      tableColumns: [
-        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amount', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'type', dataType: RS_DATA_TYPES.TRADE_TYPE },
-        { name: 'numOutputs', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'cosigner', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
-      ],
-    });
-
-    new aws_rs.Table(this, 'RfqResponseTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'RfqResponses',
-      tableColumns: [
-        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
-        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
-        { name: 'fillerResponseLatencyMs', dataType: RS_DATA_TYPES.INTEGER },
-      ],
-    });
-
-    new aws_rs.Table(this, 'HardResponseTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'HardResponses',
-      tableColumns: [
-        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID },
-        { name: 'requestId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'createdAtMs', dataType: RS_DATA_TYPES.TIMESTAMP_MS },
-      ],
-    });
 
     /* Kinesis Firehose Initialization */
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {

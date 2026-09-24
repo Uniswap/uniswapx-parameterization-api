@@ -2,62 +2,33 @@
 
 Guidance for AI agents (and humans) working in this repo.
 
-## Redshift analytics tables are defined in another repo — verify columns before using them
+## Analytics tables are defined in another repo — verify columns before relying on them
 
-This service's analytics pipeline loads Redshift tables (`rfqrequests`, `rfqresponses`, etc.),
-and the only code here that still runs SQL against them
-is the reaper (`lib/cron/redshift-reaper.ts` via `AnalyticsRepository`, see
-`BaseRedshiftRepository`). The fade circuit breaker no longer reads Redshift: since the
-order-service source was promoted (#504) and the Redshift path removed, it reads the
-`PostedOrders` DynamoDB table plus the order service (`lib/cron/order-service-fades-source.ts`).
-`postedorders` and `archivedorders` are no longer loaded here: since 2026-09-24 the order
-service writes that data to its own S3 buckets, which data-eng loads into BigQuery
-(`uniswap_x.posted_orders` / `uniswap_x.archived_orders`). The Redshift copies are orphaned
-(the reaper empties `postedorders` within ~14 days; `archivedorders` stops updating).
-The tables are **not defined here**. Their schemas are owned by the `data-eng-workflows` repo,
-in the load configs:
+This repo no longer has a Redshift cluster and runs no SQL against analytics tables. Its analytics
+role is to emit log lines (`QuoteRequest`, `QuoteResponse`, `HardRequest`, `HardResponse`) that
+the analytics stack's Firehose streams deliver to S3, from which data-eng loads BigQuery
+(`uniswap_x.*`). The fade circuit breaker reads the `PostedOrders` DynamoDB table plus the order
+service (`lib/cron/order-service-fades-source.ts`), not any analytics table. The table schemas are
+**not defined here**; they are owned by the `data-eng-workflows` repo, in the load configs:
 
 ```
 data-eng-workflows/lib/spaces/uniswap_x/functions/uniswap_x_hourly_config/tables/load/*.yaml
 ```
 
-Table → YAML mapping (table names are lowercased in Redshift; YAML uses snake_case):
-
-| Redshift table   | Load schema YAML       |
-| ---------------- | ---------------------- |
-| `postedorders`   | `posted_orders.yaml`   |
-| `archivedorders` | `archived_orders.yaml` |
-| `rfqrequests`    | `rfq_requests.yaml`    |
-| `rfqresponses`   | `rfq_responses.yaml`   |
-
-**Rule: before referencing any column in Redshift SQL, confirm it exists as a `name:` field
-in the corresponding YAML.** The view/query column references are validated only at runtime
-against the live cluster — there is no compile-time or unit-test check — so a typo or a
-non-loaded column fails the cron in production (and a column that exists but is null for the
-relevant rows fails _silently_).
+e.g. `rfq_requests.yaml`, `rfq_responses.yaml`, `hard_requests.yaml`, `hard_responses.yaml`, and
+(written by the order service, not this repo) `posted_orders.yaml` / `archived_orders.yaml`.
 
 ### The trap: "emitted" ≠ "loaded"
 
-A field being emitted by `x-service`'s `analytics-service.ts` does **not** mean it lands in
-the table. Only fields listed in the load YAML are loaded; the rest are dropped. Concretely,
-V3 emits `startBlock` (= `cosignerData.decayStartBlock`), but `posted_orders.yaml` has no
-`startBlock` column, so it does not exist in `postedorders`. Likewise, a column may exist but
-only be populated for some order types (e.g. `auctionStartBlock` is emitted for Priority/Hybrid
-orders but is null for Dutch_V3). Check both that the column exists **and** that it is populated
-for the rows you care about.
-
-### How to verify
-
-1. If `../data-eng-workflows` is checked out locally, grep the matching `*.yaml` for the column.
-2. Otherwise (or to be sure it's populated), query the live cluster:
-   ```sql
-   SELECT column_name FROM information_schema.columns
-   WHERE table_name = '<table>' AND column_name = '<column>';
-   -- and, for null-for-some-rows risk:
-   SELECT ordertype, COUNT(*), COUNT(<column>) FROM <table> GROUP BY 1;
-   ```
-3. New columns must be added to the `data-eng-workflows` load YAML (and the table) **before**
-   any SQL here references them.
+A field being emitted — by this service's log lines or by `x-service`'s `analytics-service.ts` —
+does **not** mean it lands in the table. Only fields listed in the load YAML are loaded; the rest
+are dropped. Concretely, V3 emits `startBlock` (= `cosignerData.decayStartBlock`), but
+`posted_orders.yaml` has no `startBlock` column, so it does not exist in `posted_orders`. Likewise,
+a column may exist but only be populated for some order types (e.g. `auctionStartBlock` is emitted
+for Priority/Hybrid orders but is null for Dutch_V3). Adding a field to a log line here is not
+enough for it to reach BigQuery: add it to the load YAML too. Before relying on a column (in a
+backtest or analysis), grep the matching `*.yaml` (`../data-eng-workflows` if checked out) and
+check that it is populated for the rows you care about.
 
 ## Backtesting fade circuit-breaker changes against real order history
 
@@ -72,8 +43,8 @@ The breaker's fade semantics live in `classifyOutcome` / `buildFadeRows` in
 `lib/cron/order-service-fades-source.ts` (the Redshift SQL that used to define them is in git
 history at `lib/repositories/fades-repository.ts`). The long-history source for a backtest is now
 BigQuery (`uniswap_x.posted_orders` / `uniswap_x.archived_orders`); the Redshift copies stopped
-updating on 2026-09-24. The extract below is still written in Redshift SQL and needs porting to
-BigQuery before its next use. It reproduces those semantics with **no 24h window, no latest-100
+updating on 2026-09-24 and the cluster has since been deleted (a final snapshot was kept). The
+extract below is still written in Redshift SQL and needs porting to BigQuery before its next use. It reproduces those semantics with **no 24h window, no latest-100
 cap, and no row limit** (the replay applies windowing itself).
 **Keep the `faded` CASE in sync with `classifyOutcome`** — e.g. #461 changed Dutch*V3 to
 `fillTimeBlocks > 0` (a fill at the decay-start block is \_not* a fade); an extract using the

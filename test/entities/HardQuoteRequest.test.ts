@@ -15,7 +15,7 @@ const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 // HardQuoteRequest's constructor derives `requestId: _data.quoteId ?? uuidv4()`, so every JSON
 // view below reports the indicative QUOTE_ID as the requestId -- the caller's REQUEST_ID is
 // discarded. This is deliberate: `hardrequests` has no quoteId column, so requestId is how the
-// indicative quoteId reaches Redshift. Named rather than inlined so the substitution is visible.
+// indicative quoteId reaches the analytics tables. Named rather than inlined so the substitution is visible.
 const DERIVED_REQUEST_ID = QUOTE_ID;
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';

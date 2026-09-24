@@ -32,9 +32,6 @@ export type TableCapacityConfig = {
 };
 
 export interface CronStackProps extends cdk.NestedStackProps {
-  RsDatabase: string;
-  RsClusterIdentifier: string;
-  RedshiftCredSecretArn: string;
   lambdaRole: aws_iam.Role;
   stage: string;
   chatbotSNSArn?: string;
@@ -48,21 +45,10 @@ export interface CronStackProps extends cdk.NestedStackProps {
 
 export class CronStack extends cdk.NestedStack {
   public readonly fadeRateV2CronLambda?: aws_lambda_nodejs.NodejsFunction;
-  public readonly redshiftReaperCronLambda: aws_lambda_nodejs.NodejsFunction;
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
-    const {
-      RsDatabase,
-      RsClusterIdentifier,
-      RedshiftCredSecretArn,
-      lambdaRole,
-      stage,
-      envVars,
-      chatbotSNSArn,
-      postedOrdersTable,
-      orderServiceUrl,
-    } = props;
+    const { lambdaRole, stage, envVars, chatbotSNSArn, postedOrdersTable, orderServiceUrl } = props;
 
     const chatbotTopic = chatbotSNSArn
       ? cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn)
@@ -77,7 +63,7 @@ export class CronStack extends cdk.NestedStack {
         timeout: Duration.seconds(240),
         memorySize: 512,
         bundling: LAMBDA_BUNDLING,
-        // No Redshift configuration: the breaker reads PostedOrders + the order service only.
+        // The breaker reads PostedOrders + the order service only.
         environment: {
           stage: stage,
           ...envVars,
@@ -118,29 +104,8 @@ export class CronStack extends cdk.NestedStack {
       });
     }
 
-    this.redshiftReaperCronLambda = new aws_lambda_nodejs.NodejsFunction(this, `${SERVICE_NAME}Reaper`, {
-      role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
-      entry: path.join(__dirname, '../../lib/cron/redshift-reaper.ts'),
-      handler: 'handler',
-      timeout: Duration.seconds(600), // deletion of large number of rows can take a while
-      memorySize: 512,
-      bundling: LAMBDA_BUNDLING,
-      environment: {
-        REDSHIFT_DATABASE: RsDatabase,
-        REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
-        REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
-        stage: stage,
-        ...envVars,
-      },
-    });
-    new aws_events.Rule(this, `${SERVICE_NAME}ReaperSwitchSchedule`, {
-      // TODO: fix schedule
-      schedule: aws_events.Schedule.rate(Duration.hours(12)),
-      targets: [new aws_events_targets.LambdaFunction(this.redshiftReaperCronLambda)],
-    });
-
-    // Circuit-breaker state table. State is derived (recomputed each cron run from Redshift).
+    // Circuit-breaker state table. State is derived (recomputed each cron run from PostedOrders
+    // and the order service).
     const fillerCBTimestampsV2Table = new aws_dynamo.Table(this, `${SERVICE_NAME}FillerCBTimestampsV2Table`, {
       tableName: DYNAMO_TABLE_NAME.FILLER_CB_TIMESTAMPS_V2,
       partitionKey: {
