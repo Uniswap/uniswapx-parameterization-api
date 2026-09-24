@@ -68,8 +68,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     const rfqResponseBucket = new aws_s3.Bucket(this, 'RfqResponseBucket');
     const hardResponseBucket = new aws_s3.Bucket(this, 'HardResponseBucket');
     const unifiedRoutingResponseBucket = new aws_s3.Bucket(this, 'UnifiedRoutingResponseBucket');
-    const fillBucket = new aws_s3.Bucket(this, 'FillBucket');
-    const ordersBucket = new aws_s3.Bucket(this, 'OrdersBucket');
     const botOrderLoaderBucket = new aws_s3.Bucket(this, 'BotOrderLoaderBucket');
     const botOrderRouterBucket = new aws_s3.Bucket(this, 'BotOrderRouterBucket');
     const botOrderBroadcasterBucket = new aws_s3.Bucket(this, 'BotOrderBroadcasterBucket');
@@ -81,8 +79,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     hardResponseBucket.grantRead(dsRole);
     unifiedRoutingRequestBucket.grantRead(dsRole);
     unifiedRoutingResponseBucket.grantRead(dsRole);
-    fillBucket.grantRead(dsRole);
-    ordersBucket.grantRead(dsRole);
     botOrderLoaderBucket.grantRead(dsRole);
     botOrderRouterBucket.grantRead(dsRole);
     botOrderBroadcasterBucket.grantRead(dsRole);
@@ -231,61 +227,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const archivedOrdersTable = new aws_rs.Table(this, 'archivedOrdersTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'ArchivedOrders',
-      tableColumns: [
-        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'orderStatus', dataType: RS_DATA_TYPES.TERMINAL_STATUS },
-        { name: 'offerer', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'nonce', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'blockNumber', dataType: RS_DATA_TYPES.BIGINT },
-        { name: 'txHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amountOut', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'amountIn', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'tokenInChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'tokenOutChainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'fillTimestamp', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'gasPriceWei', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'gasUsed', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'gasCostInETH', dataType: RS_DATA_TYPES.UnitInETH },
-        { name: 'logTime', dataType: RS_DATA_TYPES.TIMESTAMP },
-        // Blocks between the order's decay start and the fill (fillBlock - decayStartBlock),
-        // emitted by x-service. Consumed by the RFQ circuit breaker for Dutch_V3 fade detection.
-        { name: 'fillTimeBlocks', dataType: RS_DATA_TYPES.INTEGER },
-      ],
-    });
-
-    const postedOrdersTable = new aws_rs.Table(this, 'postedOrdersTable', {
-      cluster: rsCluster,
-      adminUser: creds,
-      databaseName: RS_DATABASE_NAME,
-      tableName: 'postedOrders',
-      tableColumns: [
-        { name: 'quoteId', dataType: RS_DATA_TYPES.UUID, distKey: true },
-        { name: 'createdAt', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'orderHash', dataType: RS_DATA_TYPES.TX_HASH },
-        { name: 'startTime', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'endTime', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'deadline', dataType: RS_DATA_TYPES.TIMESTAMP },
-        { name: 'chainId', dataType: RS_DATA_TYPES.INTEGER },
-        { name: 'inputStartAmount', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'inputEndAmount', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'tokenIn', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'outputStartAmount', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'outputEndAmount', dataType: RS_DATA_TYPES.UINT256 },
-        { name: 'tokenOut', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'filler', dataType: RS_DATA_TYPES.ADDRESS },
-        { name: 'orderType', dataType: RS_DATA_TYPES.ORDER_TYPE },
-      ],
-    });
-
     /* Kinesis Firehose Initialization */
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
       assumedBy: new aws_iam.ServicePrincipal('firehose.amazonaws.com'),
@@ -295,8 +236,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     hardRequestBucket.grantReadWrite(firehoseRole);
     rfqResponseBucket.grantReadWrite(firehoseRole);
     hardResponseBucket.grantReadWrite(firehoseRole);
-    fillBucket.grantReadWrite(firehoseRole);
-    ordersBucket.grantReadWrite(firehoseRole);
     botOrderLoaderBucket.grantReadWrite(firehoseRole);
     botOrderRouterBucket.grantReadWrite(firehoseRole);
     botOrderBroadcasterBucket.grantReadWrite(firehoseRole);
@@ -317,47 +256,11 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const postOrderProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'postedOrderProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'postOrderProcessor',
-      timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
-      memorySize: 512,
-      bundling: LAMBDA_BUNDLING,
-      environment: {
-        VERSION: '2',
-        NODE_OPTIONS: '--enable-source-maps',
-        ANALYTICS_STREAM_ARN: analyticsStreamArn,
-        ...props.envVars,
-        stage,
-      },
-    });
-
-    const fillEventProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'FillLogProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
-      entry: path.join(__dirname, '../../lib/handlers/index.ts'),
-      handler: 'fillEventProcessor',
-      timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher
-      memorySize: 512,
-      bundling: LAMBDA_BUNDLING,
-      environment: {
-        VERSION: '2',
-        NODE_OPTIONS: '--enable-source-maps',
-        ANALYTICS_STREAM_ARN: analyticsStreamArn,
-        ...props.envVars,
-        stage,
-      },
-    });
-
     firehoseRole.addToPolicy(
       new aws_iam.PolicyStatement({
         effect: aws_iam.Effect.ALLOW,
         actions: ['lambda:InvokeFunction', 'lambda:GetFunctionConfiguration'],
-        resources: [
-          quoteProcessorLambda.functionArn,
-          fillEventProcessorLambda.functionArn,
-          postOrderProcessorLambda.functionArn,
-        ],
+        resources: [quoteProcessorLambda.functionArn],
       })
     );
     let chatBotTopic: cdk.aws_sns.ITopic;
@@ -366,7 +269,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     }
 
     /* log processor alarms */
-    [quoteProcessorLambda, fillEventProcessorLambda, postOrderProcessorLambda].forEach((lambda) => {
+    [quoteProcessorLambda].forEach((lambda) => {
       const successRateSev2Name = `${lambda.node.id}-SEV2-SuccessRate`;
       const successRateSev3Name = `${lambda.node.id}-SEV3-SuccessRate`;
 
@@ -547,72 +450,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       },
     });
 
-    const fillStream = new aws_firehose.CfnDeliveryStream(this, 'FillRedshiftStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: fillBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: archivedOrdersTable.tableName,
-          dataTableColumns: archivedOrdersTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: fillEventProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
-    const orderStream = new aws_firehose.CfnDeliveryStream(this, 'OrderStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: ordersBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
-        roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: postedOrdersTable.tableName,
-          dataTableColumns: postedOrdersTable.tableColumns.map((column) => column.name).toString(),
-        },
-        processingConfiguration: {
-          enabled: true,
-          processors: [
-            {
-              type: 'Lambda',
-              parameters: [
-                {
-                  parameterName: 'LambdaArn',
-                  parameterValue: postOrderProcessorLambda.functionArn,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
     /* Firehose Alarms */
     // hasRedshift gates the DeliveryToRedshift alarms: an S3-only stream never emits that
     // metric, and with treatMissingData NOT_BREACHING an alarm on it can never leave OK.
@@ -731,58 +568,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       })
     );
 
-    // A 'CW Logs destination' which is somehow different from the Firehose stream which is supposed to be the
-    // destination of the x-account subscription filter; unfortunately there is little documentation on this from AWS
-    // had to use Cfn construct because aws-cdk-lib.aws_logs_destinations module doesn't support Firehose
-    // https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CreateDestination.html
-    const fillDestination = new aws_logs.CfnDestination(this, 'FillEventDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: fillStream.attrArn,
-      destinationName: 'fillEventDestination',
-    });
-
-    const postedOrderDestination = new aws_logs.CfnDestination(this, 'PostedOrderDestination', {
-      roleArn: subscriptionRole.roleArn,
-      targetArn: orderStream.attrArn,
-      destinationName: 'postedOrderDestination',
-    });
-
-    // hack to get around with CDK bug where `new aws_iam.PolicyDocument({...}).string()` doesn't really turn it into a string
-    // enclosed in if statement to allow deploying stack w/o having to set up x-account logging
-    if (props.envVars['FILL_LOG_SENDER_ACCOUNT']) {
-      fillDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['FILL_LOG_SENDER_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-    }
-
-    if (props.envVars['ORDER_LOG_SENDER_ACCOUNT']) {
-      postedOrderDestination.destinationPolicy = JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: '',
-            Effect: 'Allow',
-            Principal: {
-              AWS: props.envVars['FILL_LOG_SENDER_ACCOUNT'],
-            },
-            Action: 'logs:PutSubscriptionFilter',
-            Resource: '*',
-          },
-        ],
-      });
-    }
-
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-subscriptionfilter.html
     // same here regarding CDK not having a stable implementation of this resource
     new aws_logs.CfnSubscriptionFilter(this, 'RequestSub', {
@@ -813,12 +598,6 @@ export class AnalyticsStack extends cdk.NestedStack {
       roleArn: subscriptionRole.roleArn,
     });
 
-    new CfnOutput(this, 'fillDestinationName', {
-      value: fillDestination.attrArn,
-    });
-    new CfnOutput(this, 'postedOrderDestinationName', {
-      value: postedOrderDestination.attrArn,
-    });
     new CfnOutput(this, 'BOT_ACCOUNT', {
       value: props.envVars['BOT_ACCOUNT'],
     });

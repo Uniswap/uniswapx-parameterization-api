@@ -1,7 +1,5 @@
-import { fillEventProcessor, postOrderProcessor, quoteProcessor } from './blueprints/cw-log-firehose-processor';
+import { quoteProcessor } from './blueprints/cw-log-firehose-processor';
 
 module.exports = {
-  fillEventProcessor: fillEventProcessor,
-  postOrderProcessor: postOrderProcessor,
   quoteProcessor: quoteProcessor,
 };
