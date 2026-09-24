@@ -144,8 +144,6 @@ export class APIPipeline extends Stack {
       envVars: {
         ...jsonRpcProviders,
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_BETA').toString(),
-        FILL_LOG_SENDER_ACCOUNT: '321377678687',
-        ORDER_LOG_SENDER_ACCOUNT: '321377678687',
         BOT_ACCOUNT: '800035746608',
       },
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.BETA],
@@ -164,8 +162,6 @@ export class APIPipeline extends Stack {
       envVars: {
         ...jsonRpcProviders,
         ORDER_SERVICE_URL: urlSecrets.secretValueFromJson('GOUDA_SERVICE_PROD').toString(),
-        FILL_LOG_SENDER_ACCOUNT: '316116520258',
-        ORDER_LOG_SENDER_ACCOUNT: '316116520258',
         BOT_ACCOUNT: '456809954954',
       },
       stage: STAGE.PROD,
@@ -275,7 +271,6 @@ const app = new cdk.App();
 
 const envVars: { [key: string]: string } = {};
 
-envVars['FILL_LOG_SENDER_ACCOUNT'] = process.env['FILL_LOG_SENDER_ACCOUNT'] || '';
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';

@@ -4,12 +4,16 @@ Guidance for AI agents (and humans) working in this repo.
 
 ## Redshift analytics tables are defined in another repo — verify columns before using them
 
-This service's analytics pipeline loads Redshift tables (`postedorders`, `archivedorders`,
-`rfqrequests`, `rfqresponses`, etc.), and the only code here that still runs SQL against them
+This service's analytics pipeline loads Redshift tables (`rfqrequests`, `rfqresponses`, etc.),
+and the only code here that still runs SQL against them
 is the reaper (`lib/cron/redshift-reaper.ts` via `AnalyticsRepository`, see
 `BaseRedshiftRepository`). The fade circuit breaker no longer reads Redshift: since the
 order-service source was promoted (#504) and the Redshift path removed, it reads the
 `PostedOrders` DynamoDB table plus the order service (`lib/cron/order-service-fades-source.ts`).
+`postedorders` and `archivedorders` are no longer loaded here: since 2026-09-24 the order
+service writes that data to its own S3 buckets, which data-eng loads into BigQuery
+(`uniswap_x.posted_orders` / `uniswap_x.archived_orders`). The Redshift copies are orphaned
+(the reaper empties `postedorders` within ~14 days; `archivedorders` stops updating).
 The tables are **not defined here**. Their schemas are owned by the `data-eng-workflows` repo,
 in the load configs:
 
@@ -66,11 +70,13 @@ full harness design, per-filler duty-cycle/allowed-fades metrics, and baseline n
 
 The breaker's fade semantics live in `classifyOutcome` / `buildFadeRows` in
 `lib/cron/order-service-fades-source.ts` (the Redshift SQL that used to define them is in git
-history at `lib/repositories/fades-repository.ts`). The Redshift analytics tables are still the
-best long-history source for a backtest; the extract below reproduces those semantics with **no
-24h window, no latest-100 cap, and no row limit** (the replay applies windowing itself).
-**Keep the `faded` CASE in sync with `classifyOutcome`** — e.g. #461 changed Dutch_V3 to
-`fillTimeBlocks > 0` (a fill at the decay-start block is _not_ a fade); an extract using the
+history at `lib/repositories/fades-repository.ts`). The long-history source for a backtest is now
+BigQuery (`uniswap_x.posted_orders` / `uniswap_x.archived_orders`); the Redshift copies stopped
+updating on 2026-09-24. The extract below is still written in Redshift SQL and needs porting to
+BigQuery before its next use. It reproduces those semantics with **no 24h window, no latest-100
+cap, and no row limit** (the replay applies windowing itself).
+**Keep the `faded` CASE in sync with `classifyOutcome`** — e.g. #461 changed Dutch*V3 to
+`fillTimeBlocks > 0` (a fill at the decay-start block is \_not* a fade); an extract using the
 old `>= 0` inflates V3 fade rates and mis-calibrates every knob. Two Redshift-specific caveats:
 `archivedorders` never receives `expired` or `insufficient-funds` orders and its `cancelled` rows
 carry no token columns, so (a) the `ao.fillTimestamp IS NULL THEN 1` branch is how an expiry
