@@ -16,7 +16,7 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
   // try to refetch timestamps every 30 seconds
   private static UPDATE_PERIOD_MS = 1 * 30000;
 
-  // TimestampRepository builds its own wrapNumbers:false client (state is small integers).
+  // The default repo builds its own wrapNumbers:false client (state is small integers).
   constructor(_log: Logger, private readonly timestampDB: BaseTimestampRepository = TimestampRepository.create()) {
     this.log = _log.child({ quoter: 'CircuitBreakerConfigurationProvider' });
   }
@@ -27,9 +27,20 @@ export class DynamoCircuitBreakerConfigurationProvider implements CircuitBreaker
       key !== this.fetchedFor ||
       Date.now() - this.lastUpdatedTimestamp > DynamoCircuitBreakerConfigurationProvider.UPDATE_PERIOD_MS
     ) {
-      this.timestamps = await this.timestampDB.getFillerTimestampsMap(endpoints);
-      this.fetchedFor = key;
-      this.lastUpdatedTimestamp = Date.now();
+      try {
+        this.timestamps = await this.timestampDB.getFillerTimestampsMap(endpoints);
+        this.fetchedFor = key;
+        this.lastUpdatedTimestamp = Date.now();
+      } catch (e) {
+        // Keep scoring with the last good read so benched fillers stay benched through a
+        // DynamoDB blip. It is keyed by endpoint, so it stays correct for the fillers it covers
+        // even if the set changed. Before any good read it is empty, which enables everyone.
+        // fetchedFor and lastUpdatedTimestamp are left alone, so the next request retries.
+        this.log.error(
+          { error: e, cachedFillers: this.timestamps.size },
+          'Error reading filler timestamps, serving the last good read'
+        );
+      }
     }
     this.log.info({ timestamps: Array.from(this.timestamps.entries()) }, 'filler timestamps');
     return this.timestamps;

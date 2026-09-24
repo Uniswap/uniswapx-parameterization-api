@@ -210,7 +210,21 @@ describe('DynamoCircuitBreakerConfigurationProvider', () => {
     expect(repo.requests).toHaveLength(2);
   });
 
-  it('fails open on a read error and retries on the next request', async () => {
+  it('keeps benched fillers benched when a later read fails, and retries on the next request', async () => {
+    const start = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start);
+    await provider.getEndpointStatuses(WEBHOOK_CONFIGS);
+
+    nowSpy.mockReturnValue(start + 30_001);
+    repo.failNext = true;
+    const duringBlip = await provider.getEndpointStatuses(WEBHOOK_CONFIGS);
+    expect(duringBlip.disabled.map((d) => d.webhook.endpoint)).toEqual(['filler3', 'filler5']);
+
+    await provider.getEndpointStatuses(WEBHOOK_CONFIGS);
+    expect(repo.requests).toHaveLength(3);
+  });
+
+  it('fails open when the first read fails, and retries on the next request', async () => {
     repo.failNext = true;
     const failed = await provider.getEndpointStatuses(WEBHOOK_CONFIGS);
     expect(failed).toEqual({ enabled: WEBHOOK_CONFIGS, disabled: [] });
