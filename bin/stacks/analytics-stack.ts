@@ -17,6 +17,9 @@ import { LAMBDA_BUNDLING } from './lambda-bundling';
 const RS_DATABASE_NAME = 'uniswap_x'; // must be lowercase
 const ADMIN = 'admin';
 const FIREHOSE_IP_ADDRESS_USE2 = '13.58.135.96/27';
+// Pinned to what these streams used as Redshift intermediate-S3 destinations, so object sizes and
+// flush cadence don't change for the data-eng BigQuery load that reads these buckets.
+const QUOTE_ANALYTICS_S3_BUFFERING = { sizeInMBs: 5, intervalInSeconds: 300 };
 
 enum RS_DATA_TYPES {
   UUID = 'char(36)',
@@ -45,12 +48,12 @@ export interface AnalyticsStackProps extends cdk.NestedStackProps {
 
 /**
  * AnalyticsStack
- *  Sets up the Analytics infrastructure for the parameterization service. The final destination is a Redshift cluster that we can run SQL queries against.
+ *  Sets up the Analytics infrastructure for the parameterization service.
  *    This includes:
  *      - CloudWatch Subscription Filters for sending relevant logs events about quote requests and responses to Kinesis Firehose
  *      - 'Data Processors': lambda functions to transform the shape of the log events before they are published to Firehose
- *      - Kinesis Firehose Delivery Stream, which batches log events together and load them to intermediary S3 buckets
- *      - Provisioned Redshift Cluster; transformed log events are COPY'd from S3 to Redshift as the final datawarehouse and analytics engine
+ *      - Kinesis Firehose Delivery Streams, which batch log events together and write them to S3 buckets that data-eng loads into BigQuery
+ *      - Provisioned Redshift Cluster; no stream loads into it any more, and it is removed in a follow-up
  */
 export class AnalyticsStack extends cdk.NestedStack {
   public readonly clusterId: string;
@@ -143,7 +146,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       aws_ec2.Port.tcp(rsCluster.clusterEndpoint.port)
     );
 
-    const rfqRequestTable = new aws_rs.Table(this, 'RfqRequestTable', {
+    new aws_rs.Table(this, 'RfqRequestTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
@@ -162,7 +165,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const hardRequestTable = new aws_rs.Table(this, 'HardRequestTable', {
+    new aws_rs.Table(this, 'HardRequestTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
@@ -184,7 +187,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const rfqResponseTable = new aws_rs.Table(this, 'RfqResponseTable', {
+    new aws_rs.Table(this, 'RfqResponseTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
@@ -206,7 +209,7 @@ export class AnalyticsStack extends cdk.NestedStack {
       ],
     });
 
-    const hardResponseTable = new aws_rs.Table(this, 'HardResponseTable', {
+    new aws_rs.Table(this, 'HardResponseTable', {
       cluster: rsCluster,
       adminUser: creds,
       databaseName: RS_DATABASE_NAME,
@@ -318,22 +321,15 @@ export class AnalyticsStack extends cdk.NestedStack {
 
     // CDK doesn't have this implemented yet, so have to use the CloudFormation resource (lower level of abstraction)
     // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-kinesisfirehose-deliverystream.html
+    // The quote request/response streams deliver to S3 only. data-eng loads these buckets into BigQuery by
+    // listing the default YYYY/MM/DD/HH/ (UTC) key prefix, so keep the bucket, prefix, compression, and
+    // buffering unchanged.
     const rfqRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RfqRequestStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: rfqRequestBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
+      extendedS3DestinationConfiguration: {
+        bucketArn: rfqRequestBucket.bucketArn,
         roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: rfqRequestTable.tableName,
-          dataTableColumns: rfqRequestTable.tableColumns.map((column) => column.name).toString(),
-        },
+        compressionFormat: 'UNCOMPRESSED',
+        bufferingHints: QUOTE_ANALYTICS_S3_BUFFERING,
         processingConfiguration: {
           enabled: true,
           processors: [
@@ -352,21 +348,11 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     const hardRequestFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'HardRequestStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: hardRequestBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
+      extendedS3DestinationConfiguration: {
+        bucketArn: hardRequestBucket.bucketArn,
         roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: hardRequestTable.tableName,
-          dataTableColumns: hardRequestTable.tableColumns.map((column) => column.name).toString(),
-        },
+        compressionFormat: 'UNCOMPRESSED',
+        bufferingHints: QUOTE_ANALYTICS_S3_BUFFERING,
         processingConfiguration: {
           enabled: true,
           processors: [
@@ -385,21 +371,11 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     const hardResponseFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'HardResponseStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: hardResponseBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
+      extendedS3DestinationConfiguration: {
+        bucketArn: hardResponseBucket.bucketArn,
         roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: hardResponseTable.tableName,
-          dataTableColumns: hardResponseTable.tableColumns.map((column) => column.name).toString(),
-        },
+        compressionFormat: 'UNCOMPRESSED',
+        bufferingHints: QUOTE_ANALYTICS_S3_BUFFERING,
         processingConfiguration: {
           enabled: true,
           processors: [
@@ -418,21 +394,11 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     const rfqResponseFirehoseStream = new aws_firehose.CfnDeliveryStream(this, 'RfqResponseStream', {
-      redshiftDestinationConfiguration: {
-        clusterJdbcurl: `jdbc:redshift://${rsCluster.clusterEndpoint.hostname}:${rsCluster.clusterEndpoint.port}/${RS_DATABASE_NAME}`,
-        username: 'admin',
-        password: creds.secretValueFromJson('password').toString(),
-        s3Configuration: {
-          bucketArn: rfqResponseBucket.bucketArn,
-          roleArn: firehoseRole.roleArn,
-          compressionFormat: 'UNCOMPRESSED',
-        },
+      extendedS3DestinationConfiguration: {
+        bucketArn: rfqResponseBucket.bucketArn,
         roleArn: firehoseRole.roleArn,
-        copyCommand: {
-          copyOptions: "JSON 'auto ignorecase'",
-          dataTableName: rfqResponseTable.tableName,
-          dataTableColumns: rfqResponseTable.tableColumns.map((column) => column.name).toString(),
-        },
+        compressionFormat: 'UNCOMPRESSED',
+        bufferingHints: QUOTE_ANALYTICS_S3_BUFFERING,
         processingConfiguration: {
           enabled: true,
           processors: [
@@ -451,20 +417,14 @@ export class AnalyticsStack extends cdk.NestedStack {
     });
 
     /* Firehose Alarms */
-    // hasRedshift gates the DeliveryToRedshift alarms: an S3-only stream never emits that
-    // metric, and with treatMissingData NOT_BREACHING an alarm on it can never leave OK.
-    // fillStream and orderStream are deliberately unmonitored: the order service stopped
-    // producing to them (it writes posted/fill data to data-eng's bucket directly), so zero
-    // records is their expected state and the breaching MissingRecords alarm would page until
-    // the streams themselves are removed.
     const allStreams = [
-      { stream: rfqRequestFirehoseStream, hasRedshift: true },
-      { stream: hardRequestFirehoseStream, hasRedshift: true },
-      { stream: hardResponseFirehoseStream, hasRedshift: true },
-      { stream: rfqResponseFirehoseStream, hasRedshift: true },
+      rfqRequestFirehoseStream,
+      hardRequestFirehoseStream,
+      hardResponseFirehoseStream,
+      rfqResponseFirehoseStream,
     ];
 
-    allStreams.forEach(({ stream, hasRedshift }) => {
+    allStreams.forEach((stream) => {
       const s3DeliverySuccessSev3Name = `${stream.node.id}-SEV3-S3Delivery`;
       const s3DeliverySuccessSev2Name = `${stream.node.id}-SEV2-S3Delivery`;
       const missingRecordsName = `UniswapXParameterizationAPI-SEV3-MissingRecords-${stream.node.id}`;
@@ -517,41 +477,10 @@ export class AnalyticsStack extends cdk.NestedStack {
         actionsEnabled: true,
       });
 
-      const deliveryAlarms = [s3DeliverySev3, s3DeliverySev2];
-
-      if (hasRedshift) {
-        const deliveryToRedshift = new cdk.aws_cloudwatch.Metric({
-          namespace: 'AWS/Firehose',
-          metricName: 'DeliveryToRedshift.Success',
-          dimensionsMap: {
-            DeliveryStreamName: stream.ref,
-          },
-          statistic: 'Average',
-          period: cdk.Duration.minutes(5),
-        });
-
-        deliveryAlarms.push(
-          new cdk.aws_cloudwatch.Alarm(this, `${stream.node.id}-SEV3-RedshiftDelivery`, {
-            metric: deliveryToRedshift,
-            threshold: 0.95,
-            evaluationPeriods: 3,
-            comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-            treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
-            actionsEnabled: true,
-          }),
-          new cdk.aws_cloudwatch.Alarm(this, `${stream.node.id}-SEV2-RedshiftDelivery`, {
-            metric: deliveryToRedshift,
-            threshold: 0.85,
-            evaluationPeriods: 3,
-            comparisonOperator: cdk.aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-            treatMissingData: cdk.aws_cloudwatch.TreatMissingData.NOT_BREACHING,
-            actionsEnabled: true,
-          })
-        );
-      }
-
       if (chatBotTopic) {
-        deliveryAlarms.forEach((alarm) => alarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic)));
+        [s3DeliverySev3, s3DeliverySev2].forEach((alarm) =>
+          alarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic))
+        );
       }
     });
 
