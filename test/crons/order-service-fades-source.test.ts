@@ -1,9 +1,3 @@
-import {
-  DescribeStatementCommand,
-  ExecuteStatementCommand,
-  GetStatementResultCommand,
-  RedshiftDataClient,
-} from '@aws-sdk/client-redshift-data';
 import { OrderType, PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import Logger from 'bunyan';
 
@@ -23,7 +17,7 @@ import {
 } from '../../lib/cron/order-service-fades-source';
 import { MockOrderStatusProvider, OrderServiceOrderStatus } from '../../lib/providers/order';
 import { ORDER_SERVICE_MAX_ORDER_HASHES } from '../../lib/providers/order/uniswapxService';
-import { ORDERS_PER_FILLER_LIMIT, V2FadesRepository, V2FadesRowType } from '../../lib/repositories/fades-repository';
+import { ORDERS_PER_FILLER_LIMIT, V2FadesRowType } from '../../lib/repositories/fade-rows';
 import {
   MockPostedOrderRepository,
   PostedOrderOutcome,
@@ -349,42 +343,16 @@ describe('OrderServiceFadesSource', () => {
       expect(rows).toEqual([{ fillerAddress: ADDR_A, faded: 1, postTimestamp: NOW - 200, deadline: NOW - 100 }]);
     });
 
-    it('produces rows with exactly the keys and value types the Redshift repository returns', async () => {
-      // Drive the real Redshift formatter through a fake RedshiftDataClient so the shape
-      // comparison is against what the cron actually receives today, not a hand-written type.
-      V2FadesRepository.log = log;
-      const fakeClient = {
-        send: async (command: unknown) => {
-          if (command instanceof ExecuteStatementCommand) return { Id: 'stmt' };
-          if (command instanceof DescribeStatementCommand) return { Status: 'FINISHED' };
-          if (command instanceof GetStatementResultCommand) {
-            return {
-              Records: [
-                [
-                  { stringValue: ADDR_A },
-                  { stringValue: `${NOW - 200}` },
-                  { stringValue: `${NOW - 100}` },
-                  { longValue: 1 },
-                ],
-              ],
-            };
-          }
-          throw new Error('unexpected command');
-        },
+    it('produces rows with exactly the V2FadesRowType keys (the shape the scoring code has always consumed)', () => {
+      const reference: V2FadesRowType = {
+        fillerAddress: ADDR_A,
+        faded: 1,
+        postTimestamp: NOW - 200,
+        deadline: NOW - 100,
       };
-      const redshift = new V2FadesRepository(fakeClient as unknown as RedshiftDataClient, {
-        Database: 'db',
-        ClusterIdentifier: 'cluster',
-        SecretArn: 'arn',
-      });
-      const [redshiftRow] = await redshift.getFades();
       const [newRow] = buildFadeRows([fade({ deadline: NOW - 100, postedAt: NOW - 200 })], { now: NOW });
-
-      expect(Object.keys(newRow).sort()).toEqual(Object.keys(redshiftRow).sort());
-      (Object.keys(redshiftRow) as (keyof V2FadesRowType)[]).forEach((key) => {
-        expect(typeof newRow[key]).toBe(typeof redshiftRow[key]);
-      });
-      expect(newRow).toEqual(redshiftRow);
+      expect(Object.keys(newRow).sort()).toEqual(Object.keys(reference).sort());
+      expect(newRow).toEqual(reference);
     });
 
     it('excludes in-flight orders (deadline >= now)', () => {

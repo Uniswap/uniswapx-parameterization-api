@@ -10,7 +10,6 @@ import { ethers } from 'ethers';
 import {
   BETA_S3_KEY,
   FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV,
-  FADES_SOURCE_ENV,
   PRODUCTION_S3_KEY,
   WEBHOOK_CONFIG_BUCKET,
 } from '../constants';
@@ -21,31 +20,20 @@ import { S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../prov
 import {
   BaseTimestampRepository,
   ORDERS_PER_FILLER_LIMIT,
-  SharedConfigs,
   TimestampRepoRow,
   ToUpdateTimestampRow,
-  V2FadesRepository,
   V2FadesRowType,
 } from '../repositories';
 import { DynamoFillerAddressRepository, FillerAddressRepository } from '../repositories/filler-address-repository';
 import { DynamoPostedOrderRepository } from '../repositories/posted-order-repository';
 import { TimestampRepository, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
-import { runFadeRateShadow, SHADOW_TIME_BUDGET_MS } from './fade-rate-shadow';
-import {
-  FadesScoringSource,
-  FadesSourceKind,
-  orderServiceScoringSource,
-  parseFadesSource,
-  redshiftScoringSource,
-} from './fades-sources';
-import { OrderServiceFadesSource, ResolutionSummary } from './order-service-fades-source';
+import { FadesSource, OrderServiceFadesSource, ResolutionSummary } from './order-service-fades-source';
 
-// Time kept in hand at the end of an invocation so the shadow's budget can never run the Lambda
-// into its own timeout: a run that did its job correctly must not surface as a cron error.
+// Time kept in hand at the end of an invocation: the source's best-effort outcome resolution stops
+// starting order-service batches this far before the Lambda deadline, so a slow order service
+// truncates resolution (finished next run) rather than the run.
 export const LAMBDA_EXIT_MARGIN_MS = 30_000;
-// Below this the shadow is not worth starting (a Redshift statement alone takes seconds).
-export const MIN_SHADOW_BUDGET_MS = 5_000;
 
 // Re-exported for existing importers; the sentinel lives with the repository that owns the
 // stored value's parse/write semantics.
@@ -53,8 +41,8 @@ export { UNBLOCKED_BLOCK_UNTIL_TIMESTAMP };
 
 export type FillerFadeStats = {
   // Laplace-smoothed fade rate over the filler's post-block window (see getFillersFadeStats).
-  // The underlying query bounds the window to 24 hours OR the latest ORDERS_PER_FILLER_LIMIT
-  // orders, whichever is smaller — so high-volume fillers are judged on recent orders (fast
+  // The source bounds the window to 24 hours OR the latest ORDERS_PER_FILLER_LIMIT orders per
+  // address, whichever is smaller — so high-volume fillers are judged on recent orders (fast
   // acute response) and low-volume fillers on up to a full day (catches chronic fading).
   fadeRate: number;
   // Laplace-smoothed fade rate over orders that completed since the last cron run with a
@@ -72,10 +60,9 @@ export type FillerFadeStats = {
   // A run with any new fade is not a clean run: it cannot build the decay streak (and resets
   // it), so a sub-threshold fade never counts as recovery.
   newFades: number;
-  // Raw (unsmoothed) fade rate over the FINAL rows of the filler's query window (24h /
-  // latest-100 per address, deadline past the finality horizon), ignoring the clean-slate
-  // floor — the no-amnesty "chronic" view. Final rows only, so not-yet-loaded fills can't
-  // inflate the rate with transient fades. Never used for blocking: emitted as a watchlist
+  // Raw (unsmoothed) fade rate over the FINAL rows of the filler's window (24h / latest-100
+  // per address, deadline past the finality horizon), ignoring the clean-slate floor — the
+  // no-amnesty "chronic" view. Never used for blocking: emitted as a watchlist
   // metric so persistent moderate faders who live inside the block threshold's envelope
   // (~0.12n + 1.4 fades per day, e.g. ~20% raw at 15 orders/day) stay visible to humans even
   // though the breaker correctly never trips on them.
@@ -115,16 +102,16 @@ export const FADE_RATE_BLOCK_THRESHOLD = 0.12;
 // under threshold -> "activity" decay, fade #2 -> block) nets zero escalation per cycle and
 // stays on 15-30 minute blocks forever.
 export const CLEAN_RUNS_PER_DECAY = 6;
-// The streak classifies rows as "new" against a horizon that trails wall clock by this lag,
-// because postedorders/archivedorders are batch-loaded (hourly) while the cron runs every 10
-// minutes. Without the lag, streak classification is wrong in both directions: a fade whose
-// row loads late (deadline already behind the watermark) never resets the streak, and an
-// order whose fill row hasn't loaded yet reads as a transient fade (LEFT JOIN fillTimestamp
-// NULL) exactly when it counts as new — resetting an honest filler's streak with no later
-// correction. Rows older than the lag have final load state, so classification is exact.
-// 2h = hourly load cadence + headroom for cross-table skew and job runtime.
+// The streak classifies rows as "new" against a horizon that trails wall clock by this lag.
+// It was introduced for the retired Redshift source, whose tables were batch-loaded hourly: a
+// fade whose row loaded late never reset the streak, and a fill whose row had not loaded yet
+// read as a transient fade. Neither can happen with the order-service source (an unresolved
+// order contributes no row at all), so today the lag is a deliberate 2h delay on streak credit
+// (newCompletions/newFades → consecutiveCleanRuns decay) and on chronicRate. Deliberately left
+// unchanged when the Redshift path was removed: shrinking it changes recovery speed and is a
+// tuning decision to make on its own, with a backtest (see CLAUDE.md).
 //
-// Known boundary (by design): a row is only classifiable while it survives in the query's
+// Known boundary (by design): a row is only classifiable while it survives in the source's
 // latest-ORDERS_PER_FILLER_LIMIT window per address, so streak classification degrades for
 // an address completing more than ORDERS_PER_FILLER_LIMIT orders per lag period (~50/hour
 // sustained) — evicted rows are never classified, thinning streak credit (and, in the
@@ -134,11 +121,6 @@ export const CLEAN_RUNS_PER_DECAY = 6;
 // CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES fires when an address's window no longer reaches
 // back to this horizon, so volume growth surfaces on the dashboard rather than as a stuck
 // recovery.
-// TODO(fades-source flip): this lag exists for Redshift's hourly batch load. With
-// FADES_SOURCE=order-service an unresolved order contributes no row at all (there is no
-// NULL-fill window), so the 2h is pure delay on newCompletions/newFades — and therefore on
-// consecutiveCleanRuns decay — and on chronicRate. First tuning constant to revisit once the flip
-// has bedded in; deliberately unchanged by the flip itself.
 export const STREAK_FINALITY_LAG_SECS = 2 * 60 * 60;
 // Cap on the block backoff: both the stored consecutiveBlocks counter and the duration
 // exponent stop growing here, so a single block/extension increment is at most
@@ -191,45 +173,24 @@ export const handler: ScheduledHandler = metricScope(
  * passes.
  */
 export type FadeRateCronDeps = {
-  // Which source's rows drive the block decisions this run (FADES_SOURCE). The other source, if
-  // present, runs as the shadow: scored with the same code, written nowhere, compared.
-  primary: FadesSourceKind;
-  redshift: FadesScoringSource;
-  // Absent when the order service is not configured for this stage. Required when it is the
-  // primary; without it there is no shadow when Redshift is the primary.
-  orderService?: FadesScoringSource;
+  // The breaker's input: per-order rows from PostedOrders + the order service. A failure here is
+  // a failure of the cron run — there is no fallback source.
+  source: FadesSource;
   webhookProvider: Pick<S3WebhookConfigurationProvider, 'fetchEndpoints' | 'fillerEndpoints'>;
   fillerAddressRepo: Pick<FillerAddressRepository, 'getAddressToFillerMap'>;
   timestampDB: BaseTimestampRepository;
   now?: () => number;
   log?: Logger;
-  shadowCompareSince?: number;
-  shadowBudgetMs?: number;
-  // Milliseconds left in the Lambda invocation. When present, the primary's best-effort work
-  // (order-service resolution) is given everything but a shadow reserve and the exit margin, and
-  // the shadow's budget is clamped to what remains; without it the fixed budgets apply.
+  // Milliseconds left in the Lambda invocation. When present, the source's best-effort outcome
+  // resolution is bounded to it minus LAMBDA_EXIT_MARGIN_MS; without it, unbounded.
   remainingTimeMs?: () => number;
   // The Lambda invocation id, for the run's Context. Absent in tests.
   requestId?: string;
 };
 
 async function main(metrics: MetricsLogger, remainingTimeMs: () => number, requestId: string) {
-  const sharedConfig: SharedConfigs = {
-    Database: checkDefined(process.env.REDSHIFT_DATABASE),
-    ClusterIdentifier: checkDefined(process.env.REDSHIFT_CLUSTER_IDENTIFIER),
-    SecretArn: checkDefined(process.env.REDSHIFT_SECRET_ARN),
-  };
-  const primary = parseFadesSource(process.env[FADES_SOURCE_ENV], log);
-  const orderService = buildOrderServiceSource();
-  if (primary === 'order-service' && !orderService) {
-    // A misconfigured primary is a real cron failure, exactly like a Redshift outage was: the
-    // alarm fires and the breaker's stored blocks simply expire until it is fixed.
-    throw new Error(`${FADES_SOURCE_ENV}=order-service but ORDER_SERVICE_URL is not set`);
-  }
   await runFadeRateCron(metrics, {
-    primary,
-    redshift: redshiftScoringSource(V2FadesRepository.create(sharedConfig)),
-    orderService,
+    source: buildOrderServiceSource(),
     webhookProvider,
     fillerAddressRepo,
     timestampDB,
@@ -238,18 +199,10 @@ async function main(metrics: MetricsLogger, remainingTimeMs: () => number, reque
   });
 }
 
-/**
- * Production wiring of the order-service/PostedOrders fades source (lib/cron/order-service-
- * fades-source.ts). Undefined, with a log line, when the order service URL is not configured.
- */
-function buildOrderServiceSource(): FadesScoringSource | undefined {
-  const orderServiceUrl = process.env.ORDER_SERVICE_URL;
-  if (!orderServiceUrl) {
-    log.info('ORDER_SERVICE_URL is not set; the order-service fades source is unavailable');
-    return undefined;
-  }
-  const sourceLog = log.child({ fadesSource: 'order-service' });
-  const source = new OrderServiceFadesSource({
+/** Production wiring of the fades source (lib/cron/order-service-fades-source.ts). */
+function buildOrderServiceSource(): OrderServiceFadesSource {
+  const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
+  return new OrderServiceFadesSource({
     postedOrders: DynamoPostedOrderRepository.create(
       // Not the hard-quote path's 200/300ms-bounded client: the cron is not in series with a
       // quote.
@@ -258,15 +211,14 @@ function buildOrderServiceSource(): FadesScoringSource | undefined {
         unmarshallOptions: { wrapNumbers: false },
       })
     ),
-    orderStatus: new UniswapXServiceProvider(sourceLog, orderServiceUrl),
+    orderStatus: new UniswapXServiceProvider(log, orderServiceUrl),
     fillerEndpoints: () => webhookProvider.fillerEndpoints(),
-    log: sourceLog,
-    // Parity flag (default off): cancelled / insufficient-funds / error orders are excluded, as
-    // production's SQL effectively excludes them. 'true' scores them as fades. Expiries always
-    // count regardless.
+    log,
+    // Policy flag (default off): cancelled / insufficient-funds / error orders are excluded, as
+    // the retired Redshift breaker effectively excluded them. 'true' scores them as fades.
+    // Expiries always count regardless.
     policy: { countNeverFilledTerminalAsFade: process.env[FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV] === 'true' },
   });
-  return orderServiceScoringSource(source);
 }
 
 /**
@@ -304,45 +256,11 @@ export async function lookupFillersForRows(
   return new Map([...mapped.entries()].filter(([, filler]) => configured.has(filler)));
 }
 
-/**
- * The primary run's address map, extended for any address in `rows` it does not cover. The
- * shadow's rows come from a different source and can name addresses the primary's rows do not
- * (a batch load Redshift has not caught up with, rows past its row cap, or orders that only one
- * side records); scoring them with the primary's map alone would silently drop exactly the rows
- * only the shadow has.
- */
-async function extendFillerMapForRows(
-  base: Map<string, string>,
-  rows: V2FadesRowType[],
-  fillerEndpoints: string[],
-  fillerAddressRepo: Pick<FillerAddressRepository, 'getAddressToFillerMap'>,
-  log: Logger
-): Promise<Map<string, string>> {
-  const uncovered = rows.filter((row) => !base.has(ethers.utils.getAddress(row.fillerAddress)));
-  if (uncovered.length === 0) {
-    return base;
-  }
-  const extra = await lookupFillersForRows(uncovered, fillerEndpoints, fillerAddressRepo, log);
-  return new Map([...base, ...extra]);
-}
-
 export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCronDeps): Promise<void> {
-  const { webhookProvider, fillerAddressRepo, timestampDB } = deps;
-  const primary = deps.primary === 'order-service' ? deps.orderService : deps.redshift;
-  if (!primary) {
-    throw new Error(`${FADES_SOURCE_ENV}=${deps.primary} but that source is not available`);
-  }
-  const shadow = deps.primary === 'order-service' ? deps.redshift : deps.orderService;
-  // Every log line and EMF record of this run says which source produced the decisions.
-  const log = (deps.log ?? defaultLog).child({ fadesSource: primary.kind });
+  const { source, webhookProvider, fillerAddressRepo, timestampDB } = deps;
+  const log = deps.log ?? defaultLog;
   metrics.setNamespace('Uniswap');
   metrics.setDimensions(CircuitBreakerMetricDimension);
-  metrics.setProperty('fadesSource', primary.kind);
-  metrics.putMetric(
-    Metric.CIRCUIT_BREAKER_PRIMARY_IS_ORDER_SERVICE,
-    primary.kind === 'order-service' ? 1 : 0,
-    Unit.Count
-  );
   // The webhook config provider reports RFQ_CONFIG_CHANGED through the caller's ctx, so the
   // refresh below emits into this run's MetricsLogger, under Service=CircuitBreaker — the
   // dashboard's config-change strip charts that stream alongside the quote lambdas'
@@ -351,22 +269,19 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
   const ctx: Context = { logger, metrics: new EmfMetrics(metrics, logger), requestId: deps.requestId ?? randomUUID() };
 
   await webhookProvider.fetchEndpoints(ctx);
-  // The primary's best-effort work (order-service outcome resolution) may not eat the whole
-  // invocation: what it does not resolve now, it resolves next run.
+  // Best-effort outcome resolution may not eat the whole invocation: what it does not resolve
+  // now, it resolves next run.
   if (deps.remainingTimeMs) {
-    const primaryBudgetMs = Math.max(0, deps.remainingTimeMs() - SHADOW_TIME_BUDGET_MS - LAMBDA_EXIT_MARGIN_MS);
-    primary.setDeadline?.(Date.now() + primaryBudgetMs);
+    source.deadlineMs = Date.now() + Math.max(0, deps.remainingTimeMs() - LAMBDA_EXIT_MARGIN_MS);
   }
   /*
-   primary rows: one per recently completed order
+   rows: one per recently completed order
         | fillerAddress |    faded  |   postTimestamp |   deadline   |
         |---- 0x1 ------|---- 0 ----|---- 12222222 ---|--- 12222282 -|
         |---- 0x2 ------|---- 1 ----|---- 12345679 ---|--- 12345739 -|
         |---- 0x1 ------|---- 0 ----|---- 12345678 ---|--- 12345738 -|
-   A failure here is a failure of the cron run — the primary is authoritative and there is no
-   fallback to the other source (that would be a silent, un-flagged switch of the breaker's input).
   */
-  const rows = await primary.fetchRows();
+  const rows = await source.getFades();
 
   const fillerEndpoints = webhookProvider.fillerEndpoints();
   const [addressToFillerMap, fillerTimestamps] = await Promise.all([
@@ -399,60 +314,8 @@ export async function runFadeRateCron(metrics: MetricsLogger, deps: FadeRateCron
     log.info('no timestamp to update');
   }
 
-  // Shadow evaluation of the other source: strictly after the primary has written its decisions.
-  // It scores its own rows with the same code against the same stored state (metrics and row
-  // logging off), writes nothing and notifies nobody. Guarded so that nothing it does — a Redshift
-  // connectivity error, an order-service timeout, a bug — can fail the cron or touch the
-  // decisions above; the runner itself already never throws, this covers the wiring around it.
-  const shadowBudgetMs = deps.remainingTimeMs
-    ? Math.min(deps.shadowBudgetMs ?? SHADOW_TIME_BUDGET_MS, deps.remainingTimeMs() - LAMBDA_EXIT_MARGIN_MS)
-    : deps.shadowBudgetMs;
-  if (shadow && shadowBudgetMs !== undefined && shadowBudgetMs < MIN_SHADOW_BUDGET_MS) {
-    metrics.putMetric(Metric.CIRCUIT_BREAKER_SHADOW_SKIPPED, 1, Unit.Count);
-    log.warn({ shadow: shadow.kind, shadowBudgetMs }, 'skipping the fade shadow: not enough invocation time left');
-  } else if (shadow) {
-    try {
-      await runFadeRateShadow(
-        {
-          primary: primary.kind,
-          primaryRows: rows,
-          primaryResolution: primary.lastResolution?.(),
-          realUpdates: updatedTimestamps,
-          now,
-          score: async (shadowRows) =>
-            calculateNewTimestamps(
-              fillerTimestamps,
-              getFillersFadeStats(
-                shadowRows,
-                await extendFillerMapForRows(addressToFillerMap, shadowRows, fillerEndpoints, fillerAddressRepo, log),
-                fillerTimestamps,
-                now
-              ),
-              now
-            ),
-        },
-        {
-          shadow,
-          log: log.child({ shadow: shadow.kind }),
-          metrics,
-          compareSince: deps.shadowCompareSince,
-          budgetMs: shadowBudgetMs,
-        }
-      );
-    } catch (e) {
-      metrics.putMetric(Metric.CIRCUIT_BREAKER_SHADOW_FAILURE, 1, Unit.Count);
-      log.error(
-        { error: e instanceof Error ? e.message : e },
-        'fade shadow wiring threw; primary decisions unaffected'
-      );
-    }
-  }
-
-  // Order-service resolution health, whichever role that source played this run (absent when the
-  // source is not configured or, as the shadow, did not get to run).
-  const resolution = deps.orderService?.lastResolution?.();
-  if (resolution) {
-    emitOrderResolutionMetrics(metrics, resolution);
+  if (source.lastResolution) {
+    emitOrderResolutionMetrics(metrics, source.lastResolution);
   }
 }
 
@@ -695,7 +558,7 @@ export function laplaceSmoothedFadeRate(fades: number, total: number): number {
    - fadeRate: orders whose deadline is after the filler's fadeWindowStart (last block end)
      ("post-block window"). This is the clean-slate mechanism: a filler who served a block
      is scored only on orders completed after the block ended, not on the pre-block fades
-     that are still inside the query's rolling window. While a filler is currently blocked
+     that are still inside the source's rolling window. While a filler is currently blocked
      the floor is in the future, so this window is ~empty and the rate sits at the prior.
    - duringBlockRate: orders completed since the last cron run with deadline on/before the
      block end — i.e. orders that were in flight during a block. calculateNewTimestamps uses
@@ -723,9 +586,12 @@ export function getFillersFadeStats(
   now: number,
   log?: Logger
 ): FillerFadeStatsMap {
+  // Counts only: the full row set is ~170 KB per run and never needed for diagnosis (the
+  // per-filler tallies and stats below are).
   log?.info(
     {
-      rows: rows,
+      rowCount: rows.length,
+      fadeCount: rows.reduce((sum, row) => sum + row.faded, 0),
       fillerTimestamps: [...fillerTimestamps.entries()],
       addressToFillerMap: [...addressToFillerMap.entries()],
     },
@@ -775,16 +641,14 @@ export function getFillersFadeStats(
     }
     const windowStart = fillerTimestamp?.fadeWindowStart ?? UNBLOCKED_BLOCK_UNTIL_TIMESTAMP;
     const lastExaminedTimestamp = fillerTimestamp?.lastExaminedTimestamp ?? 0;
-    // Chronic (no-amnesty) view: every FINAL row in the query window, regardless of cohort.
-    // Fresher rows are excluded for the same reason the streak defers them: a not-yet-loaded
-    // fill reads as a transient fade and would sawtooth the watchlist metric every load cycle.
+    // Chronic (no-amnesty) view: every FINAL row in the window, regardless of cohort. Fresher
+    // rows are excluded for the same reason the streak defers them (see STREAK_FINALITY_LAG_SECS).
     if (row.deadline <= now - STREAK_FINALITY_LAG_SECS) {
       tallies[fillerHash].chronicTotal += 1;
       tallies[fillerHash].chronicFades += row.faded;
     }
-    // Streak inputs, classified against the finality-lagged horizon so hourly-batch load lag
-    // can't miss a late fade or count a not-yet-loaded fill as a transient fade. The slices
-    // partition time across runs because lastExaminedTimestamp advances to `now` each run.
+    // Streak inputs, classified against the finality-lagged horizon (see STREAK_FINALITY_LAG_SECS).
+    // The slices partition time across runs because lastExaminedTimestamp advances to `now` each run.
     if (
       row.deadline > lastExaminedTimestamp - STREAK_FINALITY_LAG_SECS &&
       row.deadline <= now - STREAK_FINALITY_LAG_SECS

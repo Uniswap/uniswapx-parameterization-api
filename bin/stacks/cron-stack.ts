@@ -7,17 +7,11 @@ import * as aws_events_targets from 'aws-cdk-lib/aws-events-targets';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
 import * as aws_lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
-import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
 import { ITopic } from 'aws-cdk-lib/aws-sns';
-import {
-  DYNAMO_TABLE_NAME,
-  FADE_RATE_BUCKET,
-  FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV,
-  FADES_SOURCE_ENV,
-} from '../../lib/constants';
+import { DYNAMO_TABLE_NAME, FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV } from '../../lib/constants';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
@@ -45,9 +39,9 @@ export interface CronStackProps extends cdk.NestedStackProps {
   stage: string;
   chatbotSNSArn?: string;
   envVars?: { [key: string]: string };
-  // Inputs of the fade cron's shadow evaluation of the order-service fades source
-  // (lib/cron/fade-rate-shadow.ts): the PostedOrders table it resolves outcomes in, and the
-  // order service it asks for them. Both optional so the stack synthesizes without them.
+  // Inputs of the fade cron (lib/cron/order-service-fades-source.ts): the PostedOrders table it
+  // resolves outcomes in and reads the 24h window from, and the order service it asks for
+  // outcomes. Both optional so the stack synthesizes without them.
   postedOrdersTable?: aws_dynamo.ITable;
   orderServiceUrl?: string;
 }
@@ -70,12 +64,6 @@ export class CronStack extends cdk.NestedStack {
       orderServiceUrl,
     } = props;
 
-    new s3.Bucket(this, 'FadeRateS3', {
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      bucketName: `${FADE_RATE_BUCKET}-${stage}-1`,
-    });
-
     const chatbotTopic = chatbotSNSArn
       ? cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn)
       : undefined;
@@ -89,18 +77,13 @@ export class CronStack extends cdk.NestedStack {
         timeout: Duration.seconds(240),
         memorySize: 512,
         bundling: LAMBDA_BUNDLING,
+        // No Redshift configuration: the breaker reads PostedOrders + the order service only.
         environment: {
-          REDSHIFT_DATABASE: RsDatabase,
-          REDSHIFT_CLUSTER_IDENTIFIER: RsClusterIdentifier,
-          REDSHIFT_SECRET_ARN: RedshiftCredSecretArn,
           stage: stage,
           ...envVars,
           ...(orderServiceUrl && { ORDER_SERVICE_URL: orderServiceUrl }),
-          // Which fades source is authoritative for block decisions; the other runs as a shadow.
-          // Reverting to the Redshift-computed breaker is changing this one value to 'redshift'.
-          [FADES_SOURCE_ENV]: 'order-service',
-          // Cancelled / insufficient-funds / error orders are not fades (production parity);
-          // 'true' would score them as fades. Expiries always count.
+          // Cancelled / insufficient-funds / error orders are not fades (parity with the retired
+          // Redshift breaker); 'true' would score them as fades. Expiries always count.
           [FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV]: 'false',
         },
       });
