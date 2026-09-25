@@ -2,6 +2,7 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 
+import { SoftQuoteBL } from '../../core';
 import { SoftQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { ApiInjector } from '../base/api-handler';
 import {
@@ -13,7 +14,9 @@ import {
 } from '../shared/quote-injector';
 import { PostQuoteRequestBody } from './schema';
 
-export interface ContainerInjected extends BaseQuoteContainerInjected {}
+export interface ContainerInjected extends BaseQuoteContainerInjected {
+  softQuote: SoftQuoteBL;
+}
 
 export interface RequestInjected extends BaseQuoteRequestInjected {}
 
@@ -23,7 +26,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const stage = process.env['stage'];
 
-    return buildQuoteContainerInjected(log, stage);
+    const base = buildQuoteContainerInjected(log, stage);
+    return { ...base, softQuote: new SoftQuoteBL(base.quoters, base.chainIdRpcMap) };
   }
 
   public async getRequestInjected(

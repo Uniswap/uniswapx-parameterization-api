@@ -2,6 +2,7 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 
+import { SoftQuoteBL } from '../../../lib/core';
 import { Metric } from '../../../lib/entities';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
@@ -50,11 +51,8 @@ describe('Quote handler', () => {
     new Promise((resolve) =>
       resolve({
         getContainerInjected: () => {
-          return {
-            quoters,
-            // Mock chainIdRpcMap
-            chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
-          };
+          const chainIdRpcMap = new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]);
+          return { quoters, chainIdRpcMap, softQuote: new SoftQuoteBL(quoters, chainIdRpcMap) };
         },
         getRequestInjected: () => requestInjectedMock,
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>)
