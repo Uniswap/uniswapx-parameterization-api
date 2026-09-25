@@ -42,6 +42,9 @@ interface FromRequestArgs {
   amountQuoted: BigNumber;
   metadata: QuoteMetadata;
   filler?: string;
+  // Mints the quoteId when the request doesn't carry one. Injectable so tests can pin ids
+  // without mocking the uuid module; production callers use the default.
+  newQuoteId?: () => string;
 }
 
 // data class for QuoteRequest helpers and conversions
@@ -56,7 +59,7 @@ export class QuoteResponse implements QuoteResponseData {
   }
 
   public static fromRequest(args: FromRequestArgs): QuoteResponse {
-    const { request, amountQuoted, metadata, filler } = args;
+    const { request, amountQuoted, metadata, filler, newQuoteId = uuidv4 } = args;
     return new QuoteResponse(
       {
         chainId: request.tokenInChainId, // TODO: update schema
@@ -67,7 +70,7 @@ export class QuoteResponse implements QuoteResponseData {
         amountIn: request.type === TradeType.EXACT_INPUT ? request.amount : amountQuoted,
         amountOut: request.type === TradeType.EXACT_OUTPUT ? request.amount : amountQuoted,
         filler: filler,
-        quoteId: request.quoteId ?? uuidv4(),
+        quoteId: request.quoteId ?? newQuoteId(),
       },
       request.type,
       metadata

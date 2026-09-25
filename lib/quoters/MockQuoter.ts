@@ -15,7 +15,12 @@ const METADATA = {
 export class MockQuoter implements Quoter {
   private log: Logger;
 
-  constructor(_log: Logger, private numerator?: number, private denominator?: number) {
+  constructor(
+    _log: Logger,
+    private numerator?: number,
+    private denominator?: number,
+    private readonly newQuoteId?: () => string
+  ) {
     this.log = _log.child({ quoter: 'MockQuoter' });
   }
 
@@ -26,7 +31,15 @@ export class MockQuoter implements Quoter {
     this.log.info(
       `MockQuoter: request ${request.requestId}: ${request.amount.toString()} -> ${amountQuoted.toString()}`
     );
-    return [QuoteResponse.fromRequest({ request, amountQuoted, metadata: METADATA, filler: MOCK_FILLER_ADDRESS })];
+    return [
+      QuoteResponse.fromRequest({
+        request,
+        amountQuoted,
+        metadata: METADATA,
+        filler: MOCK_FILLER_ADDRESS,
+        newQuoteId: this.newQuoteId,
+      }),
+    ];
   }
 
   public type(): QuoterType {

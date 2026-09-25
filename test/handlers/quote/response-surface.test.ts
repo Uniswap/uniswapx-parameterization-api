@@ -20,19 +20,6 @@ import { fakeContext } from '../../fakes';
  * the test comment says so; do not "fix" it from this file.
  */
 
-// MockQuoter mints a fresh quoteId per quote via uuid.v4(). Pin it so the 200 snapshots are
-// byte-stable, but keep each quote's id distinct so a fan-out regression (e.g. every entry in
-// allQuotes echoing the best quote's id) still shows up in the snapshot.
-jest.mock('uuid', () => {
-  let n = 0;
-  return {
-    v4: () => `${String(++n).padStart(8, '0')}-0000-4000-8000-000000000000`,
-    __resetCounter: () => {
-      n = 0;
-    },
-  };
-});
-
 const REQUEST_ID = 'b45c2d1e-7f30-4a92-8c65-1d8e4f2a9b03';
 const SWAPPER = '0x0000000000000000000000000000000000000000';
 const TOKEN_IN = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
@@ -42,6 +29,14 @@ const ONE_ETHER = ethers.utils.parseEther('1').toString();
 
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
+
+// MockQuoter mints a fresh quoteId per quote. Pin it with an injected, sequential id generator so
+// the 200 snapshots are byte-stable, but keep each quote's id distinct so a fan-out regression
+// (e.g. every entry in allQuotes echoing the best quote's id) still shows up in the snapshot.
+// One generator is shared by every quoter in a test and reset before each test.
+let nextQuoteId: () => string;
+const mockQuoter = (numerator: number, denominator: number): MockQuoter =>
+  new MockQuoter(logger, numerator, denominator, () => nextQuoteId());
 
 describe('/quote response surface', () => {
   const fakes = fakeContext('test');
@@ -100,34 +95,35 @@ describe('/quote response surface', () => {
   };
 
   beforeEach(() => {
-    jest.requireMock('uuid').__resetCounter();
+    let n = 0;
+    nextQuoteId = () => `${String(++n).padStart(8, '0')}-0000-4000-8000-000000000000`;
   });
 
   describe('200', () => {
     it('EXACT_INPUT: best quote fanned out at the top level, every quote under allQuotes', async () => {
       // 1:1 and 2:1 quoters; the 2x amountOut wins and is echoed at the top level.
-      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+      const quoters = [mockQuoter(1, 1), mockQuoter(2, 1)];
       const result = await invoke(quoters, JSON.stringify(validRequest()));
       expect(result.statusCode).toEqual(200);
       expect(result).toMatchSnapshot();
     });
 
     it('EXACT_OUTPUT: lowest amountIn wins', async () => {
-      const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];
+      const quoters = [mockQuoter(1, 1), mockQuoter(2, 1)];
       const result = await invoke(quoters, JSON.stringify(validRequest({ type: 'EXACT_OUTPUT' })));
       expect(result.statusCode).toEqual(200);
       expect(result).toMatchSnapshot();
     });
 
     it('single quoter: allQuotes is still present with one entry', async () => {
-      const result = await invoke([new MockQuoter(logger, 1, 1)], JSON.stringify(validRequest()));
+      const result = await invoke([mockQuoter(1, 1)], JSON.stringify(validRequest()));
       expect(result.statusCode).toEqual(200);
       expect(result).toMatchSnapshot();
     });
 
     it('protocol defaults to V1 when omitted and the response shape is unchanged', async () => {
       const withoutProtocol = (({ protocol: _p, ...rest }) => rest)(validRequest());
-      const result = await invoke([new MockQuoter(logger, 1, 1)], JSON.stringify(withoutProtocol));
+      const result = await invoke([mockQuoter(1, 1)], JSON.stringify(withoutProtocol));
       expect(result.statusCode).toEqual(200);
       expect(result).toMatchSnapshot();
     });
@@ -156,7 +152,7 @@ describe('/quote response surface', () => {
       ['unknown protocol', validRequest({ protocol: 'v9' as ProtocolVersion })],
       ['empty object', {}],
     ])('%s', async (_name, body) => {
-      const result = await invoke([new MockQuoter(logger, 1, 1)], JSON.stringify(body));
+      const result = await invoke([mockQuoter(1, 1)], JSON.stringify(body));
       expect(result.statusCode).toEqual(400);
       // Validation errors are produced before the request injector runs, so unlike the
       // handler-level errors above they carry no `id` field.
@@ -165,10 +161,7 @@ describe('/quote response surface', () => {
     });
 
     it('unknown fields are stripped rather than rejected', async () => {
-      const result = await invoke(
-        [new MockQuoter(logger, 1, 1)],
-        JSON.stringify({ ...validRequest(), extraField: 'ignored' })
-      );
+      const result = await invoke([mockQuoter(1, 1)], JSON.stringify({ ...validRequest(), extraField: 'ignored' }));
       expect(result.statusCode).toEqual(200);
       expect(result.body).not.toHaveProperty('extraField');
     });
@@ -176,7 +169,7 @@ describe('/quote response surface', () => {
 
   describe('malformed transport', () => {
     it('422 on a body that is not JSON', async () => {
-      const result = await invoke([new MockQuoter(logger, 1, 1)], '{not json');
+      const result = await invoke([mockQuoter(1, 1)], '{not json');
       expect(result.statusCode).toEqual(422);
       expect(result).toMatchSnapshot();
     });
@@ -186,7 +179,7 @@ describe('/quote response surface', () => {
       // handler, which then dereferences it. With the real request injector this trips one
       // step earlier (buildQuoteRequestInjected reads requestBody.tokenInChainId) and yields
       // the same body without `id`; the mocked injector here lets it reach handleRequest.
-      const result = await invoke([new MockQuoter(logger, 1, 1)], undefined);
+      const result = await invoke([mockQuoter(1, 1)], undefined);
       expect(result.statusCode).toEqual(500);
       expect(result).toMatchSnapshot();
     });
