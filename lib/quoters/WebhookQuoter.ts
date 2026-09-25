@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import axios, { AxiosError, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { ethers } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,7 +19,7 @@ import {
 } from '../entities';
 import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
-import { FirehoseLogger } from '../providers/analytics';
+import { IAnalyticsLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
@@ -54,6 +54,9 @@ export function deriveFanoutStats(
   };
 }
 
+/** The axios subset WebhookQuoter uses for market-maker webhooks and block notifications. */
+export type WebhookHttp = Pick<AxiosInstance, 'post'>;
+
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
@@ -61,9 +64,10 @@ export class WebhookQuoter implements Quoter {
 
   constructor(
     _log: Logger,
-    private firehose: FirehoseLogger,
+    private firehose: IAnalyticsLogger,
     private webhookProvider: WebhookConfigurationProvider,
-    private circuitBreakerProvider: CircuitBreakerConfigurationProvider
+    private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
+    private readonly http: WebhookHttp = axios
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
@@ -209,7 +213,7 @@ export class WebhookQuoter implements Quoter {
         ? [realWireRequest, opposingWireRequest]
         : [opposingWireRequest, realWireRequest];
       const [firstResponse, secondResponse] = await Promise.all(
-        orderedRequests.map((req) => axios.post(endpoint, req, axiosConfig))
+        orderedRequests.map((req) => this.http.post(endpoint, req, axiosConfig))
       );
       const hookResponse = realRequestFirst ? firstResponse : secondResponse;
       const opposite = realRequestFirst ? secondResponse : firstResponse;
@@ -427,7 +431,7 @@ export class WebhookQuoter implements Quoter {
       timeout: NOTIFICATION_TIMEOUT_MS,
       ...(!!status.webhook.headers && { headers: status.webhook.headers }),
     };
-    axios
+    this.http
       .post(
         status.webhook.endpoint,
         {

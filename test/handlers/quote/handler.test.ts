@@ -1,5 +1,4 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
-import axios from 'axios';
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 
@@ -14,13 +13,9 @@ import {
 } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
-import { FirehoseLogger } from '../../../lib/providers/analytics';
-import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
-import { fakeContext } from '../../fakes';
+import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookHttp, WebhookQuoter } from '../../../lib/quoters';
+import { FakeAnalyticsLogger, fakeContext } from '../../fakes';
 import { MOCK_V2_CB_PROVIDER } from '../../fixtures';
-
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -33,7 +28,9 @@ const CHAIN_ID = 1;
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
-const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
+// Injected in place of axios and Firehose for the WebhookQuoter-backed tests.
+const http = { post: jest.fn() } as unknown as jest.Mocked<WebhookHttp>;
+const analytics = new FakeAnalyticsLogger();
 
 describe('Quote handler', () => {
   // Creating mocks for all the handler dependencies.
@@ -278,11 +275,11 @@ describe('Quote handler', () => {
         { endpoint: 'https://foo.org', headers: {}, name: 'foo', hash: '0xfoo' },
       ]);
 
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
+      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: {
@@ -378,11 +375,11 @@ describe('Quote handler', () => {
           hash: '0xfoo',
         },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
+      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, options: any) => {
           expect(options.headers['X-Authentication']).toEqual('1234');
           return Promise.resolve({
@@ -449,11 +446,11 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
+      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      http.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: {
             ...request,
@@ -472,11 +469,11 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER)];
+      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      http.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: {
             requestId: '1234',
@@ -498,14 +495,14 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER),
+        new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http),
         new MockQuoter(logger, 1, 1),
         new MockQuoter(logger, 1, 2),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      http.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: {
             ...request,
@@ -529,13 +526,13 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER),
+        new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: {
@@ -584,13 +581,13 @@ describe('Quote handler', () => {
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER),
+        new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
-      mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+      http.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: {
             amountOut: amountIn.div(2).toString(),
