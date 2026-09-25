@@ -1,7 +1,7 @@
 import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
-import { ethers, Wallet } from 'ethers';
+import { Wallet } from 'ethers';
 
 import { POST_ORDER_ERROR_REASON } from '../../../lib/constants';
 import { Metric } from '../../../lib/entities/aws-metrics-logger';
@@ -14,10 +14,9 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { OrderServiceProvider } from '../../../lib/providers/order';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
-import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
 import { MockPostedOrderRepository, PostedOrderOutcome } from '../../../lib/repositories/posted-order-repository';
 import { ErrorCode } from '../../../lib/util/errors';
-import { fakeContext, FakeCosigner } from '../../fakes';
+import { fakeContext, FakeCosigner, hardQuoteContainer } from '../../fakes';
 import { getOrder } from '../../fixtures/hard-quote';
 
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -59,16 +58,13 @@ describe('Quote handler order post error mapping', () => {
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
-        getContainerInjected: () => {
-          return {
+        getContainerInjected: () =>
+          hardQuoteContainer({
             quoters,
             orderServiceProvider,
             postedOrderRepository,
-            fillerAddressRepository: new MockFillerAddressRepository(),
-            chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
             cosignerFactory: cosigner.factory(),
-          };
-        },
+          }),
         getRequestInjected: () => requestInjectedMock,
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
     );

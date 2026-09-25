@@ -2,7 +2,6 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 
-import { SoftQuoteBL } from '../../../lib/core';
 import { Metric } from '../../../lib/entities';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
@@ -15,7 +14,7 @@ import {
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookHttp, WebhookQuoter } from '../../../lib/quoters';
-import { FakeAnalyticsLogger, fakeContext } from '../../fakes';
+import { FakeAnalyticsLogger, fakeContext, softQuoteContainer } from '../../fakes';
 import { MOCK_V2_CB_PROVIDER } from '../../fixtures';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -50,10 +49,7 @@ describe('Quote handler', () => {
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
-        getContainerInjected: () => {
-          const chainIdRpcMap = new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]);
-          return { quoters, chainIdRpcMap, softQuote: new SoftQuoteBL(quoters, chainIdRpcMap) };
-        },
+        getContainerInjected: () => softQuoteContainer(quoters),
         getRequestInjected: () => requestInjectedMock,
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>)
     );

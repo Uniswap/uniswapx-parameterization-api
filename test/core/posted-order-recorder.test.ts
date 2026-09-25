@@ -9,26 +9,22 @@ import {
 } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 
-import { Metric, QuoteRequest, QuoteResponse } from '../../../lib/entities';
-import {
-  buildPostedOrderRecord,
-  exclusiveFillerOf,
-  recordPostedOrder,
-} from '../../../lib/handlers/hard-quote/posted-order-recorder';
-import { ProtocolVersion } from '../../../lib/providers';
+import { buildPostedOrderRecord, exclusiveFillerOf, recordPostedOrder } from '../../lib/core/posted-order-recorder';
+import { Metric, QuoteRequest, QuoteResponse } from '../../lib/entities';
+import { ProtocolVersion } from '../../lib/providers';
 import {
   FillerAddressRepository,
   MockFillerAddressRepository,
   WinningAddressClaim,
-} from '../../../lib/repositories/filler-address-repository';
+} from '../../lib/repositories/filler-address-repository';
 import {
   MockPostedOrderRepository,
   PostedOrderOutcome,
   PostedOrderRecord,
   PostedOrderRepository,
-} from '../../../lib/repositories/posted-order-repository';
-import { fakeContext } from '../../fakes';
-import { CHAIN_ID, getOrder, TOKEN_IN, TOKEN_OUT } from '../../fixtures/hard-quote';
+} from '../../lib/repositories/posted-order-repository';
+import { fakeContext } from '../fakes';
+import { CHAIN_ID, getOrder, TOKEN_IN, TOKEN_OUT } from '../fixtures/hard-quote';
 
 const FILLER = '0x0000000000000000000000000000000000000001';
 const ENDPOINT = 'https://filler.example/rfq';

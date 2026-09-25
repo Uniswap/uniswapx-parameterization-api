@@ -2,16 +2,12 @@ import { CosignedV2DutchOrder, CosignedV3DutchOrder, OrderType } from '@uniswap/
 import { ethers } from 'ethers';
 import { getAddress } from 'ethers/lib/utils';
 
-import { Metric } from '../../entities/aws-metrics-logger';
-import { QuoteResponse } from '../../entities/QuoteResponse';
-import { Context } from '../../observability';
-import { FillerAddressRepository } from '../../repositories/filler-address-repository';
-import {
-  PostedOrderOutcome,
-  PostedOrderRecord,
-  PostedOrderRepository,
-} from '../../repositories/posted-order-repository';
-import { withTimeout } from '../../util/time';
+import { Metric } from '../entities/aws-metrics-logger';
+import { QuoteResponse } from '../entities/QuoteResponse';
+import { Context } from '../observability';
+import { FillerAddressRepository } from '../repositories/filler-address-repository';
+import { PostedOrderOutcome, PostedOrderRecord, PostedOrderRepository } from '../repositories/posted-order-repository';
+import { withTimeout } from '../util/time';
 
 // Hard wall on the bookkeeping writes. They sit in series with the hard-quote response (the
 // Lambda freezes once the handler returns, so a write cannot be fire-and-forget), and the

@@ -1,6 +1,6 @@
 import { KmsSigner } from '@uniswap/signer';
 
-import { kmsCosignerFactory } from '../../../lib/handlers/hard-quote/cosigner';
+import { kmsCosignerFactory } from '../../lib/core/cosigner';
 
 // These pin the behavior the handler had when it built the signer inline: config is read on
 // each call (so missing config fails the request, not the container build), and every call

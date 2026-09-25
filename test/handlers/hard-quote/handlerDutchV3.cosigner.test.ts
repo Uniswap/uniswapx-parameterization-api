@@ -2,8 +2,8 @@ import { TradeType } from '@uniswap/sdk-core';
 import { OrderType, UnsignedV3DutchOrder, V3CosignerData } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 
+import { getCosignerData } from '../../../lib/core';
 import { HardQuoteRequest, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
-import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { ChainId } from '../../../lib/util/chains';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';

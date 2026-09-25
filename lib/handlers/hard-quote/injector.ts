@@ -2,34 +2,24 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 
+import { HardQuoteBL, kmsCosignerFactory } from '../../core';
 import { HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
-import { OrderServiceProvider, UniswapXServiceProvider } from '../../providers';
-import { DynamoFillerAddressRepository, FillerAddressRepository } from '../../repositories/filler-address-repository';
-import { DynamoPostedOrderRepository, PostedOrderRepository } from '../../repositories/posted-order-repository';
+import { UniswapXServiceProvider } from '../../providers';
+import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
+import { DynamoPostedOrderRepository } from '../../repositories/posted-order-repository';
 import { ApiInjector } from '../base/api-handler';
 import {
-  BaseQuoteContainerInjected,
   BaseQuoteRequestInjected,
   buildQuoteContainerInjected,
   buildQuoteRequestInjected,
   createInjectorLogger,
 } from '../shared/quote-injector';
-import { CosignerFactory, kmsCosignerFactory } from './cosigner';
 import { HardQuoteRequestBody } from './schema';
 
-export interface ContainerInjected extends BaseQuoteContainerInjected {
-  orderServiceProvider: OrderServiceProvider;
-  // Bookkeeping sink for confirmed RFQ-won posts (see posted-order-recorder.ts).
-  postedOrderRepository: PostedOrderRepository;
-  // Winning filler address -> webhook attribution for the fade breaker, written by
-  // recordPostedOrder alongside the PostedOrders row. Hard-quote only: the breaker scores
-  // V2/V3 orders and every one of those is cosigned here, so /quote never touches this table.
-  fillerAddressRepository: FillerAddressRepository;
-  // Builds the request's cosigner. Injected so tests sign with a local wallet instead of
-  // mocking the KMS SDK, and so the client that reaches the key can change without touching
-  // the handler.
-  cosignerFactory: CosignerFactory;
+/** What the /hard-quote handler reads: only the flow. Its dependencies live inside it. */
+export interface ContainerInjected {
+  hardQuote: HardQuoteBL;
 }
 
 export interface RequestInjected extends BaseQuoteRequestInjected {}
@@ -45,13 +35,16 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const base = buildQuoteContainerInjected(log, stage);
 
     return {
-      ...base,
-      orderServiceProvider: new UniswapXServiceProvider(log, orderServiceUrl),
-      // Both build their own bounded DynamoDB client (the writes sit in series with the
-      // response); construction is lazy (no I/O).
-      postedOrderRepository: DynamoPostedOrderRepository.create(),
-      fillerAddressRepository: DynamoFillerAddressRepository.create(),
-      cosignerFactory: kmsCosignerFactory(),
+      hardQuote: new HardQuoteBL({
+        quoters: base.quoters,
+        chainIdRpcMap: base.chainIdRpcMap,
+        orderServiceProvider: new UniswapXServiceProvider(log, orderServiceUrl),
+        // Both build their own bounded DynamoDB client (the writes sit in series with the
+        // response); construction is lazy (no I/O).
+        postedOrderRepository: DynamoPostedOrderRepository.create(),
+        fillerAddressRepository: DynamoFillerAddressRepository.create(),
+        cosignerFactory: kmsCosignerFactory(),
+      }),
     };
   }
 

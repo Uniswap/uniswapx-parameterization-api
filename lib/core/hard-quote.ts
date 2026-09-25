@@ -1,0 +1,466 @@
+import { TradeType } from '@uniswap/sdk-core';
+import {
+  CosignedV2DutchOrder,
+  CosignedV3DutchOrder,
+  CosignerData,
+  OrderType,
+  UniswapXOrderParser,
+  UnsignedV2DutchOrder,
+  UnsignedV3DutchOrder,
+  V3CosignerData,
+} from '@uniswap/uniswapx-sdk';
+import { BigNumber, ethers } from 'ethers';
+
+import { getV3BlockBuffer, POST_ORDER_ERROR_REASON } from '../constants';
+import { HardQuoteRequest, Metric, QuoteResponse } from '../entities';
+import { V2HardQuoteResponse } from '../entities/V2HardQuoteResponse';
+import { V3HardQuoteResponse } from '../entities/V3HardQuoteResponse';
+import { ErrorResponse } from '../handlers/base';
+import { HardQuoteRequestBody, HardQuoteResponseData } from '../handlers/hard-quote/schema';
+import { Context } from '../observability';
+import { OrderServiceProvider } from '../providers';
+import { Quoter } from '../quoters';
+import { getBestQuote } from '../quoters/best-quote';
+import { FillerAddressRepository } from '../repositories/filler-address-repository';
+import { PostedOrderRepository } from '../repositories/posted-order-repository';
+import { ChainId } from '../util/chains';
+import { NoQuotesAvailable, OrderDeadlineExpired, OrderPostError, UnknownOrderCosignerError } from '../util/errors';
+import { timestampInMstoSeconds } from '../util/time';
+import { Cosigner, CosignerFactory } from './cosigner';
+import { recordPostedOrder } from './posted-order-recorder';
+
+const DEFAULT_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(100); // non-exclusive fillers must override price by this much (V2)
+const V3_EXCLUSIVITY_OVERRIDE_BPS = BigNumber.from(25);
+const RESPONSE_LOG_TYPE = 'HardResponse';
+
+export interface HardQuoteDeps {
+  quoters: Quoter[];
+  chainIdRpcMap: Map<ChainId, ethers.providers.StaticJsonRpcProvider>;
+  orderServiceProvider: OrderServiceProvider;
+  // Bookkeeping sink for confirmed RFQ-won posts (see posted-order-recorder.ts).
+  postedOrderRepository: PostedOrderRepository;
+  // Winning filler address -> webhook attribution for the fade breaker, written by
+  // recordPostedOrder alongside the PostedOrders row. Hard-quote only: the breaker scores
+  // V2/V3 orders and every one of those is cosigned here, so /quote never touches this table.
+  fillerAddressRepository: FillerAddressRepository;
+  // Builds the request's cosigner. Injected so tests sign with a local wallet instead of
+  // mocking the KMS SDK, and so the client that reaches the key can change without touching
+  // the flow.
+  cosignerFactory: CosignerFactory;
+}
+
+/**
+ * How a hard quote ended, for the caller to map onto its transport:
+ * - `posted`: the order service confirmed the order (200/201, including a timeout reconciled as
+ *   accepted); `body` is the response to return.
+ * - `rejected`: the order service returned a 4xx, a genuine rejection of the order.
+ * - `indeterminate`: anything else (timeouts, 5xx). The order service may still have accepted the
+ *   order, so callers must not report it as rejected.
+ * Failures before the post (no quotes, unknown cosigner, deadline too close, a thrown post) are
+ * thrown as the existing `CustomError` subclasses.
+ */
+export type HardQuoteOutcome =
+  | { kind: 'posted'; body: HardQuoteResponseData }
+  | { kind: 'rejected'; error: ErrorResponse }
+  | { kind: 'indeterminate'; error: ErrorResponse };
+
+/**
+ * The hard-quote (`POST /hard-quote`) flow, independent of how the request arrived: run the RFQ
+ * round (unless the caller forces an open order), build the cosigner data, cosign the order, post
+ * it to the order service, and record confirmed posts for the fade circuit breaker.
+ *
+ * It knows nothing about Lambda or HTTP status codes, so the backend monorepo port can reuse it
+ * unchanged behind its own API adapter.
+ */
+export class HardQuoteBL {
+  constructor(private readonly deps: HardQuoteDeps) {}
+
+  public async getHardQuote(ctx: Context, requestBody: HardQuoteRequestBody): Promise<HardQuoteOutcome> {
+    const {
+      quoters,
+      orderServiceProvider,
+      chainIdRpcMap,
+      postedOrderRepository,
+      fillerAddressRepository,
+      cosignerFactory,
+    } = this.deps;
+    const { logger, metrics } = ctx;
+    const start = Date.now();
+
+    await metrics.count(Metric.QUOTE_REQUESTED);
+
+    // QUOTE_LATENCY below fires only on successful order posts (and is alarmed on). The
+    // finally makes this metric cover every exit path — no-quote throws, cosigner
+    // mismatches, and order-service failures included.
+    try {
+      const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
+
+      const orderParser = new UniswapXOrderParser();
+      const orderType: OrderType = orderParser.getOrderTypeFromEncoded(
+        requestBody.encodedInnerOrder,
+        requestBody.tokenInChainId
+      );
+      const request = HardQuoteRequest.fromHardRequestBody(requestBody, orderType);
+      // Built per request (see kmsCosignerFactory for why the KMS client is not reused).
+      const cosigner = cosignerFactory();
+      const cosignerAddress = await cosigner.getAddress();
+
+      // we dont have access to the cosigner key, throw
+      if (request.order.info.cosigner !== cosignerAddress) {
+        logger.error('Unknown cosigner', { cosignerInReq: request.order.info.cosigner, expected: cosignerAddress });
+        throw new UnknownOrderCosignerError();
+      }
+      // Instead of decoding the order, we rely on frontend passing in the requestId
+      //   from indicative quote
+      // Analytics event line: the CloudWatch subscription filter keys on eventType, not the
+      // message. The message is empty on purpose — bunyan writes `"msg":""` for a fields-only
+      // call, so the record is byte-identical to the one this replaces.
+      logger.info('', {
+        eventType: 'HardRequest',
+        body: {
+          requestId: request.requestId,
+          quoteId: request.quoteId,
+          tokenInChainId: request.tokenInChainId,
+          tokenOutChainId: request.tokenOutChainId,
+          tokenIn: request.tokenIn,
+          tokenOut: request.tokenOut,
+          offerer: request.swapper,
+          amount: request.amount.toString(),
+          type: TradeType[request.type],
+          numOutputs: request.numOutputs,
+          cosigner: request.order.info.cosigner,
+          createdAt: timestampInMstoSeconds(start),
+          createdAtMs: start.toString(),
+        },
+      });
+
+      let bestQuote;
+      if (!requestBody.forceOpenOrder) {
+        const result = await getBestQuote(ctx, quoters, request.toQuoteRequest(), provider, RESPONSE_LOG_TYPE);
+        bestQuote = result.bestQuote;
+        if (!bestQuote && !requestBody.allowNoQuote) {
+          if (!requestBody.allowNoQuote) {
+            throw new NoQuotesAvailable();
+          }
+        }
+      }
+
+      let cosignerData: CosignerData | V3CosignerData;
+      if (bestQuote) {
+        cosignerData = await getCosignerData(request, bestQuote, orderType, provider);
+        logger.info('bestQuote', { bestQuote });
+      } else {
+        cosignerData = await getDefaultCosignerData(request, orderType, provider);
+        logger.info('open order with default cosignerData', { cosignerData });
+      }
+
+      const cosignedOrder = await createCosignedOrder(cosigner, request, cosignerData);
+      // if no quote and creating open order, create random new quoteId
+      const postedQuoteId = bestQuote?.quoteId ?? request.quoteId ?? request.requestId;
+      try {
+        await metrics.count(Metric.QUOTE_POST_ATTEMPT);
+        const response = await orderServiceProvider.postOrder({
+          order: cosignedOrder,
+          signature: request.innerSig,
+          quoteId: postedQuoteId,
+          requestId: request.requestId,
+        });
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          await metrics.count(Metric.QUOTE_200);
+          // 200 and 201 (the latter also covers a post whose timeout was reconciled as
+          // accepted) are the only confirmed posts, so this is the only place the
+          // fade-breaker bookkeeping rows are written: the PostedOrders row and, for the
+          // winning exclusive filler, its address -> webhook attribution. Bounded and
+          // non-throwing; it runs before QUOTE_LATENCY is stamped so the alarmed metric keeps
+          // including it.
+          await recordPostedOrder({
+            repository: postedOrderRepository,
+            fillerAddressRepository,
+            order: cosignedOrder,
+            quote: bestQuote ?? undefined,
+            quoteId: postedQuoteId,
+            requestId: request.requestId,
+            ctx,
+          });
+          await metrics.timer(Metric.QUOTE_LATENCY, Date.now() - start);
+          const hardResponse = createHardQuoteResponse(request, cosignedOrder);
+          if (!bestQuote) {
+            // The RFQ responses are logged in getBestQuote()
+            // we log the Open Orders here
+            // Analytics event line (see the HardRequest line above for why the message is empty).
+            logger.info('', {
+              eventType: RESPONSE_LOG_TYPE,
+              body: {
+                ...hardResponse.toLog(),
+                offerer: request.swapper,
+              },
+            });
+          }
+          // Serialized inside this try so a failure here still surfaces as OrderPostError (400),
+          // as it did when this flow lived in the handler.
+          return { kind: 'posted', body: hardResponse.toResponseJSON() };
+        } else {
+          const error = response as ErrorResponse;
+          logger.error('Error posting order', { error });
+
+          // user error should not be alerted on
+          if (error.detail != POST_ORDER_ERROR_REASON.INSUFFICIENT_FUNDS) {
+            await metrics.count(Metric.QUOTE_POST_ERROR);
+          }
+          // Only a 4xx from the order service is a genuine rejection of the
+          // order. Anything else (timeouts, 5xx) is indeterminate — the order
+          // service may have accepted the order after we stopped waiting — and
+          // rewriting it to 400 makes clients treat a live, fillable order as
+          // rejected.
+          if (error.statusCode >= 400 && error.statusCode < 500) {
+            await metrics.count(Metric.QUOTE_400);
+            return { kind: 'rejected', error };
+          }
+          await metrics.count(Metric.QUOTE_500);
+          return { kind: 'indeterminate', error };
+        }
+      } catch (e) {
+        throw new OrderPostError((e as Error).message);
+      }
+    } finally {
+      // Fire-and-forget: a metric failure must never replace the flow's outcome.
+      void metrics.timer(Metric.QUOTE_E2E_LATENCY, Date.now() - start);
+    }
+  }
+}
+
+export async function getCosignerData(
+  request: HardQuoteRequest,
+  quote: QuoteResponse,
+  orderType: OrderType,
+  provider?: ethers.providers.StaticJsonRpcProvider
+): Promise<CosignerData | V3CosignerData> {
+  switch (orderType) {
+    case OrderType.Dutch_V2: {
+      const decayStartTime = getDecayStartTime(request.tokenInChainId);
+      let filler = ethers.constants.AddressZero;
+      let inputOverride = BigNumber.from(0);
+      const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
+
+      // if the quote is better, then increase amounts by the difference
+      if (request.type === TradeType.EXACT_INPUT) {
+        if (quote.amountOut.gt(request.totalOutputAmountStart)) {
+          const increase = quote.amountOut.sub(request.totalOutputAmountStart);
+          // give all the increase to the first (swapper) output
+          outputOverrides[0] = request.order.info.outputs[0].startAmount.add(increase);
+          if (quote.filler) {
+            filler = quote.filler;
+          }
+        }
+      } else {
+        if (quote.amountIn.lt(request.totalInputAmountStart)) {
+          inputOverride = quote.amountIn;
+          if (quote.filler) {
+            filler = quote.filler;
+          }
+        }
+      }
+
+      const decayEndTime = getDecayEndTime(request.tokenInChainId, decayStartTime);
+      assertV2DecayWithinDeadline(decayEndTime, request.order.info.deadline);
+
+      const v2Data: CosignerData = {
+        decayStartTime,
+        decayEndTime,
+        exclusiveFiller: filler,
+        exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+        inputOverride,
+        outputOverrides,
+      };
+      return v2Data;
+    }
+
+    // Note: on Dutch_V3 we allow decayEndBlock to land after the order's
+    // deadline. The reactor enforces the deadline on-chain; an order filled
+    // before deadline simply takes whatever portion of the decay curve has
+    // elapsed (partial decay).
+    case OrderType.Dutch_V3: {
+      if (!provider) {
+        throw new Error(
+          `No rpc provider found for chain: ${request.tokenInChainId}, which is required for V3 Dutch orders`
+        );
+      }
+      let filler = ethers.constants.AddressZero;
+      let inputOverride = BigNumber.from(0);
+      const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
+
+      // Mirror V2 RFQ override flow: only apply override if the quote is
+      // strictly better for the swapper. The improvement is applied entirely
+      // to outputs[0] (the swapper-facing output); fee outputs at higher
+      // indexes stay at zero, which the reactor treats as "use baseOutput".
+      // V3DutchOrderReactor._updateWithCosignerAmounts enforces the
+      // per-output invariants (inputOverride <= baseInput.startAmount,
+      // outputOverride >= baseOutput.startAmount) on-chain.
+      if (request.type === TradeType.EXACT_INPUT) {
+        if (quote.amountOut.gt(request.totalOutputAmountStart)) {
+          const increase = quote.amountOut.sub(request.totalOutputAmountStart);
+          outputOverrides[0] = request.order.info.outputs[0].startAmount.add(increase);
+          if (quote.filler) {
+            filler = quote.filler;
+          }
+        }
+      } else {
+        if (quote.amountIn.lt(request.totalInputAmountStart)) {
+          inputOverride = quote.amountIn;
+          if (quote.filler) {
+            filler = quote.filler;
+          }
+        }
+      }
+
+      const currentBlock = await provider.getBlockNumber();
+      const decayStartBlock = currentBlock + getV3BlockBuffer(request.tokenInChainId);
+
+      const v3Data: V3CosignerData = {
+        decayStartBlock,
+        exclusiveFiller: filler,
+        exclusivityOverrideBps: V3_EXCLUSIVITY_OVERRIDE_BPS,
+        inputOverride,
+        outputOverrides,
+      };
+      return v3Data;
+    }
+
+    default:
+      throw new Error('Unsupported order type');
+  }
+}
+export async function getDefaultCosignerData(
+  request: HardQuoteRequest,
+  orderType: OrderType,
+  provider: ethers.providers.StaticJsonRpcProvider | undefined
+): Promise<CosignerData | V3CosignerData> {
+  switch (orderType) {
+    case OrderType.Dutch_V2:
+      return getDefaultV2CosignerData(request);
+    case OrderType.Dutch_V3:
+      return await getDefaultV3CosignerData(request, provider);
+    default:
+      throw new Error('Unsupported order type');
+  }
+}
+
+function getDecayStartTime(chainId: number): number {
+  const nowTimestamp = Math.floor(Date.now() / 1000);
+  switch (chainId) {
+    case ChainId.MAINNET:
+      return nowTimestamp + 24; // 2 blocks
+    case ChainId.ARBITRUM_ONE:
+      return nowTimestamp; // start immediately
+    default:
+      return nowTimestamp + 10; // 10 seconds
+  }
+}
+
+function getDecayEndTime(chainId: number, startTime: number): number {
+  switch (chainId) {
+    case ChainId.MAINNET:
+      return startTime + 60; // 5 blocks
+    case ChainId.ARBITRUM_ONE:
+      return startTime + 8; // 8 seconds
+    default:
+      return startTime + 30; // 30 seconds
+  }
+}
+
+function createHardQuoteResponse(
+  request: HardQuoteRequest,
+  order: CosignedV2DutchOrder | CosignedV3DutchOrder
+): V2HardQuoteResponse | V3HardQuoteResponse {
+  if (order instanceof CosignedV2DutchOrder) {
+    return new V2HardQuoteResponse(request, order);
+  } else if (order instanceof CosignedV3DutchOrder) {
+    return new V3HardQuoteResponse(request, order);
+  }
+  throw new Error('Unsupported order type');
+}
+
+async function createCosignedOrder(
+  cosigner: Cosigner,
+  request: HardQuoteRequest,
+  cosignerData: CosignerData | V3CosignerData
+): Promise<CosignedV2DutchOrder | CosignedV3DutchOrder> {
+  if (request.order instanceof UnsignedV2DutchOrder) {
+    const v2CosignerData = cosignerData as CosignerData;
+    const cosignature = await cosigner.signDigest(request.order.cosignatureHash(v2CosignerData));
+    return CosignedV2DutchOrder.fromUnsignedOrder(request.order, v2CosignerData, cosignature);
+  } else if (request.order instanceof UnsignedV3DutchOrder) {
+    const v3CosignerData = cosignerData as V3CosignerData;
+    const cosignature = await cosigner.signDigest(request.order.cosignatureHash(v3CosignerData));
+    return CosignedV3DutchOrder.fromUnsignedOrder(request.order, v3CosignerData, cosignature);
+  } else {
+    throw new Error('Unsupported order type');
+  }
+}
+
+function getDefaultV2CosignerData(request: HardQuoteRequest): CosignerData {
+  const decayStartTime = getDecayStartTime(request.tokenInChainId);
+  const decayEndTime = getDecayEndTime(request.tokenInChainId, decayStartTime);
+  assertV2DecayWithinDeadline(decayEndTime, request.order.info.deadline);
+
+  const filler = ethers.constants.AddressZero;
+  let inputOverride = BigNumber.from(0);
+  const outputOverrides = request.order.info.outputs.map(() => BigNumber.from(0));
+  if (request.type === TradeType.EXACT_INPUT) {
+    outputOverrides[0] = request.totalOutputAmountStart;
+  } else {
+    inputOverride = request.totalInputAmountStart;
+  }
+
+  return {
+    decayStartTime,
+    decayEndTime,
+    exclusiveFiller: filler,
+    exclusivityOverrideBps: DEFAULT_EXCLUSIVITY_OVERRIDE_BPS,
+    inputOverride: inputOverride,
+    outputOverrides: outputOverrides,
+  };
+}
+
+/**
+ * V2 orders must complete their decay window before the order's deadline,
+ * otherwise the resolved output the swapper signed for becomes meaningless —
+ * fills past `decayEndTime` lock in the end-amount, but if `decayEndTime`
+ * is itself past the deadline, the reactor reverts the fill on the
+ * deadline check and the swapper loses the order's exclusivity window
+ * (and the cosigner's exclusivity grant) for nothing.
+ *
+ * V3 orders allow partial decay — fills that happen before
+ * `decayEndBlock` simply interpolate, so this check is V2-only.
+ */
+function assertV2DecayWithinDeadline(decayEndTime: number, deadline: number): void {
+  if (decayEndTime > deadline) {
+    // This is a client error (the submitted order's deadline is too close or
+    // already expired), not a transient server failure. Throw a CustomError so
+    // the base handler returns a final 400 rather than a retryable 5xx — the
+    // request will never succeed as-is, so the customer should not retry it.
+    throw new OrderDeadlineExpired(
+      `Order deadline is too close or has already expired (decayEndTime ${decayEndTime} > deadline ${deadline}); ` +
+        'the order can no longer be filled. Recreate the order with a later deadline.'
+    );
+  }
+}
+
+async function getDefaultV3CosignerData(
+  request: HardQuoteRequest,
+  provider: ethers.providers.StaticJsonRpcProvider | undefined
+): Promise<V3CosignerData> {
+  if (!provider)
+    throw new Error(
+      `No rpc provider found for chain: ${request.tokenInChainId}, which is required for V3 Dutch orders`
+    );
+  const currentBlock = await provider.getBlockNumber();
+
+  return {
+    decayStartBlock: currentBlock + getV3BlockBuffer(request.tokenInChainId),
+    exclusiveFiller: ethers.constants.AddressZero,
+    exclusivityOverrideBps: BigNumber.from(0),
+    inputOverride: BigNumber.from(0),
+    outputOverrides: request.order.info.outputs.map(() => BigNumber.from(0)),
+  };
+}

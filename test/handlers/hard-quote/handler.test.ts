@@ -4,6 +4,7 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda
 import { default as Logger } from 'bunyan';
 import { BigNumber, ethers, Wallet } from 'ethers';
 
+import { getCosignerData } from '../../../lib/core';
 import { HardQuoteRequest, Metric, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
@@ -13,8 +14,6 @@ import {
   HardQuoteResponseData,
   RequestInjected,
 } from '../../../lib/handlers/hard-quote';
-import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
-import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
 import {
   FillerAddressRepository,
@@ -25,7 +24,7 @@ import {
   PostedOrderOutcome,
   PostedOrderRepository,
 } from '../../../lib/repositories/posted-order-repository';
-import { fakeContext, FakeCosigner } from '../../fakes';
+import { fakeContext, FakeCosigner, hardQuoteContainer } from '../../fakes';
 import { getOrder } from '../../fixtures/hard-quote';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -65,17 +64,13 @@ describe('Quote handler', () => {
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
-        getContainerInjected: () => {
-          return {
+        getContainerInjected: () =>
+          hardQuoteContainer({
             quoters,
-            orderServiceProvider: new MockOrderServiceProvider(),
             postedOrderRepository,
             fillerAddressRepository,
-            // Mock chainIdRpcMap
-            chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
             cosignerFactory: cosigner.factory(),
-          };
-        },
+          }),
         getRequestInjected: () => requestInjectedMock,
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
     );
