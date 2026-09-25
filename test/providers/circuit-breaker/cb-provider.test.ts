@@ -1,6 +1,6 @@
 import bunyan from 'bunyan';
 
-import { FillerTimestamps } from '../../../lib/cron/fade-rate-v2';
+import { FillerTimestamps } from '../../../lib/core/circuit-breaker';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/dynamo';
 import { BaseTimestampRepository, FillerTimestampMap, TimestampRepoRow } from '../../../lib/repositories';
 

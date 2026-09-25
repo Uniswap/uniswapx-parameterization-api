@@ -1,5 +1,3 @@
-import Logger from 'bunyan';
-
 import {
   BASE_BLOCK_SECS,
   calculateBlockUntilTimestamp,
@@ -19,7 +17,7 @@ import {
   MAX_BLOCK_BACKOFF_EXPONENT,
   STREAK_FINALITY_LAG_SECS,
   UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
-} from '../../lib/cron/fade-rate-v2';
+} from '../../lib/core/circuit-breaker';
 import { Metric, metricContext } from '../../lib/entities';
 import {
   ORDERS_PER_FILLER_LIMIT,
@@ -27,14 +25,13 @@ import {
   ToUpdateTimestampRow,
   V2FadesRowType,
 } from '../../lib/repositories';
+import { FakeLogger, FakeMetrics } from '../fakes';
 
 const now = Math.floor(Date.now() / 1000);
 // deadlines at least this old are past the streak's finality horizon (load state final)
 const FINAL = STREAK_FINALITY_LAG_SECS + 100;
 
-// silent logger in tests
-const logger = Logger.createLogger({ name: 'test' });
-logger.level(Logger.FATAL);
+const logger = new FakeLogger();
 
 // helper to build a faded/non-faded order row
 const order = (fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRowType => ({
@@ -516,7 +513,7 @@ describe('FadeRateV2 cron', () => {
     });
 
     it('emits per-filler fade rates and new/extended block counters', () => {
-      const metrics = { putMetric: jest.fn() } as any;
+      const metrics = new FakeMetrics();
       const timestamps: FillerTimestamps = new Map([
         ['extendMe', cbState({ blockUntilTimestamp: now + 500, fadeWindowStart: now + 500, consecutiveBlocks: 1 })],
       ]);
@@ -527,53 +524,59 @@ describe('FadeRateV2 cron', () => {
       };
       calculateNewTimestamps(timestamps, stats, now, logger, metrics);
 
-      expect(metrics.putMetric).toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_FADE_RATE, 'breach'),
-        0.25,
-        expect.anything()
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({
+          kind: 'gauge',
+          name: metricContext(Metric.CIRCUIT_BREAKER_V2_FADE_RATE, 'breach'),
+          value: 0.25,
+        })
       );
-      expect(metrics.putMetric).toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_FADE_RATE, 'clean'),
-        0.03,
-        expect.anything()
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({
+          kind: 'gauge',
+          name: metricContext(Metric.CIRCUIT_BREAKER_V2_FADE_RATE, 'clean'),
+          value: 0.03,
+        })
       );
-      expect(metrics.putMetric).toHaveBeenCalledWith(Metric.CIRCUIT_BREAKER_V2_NEW_BLOCKS, 1, expect.anything());
-      expect(metrics.putMetric).toHaveBeenCalledWith(Metric.CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS, 1, expect.anything());
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({ kind: 'count', name: Metric.CIRCUIT_BREAKER_V2_NEW_BLOCKS, value: 1 })
+      );
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({ kind: 'count', name: Metric.CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS, value: 1 })
+      );
 
       // during-block rate is charted only for the currently-blocked filler (its post-block
       // fadeRate sits at the prior while benched)
-      expect(metrics.putMetric).toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE, 'extendMe'),
-        0.2,
-        expect.anything()
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({
+          kind: 'gauge',
+          name: metricContext(Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE, 'extendMe'),
+          value: 0.2,
+        })
       );
-      expect(metrics.putMetric).not.toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE, 'breach'),
-        expect.anything(),
-        expect.anything()
-      );
+      expect(metrics.emitted(metricContext(Metric.CIRCUIT_BREAKER_V2_DURING_BLOCK_RATE, 'breach'))).toBe(0);
 
       // escalation level emitted for blocked/blocking fillers; never-blocked 'clean' (0 -> 0)
       // emits nothing
-      expect(metrics.putMetric).toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'breach'),
-        1,
-        expect.anything()
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({
+          kind: 'count',
+          name: metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'breach'),
+          value: 1,
+        })
       );
-      expect(metrics.putMetric).toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'extendMe'),
-        2,
-        expect.anything()
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({
+          kind: 'count',
+          name: metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'extendMe'),
+          value: 2,
+        })
       );
-      expect(metrics.putMetric).not.toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'clean'),
-        expect.anything(),
-        expect.anything()
-      );
+      expect(metrics.emitted(metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'clean'))).toBe(0);
     });
 
     it('emits the decayed escalation level so recovery is visible (steps down to 0)', () => {
-      const metrics = { putMetric: jest.fn() } as any;
+      const metrics = new FakeMetrics();
       const timestamps: FillerTimestamps = new Map([
         [
           'recovering',
@@ -586,15 +589,17 @@ describe('FadeRateV2 cron', () => {
       calculateNewTimestamps(timestamps, stats, now, logger, metrics);
 
       // the step down to 0 is emitted (previousBlocks was 1), not silently dropped
-      expect(metrics.putMetric).toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'recovering'),
-        0,
-        expect.anything()
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({
+          kind: 'count',
+          name: metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, 'recovering'),
+          value: 0,
+        })
       );
     });
 
     it('emits the chronic (no-amnesty) watchlist rate only at sufficient sample size', () => {
-      const metrics = { putMetric: jest.fn() } as any;
+      const metrics = new FakeMetrics();
       const stats: FillerFadeStatsMap = {
         // a low-volume ~20% fader living inside the block threshold's envelope: never blocked,
         // but the watchlist metric keeps them visible
@@ -605,34 +610,26 @@ describe('FadeRateV2 cron', () => {
         healthy: fadeStats({ chronicRate: CHRONIC_RATE_EMISSION_FLOOR - 0.01, chronicTotal: 50 }),
       };
       calculateNewTimestamps(new Map(), stats, now, logger, metrics);
-      expect(metrics.putMetric).toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'watchme'),
-        0.2,
-        expect.anything()
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({
+          kind: 'gauge',
+          name: metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'watchme'),
+          value: 0.2,
+        })
       );
-      expect(metrics.putMetric).not.toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'tiny'),
-        expect.anything(),
-        expect.anything()
-      );
-      expect(metrics.putMetric).not.toHaveBeenCalledWith(
-        metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'healthy'),
-        expect.anything(),
-        expect.anything()
-      );
+      expect(metrics.emitted(metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'tiny'))).toBe(0);
+      expect(metrics.emitted(metricContext(Metric.CIRCUIT_BREAKER_V2_CHRONIC_RATE, 'healthy'))).toBe(0);
     });
 
     it('emits the aggregate count of window-saturated addresses', () => {
-      const metrics = { putMetric: jest.fn() } as any;
+      const metrics = new FakeMetrics();
       const stats: FillerFadeStatsMap = {
         busy: fadeStats({ saturatedAddresses: 2 }),
         quiet: fadeStats(),
       };
       calculateNewTimestamps(new Map(), stats, now, logger, metrics);
-      expect(metrics.putMetric).toHaveBeenCalledWith(
-        Metric.CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES,
-        2,
-        expect.anything()
+      expect(metrics.calls).toContainEqual(
+        expect.objectContaining({ kind: 'count', name: Metric.CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES, value: 2 })
       );
     });
   });

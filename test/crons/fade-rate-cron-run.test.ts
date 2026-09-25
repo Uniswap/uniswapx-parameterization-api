@@ -1,9 +1,10 @@
 import { createMetricsLogger, MetricsLogger, Unit } from 'aws-embedded-metrics';
 import Logger from 'bunyan';
 
-import { BASE_BLOCK_SECS, FadeRateCronDeps, LAMBDA_EXIT_MARGIN_MS, runFadeRateCron } from '../../lib/cron/fade-rate-v2';
+import { BASE_BLOCK_SECS } from '../../lib/core/circuit-breaker';
+import { FadeRateCronDeps, LAMBDA_EXIT_MARGIN_MS, runFadeRateCron } from '../../lib/cron/fade-rate-v2';
 import { FadesSource, ResolutionSummary } from '../../lib/cron/order-service-fades-source';
-import { Metric } from '../../lib/entities';
+import { Metric, metricContext } from '../../lib/entities';
 import { Context } from '../../lib/observability';
 import {
   BaseTimestampRepository,
@@ -87,15 +88,21 @@ class FakeTimestampRepository implements BaseTimestampRepository {
   }
 }
 
-function recordingMetrics(): { metrics: MetricsLogger; calls: Record<string, number[]> } {
+function recordingMetrics(): {
+  metrics: MetricsLogger;
+  calls: Record<string, number[]>;
+  units: Record<string, Set<Unit | string | undefined>>;
+} {
   const metrics = createMetricsLogger();
   const calls: Record<string, number[]> = {};
+  const units: Record<string, Set<Unit | string | undefined>> = {};
   const originalPut = metrics.putMetric.bind(metrics);
   metrics.putMetric = (key: string, value: number, unit?: Unit | string) => {
     (calls[key] ??= []).push(value);
+    (units[key] ??= new Set()).add(unit);
     return originalPut(key, value, unit);
   };
-  return { metrics, calls };
+  return { metrics, calls, units };
 }
 
 // A bunyan logger writing to an in-memory ring so tests can inspect record fields.
@@ -167,7 +174,7 @@ async function run(opts: RunOptions) {
   source.lastResolution = opts.resolution;
   const webhooks = new FakeWebhookProvider(opts.endpoints ?? [FILLER_A, FILLER_B]);
   const timestamps = new FakeTimestampRepository(new Map(), order);
-  const { metrics, calls } = recordingMetrics();
+  const { metrics, calls, units } = recordingMetrics();
   const { log, records } = recordingLog();
   const addresses = opts.addresses ?? (await fillerAddresses());
   const deps: FadeRateCronDeps = {
@@ -180,7 +187,7 @@ async function run(opts: RunOptions) {
     remainingTimeMs: opts.remainingTimeMs,
   };
   await runFadeRateCron(metrics, deps);
-  return { source, webhooks, timestamps, calls, records, order, addresses };
+  return { source, webhooks, timestamps, calls, units, records, order, addresses };
 }
 
 describe('runFadeRateCron', () => {
@@ -287,6 +294,30 @@ describe('runFadeRateCron', () => {
       // The ctx logger writes through the run's logger.
       r.webhooks.ctx?.logger.info('from the refresh');
       expect(r.records.find((rec) => rec.msg === 'from the refresh')).toBeDefined();
+    });
+  });
+
+  describe('EMF output', () => {
+    // CircuitBreakerBL emits through the Metrics interface; the adapter's EmfMetrics must turn
+    // that back into the exact (name, unit) series the dashboards and alarms read.
+    it('emits run counters as Count and per-filler rates as None', async () => {
+      const r = await run({ rows: BLOCKING_ROWS, resolution: RESOLUTION });
+
+      for (const name of [
+        Metric.CIRCUIT_BREAKER_V2_ACTIVE_BLOCKS,
+        Metric.CIRCUIT_BREAKER_V2_FILLERS_EVALUATED,
+        Metric.CIRCUIT_BREAKER_V2_NEW_BLOCKS,
+        Metric.CIRCUIT_BREAKER_V2_EXTENDED_BLOCKS,
+        Metric.CIRCUIT_BREAKER_V2_SATURATED_ADDRESSES,
+        Metric.CIRCUIT_BREAKER_ORDER_RESOLUTION_RESOLVED,
+        metricContext(Metric.CIRCUIT_BREAKER_V2_CONSECUTIVE_BLOCKS, FILLER_A),
+      ]) {
+        expect([name, [...(r.units[name] ?? [])]]).toEqual([name, [Unit.Count]]);
+      }
+      for (const hash of [FILLER_A, FILLER_B]) {
+        const name = metricContext(Metric.CIRCUIT_BREAKER_V2_FADE_RATE, hash);
+        expect([name, [...(r.units[name] ?? [])]]).toEqual([name, [Unit.None]]);
+      }
     });
   });
 
