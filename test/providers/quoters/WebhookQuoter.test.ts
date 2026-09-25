@@ -1,14 +1,13 @@
 import { TradeType } from '@uniswap/sdk-core';
-import axios, { AxiosError } from 'axios';
+import { AxiosError } from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
 import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { NOTIFICATION_TIMEOUT_MS } from '../../../lib/constants';
 import { AnalyticsEventType, Metric, metricContext, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
-import { FirehoseLogger } from '../../../lib/providers/analytics';
-import { WebhookQuoter } from '../../../lib/quoters';
-import { fakeContext } from '../../fakes';
+import { WebhookHttp, WebhookQuoter } from '../../../lib/quoters';
+import { FakeAnalyticsLogger, fakeContext } from '../../fakes';
 import {
   MOCK_V2_CB_PROVIDER,
   WEBHOOK_URL,
@@ -16,10 +15,6 @@ import {
   WEBHOOK_URL_ONEINCH,
   WEBHOOK_URL_SEARCHER,
 } from '../../fixtures';
-
-jest.mock('axios');
-jest.mock('../../../lib/providers/analytics');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -37,6 +32,7 @@ describe('WebhookQuoter tests', () => {
   beforeEach(() => {
     fakes.metrics.reset();
     fakes.logger.reset();
+    analytics.reset();
     // Dispatch order is randomized in WebhookQuoter; pin it so the positional axios mocks
     // below (real response first, opposing second) line up deterministically.
     jest.spyOn(Math, 'random').mockReturnValue(0);
@@ -47,7 +43,7 @@ describe('WebhookQuoter tests', () => {
     jest.clearAllMocks();
     // clearAllMocks clears recorded calls but leaves implementations in place, so a persistent
     // mockImplementation would leak into later tests that rely on mockImplementationOnce.
-    mockedAxios.post.mockReset();
+    http.post.mockReset();
   });
 
   const webhookProvider = new MockWebhookConfigurationProvider([
@@ -69,8 +65,10 @@ describe('WebhookQuoter tests', () => {
   ]);
 
   const logger = { child: jest.fn(() => logger), info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
-  const mockFirehoseLogger = new FirehoseLogger(logger, 'arn:aws:deliverystream/dummy');
-  const webhookQuoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER);
+  // Injected in place of axios and Firehose: every webhook call and analytics event lands here.
+  const http = { post: jest.fn() } as unknown as jest.Mocked<WebhookHttp>;
+  const analytics = new FakeAnalyticsLogger();
+  const webhookQuoter = new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http);
 
   const makeQuoteRequest = (overrides: Partial<QuoteRequest>): QuoteRequest => {
     return new QuoteRequest({
@@ -114,7 +112,7 @@ describe('WebhookQuoter tests', () => {
   };
 
   it('Simple request and response', async () => {
-    mockedAxios.post
+    http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: { ...quote, requestId: (_req as any).requestId },
@@ -147,13 +145,13 @@ describe('WebhookQuoter tests', () => {
       });
 
     it('sends both the real and opposing requests with distinct, obfuscated requestIds', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req))
         .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req));
 
       await webhookQuoter.quote(fakes.ctx, request);
 
-      const uniswapBodies = mockedAxios.post.mock.calls
+      const uniswapBodies = http.post.mock.calls
         .filter((call) => call[0] === WEBHOOK_URL)
         .map((call) => call[1] as any);
       const realBody = uniswapBodies.find((body) => body.tokenIn === request.tokenIn);
@@ -169,7 +167,7 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('restores the original requestId on the response returned to the caller', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req))
         .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req));
 
@@ -185,7 +183,7 @@ describe('WebhookQuoter tests', () => {
       // realRequestFirst = false: the opposing request is dispatched before the real one
       (Math.random as jest.Mock).mockReturnValue(0.9);
 
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req))
         .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req));
 
@@ -197,7 +195,7 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('logs both the original and obfuscated requestId for each leg', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => echoReal(_req))
         .mockImplementationOnce((_endpoint, _req, _options) => echoOpposing(_req));
 
@@ -221,7 +219,7 @@ describe('WebhookQuoter tests', () => {
   });
 
   it('adds filler metadata to response', async () => {
-    mockedAxios.post
+    http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: { ...quote, requestId: (_req as any).requestId },
@@ -266,7 +264,7 @@ describe('WebhookQuoter tests', () => {
       - '0xsearcher' has blockUntilTimestamp in the past
    */
     it('Only calls to eligible endpoints', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: { ...quote, requestId: (_req as any).requestId },
@@ -283,17 +281,17 @@ describe('WebhookQuoter tests', () => {
         });
       await webhookQuoter.quote(fakes.ctx, request);
 
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).not.toBeCalledWith(
+      expect(http.post).not.toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         {
           quoteId: expect.any(String),
@@ -307,7 +305,7 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('notify fillers of circuit breaker status', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: { ...quote, requestId: (_req as any).requestId },
@@ -324,7 +322,7 @@ describe('WebhookQuoter tests', () => {
         });
 
       await webhookQuoter.quote(fakes.ctx, request);
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         {
           blockUntilTimestamp: expect.any(Number),
@@ -337,7 +335,7 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('Calls to all endpoints if tokenIn is permissioned', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: {
@@ -362,17 +360,17 @@ describe('WebhookQuoter tests', () => {
       });
       await webhookQuoter.quote(fakes.ctx, permissionedTokenRequest);
 
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
@@ -380,7 +378,7 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('Calls to all endpoints if tokenOut is permissioned', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: {
@@ -405,17 +403,17 @@ describe('WebhookQuoter tests', () => {
       });
       await webhookQuoter.quote(fakes.ctx, permissionedTokenRequest);
 
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
@@ -423,7 +421,7 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('Permissioned tokens still filter on supported protocol', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: {
@@ -448,17 +446,17 @@ describe('WebhookQuoter tests', () => {
       });
       await webhookQuoter.quote(fakes.ctx, permissionedTokenRequest);
 
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).not.toBeCalledWith(
+      expect(http.post).not.toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
@@ -490,9 +488,9 @@ describe('WebhookQuoter tests', () => {
         hash: '0xfoo',
       },
     ]);
-    const webhookQuoter = new WebhookQuoter(logger, mockFirehoseLogger, webhookProvider, MOCK_V2_CB_PROVIDER);
+    const webhookQuoter = new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http);
     it('v1 quote request only sent to fillers supporting v1', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: { ...quote, requestId: (_req as any).requestId },
@@ -510,29 +508,29 @@ describe('WebhookQuoter tests', () => {
 
       await webhookQuoter.quote(fakes.ctx, request);
       // blocked
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { blockUntilTimestamp: expect.any(Number) },
         { headers: {}, timeout: NOTIFICATION_TIMEOUT_MS }
       );
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), {
+      expect(http.post).not.toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), {
         headers: {},
         timeout: 500,
       });
       // empty supportedVersions defaults to v2 and v3
-      expect(mockedAxios.post).not.toBeCalledWith(WEBHOOK_URL_FOO, request.toCleanJSON(), {
+      expect(http.post).not.toBeCalledWith(WEBHOOK_URL_FOO, request.toCleanJSON(), {
         headers: {},
         timeout: 500,
       });
     });
 
     it('v2 quote request only sent to fillers supporting v2', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: { ...quote, requestId: (_req as any).requestId },
@@ -550,12 +548,12 @@ describe('WebhookQuoter tests', () => {
 
       const request = makeQuoteRequest({ protocol: ProtocolVersion.V2 });
       await webhookQuoter.quote(fakes.ctx, request);
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
@@ -564,7 +562,7 @@ describe('WebhookQuoter tests', () => {
         }
       );
       // empty config defaults to v2 and v3
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_FOO,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
@@ -575,7 +573,7 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('v3 quote request only sent to fillers supporting v3', async () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
             data: { ...quote, requestId: (_req as any).requestId },
@@ -593,12 +591,12 @@ describe('WebhookQuoter tests', () => {
 
       const request = makeQuoteRequest({ protocol: ProtocolVersion.V3 });
       await webhookQuoter.quote(fakes.ctx, request);
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         { headers: {}, timeout: 500 }
       );
-      expect(mockedAxios.post).not.toBeCalledWith(
+      expect(http.post).not.toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
@@ -607,7 +605,7 @@ describe('WebhookQuoter tests', () => {
         }
       );
       // empty config defaults to v2 and v3
-      expect(mockedAxios.post).toBeCalledWith(
+      expect(http.post).toBeCalledWith(
         WEBHOOK_URL_FOO,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
@@ -619,7 +617,7 @@ describe('WebhookQuoter tests', () => {
   });
 
   it('Simple request and response no swapper', async () => {
-    mockedAxios.post
+    http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: { ...quote, requestId: (_req as any).requestId },
@@ -638,13 +636,13 @@ describe('WebhookQuoter tests', () => {
 
     expect(response.length).toEqual(1);
     expect(response[0].toResponseJSON()).toEqual({ ...quote, swapper: request.swapper, quoteId: expect.any(String) });
-    expect(mockedAxios.post).toBeCalledWith(
+    expect(http.post).toBeCalledWith(
       WEBHOOK_URL,
       // opposing request carries a distinct, randomized requestId (obfuscation)
       { quoteId: expect.any(String), ...request.toOpposingCleanJSON(), requestId: expect.any(String) },
       { headers: {}, timeout: 500 }
     );
-    expect(mockedAxios.post).toBeCalledWith(
+    expect(http.post).toBeCalledWith(
       WEBHOOK_URL,
       { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
       { headers: {}, timeout: 500 }
@@ -664,7 +662,7 @@ describe('WebhookQuoter tests', () => {
       filler: FILLER,
     };
 
-    mockedAxios.post
+    http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: { ...quote, requestId: (_req as any).requestId },
@@ -689,7 +687,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1], hash: '0xuni' },
     ]);
-    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, provider, MOCK_V2_CB_PROVIDER);
+    const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, http);
     const request = makeQuoteRequest({ tokenInChainId: 1, tokenOutChainId: 1, protocol: ProtocolVersion.V2 });
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
@@ -703,7 +701,7 @@ describe('WebhookQuoter tests', () => {
       filler: FILLER,
     };
 
-    mockedAxios.post
+    http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
           data: { ...quote, requestId: (_req as any).requestId },
@@ -729,7 +727,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6], hash: '0xuni' },
     ]);
-    const quoter = new WebhookQuoter(logger, mockFirehoseLogger, provider, MOCK_V2_CB_PROVIDER);
+    const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, http);
 
     const response = await quoter.quote(fakes.ctx, request);
 
@@ -758,7 +756,7 @@ describe('WebhookQuoter tests', () => {
       filler: FILLER,
     };
 
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+    http.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
         status: 200,
@@ -792,7 +790,7 @@ describe('WebhookQuoter tests', () => {
       },
       `Webhook Response failed validation. Webhook: ${WEBHOOK_URL}.`
     );
-    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+    expect(analytics.events).toContainEqual(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
@@ -824,7 +822,7 @@ describe('WebhookQuoter tests', () => {
       filler: FILLER,
     };
 
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+    http.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
         status: 200,
@@ -840,7 +838,7 @@ describe('WebhookQuoter tests', () => {
       },
       'Webhook ResponseId does not match request'
     );
-    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+    expect(analytics.events).toContainEqual(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
@@ -860,7 +858,7 @@ describe('WebhookQuoter tests', () => {
   // cannot or will not quote". This case passed before 204 was checked explicitly, but only by
   // accident — an empty body makes amountOut default to 0 and fall into the zero-amount branch.
   it('Counts as non-quote if response returns 204 with an empty body', async () => {
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+    http.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({ data: '', status: 204 });
     });
 
@@ -870,7 +868,7 @@ describe('WebhookQuoter tests', () => {
       { response: '', responseStatus: 204 },
       `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
-    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+    expect(analytics.events).toContainEqual(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: expect.objectContaining({
@@ -885,13 +883,13 @@ describe('WebhookQuoter tests', () => {
   // A 204 is "no content", so the status decides on its own. Without an explicit check a body
   // carrying a non-zero amount slips past the zero-amount branch and is accepted as a real quote.
   it('Counts as non-quote if response returns 204 carrying a quote body', async () => {
-    mockedAxios.post.mockImplementation((_endpoint, _req, _options) => {
+    http.post.mockImplementation((_endpoint, _req, _options) => {
       return Promise.resolve({ data: { ...quote, requestId: (_req as any).requestId }, status: 204 });
     });
 
     const response = await webhookQuoter.quote(fakes.ctx, request);
 
-    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+    expect(analytics.events).toContainEqual(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: expect.objectContaining({
@@ -911,7 +909,7 @@ describe('WebhookQuoter tests', () => {
     // Resolve or reject the way real axios would for the config the quoter actually passes. A mock
     // that rejects unconditionally would keep passing even if validateStatus were widened, which is
     // what let the unreachable branch sit here unnoticed in the first place.
-    mockedAxios.post.mockImplementation((_endpoint, _req, options) => {
+    http.post.mockImplementation((_endpoint, _req, options) => {
       const validateStatus = (options as any)?.validateStatus ?? ((s: number) => s >= 200 && s < 300);
       if (validateStatus(404)) {
         return Promise.resolve({ status: 404, data: '' });
@@ -924,7 +922,7 @@ describe('WebhookQuoter tests', () => {
 
     const response = await webhookQuoter.quote(fakes.ctx, request);
 
-    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+    expect(analytics.events).toContainEqual(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: expect.objectContaining({
@@ -933,7 +931,7 @@ describe('WebhookQuoter tests', () => {
         }),
       })
     );
-    expect(mockFirehoseLogger.sendAnalyticsEvent).not.toHaveBeenCalledWith(
+    expect(analytics.events).not.toContainEqual(
       expect.objectContaining({
         eventProperties: expect.objectContaining({ responseType: WebhookResponseType.NON_QUOTE }),
       })
@@ -954,7 +952,7 @@ describe('WebhookQuoter tests', () => {
       filler: FILLER,
     };
 
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+    http.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
         status: 200,
@@ -970,7 +968,7 @@ describe('WebhookQuoter tests', () => {
       },
       `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
-    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+    expect(analytics.events).toContainEqual(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
@@ -997,7 +995,7 @@ describe('WebhookQuoter tests', () => {
       filler: FILLER,
     };
 
-    mockedAxios.post.mockImplementationOnce((_endpoint, _req, _options) => {
+    http.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
         data: quote,
         status: 200,
@@ -1027,7 +1025,7 @@ describe('WebhookQuoter tests', () => {
       },
       `Webhook elected not to quote: ${WEBHOOK_URL}`
     );
-    expect(mockFirehoseLogger.sendAnalyticsEvent).toHaveBeenCalledWith(
+    expect(analytics.events).toContainEqual(
       expect.objectContaining({
         eventType: AnalyticsEventType.WEBHOOK_RESPONSE,
         eventProperties: {
@@ -1043,7 +1041,7 @@ describe('WebhookQuoter tests', () => {
 
   describe('latency instrumentation', () => {
     const mockSimpleSuccess = () => {
-      mockedAxios.post
+      http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({ data: { ...quote, requestId: (_req as any).requestId } });
         })
@@ -1075,7 +1073,7 @@ describe('WebhookQuoter tests', () => {
     it('emits RFQ_TIMEOUT (bare and per-filler) only for axios timeouts', async () => {
       const timeoutError = new AxiosError('timeout of 500ms exceeded');
       (timeoutError as any).code = 'ECONNABORTED';
-      mockedAxios.post.mockRejectedValue(timeoutError);
+      http.post.mockRejectedValue(timeoutError);
 
       const response = await webhookQuoter.quote(fakes.ctx, request);
 
@@ -1095,7 +1093,7 @@ describe('WebhookQuoter tests', () => {
     it('does not emit RFQ_TIMEOUT for non-timeout errors', async () => {
       const httpError = new AxiosError('Request failed with status code 500');
       (httpError as any).code = 'ERR_BAD_RESPONSE';
-      mockedAxios.post.mockRejectedValue(httpError);
+      http.post.mockRejectedValue(httpError);
 
       await webhookQuoter.quote(fakes.ctx, request);
 
@@ -1110,7 +1108,7 @@ describe('WebhookQuoter tests', () => {
       const v1OnlyProvider = new MockWebhookConfigurationProvider([
         { name: 'v1only', endpoint: WEBHOOK_URL, headers: {}, hash: '0xv1', supportedVersions: [ProtocolVersion.V1] },
       ]);
-      const quoter = new WebhookQuoter(logger, mockFirehoseLogger, v1OnlyProvider, MOCK_V2_CB_PROVIDER);
+      const quoter = new WebhookQuoter(logger, analytics, v1OnlyProvider, MOCK_V2_CB_PROVIDER, http);
 
       const response = await quoter.quote(fakes.ctx, makeQuoteRequest({ protocol: ProtocolVersion.V2 }));
 
@@ -1126,7 +1124,7 @@ describe('WebhookQuoter tests', () => {
     // The point of passing ctx instead of reading a module global: on a concurrent runtime two
     // in-flight quotes must never report into each other's metrics.
     it('reports each concurrent quote only into the ctx it was given', async () => {
-      mockedAxios.post.mockImplementation((_endpoint, req) =>
+      http.post.mockImplementation((_endpoint, req) =>
         Promise.resolve({ data: { ...quote, requestId: (req as { requestId: string }).requestId } })
       );
       const a = fakeContext('request-a');

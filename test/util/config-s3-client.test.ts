@@ -1,5 +1,3 @@
-import { S3Client } from '@aws-sdk/client-s3';
-
 import {
   CONFIG_S3_CONNECTION_TIMEOUT_MS,
   CONFIG_S3_MAX_ATTEMPTS,
@@ -7,18 +5,19 @@ import {
   createConfigS3Client,
 } from '../../lib/util/config-s3-client';
 
-jest.mock('@aws-sdk/client-s3');
+// The SDK resolves request-handler options into a private promise; reading it back from a real
+// client proves the bounds actually reach the handler (a misspelled option is silently ignored).
+type ResolvedHandlerOptions = { connectionTimeout?: number; requestTimeout?: number };
 
 describe('createConfigS3Client', () => {
-  it('bounds connection, request, and retry budget so a stalled fetch cannot hold the quote path', () => {
-    createConfigS3Client();
-    expect(S3Client).toHaveBeenCalledWith({
-      requestHandler: {
-        connectionTimeout: CONFIG_S3_CONNECTION_TIMEOUT_MS,
-        requestTimeout: CONFIG_S3_REQUEST_TIMEOUT_MS,
-      },
-      maxAttempts: CONFIG_S3_MAX_ATTEMPTS,
-    });
+  it('bounds connection, request, and retry budget so a stalled fetch cannot hold the quote path', async () => {
+    const client = createConfigS3Client();
+    const handler = client.config.requestHandler as unknown as { configProvider: Promise<ResolvedHandlerOptions> };
+    const options = await handler.configProvider;
+
+    expect(options.connectionTimeout).toBe(CONFIG_S3_CONNECTION_TIMEOUT_MS);
+    expect(options.requestTimeout).toBe(CONFIG_S3_REQUEST_TIMEOUT_MS);
+    expect(await client.config.maxAttempts()).toBe(CONFIG_S3_MAX_ATTEMPTS);
   });
 
   it('keeps the total worst-case stall on the order of seconds, not the kernel SYN ladder', () => {
