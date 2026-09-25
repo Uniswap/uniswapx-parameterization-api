@@ -9,7 +9,11 @@ import { Construct } from 'constructs';
 import dotenv from 'dotenv';
 
 import { STAGE } from '../lib/util/stage';
-import { EGRESS_PROXY_BACKEND_ACCOUNTS, HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS } from './config';
+import {
+  ANALYTICS_WRITER_BACKEND_ACCOUNTS,
+  EGRESS_PROXY_BACKEND_ACCOUNTS,
+  HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS,
+} from './config';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
 
@@ -28,6 +32,7 @@ export class APIStage extends Stage {
       envVars: Record<string, string>;
       hardQuoteCosignerBackendAccounts?: readonly string[];
       egressProxyBackendAccounts?: readonly string[];
+      analyticsWriterBackendAccounts?: readonly string[];
     }
   ) {
     super(scope, id, props);
@@ -40,6 +45,7 @@ export class APIStage extends Stage {
       envVars,
       hardQuoteCosignerBackendAccounts,
       egressProxyBackendAccounts,
+      analyticsWriterBackendAccounts,
     } = props;
 
     const { url } = new APIStack(this, `${SERVICE_NAME}API`, {
@@ -51,6 +57,7 @@ export class APIStage extends Stage {
       envVars,
       hardQuoteCosignerBackendAccounts,
       egressProxyBackendAccounts,
+      analyticsWriterBackendAccounts,
     });
     this.url = url;
   }
@@ -151,6 +158,7 @@ export class APIPipeline extends Stack {
       },
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.BETA],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.BETA],
+      analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.BETA],
     });
 
     const betaUsEast2AppStage = pipeline.addStage(betaUsEast2Stage);
@@ -171,6 +179,7 @@ export class APIPipeline extends Stack {
       stage: STAGE.PROD,
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.PROD],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.PROD],
+      analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.PROD],
     });
 
     const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);
