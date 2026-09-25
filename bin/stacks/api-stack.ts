@@ -54,6 +54,9 @@ export class APIStack extends cdk.Stack {
       // Backend accounts that may reach the market-maker egress proxy. Absent (local stack)
       // means no proxy is created.
       egressProxyBackendAccounts?: readonly string[];
+      // Backend accounts that may write analytics records cross-account. Absent (local stack)
+      // means no direct-write streams or writer role are created.
+      analyticsWriterBackendAccounts?: readonly string[];
     }
   ) {
     super(parent, name, props);
@@ -376,6 +379,7 @@ export class APIStack extends cdk.Stack {
       analyticsStreamArn: firehoseStack.analyticsStreamArn,
       stage,
       chatbotSNSArn,
+      analyticsWriterBackendAccounts: props.analyticsWriterBackendAccounts,
     });
 
     /* posted-orders table: the hard-quote Lambda writes one row per confirmed RFQ-won post

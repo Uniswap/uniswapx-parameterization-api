@@ -8,6 +8,7 @@ import * as aws_logs from 'aws-cdk-lib/aws-logs';
 import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import path from 'path';
+import { BackendAnalyticsWriter } from './backend-analytics-writer';
 import { LAMBDA_BUNDLING } from './lambda-bundling';
 
 // Pinned to what these streams used as Redshift intermediate-S3 destinations, so object sizes and
@@ -21,6 +22,8 @@ export interface AnalyticsStackProps extends cdk.NestedStackProps {
   analyticsStreamArn: string;
   stage: string;
   chatbotSNSArn?: string;
+  // Backend accounts that may write analytics records directly (see BackendAnalyticsWriter).
+  analyticsWriterBackendAccounts?: readonly string[];
 }
 
 /**
@@ -354,6 +357,21 @@ export class AnalyticsStack extends cdk.NestedStack {
       logGroupName: hardQuoteLambda.logGroup.logGroupName,
       roleArn: subscriptionRole.roleArn,
     });
+
+    // Direct-write path for the backend uniswapx service: same buckets, no log subscription.
+    if (props.analyticsWriterBackendAccounts?.length) {
+      new BackendAnalyticsWriter(this, 'BackendAnalyticsWriter', {
+        buckets: {
+          rfqRequest: rfqRequestBucket,
+          rfqResponse: rfqResponseBucket,
+          hardRequest: hardRequestBucket,
+          hardResponse: hardResponseBucket,
+        },
+        firehoseRole,
+        webhookResponseStreamArn: analyticsStreamArn,
+        allowedAccounts: props.analyticsWriterBackendAccounts,
+      });
+    }
 
     new CfnOutput(this, 'BOT_ACCOUNT', {
       value: props.envVars['BOT_ACCOUNT'],
