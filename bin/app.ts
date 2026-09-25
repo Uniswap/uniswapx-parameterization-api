@@ -109,7 +109,7 @@ export class APIPipeline extends Stack {
         phases: {
           install: {
             'runtime-versions': {
-              nodejs: '20',
+              nodejs: '22',
             },
           },
         },
@@ -269,7 +269,7 @@ export class APIPipeline extends Stack {
         phases: {
           install: {
             'runtime-versions': {
-              nodejs: '20',
+              nodejs: '22',
             },
           },
         },
