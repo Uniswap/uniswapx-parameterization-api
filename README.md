@@ -1,4 +1,4 @@
-# uniswapx-parametrization-api
+# uniswapx-parameterization-api
 
 [![Unit Tests](https://github.com/Uniswap/uniswapx-parameterization-api/actions/workflows/test.yml/badge.svg)](https://github.com/Uniswap/uniswapx-parameterization-api/actions/workflows/test.yml)
 
@@ -10,7 +10,7 @@ follow [api-template README](https://github.com/Uniswap/api-template#first-time-
 
 To run dynamodb-related tests, you need to have Java Runtime installed (https://www.java.com/en/download/manual.jsp).
 
-## Delopyment
+## Deployment
 
 ### Dev Environment
 
@@ -47,7 +47,7 @@ The project currently has a `GET hello-world` Api Gateway<>Lambda integration se
 
 ## Integration Tests
 
-1. Deploy your API using the intructions above.
+1. Deploy your API using the instructions above.
 
 1. Add your API url to your `.env` file as `UNISWAP_API`
 
