@@ -7,6 +7,7 @@ export * from './fake-cosigner';
 export * from './fake-http';
 export * from './fake-logger';
 export * from './fake-metrics';
+export * from './quote-containers';
 
 export interface FakeContext {
   ctx: Context;

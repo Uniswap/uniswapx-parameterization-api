@@ -2,13 +2,12 @@ import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 
-import { SoftQuoteBL } from '../../../lib/core';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import { ContainerInjected, PostQuoteRequestBody, RequestInjected } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { ProtocolVersion } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
-import { fakeContext } from '../../fakes';
+import { fakeContext, softQuoteContainer } from '../../fakes';
 
 /**
  * Response-surface snapshots for POST /quote.
@@ -56,10 +55,7 @@ describe('/quote response surface', () => {
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
-        getContainerInjected: () => {
-          const chainIdRpcMap = new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]);
-          return { quoters, chainIdRpcMap, softQuote: new SoftQuoteBL(quoters, chainIdRpcMap) };
-        },
+        getContainerInjected: () => softQuoteContainer(quoters),
         getRequestInjected: () => requestInjectedMock,
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, PostQuoteRequestBody, void>)
     );

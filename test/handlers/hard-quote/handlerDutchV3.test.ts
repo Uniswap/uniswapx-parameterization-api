@@ -17,11 +17,8 @@ import {
   HardQuoteResponseData,
   RequestInjected,
 } from '../../../lib/handlers/hard-quote';
-import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
-import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
-import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
-import { fakeContext, FakeCosigner } from '../../fakes';
+import { fakeContext, FakeCosigner, hardQuoteContainer } from '../../fakes';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 // Deliberately DIFFERENT from QUOTE_ID. HardQuoteRequest derives
@@ -111,20 +108,16 @@ describe('Quote handler', () => {
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
-        getContainerInjected: () => {
-          return {
+        getContainerInjected: () =>
+          hardQuoteContainer({
             quoters,
-            orderServiceProvider: new MockOrderServiceProvider(),
-            postedOrderRepository: new MockPostedOrderRepository(),
-            fillerAddressRepository: new MockFillerAddressRepository(),
             // The V3 path calls provider.getBlockNumber() to derive decayStartBlock. A real
             // StaticJsonRpcProvider here defaults to http://localhost:8545, so the call fails
             // and the handler returns 500 -- which is why this suite was skipped rather than
             // being blocked on the order service. Duck-typed to keep the test offline.
             chainIdRpcMap: new Map([[CHAIN_ID, makeProvider()]]),
             cosignerFactory: cosigner.factory(),
-          };
-        },
+          }),
         getRequestInjected: () => requestInjectedMock,
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
     );

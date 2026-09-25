@@ -1,7 +1,7 @@
 import { KMSClient } from '@aws-sdk/client-kms';
 import { KmsSigner } from '@uniswap/signer';
 
-import { checkDefined } from '../../preconditions/preconditions';
+import { checkDefined } from '../preconditions/preconditions';
 
 /**
  * The two operations the hard-quote path needs from its cosigning key. The key's address is

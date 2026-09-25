@@ -6,7 +6,6 @@ import { SoftQuoteBL } from '../../core';
 import { SoftQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { ApiInjector } from '../base/api-handler';
 import {
-  BaseQuoteContainerInjected,
   BaseQuoteRequestInjected,
   buildQuoteContainerInjected,
   buildQuoteRequestInjected,
@@ -14,7 +13,8 @@ import {
 } from '../shared/quote-injector';
 import { PostQuoteRequestBody } from './schema';
 
-export interface ContainerInjected extends BaseQuoteContainerInjected {
+/** What the /quote handler reads: only the flow. Its dependencies live inside it. */
+export interface ContainerInjected {
   softQuote: SoftQuoteBL;
 }
 
@@ -27,7 +27,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
     const stage = process.env['stage'];
 
     const base = buildQuoteContainerInjected(log, stage);
-    return { ...base, softQuote: new SoftQuoteBL(base.quoters, base.chainIdRpcMap) };
+    return { softQuote: new SoftQuoteBL(base.quoters, base.chainIdRpcMap) };
   }
 
   public async getRequestInjected(

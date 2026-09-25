@@ -346,7 +346,7 @@ export class WebhookQuoter implements Quoter {
 
       // Filler-address attribution is NOT done here: only a winning quote that is then posted
       // with exclusivity puts a filler address on an order, so recordPostedOrder writes it at
-      // the confirmed post (see handlers/hard-quote/posted-order-recorder.ts). Doing it per
+      // the confirmed post (see core/posted-order-recorder.ts). Doing it per
       // response costs a DynamoDB round trip for every filler on every quote, enough to
       // throttle the table under load.
 

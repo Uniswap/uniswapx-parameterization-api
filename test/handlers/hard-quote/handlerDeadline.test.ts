@@ -1,7 +1,7 @@
 import { UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
-import { ethers, Wallet } from 'ethers';
+import { Wallet } from 'ethers';
 
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
@@ -10,11 +10,8 @@ import {
   HardQuoteRequestBody,
   RequestInjected,
 } from '../../../lib/handlers/hard-quote';
-import { MockOrderServiceProvider } from '../../../lib/providers';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
-import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
-import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
-import { fakeContext, FakeCosigner } from '../../fakes';
+import { fakeContext, FakeCosigner, hardQuoteContainer } from '../../fakes';
 import { getOrder } from '../../fixtures/hard-quote';
 
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -45,16 +42,7 @@ describe('Hard quote handler - order deadline validation', () => {
   ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
     new Promise((resolve) =>
       resolve({
-        getContainerInjected: () => {
-          return {
-            quoters,
-            orderServiceProvider: new MockOrderServiceProvider(),
-            postedOrderRepository: new MockPostedOrderRepository(),
-            fillerAddressRepository: new MockFillerAddressRepository(),
-            chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
-            cosignerFactory: cosigner.factory(),
-          };
-        },
+        getContainerInjected: () => hardQuoteContainer({ quoters, cosignerFactory: cosigner.factory() }),
         getRequestInjected: () => requestInjectedMock,
       } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
     );

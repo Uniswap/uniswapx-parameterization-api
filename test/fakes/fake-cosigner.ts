@@ -1,6 +1,6 @@
 import { ethers, Wallet } from 'ethers';
 
-import { Cosigner, CosignerFactory } from '../../lib/handlers/hard-quote/cosigner';
+import { Cosigner, CosignerFactory } from '../../lib/core/cosigner';
 
 /**
  * A cosigner backed by a local wallet, standing in for the KMS key. It signs digests the way

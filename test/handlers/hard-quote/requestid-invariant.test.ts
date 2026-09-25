@@ -1,7 +1,7 @@
 import { OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
-import { ethers, Wallet } from 'ethers';
+import { Wallet } from 'ethers';
 
 import { HardQuoteRequest } from '../../../lib/entities';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
@@ -13,9 +13,7 @@ import {
 } from '../../../lib/handlers/hard-quote';
 import { OrderServiceProvider } from '../../../lib/providers/order';
 import { MockQuoter, Quoter } from '../../../lib/quoters';
-import { MockFillerAddressRepository } from '../../../lib/repositories/filler-address-repository';
-import { MockPostedOrderRepository } from '../../../lib/repositories/posted-order-repository';
-import { fakeContext, FakeCosigner } from '../../fakes';
+import { fakeContext, FakeCosigner, hardQuoteContainer } from '../../fakes';
 import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
 
 /**
@@ -124,14 +122,8 @@ describe('hard-quote requestId := quoteId invariant', () => {
     ): Promise<ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>> =>
       new Promise((resolve) =>
         resolve({
-          getContainerInjected: () => ({
-            quoters,
-            orderServiceProvider,
-            postedOrderRepository: new MockPostedOrderRepository(),
-            fillerAddressRepository: new MockFillerAddressRepository(),
-            chainIdRpcMap: new Map([[42161, new ethers.providers.StaticJsonRpcProvider()]]),
-            cosignerFactory: cosigner.factory(),
-          }),
+          getContainerInjected: () =>
+            hardQuoteContainer({ quoters, orderServiceProvider, cosignerFactory: cosigner.factory() }),
           getRequestInjected: () => requestInjectedMock,
         } as unknown as ApiInjector<ContainerInjected, RequestInjected, HardQuoteRequestBody, void>)
       );

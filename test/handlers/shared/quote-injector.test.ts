@@ -38,23 +38,32 @@ function stubMetricsLogger() {
 
 describe('shared quote injector wiring', () => {
   describe.each([
-    ['soft quote', () => new SoftQuoteInjector('quoteInjector'), false],
-    ['hard quote', () => new HardQuoteInjector('hardQuoteInjector'), true],
-  ])('%s container', (_name, makeInjector, expectsOrderService) => {
+    ['soft quote', () => new SoftQuoteInjector('quoteInjector'), 'softQuote', false],
+    ['hard quote', () => new HardQuoteInjector('hardQuoteInjector'), 'hardQuote', true],
+  ])('%s container', (_name, makeInjector, flowKey, expectsOrderService) => {
     let container: any;
+    // What the injector wired into the flow. The handler-facing container holds only the flow, so
+    // this reaches into its private fields.
+    let wiring: any;
     let quoter: any;
 
     beforeAll(async () => {
       container = (await (makeInjector() as any).build()).getContainerInjected();
-      quoter = container.quoters[0];
+      const flow = container[flowKey];
+      wiring = flow.deps ?? { quoters: flow.quoters, chainIdRpcMap: flow.chainIdRpcMap };
+      quoter = wiring.quoters[0];
     });
 
-    it('shares one firehose logger between the container and the quoter', () => {
-      expect(quoter.firehose).toBe(container.firehose);
+    it('exposes only its flow to the handler', () => {
+      expect(Object.keys(container)).toEqual([flowKey]);
+    });
+
+    it('gives the quoter a firehose logger for its analytics events', () => {
+      expect(quoter.firehose).toBeDefined();
     });
 
     it('registers exactly one quoter', () => {
-      expect(container.quoters).toHaveLength(1);
+      expect(wiring.quoters).toHaveLength(1);
     });
 
     it('scopes the webhook config bucket to the stage', () => {
@@ -62,33 +71,33 @@ describe('shared quote injector wiring', () => {
     });
 
     it('builds one static RPC provider per supported chain', () => {
-      expect(container.chainIdRpcMap.size).toEqual(SUPPORTED_CHAINS.length);
+      expect(wiring.chainIdRpcMap.size).toEqual(SUPPORTED_CHAINS.length);
 
-      const mainnet = container.chainIdRpcMap.get(1);
+      const mainnet = wiring.chainIdRpcMap.get(1);
       expect(mainnet.connection.url).toEqual('https://rpc.example/1');
       expect(mainnet.connection.headers['x-uni-service-id']).toEqual('x_parameterization_api');
       // explicit network => no eth_chainId round trip on cold start
       expect(mainnet.network.chainId).toEqual(1);
     });
 
-    it('keeps filler-address attribution out of the quoter and on the hard-quote container only', () => {
+    it('keeps filler-address attribution out of the quoter and in the hard-quote flow only', () => {
       expect(quoter.repository).toBeUndefined();
       if (expectsOrderService) {
-        expect(container.fillerAddressRepository).toBeDefined();
+        expect(wiring.fillerAddressRepository).toBeDefined();
       } else {
-        expect(container.fillerAddressRepository).toBeUndefined();
+        expect(wiring.fillerAddressRepository).toBeUndefined();
       }
     });
 
     it('provides the order service only where it is needed', () => {
       if (expectsOrderService) {
-        expect(container.orderServiceProvider).toBeDefined();
-        expect(container.postedOrderRepository).toBeDefined();
-        expect(container.cosignerFactory).toBeDefined();
+        expect(wiring.orderServiceProvider).toBeDefined();
+        expect(wiring.postedOrderRepository).toBeDefined();
+        expect(wiring.cosignerFactory).toBeDefined();
       } else {
-        expect(container.orderServiceProvider).toBeUndefined();
-        expect(container.postedOrderRepository).toBeUndefined();
-        expect(container.cosignerFactory).toBeUndefined();
+        expect(wiring.orderServiceProvider).toBeUndefined();
+        expect(wiring.postedOrderRepository).toBeUndefined();
+        expect(wiring.cosignerFactory).toBeUndefined();
       }
     });
   });

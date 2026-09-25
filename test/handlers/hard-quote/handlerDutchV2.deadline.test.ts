@@ -2,8 +2,8 @@ import { TradeType } from '@uniswap/sdk-core';
 import { CosignerData, OrderType, UnsignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import { BigNumber, ethers } from 'ethers';
 
+import { getCosignerData } from '../../../lib/core';
 import { HardQuoteRequest, QuoteResponse } from '../../../lib/entities';
-import { getCosignerData } from '../../../lib/handlers/hard-quote/handler';
 import { OrderDeadlineExpired } from '../../../lib/util/errors';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
