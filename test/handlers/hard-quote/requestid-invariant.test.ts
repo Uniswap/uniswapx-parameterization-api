@@ -31,8 +31,8 @@ import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
  * HTTP response body.
  *
  * Why it must not be "fixed" as a bug: it is an analytics contract. The `hardrequests`
- * Redshift table has no quoteId column, so overwriting requestId is currently the only way the
- * indicative quoteId reaches Redshift; `hardrequests.requestid`, `hardresponses.requestid`, the
+ * analytics table has no quoteId column, so overwriting requestId is currently the only way the
+ * indicative quoteId reaches the analytics tables; `hardrequests.requestid`, `hardresponses.requestid`, the
  * hard round's `rfqrequests`/`rfqresponses.requestid`, and `postedorders.quoteid` for open
  * orders are all keyed off it. It landed deliberately in commit e542951 (PR #317), which also
  * contains a reverted alternative. Changing the derivation requires a data-eng-workflows

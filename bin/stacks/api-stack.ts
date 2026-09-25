@@ -188,7 +188,6 @@ export class APIStack extends cdk.Stack {
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess'),
         aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
-        aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonRedshiftDataFullAccess'),
       ],
     });
 
@@ -370,7 +369,7 @@ export class APIStack extends cdk.Stack {
     /*
      * Analytics Stack Initialization
      */
-    const analyticsStack = new AnalyticsStack(this, 'AnalyticsStack', {
+    new AnalyticsStack(this, 'AnalyticsStack', {
       quoteLambda,
       hardQuoteLambda,
       envVars: props.envVars,
@@ -410,9 +409,6 @@ export class APIStack extends cdk.Stack {
     postedOrdersTable.grantWriteData(hardQuoteLambda);
 
     new CronStack(this, 'CronStack', {
-      RsDatabase: analyticsStack.dbName,
-      RsClusterIdentifier: analyticsStack.clusterId,
-      RedshiftCredSecretArn: analyticsStack.credSecretArn,
       lambdaRole: lambdaRole,
       chatbotSNSArn: chatbotSNSArn,
       stage: stage,

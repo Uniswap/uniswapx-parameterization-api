@@ -17,11 +17,6 @@
   resolved "https://registry.yarnpkg.com/@aws-cdk/asset-node-proxy-agent-v6/-/asset-node-proxy-agent-v6-2.1.2.tgz#71733894b092032309523cfcba24dc2bb3e7fd84"
   integrity sha512-pDiuqH+qY3zM9lhhLjbKJ1tnKOHzQ2V4Wr/3qsxyKeKAkuPMI/BVGvZG1PbrikUw949cGVTfVEt4ETKKYnrj0Q==
 
-"@aws-cdk/aws-redshift-alpha@2.262.1-alpha.0":
-  version "2.262.1-alpha.0"
-  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-redshift-alpha/-/aws-redshift-alpha-2.262.1-alpha.0.tgz#2b69b2964810bce695e2376ed484aac166936889"
-  integrity sha512-QhX29L+aiZGgA1bNUDQFbfHvU6AtmK9KSRRawTLuIbds3VzksBmruQBWsqR9yTskH5AYPRoCFfQWa69dts7/YQ==
-
 "@aws-cdk/cloud-assembly-api@^2.2.6":
   version "2.3.0"
   resolved "https://registry.yarnpkg.com/@aws-cdk/cloud-assembly-api/-/cloud-assembly-api-2.3.0.tgz#fe1027594ea171cfed154ef8438b3b29fe4e1e93"
@@ -295,53 +290,6 @@
     "@smithy/util-retry" "^4.1.1"
     "@smithy/util-utf8" "^4.1.0"
     tslib "^2.6.2"
-
-"@aws-sdk/client-redshift-data@^3.382.0":
-  version "3.887.0"
-  resolved "https://registry.npmjs.org/@aws-sdk/client-redshift-data/-/client-redshift-data-3.887.0.tgz#e0090af7bbaf401a200f82881ded76a760222dbb"
-  integrity sha512-Rr6j29yAY+0LBpKesiXT/A1cpbCloQLN6Ne6Wl22cbdxsIMAuzXp03FNpLcy8Ck9lXnnpyhv2SkIyYyOpbmfFw==
-  dependencies:
-    "@aws-crypto/sha256-browser" "5.2.0"
-    "@aws-crypto/sha256-js" "5.2.0"
-    "@aws-sdk/core" "3.887.0"
-    "@aws-sdk/credential-provider-node" "3.887.0"
-    "@aws-sdk/middleware-host-header" "3.887.0"
-    "@aws-sdk/middleware-logger" "3.887.0"
-    "@aws-sdk/middleware-recursion-detection" "3.887.0"
-    "@aws-sdk/middleware-user-agent" "3.887.0"
-    "@aws-sdk/region-config-resolver" "3.887.0"
-    "@aws-sdk/types" "3.887.0"
-    "@aws-sdk/util-endpoints" "3.887.0"
-    "@aws-sdk/util-user-agent-browser" "3.887.0"
-    "@aws-sdk/util-user-agent-node" "3.887.0"
-    "@smithy/config-resolver" "^4.2.1"
-    "@smithy/core" "^3.11.0"
-    "@smithy/fetch-http-handler" "^5.2.1"
-    "@smithy/hash-node" "^4.1.1"
-    "@smithy/invalid-dependency" "^4.1.1"
-    "@smithy/middleware-content-length" "^4.1.1"
-    "@smithy/middleware-endpoint" "^4.2.1"
-    "@smithy/middleware-retry" "^4.2.1"
-    "@smithy/middleware-serde" "^4.1.1"
-    "@smithy/middleware-stack" "^4.1.1"
-    "@smithy/node-config-provider" "^4.2.1"
-    "@smithy/node-http-handler" "^4.2.1"
-    "@smithy/protocol-http" "^5.2.1"
-    "@smithy/smithy-client" "^4.6.1"
-    "@smithy/types" "^4.5.0"
-    "@smithy/url-parser" "^4.1.1"
-    "@smithy/util-base64" "^4.1.0"
-    "@smithy/util-body-length-browser" "^4.1.0"
-    "@smithy/util-body-length-node" "^4.1.0"
-    "@smithy/util-defaults-mode-browser" "^4.1.1"
-    "@smithy/util-defaults-mode-node" "^4.1.1"
-    "@smithy/util-endpoints" "^3.1.1"
-    "@smithy/util-middleware" "^4.1.1"
-    "@smithy/util-retry" "^4.1.1"
-    "@smithy/util-utf8" "^4.1.0"
-    "@types/uuid" "^9.0.1"
-    tslib "^2.6.2"
-    uuid "^9.0.1"
 
 "@aws-sdk/client-s3@^3.304.0":
   version "3.887.0"

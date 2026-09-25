@@ -256,7 +256,7 @@ describe('Quote handler', () => {
   // Pins the requestId contract: HardQuoteRequest's constructor sets
   // `requestId: _data.quoteId ?? uuidv4()`, so the response echoes the indicative quoteId and
   // the client-supplied requestId is discarded. This is deliberate -- `hardrequests` has no
-  // quoteId column, so requestId is how the indicative quoteId reaches Redshift. The
+  // quoteId column, so requestId is how the indicative quoteId reaches the analytics tables. The
   // `.not.toEqual` is the load-bearing line: it fails if the derivation is removed without
   // updating this test.
   it('echoes the indicative quoteId as requestId, discarding the client requestId', async () => {

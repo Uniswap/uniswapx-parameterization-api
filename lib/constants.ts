@@ -8,11 +8,12 @@ export const BETA_S3_KEY = 'beta.json';
 export const DYNAMO_TABLE_NAME = {
   FILLER_ADDRESS: 'FillerAddress',
   // Circuit-breaker state table for the rate-based breaker. State is derived (recomputed each
-  // cron run from Redshift). The name keeps its V2 suffix because it is the live table name.
+  // cron run from PostedOrders and the order service). The name keeps its V2 suffix because it
+  // is the live table name.
   FILLER_CB_TIMESTAMPS_V2: 'FillerCBTimestampsV2',
-  // GPA's own record of every RFQ-won order it posts (hard-quote path), so the fade breaker
-  // can eventually be computed from first-hand data instead of the Redshift analytics
-  // pipeline. Derived and rebuildable; rows expire POSTED_ORDER_TTL_SECS after their deadline.
+  // GPA's own record of every RFQ-won order it posts (hard-quote path), from which the fade
+  // breaker is computed. Derived and rebuildable; rows expire POSTED_ORDER_TTL_SECS after their
+  // deadline.
   POSTED_ORDERS: 'PostedOrders',
 };
 

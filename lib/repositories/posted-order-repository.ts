@@ -47,16 +47,16 @@ export type PostedOrderResolution = {
 /**
  * One row per confirmed RFQ-won order post. Everything the breaker needs about the "posted"
  * half of a fade, captured first-hand at post time instead of reconstructed from x-service
- * logs in Redshift.
+ * logs in the analytics warehouse.
  */
 export type PostedOrderRecord = {
   // Cosigned order hash — the same value the order service keys on. Partition key.
   orderHash: string;
-  // quoteId sent to the order service (the winning RFQ quote's id). Join key to Redshift.
+  // quoteId sent to the order service (the winning RFQ quote's id). Join key to the analytics tables.
   quoteId: string;
   requestId: string;
   chainId: number;
-  // OrderType.Dutch_V2 | OrderType.Dutch_V3, spelled the way Redshift's `ordertype` is.
+  // OrderType.Dutch_V2 | OrderType.Dutch_V3, spelled the way the analytics `ordertype` column is.
   orderType: string;
   // Exclusive filler from the cosigner data, checksummed. Never the zero address: open
   // orders and non-improving quotes are not recorded.
