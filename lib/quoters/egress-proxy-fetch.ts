@@ -24,8 +24,8 @@ export function parseEgressProxyShare(raw: string | undefined): number | undefin
  * A fetch that sends every request through the forward proxy at `proxyUrl`. Both HTTPS and
  * plain-HTTP targets go through a CONNECT tunnel (undici's default), so the proxy passes the
  * bytes through untouched and a market maker receives exactly what a direct call would send.
- * undici's own fetch is used with its own ProxyAgent, pinned to the undici version Node 22's
- * built-in fetch ships, so the proxied and direct calls run the same HTTP client.
+ * undici's own fetch is used with its own ProxyAgent, so the two always match. It is pinned to the
+ * latest 6.x, the major Node 22's built-in fetch ships, on a version with no known advisories.
  *
  * One behavior differs from a direct call: when the market maker can't be reached, the proxy
  * answers the tunnel request with an error status, so the failure reads as a proxy tunnel error
