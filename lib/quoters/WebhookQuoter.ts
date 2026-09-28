@@ -19,7 +19,7 @@ import {
 import { RfqResponse } from '../handlers/quote/schema';
 import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
-import { IAnalyticsLogger } from '../providers/analytics';
+import { IAnalyticsLogger, LOG_LINE_QUOTE_ANALYTICS, QuoteAnalytics } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
 import { errorDetail, FetchFn, fetchJson, HttpError, timedFetch, WebhookRoute } from '../util/fetch-http';
 import { RFQValidator } from '../util/rfqValidator';
@@ -85,7 +85,10 @@ export class WebhookQuoter implements Quoter {
     private firehose: IAnalyticsLogger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    private readonly fetchFn: FetchFn = timedFetch
+    private readonly fetchFn: FetchFn = timedFetch,
+    // Quote-response analytics records (the opposing-side responses logged below). Distinct from
+    // `firehose`, which carries the webhook-response events.
+    private readonly analytics: QuoteAnalytics = LOG_LINE_QUOTE_ANALYTICS
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
@@ -426,9 +429,9 @@ export class WebhookQuoter implements Quoter {
         !opposingResponse.validationError
       ) {
         opposingResponse.response.setFillerResponseLatencyMs(rawResponse.latencyMs);
-        log.info({
-          eventType: 'QuoteResponse',
-          body: {
+        this.analytics.record(
+          'QuoteResponse',
+          {
             ...opposingResponse.response.toLog(),
             // toLog() already carries the original requestId; also record the obfuscated id we
             // sent the filler so a partner-reported requestId can be traced back to the original.
@@ -438,7 +441,8 @@ export class WebhookQuoter implements Quoter {
             fillerName: config.name,
             algo_id: opposingResponse.response.filler,
           },
-        });
+          (fields) => log.info(fields)
+        );
       }
 
       return { response, name, latencyMs: rawResponse.latencyMs, timedOut: false };

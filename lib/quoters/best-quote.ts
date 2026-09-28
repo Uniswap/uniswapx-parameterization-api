@@ -4,6 +4,7 @@ import { ethers } from 'ethers';
 import { Quoter } from '.';
 import { Metric, QuoteRequest, QuoteResponse } from '../entities';
 import { Context } from '../observability';
+import { LOG_LINE_QUOTE_ANALYTICS, QuoteAnalytics } from '../providers/analytics/quote-analytics';
 
 export type EventType = 'QuoteResponse' | 'HardResponse';
 
@@ -18,7 +19,8 @@ export async function getBestQuote(
   quoters: Quoter[],
   quoteRequest: QuoteRequest,
   provider?: ethers.providers.StaticJsonRpcProvider,
-  eventType: EventType = 'QuoteResponse'
+  eventType: EventType = 'QuoteResponse',
+  analytics: QuoteAnalytics = LOG_LINE_QUOTE_ANALYTICS
 ): Promise<BestQuoteResult> {
   const responses: QuoteResponse[] = (
     await Promise.all(quoters.map((q) => q.quote(ctx, quoteRequest, provider)))
@@ -43,12 +45,13 @@ export async function getBestQuote(
 
   // return the response with the highest amountOut value
   const bestQuote = responses.reduce((best: QuoteResponse | null, quote: QuoteResponse) => {
-    // Analytics event line: the CloudWatch subscription filter keys on eventType, not the message,
-    // and an empty message writes the same record bunyan writes for a fields-only call.
-    ctx.logger.info('', {
-      eventType: eventType,
-      body: { ...quote.toLog(), offerer: quote.swapper, endpoint: quote.endpoint, fillerName: quote.fillerName },
-    });
+    // The log-line form keys on eventType for the CloudWatch subscription filter, and an empty
+    // message writes the same record bunyan writes for a fields-only call.
+    analytics.record(
+      eventType,
+      { ...quote.toLog(), offerer: quote.swapper, endpoint: quote.endpoint, fillerName: quote.fillerName },
+      (fields) => ctx.logger.info('', fields)
+    );
 
     if (
       !best ||

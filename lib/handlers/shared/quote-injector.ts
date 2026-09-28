@@ -6,7 +6,7 @@ import { ethers } from 'ethers';
 import { BETA_S3_KEY, PRODUCTION_S3_KEY, RPC_HEADERS, WEBHOOK_CONFIG_BUCKET } from '../../constants';
 import { BunyanLogger, Context, EmfMetrics } from '../../observability';
 import { S3WebhookConfigurationProvider } from '../../providers';
-import { FirehoseLogger } from '../../providers/analytics';
+import { FirehoseLogger, LOG_LINE_QUOTE_ANALYTICS, QuoteAnalytics } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
 import {
   EGRESS_PROXY_URL_ENV,
@@ -26,6 +26,8 @@ import { ApiRInj } from '../base/api-handler';
 export interface BaseQuoteContainerInjected {
   quoters: Quoter[];
   firehose: FirehoseLogger;
+  // The quote analytics sink the quoters write to; the handler flushes it after each request.
+  analytics: QuoteAnalytics;
   chainIdRpcMap: Map<ChainId, ethers.providers.StaticJsonRpcProvider>;
 }
 
@@ -78,7 +80,11 @@ export function buildChainIdRpcMap(): Map<ChainId, ethers.providers.StaticJsonRp
  * inside the injector call (not module scope) so BaseInjector.build() keeps caching one
  * container per Lambda execution environment, preserving each provider's refresh window.
  */
-export function buildQuoteContainerInjected(log: Logger, stage: string | undefined): BaseQuoteContainerInjected {
+export function buildQuoteContainerInjected(
+  log: Logger,
+  stage: string | undefined,
+  analytics: QuoteAnalytics = LOG_LINE_QUOTE_ANALYTICS
+): BaseQuoteContainerInjected {
   const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
 
   const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
@@ -87,12 +93,13 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
   const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
   const quoters: Quoter[] = [
-    new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, selectWebhookFetch(log)),
+    new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, selectWebhookFetch(log), analytics),
   ];
 
   return {
     quoters,
     firehose,
+    analytics,
     chainIdRpcMap: buildChainIdRpcMap(),
   };
 }

@@ -19,6 +19,7 @@ import { ErrorResponse } from '../handlers/base';
 import { HardQuoteRequestBody, HardQuoteResponseData } from '../handlers/hard-quote/schema';
 import { Context } from '../observability';
 import { OrderServiceProvider } from '../providers';
+import { LOG_LINE_QUOTE_ANALYTICS, QuoteAnalytics } from '../providers/analytics/quote-analytics';
 import { Quoter } from '../quoters';
 import { getBestQuote } from '../quoters/best-quote';
 import { FillerAddressRepository } from '../repositories/filler-address-repository';
@@ -47,6 +48,9 @@ export interface HardQuoteDeps {
   // mocking the KMS SDK, and so the client that reaches the key can change without touching
   // the flow.
   cosignerFactory: CosignerFactory;
+  // Where the flow's analytics records go; defaults to today's log lines. The caller flushes it
+  // once the request is done.
+  analytics?: QuoteAnalytics;
 }
 
 /**
@@ -83,6 +87,7 @@ export class HardQuoteBL {
       postedOrderRepository,
       fillerAddressRepository,
       cosignerFactory,
+      analytics = LOG_LINE_QUOTE_ANALYTICS,
     } = this.deps;
     const { logger, metrics } = ctx;
     const start = Date.now();
@@ -112,12 +117,12 @@ export class HardQuoteBL {
       }
       // Instead of decoding the order, we rely on frontend passing in the requestId
       //   from indicative quote
-      // Analytics event line: the CloudWatch subscription filter keys on eventType, not the
+      // The log-line form keys on eventType for the CloudWatch subscription filter, not the
       // message. The message is empty on purpose — bunyan writes `"msg":""` for a fields-only
       // call, so the record is byte-identical to the one this replaces.
-      logger.info('', {
-        eventType: 'HardRequest',
-        body: {
+      analytics.record(
+        'HardRequest',
+        {
           requestId: request.requestId,
           quoteId: request.quoteId,
           tokenInChainId: request.tokenInChainId,
@@ -132,11 +137,19 @@ export class HardQuoteBL {
           createdAt: timestampInMstoSeconds(start),
           createdAtMs: start.toString(),
         },
-      });
+        (fields) => logger.info('', fields)
+      );
 
       let bestQuote;
       if (!requestBody.forceOpenOrder) {
-        const result = await getBestQuote(ctx, quoters, request.toQuoteRequest(), provider, RESPONSE_LOG_TYPE);
+        const result = await getBestQuote(
+          ctx,
+          quoters,
+          request.toQuoteRequest(),
+          provider,
+          RESPONSE_LOG_TYPE,
+          analytics
+        );
         bestQuote = result.bestQuote;
         if (!bestQuote && !requestBody.allowNoQuote) {
           if (!requestBody.allowNoQuote) {
@@ -187,14 +200,15 @@ export class HardQuoteBL {
           if (!bestQuote) {
             // The RFQ responses are logged in getBestQuote()
             // we log the Open Orders here
-            // Analytics event line (see the HardRequest line above for why the message is empty).
-            logger.info('', {
-              eventType: RESPONSE_LOG_TYPE,
-              body: {
+            // Analytics record (see the HardRequest record above for why the message is empty).
+            analytics.record(
+              RESPONSE_LOG_TYPE,
+              {
                 ...hardResponse.toLog(),
                 offerer: request.swapper,
               },
-            });
+              (fields) => logger.info('', fields)
+            );
           }
           // Serialized inside this try so a failure here still surfaces as OrderPostError (400),
           // as it did when this flow lived in the handler.

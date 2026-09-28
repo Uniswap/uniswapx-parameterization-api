@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 
 import { Metric, QuoteRequest, QuoteResponse } from '../entities';
 import { Context } from '../observability';
+import { LOG_LINE_QUOTE_ANALYTICS, QuoteAnalytics } from '../providers/analytics/quote-analytics';
 import { Quoter } from '../quoters';
 import { getBestQuote } from '../quoters/best-quote';
 import { ChainId } from '../util/chains';
@@ -25,7 +26,9 @@ export interface SoftQuoteResult {
 export class SoftQuoteBL {
   constructor(
     private readonly quoters: Quoter[],
-    private readonly chainIdRpcMap: Map<ChainId, ethers.providers.StaticJsonRpcProvider>
+    private readonly chainIdRpcMap: Map<ChainId, ethers.providers.StaticJsonRpcProvider>,
+    // Where the flow's analytics records go. The caller flushes it once the request is done.
+    private readonly analytics: QuoteAnalytics = LOG_LINE_QUOTE_ANALYTICS
   ) {}
 
   /** @throws {NoQuotesAvailable} when no quoter returned a quote. */
@@ -41,12 +44,12 @@ export class SoftQuoteBL {
     try {
       const provider = this.chainIdRpcMap.get(request.tokenInChainId);
 
-      // Analytics event line: the CloudWatch subscription filter keys on eventType, not the
+      // The log-line form keys on eventType for the CloudWatch subscription filter, not the
       // message. The message is empty on purpose: bunyan writes `"msg":""` for a fields-only
       // call, so the record is byte-identical to the one this replaces.
-      logger.info('', {
-        eventType: 'QuoteRequest',
-        body: {
+      this.analytics.record(
+        'QuoteRequest',
+        {
           requestId: request.requestId,
           tokenInChainId: request.tokenInChainId,
           tokenOutChainId: request.tokenOutChainId,
@@ -59,9 +62,17 @@ export class SoftQuoteBL {
           createdAtMs: start.toString(),
           numOutputs: request.numOutputs,
         },
-      });
+        (fields) => logger.info('', fields)
+      );
 
-      const { bestQuote, allQuotes } = await getBestQuote(ctx, this.quoters, request, provider);
+      const { bestQuote, allQuotes } = await getBestQuote(
+        ctx,
+        this.quoters,
+        request,
+        provider,
+        'QuoteResponse',
+        this.analytics
+      );
       if (!bestQuote) {
         await metrics.count(Metric.QUOTE_404);
         throw new NoQuotesAvailable();

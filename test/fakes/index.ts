@@ -4,6 +4,7 @@ import { FakeMetrics } from './fake-metrics';
 
 export * from './fake-analytics';
 export * from './fake-cosigner';
+export * from './fake-firehose-batch-writer';
 export * from './fake-http';
 export * from './fake-logger';
 export * from './fake-metrics';

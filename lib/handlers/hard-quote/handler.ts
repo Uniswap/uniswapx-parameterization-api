@@ -28,22 +28,28 @@ export class QuoteHandler extends APIGLambdaHandler<
   ): Promise<ErrorResponse | Response<HardQuoteResponseData>> {
     const {
       requestInjected: { ctx },
-      containerInjected: { hardQuote },
+      containerInjected: { hardQuote, analytics },
       requestBody,
     } = params;
 
-    const outcome = await hardQuote.getHardQuote(ctx, requestBody);
-    switch (outcome.kind) {
-      case 'posted':
-        return { statusCode: 200, body: outcome.body };
-      // Only a 4xx from the order service is a genuine rejection of the order. Anything else
-      // (timeouts, 5xx) is indeterminate: the order service may have accepted the order after we
-      // stopped waiting, and rewriting it to 400 makes clients treat a live, fillable order as
-      // rejected.
-      case 'rejected':
-        return { ...outcome.error, statusCode: 400 };
-      case 'indeterminate':
-        return { ...outcome.error, statusCode: 500 };
+    try {
+      const outcome = await hardQuote.getHardQuote(ctx, requestBody);
+      switch (outcome.kind) {
+        case 'posted':
+          return { statusCode: 200, body: outcome.body };
+        // Only a 4xx from the order service is a genuine rejection of the order. Anything else
+        // (timeouts, 5xx) is indeterminate: the order service may have accepted the order after we
+        // stopped waiting, and rewriting it to 400 makes clients treat a live, fillable order as
+        // rejected.
+        case 'rejected':
+          return { ...outcome.error, statusCode: 400 };
+        case 'indeterminate':
+          return { ...outcome.error, statusCode: 500 };
+      }
+    } finally {
+      // Lambda freezes the environment once the handler returns, so queued analytics puts must
+      // finish first. Never throws.
+      await analytics.flush(ctx);
     }
   }
 

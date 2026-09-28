@@ -8,7 +8,7 @@ import * as aws_logs from 'aws-cdk-lib/aws-logs';
 import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import path from 'path';
-import { BackendAnalyticsWriter } from './backend-analytics-writer';
+import { BackendAnalyticsWriter, quoteAnalyticsDirectStreamNames } from './backend-analytics-writer';
 import { LAMBDA_BUNDLING } from './lambda-bundling';
 
 // Pinned to what these streams used as Redshift intermediate-S3 destinations, so object sizes and
@@ -368,6 +368,7 @@ export class AnalyticsStack extends cdk.NestedStack {
           hardResponse: hardResponseBucket,
         },
         firehoseRole,
+        streamNames: quoteAnalyticsDirectStreamNames(stage),
         webhookResponseStreamArn: analyticsStreamArn,
         allowedAccounts: props.analyticsWriterBackendAccounts,
       });

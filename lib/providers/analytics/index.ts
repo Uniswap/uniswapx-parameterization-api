@@ -5,3 +5,4 @@ export interface IAnalyticsLogger {
 }
 
 export * from './firehose';
+export * from './quote-analytics';

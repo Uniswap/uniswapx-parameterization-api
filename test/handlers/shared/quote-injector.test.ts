@@ -4,6 +4,7 @@ import bunyan from 'bunyan';
 
 import { QuoteInjector as HardQuoteInjector } from '../../../lib/handlers/hard-quote/injector';
 import { QuoteInjector as SoftQuoteInjector } from '../../../lib/handlers/quote/injector';
+import { LOG_LINE_QUOTE_ANALYTICS } from '../../../lib/providers/analytics';
 import { SUPPORTED_CHAINS } from '../../../lib/util/chains';
 
 /**
@@ -42,8 +43,7 @@ describe('shared quote injector wiring', () => {
     ['hard quote', () => new HardQuoteInjector('hardQuoteInjector'), 'hardQuote', true],
   ])('%s container', (_name, makeInjector, flowKey, expectsOrderService) => {
     let container: any;
-    // What the injector wired into the flow. The handler-facing container holds only the flow, so
-    // this reaches into its private fields.
+    // What the injector wired into the flow, reached through its private fields.
     let wiring: any;
     let quoter: any;
 
@@ -54,8 +54,12 @@ describe('shared quote injector wiring', () => {
       quoter = wiring.quoters[0];
     });
 
-    it('exposes only its flow to the handler', () => {
-      expect(Object.keys(container)).toEqual([flowKey]);
+    it('exposes its flow and the analytics sink the handler flushes, nothing else', () => {
+      expect(Object.keys(container)).toEqual([flowKey, 'analytics']);
+    });
+
+    it('keeps the analytics log lines when no stream names are set', () => {
+      expect(container.analytics).toBe(LOG_LINE_QUOTE_ANALYTICS);
     });
 
     it('gives the quoter a firehose logger for its analytics events', () => {

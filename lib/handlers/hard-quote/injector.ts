@@ -6,6 +6,7 @@ import { HardQuoteBL, kmsCosignerFactory } from '../../core';
 import { HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
 import { UniswapXServiceProvider } from '../../providers';
+import { HARD_QUOTE_ANALYTICS_EVENT_TYPES, QuoteAnalytics, selectQuoteAnalytics } from '../../providers/analytics';
 import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
 import { DynamoPostedOrderRepository } from '../../repositories/posted-order-repository';
 import { ApiInjector } from '../base/api-handler';
@@ -17,9 +18,10 @@ import {
 } from '../shared/quote-injector';
 import { HardQuoteRequestBody } from './schema';
 
-/** What the /hard-quote handler reads: only the flow. Its dependencies live inside it. */
+/** What the /hard-quote handler reads: the flow, and the analytics sink it flushes after each request. */
 export interface ContainerInjected {
   hardQuote: HardQuoteBL;
+  analytics: QuoteAnalytics;
 }
 
 export interface RequestInjected extends BaseQuoteRequestInjected {}
@@ -32,7 +34,8 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
 
-    const base = buildQuoteContainerInjected(log, stage);
+    const analytics = selectQuoteAnalytics(log, HARD_QUOTE_ANALYTICS_EVENT_TYPES);
+    const base = buildQuoteContainerInjected(log, stage, analytics);
 
     return {
       hardQuote: new HardQuoteBL({
@@ -44,7 +47,9 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
         postedOrderRepository: DynamoPostedOrderRepository.create(),
         fillerAddressRepository: DynamoFillerAddressRepository.create(),
         cosignerFactory: kmsCosignerFactory(),
+        analytics,
       }),
+      analytics,
     };
   }
 

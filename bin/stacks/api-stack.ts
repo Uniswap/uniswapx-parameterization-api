@@ -22,11 +22,13 @@ import {
   SoftQuoteMetricDimension,
   UniswapXParamServiceMetricDimension,
 } from '../../lib/entities';
+import { QUOTE_ANALYTICS_STREAM_ENV } from '../../lib/providers/analytics/quote-analytics';
 import { EGRESS_PROXY_URL_ENV, EGRESS_PROXY_WEBHOOK_SHARE_ENV } from '../../lib/quoters/egress-proxy-fetch';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
+import { quoteAnalyticsDirectStreamNames } from './backend-analytics-writer';
 import { CronStack } from './cron-stack';
 import { EgressProxy } from './egress-proxy';
 import { FirehoseStack } from './firehose-stack';
@@ -66,6 +68,21 @@ export class APIStack extends cdk.Stack {
     super(parent, name, props);
     const region = cdk.Stack.of(this).region;
     const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
+
+    // The direct-write streams exist only where the analytics writer does (AnalyticsStack). Their
+    // names are fixed per stage, so the Lambdas get names and a grant without referencing the
+    // nested stack (which depends on the Lambdas for its log subscriptions).
+    const directStreams = props.analyticsWriterBackendAccounts?.length
+      ? quoteAnalyticsDirectStreamNames(stage)
+      : undefined;
+    const softQuoteAnalyticsEnv = directStreams && {
+      [QUOTE_ANALYTICS_STREAM_ENV.QuoteRequest]: directStreams.rfqRequest,
+      [QUOTE_ANALYTICS_STREAM_ENV.QuoteResponse]: directStreams.rfqResponse,
+    };
+    const hardQuoteAnalyticsEnv = directStreams && {
+      [QUOTE_ANALYTICS_STREAM_ENV.HardRequest]: directStreams.hardRequest,
+      [QUOTE_ANALYTICS_STREAM_ENV.HardResponse]: directStreams.hardResponse,
+    };
 
     /*
      *  API Gateway Initialization
@@ -221,6 +238,18 @@ export class APIStack extends cdk.Stack {
       })
     );
 
+    if (directStreams) {
+      lambdaRole.addToPolicy(
+        new aws_iam.PolicyStatement({
+          effect: aws_iam.Effect.ALLOW,
+          actions: ['firehose:PutRecordBatch'],
+          resources: Object.values(directStreams).map((name) =>
+            cdk.Stack.of(this).formatArn({ service: 'firehose', resource: 'deliverystream', resourceName: name })
+          ),
+        })
+      );
+    }
+
     lambdaRole.addToPolicy(
       new aws_iam.PolicyStatement({
         actions: ['ec2:CreateNetworkInterface', 'ec2:DescribeNetworkInterfaces', 'ec2:DeleteNetworkInterface'],
@@ -277,6 +306,7 @@ export class APIStack extends cdk.Stack {
         ...props.envVars,
         stage,
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+        ...softQuoteAnalyticsEnv,
       },
       timeout: Duration.seconds(30),
       // NOTE: deliberately no currentVersionOptions.description commit stamping —
@@ -311,6 +341,7 @@ export class APIStack extends cdk.Stack {
         ...props.envVars,
         stage,
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+        ...hardQuoteAnalyticsEnv,
       },
       timeout: Duration.seconds(30),
     });
