@@ -4,7 +4,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as aws_lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
 
-import { FADE_RATE_BLOCK_THRESHOLD } from '../../lib/cron/fade-rate-v2';
+import { FADE_RATE_BLOCK_THRESHOLD } from '../../lib/core/circuit-breaker';
 import {
   CircuitBreakerMetricDimension,
   HardQuoteMetricDimension,
