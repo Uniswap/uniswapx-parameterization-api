@@ -16,7 +16,7 @@ import { CircuitBreakerBL, CircuitBreakerDeps } from '../core/circuit-breaker';
 import { CircuitBreakerMetricDimension } from '../entities';
 import { BunyanLogger, Context, EmfMetrics } from '../observability';
 import { checkDefined } from '../preconditions/preconditions';
-import { S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../providers';
+import { S3WebhookConfigurationProvider, selectOrderServiceHttp, UniswapXServiceProvider } from '../providers';
 import { DynamoFillerAddressRepository } from '../repositories/filler-address-repository';
 import { DynamoPostedOrderRepository } from '../repositories/posted-order-repository';
 import { TimestampRepository } from '../repositories/timestamp-repository';
@@ -92,7 +92,7 @@ function buildOrderServiceSource(): OrderServiceFadesSource {
         unmarshallOptions: { wrapNumbers: false },
       })
     ),
-    orderStatus: new UniswapXServiceProvider(log, orderServiceUrl),
+    orderStatus: new UniswapXServiceProvider(log, orderServiceUrl, selectOrderServiceHttp(log)),
     fillerEndpoints: () => webhookProvider.fillerEndpoints(),
     log,
     // Policy flag (default off): cancelled / insufficient-funds / error orders are excluded, as

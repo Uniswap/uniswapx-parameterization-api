@@ -12,6 +12,7 @@ import * as path from 'path';
 
 import { ITopic } from 'aws-cdk-lib/aws-sns';
 import { DYNAMO_TABLE_NAME, FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV } from '../../lib/constants';
+import { HttpClient, ORDER_SERVICE_HTTP_CLIENT_ENV } from '../../lib/util/fetch-http';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
@@ -41,6 +42,8 @@ export interface CronStackProps extends cdk.NestedStackProps {
   // outcomes. Both optional so the stack synthesizes without them.
   postedOrdersTable?: aws_dynamo.ITable;
   orderServiceUrl?: string;
+  // HTTP client for the order-service status reads. Absent keeps axios.
+  orderServiceHttpClient?: HttpClient;
 }
 
 export class CronStack extends cdk.NestedStack {
@@ -48,7 +51,8 @@ export class CronStack extends cdk.NestedStack {
 
   constructor(scope: Construct, name: string, props: CronStackProps) {
     super(scope, name, props);
-    const { lambdaRole, stage, envVars, chatbotSNSArn, postedOrdersTable, orderServiceUrl } = props;
+    const { lambdaRole, stage, envVars, chatbotSNSArn, postedOrdersTable, orderServiceUrl, orderServiceHttpClient } =
+      props;
 
     const chatbotTopic = chatbotSNSArn
       ? cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn)
@@ -68,6 +72,7 @@ export class CronStack extends cdk.NestedStack {
           stage: stage,
           ...envVars,
           ...(orderServiceUrl && { ORDER_SERVICE_URL: orderServiceUrl }),
+          ...(orderServiceHttpClient && { [ORDER_SERVICE_HTTP_CLIENT_ENV]: orderServiceHttpClient }),
           // Cancelled / insufficient-funds / error orders are not fades (parity with the retired
           // Redshift breaker); 'true' would score them as fades. Expiries always count.
           [FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV]: 'false',

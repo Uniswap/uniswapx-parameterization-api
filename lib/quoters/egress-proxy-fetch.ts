@@ -1,6 +1,6 @@
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 
-import { FetchFn } from './fetch-webhook-http';
+import { FetchFn } from '../util/fetch-http';
 
 // The egress proxy's address and the share (0-100) of market-maker webhook calls the quote
 // Lambdas send through it, both set per stage in bin/app.ts. The backend uniswapx service will

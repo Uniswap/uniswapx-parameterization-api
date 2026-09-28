@@ -8,7 +8,7 @@ import { CodeBuildStep, CodePipeline, CodePipelineSource } from 'aws-cdk-lib/pip
 import { Construct } from 'constructs';
 import dotenv from 'dotenv';
 
-import { WebhookHttpClient } from '../lib/quoters/fetch-webhook-http';
+import { HttpClient } from '../lib/util/fetch-http';
 import { STAGE } from '../lib/util/stage';
 import {
   ANALYTICS_WRITER_BACKEND_ACCOUNTS,
@@ -35,7 +35,8 @@ export class APIStage extends Stage {
       hardQuoteCosignerBackendAccounts?: readonly string[];
       egressProxyBackendAccounts?: readonly string[];
       analyticsWriterBackendAccounts?: readonly string[];
-      webhookHttpClient?: WebhookHttpClient;
+      webhookHttpClient?: HttpClient;
+      orderServiceHttpClient?: HttpClient;
       egressProxyWebhookSharePercent?: number;
     }
   ) {
@@ -51,6 +52,7 @@ export class APIStage extends Stage {
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
       webhookHttpClient,
+      orderServiceHttpClient,
       egressProxyWebhookSharePercent,
     } = props;
 
@@ -65,6 +67,7 @@ export class APIStage extends Stage {
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
       webhookHttpClient,
+      orderServiceHttpClient,
       egressProxyWebhookSharePercent,
     });
     this.url = url;
@@ -167,7 +170,8 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.BETA],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.BETA],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.BETA],
-      webhookHttpClient: WebhookHttpClient.FETCH,
+      webhookHttpClient: HttpClient.FETCH,
+      orderServiceHttpClient: HttpClient.FETCH,
       egressProxyWebhookSharePercent: EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.BETA],
     });
 
@@ -190,7 +194,8 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.PROD],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.PROD],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.PROD],
-      webhookHttpClient: WebhookHttpClient.FETCH,
+      webhookHttpClient: HttpClient.FETCH,
+      orderServiceHttpClient: HttpClient.AXIOS,
       egressProxyWebhookSharePercent: EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.PROD],
     });
 

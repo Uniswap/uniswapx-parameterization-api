@@ -11,17 +11,15 @@ import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circu
 import {
   EGRESS_PROXY_URL_ENV,
   EGRESS_PROXY_WEBHOOK_SHARE_ENV,
-  fetchWebhookHttp,
   parseEgressProxyShare,
   proxiedFetch,
   Quoter,
   splitFetch,
-  WEBHOOK_HTTP_CLIENT_ENV,
   WebhookHttp,
-  WebhookHttpClient,
   WebhookQuoter,
 } from '../../quoters';
 import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
+import { fetchHttp, HttpClient, WEBHOOK_HTTP_CLIENT_ENV } from '../../util/fetch-http';
 import { STAGE } from '../../util/stage';
 import { ApiRInj } from '../base/api-handler';
 
@@ -107,7 +105,7 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
  * container so the client and share in use are visible.
  */
 export function selectWebhookHttp(log: Logger, env: NodeJS.ProcessEnv = process.env): WebhookHttp | undefined {
-  const useFetch = env[WEBHOOK_HTTP_CLIENT_ENV] === WebhookHttpClient.FETCH;
+  const useFetch = env[WEBHOOK_HTTP_CLIENT_ENV] === HttpClient.FETCH;
   const proxyUrl = env[EGRESS_PROXY_URL_ENV];
   const rawShare = env[EGRESS_PROXY_WEBHOOK_SHARE_ENV];
   const share = parseEgressProxyShare(rawShare);
@@ -120,15 +118,13 @@ export function selectWebhookHttp(log: Logger, env: NodeJS.ProcessEnv = process.
     log.warn({ share }, 'Egress proxy share ignored: it needs the fetch webhook client');
   }
   log.info(
-    { webhookHttpClient: useFetch ? WebhookHttpClient.FETCH : WebhookHttpClient.AXIOS, egressProxyShare: proxyShare },
+    { webhookHttpClient: useFetch ? HttpClient.FETCH : HttpClient.AXIOS, egressProxyShare: proxyShare },
     'Webhook HTTP client'
   );
   if (!useFetch) {
     return undefined;
   }
-  return proxyUrl && proxyShare > 0
-    ? fetchWebhookHttp(splitFetch(fetch, proxiedFetch(proxyUrl), proxyShare))
-    : fetchWebhookHttp();
+  return proxyUrl && proxyShare > 0 ? fetchHttp(splitFetch(fetch, proxiedFetch(proxyUrl), proxyShare)) : fetchHttp();
 }
 
 /**

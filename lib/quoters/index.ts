@@ -17,6 +17,5 @@ export interface Quoter {
 }
 
 export * from './egress-proxy-fetch';
-export * from './fetch-webhook-http';
 export * from './MockQuoter';
 export * from './WebhookQuoter';

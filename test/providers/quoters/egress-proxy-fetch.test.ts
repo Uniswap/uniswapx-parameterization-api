@@ -7,14 +7,12 @@ import { selectWebhookHttp } from '../../../lib/handlers/shared/quote-injector';
 import {
   EGRESS_PROXY_URL_ENV,
   EGRESS_PROXY_WEBHOOK_SHARE_ENV,
-  FetchFn,
-  fetchWebhookHttp,
   parseEgressProxyShare,
   proxiedFetch,
   splitFetch,
-  WEBHOOK_HTTP_CLIENT_ENV,
   WebhookHttp,
 } from '../../../lib/quoters';
+import { FetchFn, fetchHttp, WEBHOOK_HTTP_CLIENT_ENV } from '../../../lib/util/fetch-http';
 
 // A market-maker stand-in and a CONNECT-tunneling forward proxy, both real local servers. The
 // proxy behaves like the squid egress proxy for these purposes: it tunnels CONNECT to any
@@ -139,8 +137,8 @@ async function outcomeOf(client: WebhookHttp, url: string, timeout = 500): Promi
 }
 
 describe('proxiedFetch', () => {
-  const direct = () => fetchWebhookHttp();
-  const viaProxy = () => fetchWebhookHttp(proxiedFetch(proxyUrl));
+  const direct = () => fetchHttp();
+  const viaProxy = () => fetchHttp(proxiedFetch(proxyUrl));
 
   it.each([['/json'], ['/text'], ['/empty'], ['/no-content'], ['/not-found'], ['/server-error']])(
     '%s resolves or rejects exactly as a direct call does, through a tunnel',
