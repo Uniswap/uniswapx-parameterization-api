@@ -22,6 +22,7 @@ import {
   SoftQuoteMetricDimension,
   UniswapXParamServiceMetricDimension,
 } from '../../lib/entities';
+import { EGRESS_PROXY_URL_ENV, EGRESS_PROXY_WEBHOOK_SHARE_ENV } from '../../lib/quoters/egress-proxy-fetch';
 import { WEBHOOK_HTTP_CLIENT_ENV, WebhookHttpClient } from '../../lib/quoters/fetch-webhook-http';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
@@ -60,6 +61,9 @@ export class APIStack extends cdk.Stack {
       analyticsWriterBackendAccounts?: readonly string[];
       // HTTP client for market-maker webhooks on the two quote Lambdas. Absent keeps axios.
       webhookHttpClient?: WebhookHttpClient;
+      // Share (0-100) of the quote Lambdas' market-maker webhook calls sent through the egress
+      // proxy. Needs the proxy and the fetch client. Absent leaves the Lambdas untouched.
+      egressProxyWebhookSharePercent?: number;
     }
   ) {
     super(parent, name, props);
@@ -538,6 +542,16 @@ export class APIStack extends cdk.Stack {
       new CfnOutput(this, 'EgressProxyEndpointServiceName', {
         value: egressProxy.endpointServiceName,
       });
+      const share = props.egressProxyWebhookSharePercent;
+      if (share !== undefined) {
+        validateEgressProxyShare(share, props.webhookHttpClient);
+        for (const fn of [quoteLambda, hardQuoteLambda]) {
+          fn.addEnvironment(EGRESS_PROXY_URL_ENV, egressProxy.proxyUrl);
+          fn.addEnvironment(EGRESS_PROXY_WEBHOOK_SHARE_ENV, String(share));
+        }
+      }
+    } else if (props.egressProxyWebhookSharePercent !== undefined) {
+      throw new Error('egressProxyWebhookSharePercent needs the egress proxy (egressProxyBackendAccounts)');
     }
     /* custom metric alarms */
     // Alarm on calls to RFQ providers
@@ -654,5 +668,15 @@ export class APIStack extends cdk.Stack {
     this.url = new CfnOutput(this, 'Url', {
       value: api.url,
     });
+  }
+}
+
+// Fails the synth rather than deploying a share the Lambdas would treat as 0.
+export function validateEgressProxyShare(share: number, webhookHttpClient: WebhookHttpClient | undefined): void {
+  if (!Number.isInteger(share) || share < 0 || share > 100) {
+    throw new Error(`egressProxyWebhookSharePercent must be a whole number from 0 to 100, got ${share}`);
+  }
+  if (share > 0 && webhookHttpClient !== WebhookHttpClient.FETCH) {
+    throw new Error('egressProxyWebhookSharePercent needs webhookHttpClient: fetch');
   }
 }

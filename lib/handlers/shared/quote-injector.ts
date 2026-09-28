@@ -9,8 +9,13 @@ import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
 import {
+  EGRESS_PROXY_URL_ENV,
+  EGRESS_PROXY_WEBHOOK_SHARE_ENV,
   fetchWebhookHttp,
+  parseEgressProxyShare,
+  proxiedFetch,
   Quoter,
+  splitFetch,
   WEBHOOK_HTTP_CLIENT_ENV,
   WebhookHttp,
   WebhookHttpClient,
@@ -97,12 +102,33 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
 
 /**
  * The market-maker webhook client for this container, chosen by WEBHOOK_HTTP_CLIENT. Undefined
- * means WebhookQuoter's axios default; logged once per container so the client in use is visible.
+ * means WebhookQuoter's axios default. On the fetch client, EGRESS_PROXY_WEBHOOK_SHARE_PERCENT of
+ * calls go through the egress proxy at EGRESS_PROXY_URL and the rest go direct. Logged once per
+ * container so the client and share in use are visible.
  */
 export function selectWebhookHttp(log: Logger, env: NodeJS.ProcessEnv = process.env): WebhookHttp | undefined {
   const useFetch = env[WEBHOOK_HTTP_CLIENT_ENV] === WebhookHttpClient.FETCH;
-  log.info({ webhookHttpClient: useFetch ? WebhookHttpClient.FETCH : WebhookHttpClient.AXIOS }, 'Webhook HTTP client');
-  return useFetch ? fetchWebhookHttp() : undefined;
+  const proxyUrl = env[EGRESS_PROXY_URL_ENV];
+  const rawShare = env[EGRESS_PROXY_WEBHOOK_SHARE_ENV];
+  const share = parseEgressProxyShare(rawShare);
+  if (rawShare !== undefined && share === undefined) {
+    log.warn({ rawShare }, 'Invalid egress proxy share; sending every webhook call direct');
+  }
+  // The proxy path is built on the fetch client, so axios always goes direct.
+  const proxyShare = useFetch && proxyUrl ? share ?? 0 : 0;
+  if (!useFetch && share) {
+    log.warn({ share }, 'Egress proxy share ignored: it needs the fetch webhook client');
+  }
+  log.info(
+    { webhookHttpClient: useFetch ? WebhookHttpClient.FETCH : WebhookHttpClient.AXIOS, egressProxyShare: proxyShare },
+    'Webhook HTTP client'
+  );
+  if (!useFetch) {
+    return undefined;
+  }
+  return proxyUrl && proxyShare > 0
+    ? fetchWebhookHttp(splitFetch(fetch, proxiedFetch(proxyUrl), proxyShare))
+    : fetchWebhookHttp();
 }
 
 /**

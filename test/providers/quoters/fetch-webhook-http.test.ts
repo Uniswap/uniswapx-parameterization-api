@@ -373,16 +373,22 @@ describe('WebhookQuoter classifies every endpoint the same on either client', ()
 });
 
 describe('selectWebhookHttp', () => {
-  const log = { info: jest.fn() } as any;
+  const log = { info: jest.fn(), warn: jest.fn() } as any;
 
   it('uses fetch only when WEBHOOK_HTTP_CLIENT is fetch', () => {
     expect(selectWebhookHttp(log, { [WEBHOOK_HTTP_CLIENT_ENV]: 'fetch' })).toBeDefined();
-    expect(log.info).toHaveBeenLastCalledWith({ webhookHttpClient: 'fetch' }, 'Webhook HTTP client');
+    expect(log.info).toHaveBeenLastCalledWith(
+      { webhookHttpClient: 'fetch', egressProxyShare: 0 },
+      'Webhook HTTP client'
+    );
   });
 
   it.each([['axios'], ['unset'], ['FETCH'], ['anything else']])('keeps axios for %s', (value) => {
     const env = value === 'unset' ? {} : { [WEBHOOK_HTTP_CLIENT_ENV]: value };
     expect(selectWebhookHttp(log, env)).toBeUndefined();
-    expect(log.info).toHaveBeenLastCalledWith({ webhookHttpClient: 'axios' }, 'Webhook HTTP client');
+    expect(log.info).toHaveBeenLastCalledWith(
+      { webhookHttpClient: 'axios', egressProxyShare: 0 },
+      'Webhook HTTP client'
+    );
   });
 });

@@ -16,6 +16,7 @@ export interface Quoter {
   type(): QuoterType;
 }
 
+export * from './egress-proxy-fetch';
 export * from './fetch-webhook-http';
 export * from './MockQuoter';
 export * from './WebhookQuoter';

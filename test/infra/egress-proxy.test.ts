@@ -2,8 +2,10 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { NatProvider, Vpc } from 'aws-cdk-lib/aws-ec2';
 
-import { EGRESS_PROXY_BACKEND_ACCOUNTS } from '../../bin/config';
+import { EGRESS_PROXY_BACKEND_ACCOUNTS, EGRESS_PROXY_WEBHOOK_SHARE_PERCENT } from '../../bin/config';
+import { validateEgressProxyShare } from '../../bin/stacks/api-stack';
 import { EGRESS_PROXY_PORT, EgressProxy } from '../../bin/stacks/egress-proxy';
+import { WebhookHttpClient } from '../../lib/quoters/fetch-webhook-http';
 import { STAGE } from '../../lib/util/stage';
 
 // A VPC shaped like the quote Lambdas' VPC: one NAT gateway on a fixed Elastic IP.
@@ -73,5 +75,43 @@ describe('EgressProxy', () => {
     template.hasResourceProperties('AWS::EC2::VPCEndpointServicePermissions', {
       AllowedPrincipals: ['arn:aws:iam::654200013602:root'],
     });
+  });
+
+  it('gives callers inside the VPC the load balancer on the proxy port', () => {
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, 'Stack', { env: { account: '801328487475', region: 'us-east-2' } });
+    const vpc = new Vpc(stack, 'QuoteLambdaVpc', { natGateways: 1, maxAzs: 3 });
+    const proxy = new EgressProxy(stack, 'EgressProxy', { vpc, allowedAccounts: ['411170392337'] });
+    expect(stack.resolve(proxy.proxyUrl)).toEqual({
+      'Fn::Join': [
+        '',
+        [
+          'http://',
+          { 'Fn::GetAtt': [expect.stringMatching(/^EgressProxyLoadBalancer/), 'DNSName'] },
+          `:${EGRESS_PROXY_PORT}`,
+        ],
+      ],
+    });
+  });
+});
+
+describe('egress proxy webhook share', () => {
+  it('routes all of beta and leaves prod untouched until its ramp', () => {
+    expect(EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.BETA]).toBe(100);
+    expect(EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.PROD]).toBeUndefined();
+  });
+
+  it.each([[0], [5], [100]])('accepts %s on the fetch client', (share) =>
+    expect(() => validateEgressProxyShare(share, WebhookHttpClient.FETCH)).not.toThrow()
+  );
+
+  it.each([[-1], [101], [2.5], [NaN]])('fails the synth on %s', (share) =>
+    expect(() => validateEgressProxyShare(share, WebhookHttpClient.FETCH)).toThrow(/whole number from 0 to 100/)
+  );
+
+  it('fails the synth on a positive share without the fetch client', () => {
+    expect(() => validateEgressProxyShare(10, undefined)).toThrow(/needs webhookHttpClient: fetch/);
+    expect(() => validateEgressProxyShare(10, WebhookHttpClient.AXIOS)).toThrow(/needs webhookHttpClient: fetch/);
+    expect(() => validateEgressProxyShare(0, undefined)).not.toThrow();
   });
 });

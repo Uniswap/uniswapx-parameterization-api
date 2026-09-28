@@ -13,6 +13,7 @@ import { STAGE } from '../lib/util/stage';
 import {
   ANALYTICS_WRITER_BACKEND_ACCOUNTS,
   EGRESS_PROXY_BACKEND_ACCOUNTS,
+  EGRESS_PROXY_WEBHOOK_SHARE_PERCENT,
   HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS,
 } from './config';
 import { SERVICE_NAME } from './constants';
@@ -35,6 +36,7 @@ export class APIStage extends Stage {
       egressProxyBackendAccounts?: readonly string[];
       analyticsWriterBackendAccounts?: readonly string[];
       webhookHttpClient?: WebhookHttpClient;
+      egressProxyWebhookSharePercent?: number;
     }
   ) {
     super(scope, id, props);
@@ -49,6 +51,7 @@ export class APIStage extends Stage {
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
       webhookHttpClient,
+      egressProxyWebhookSharePercent,
     } = props;
 
     const { url } = new APIStack(this, `${SERVICE_NAME}API`, {
@@ -62,6 +65,7 @@ export class APIStage extends Stage {
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
       webhookHttpClient,
+      egressProxyWebhookSharePercent,
     });
     this.url = url;
   }
@@ -164,6 +168,7 @@ export class APIPipeline extends Stack {
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.BETA],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.BETA],
       webhookHttpClient: WebhookHttpClient.FETCH,
+      egressProxyWebhookSharePercent: EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.BETA],
     });
 
     const betaUsEast2AppStage = pipeline.addStage(betaUsEast2Stage);
@@ -186,6 +191,7 @@ export class APIPipeline extends Stack {
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.PROD],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.PROD],
       webhookHttpClient: WebhookHttpClient.FETCH,
+      egressProxyWebhookSharePercent: EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.PROD],
     });
 
     const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);

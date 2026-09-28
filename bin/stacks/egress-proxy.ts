@@ -25,13 +25,16 @@ export interface EgressProxyProps {
  * PrivateLink and sends its market-maker webhook calls through this forward proxy, so they
  * leave through this VPC's NAT gateway and keep the Elastic IP market makers allowlist. Both
  * stacks then share one egress IP, and moving trading between them needs no allowlist change.
+ * Before that, the quote Lambdas route a configured share of their own webhook calls through
+ * it (see `proxyUrl`), which proves it on real market-maker traffic first.
  *
- * Purely additive: the quote Lambdas never use it, and it does not modify the VPC, subnets,
- * route tables, NAT gateway, or Elastic IP. Remove it once the Elastic IP moves to the backend
- * account at decommission.
+ * It does not modify the VPC, subnets, route tables, NAT gateway, or Elastic IP. Remove it once
+ * the Elastic IP moves to the backend account at decommission.
  */
 export class EgressProxy extends Construct {
   public readonly endpointServiceName: string;
+  // How callers inside this VPC reach the proxy: the internal load balancer on the proxy port.
+  public readonly proxyUrl: string;
 
   constructor(scope: Construct, id: string, props: EgressProxyProps) {
     super(scope, id);
@@ -94,6 +97,7 @@ export class EgressProxy extends Construct {
       vpcSubnets: privateSubnets,
       crossZoneEnabled: true,
     });
+    this.proxyUrl = `http://${loadBalancer.loadBalancerDnsName}:${EGRESS_PROXY_PORT}`;
     const targetGroup = loadBalancer
       .addListener('Listener', { port: EGRESS_PROXY_PORT, protocol: aws_elbv2.Protocol.TCP })
       .addTargets('Targets', {
