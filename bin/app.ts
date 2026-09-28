@@ -163,7 +163,6 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.BETA],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.BETA],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.BETA],
-      // Beta runs market-maker webhooks on fetch first; prod follows in its own one-line change.
       webhookHttpClient: WebhookHttpClient.FETCH,
     });
 
@@ -186,7 +185,7 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.PROD],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.PROD],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.PROD],
-      webhookHttpClient: WebhookHttpClient.AXIOS,
+      webhookHttpClient: WebhookHttpClient.FETCH,
     });
 
     const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);
