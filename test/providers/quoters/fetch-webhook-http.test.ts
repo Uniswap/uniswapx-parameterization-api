@@ -21,6 +21,9 @@ interface RecordedRequest {
   body: string;
 }
 
+const TRICKLE_GAP_MS = 40;
+const TRICKLE_TIMEOUT_MS = 200;
+
 const recorded: RecordedRequest[] = [];
 let baseUrl = '';
 let closedPortUrl = '';
@@ -81,9 +84,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       setTimeout(() => res.writeHead(200).end('{}'), 300);
       return;
     case '/trickle': {
-      // Headers now, then one body byte every 30ms: active the whole time, done after ~240ms.
+      // Headers now, then one body byte every 40ms: the socket is never idle for long, but the
+      // whole body takes ~480ms. JSON allows the trailing spaces that stretch it out.
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      const parts = ['{', '"', 'a', '"', ':', '1', '}'];
+      const parts = [...'{"a":1}', ...' '.repeat(5)];
       const timer = setInterval(() => {
         const next = parts.shift();
         if (next === undefined) {
@@ -92,7 +96,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         } else {
           res.write(next);
         }
-      }, 30);
+      }, TRICKLE_GAP_MS);
       return;
     }
     case '/quote':
@@ -224,14 +228,15 @@ describe('fetchWebhookHttp resolves and rejects like axios', () => {
   });
 
   it('differs on purpose: a body still trickling in at the deadline times out on fetch', async () => {
-    // Axios's timeout restarts on socket activity, so the trickle outlasts a 100ms timeout.
-    // fetch's deadline covers the whole request, so it doesn't.
-    expect(await outcomeOf(axios, `${baseUrl}/trickle`, 100)).toEqual({
+    // Axios's timeout restarts on socket activity: 40ms gaps sit far inside a 200ms timeout, so it
+    // resolves. fetch's deadline covers the whole ~480ms body, so it times out. Both margins are
+    // wide enough that a slow CI runner can't flip either result.
+    expect(await outcomeOf(axios, `${baseUrl}/trickle`, TRICKLE_TIMEOUT_MS)).toEqual({
       kind: 'resolved',
       status: 200,
       data: { a: 1 },
     });
-    expect(await outcomeOf(fetchWebhookHttp(), `${baseUrl}/trickle`, 100)).toMatchObject({
+    expect(await outcomeOf(fetchWebhookHttp(), `${baseUrl}/trickle`, TRICKLE_TIMEOUT_MS)).toMatchObject({
       kind: 'rejected',
       code: 'ECONNABORTED',
     });
