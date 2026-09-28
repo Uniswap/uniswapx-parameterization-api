@@ -57,7 +57,7 @@ export class CronStack extends cdk.NestedStack {
     if (stage == STAGE.PROD || STAGE.LOCAL) {
       this.fadeRateV2CronLambda = new aws_lambda_nodejs.NodejsFunction(this, `FadeRateV2Cron`, {
         role: lambdaRole,
-        runtime: aws_lambda.Runtime.NODEJS_20_X,
+        runtime: aws_lambda.Runtime.NODEJS_22_X,
         entry: path.join(__dirname, '../../lib/cron/fade-rate-v2.ts'),
         handler: 'handler',
         timeout: Duration.seconds(240),

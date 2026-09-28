@@ -75,7 +75,7 @@ export class AnalyticsStack extends cdk.NestedStack {
     botOrderBroadcasterBucket.grantReadWrite(firehoseRole);
 
     const quoteProcessorLambda = new aws_lambda_nodejs.NodejsFunction(this, 'QuoteRequestProcessor', {
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
+      runtime: aws_lambda.Runtime.NODEJS_22_X,
       entry: path.join(__dirname, '../../lib/handlers/index.ts'),
       handler: 'quoteProcessor',
       timeout: cdk.Duration.seconds(60), // AWS suggests 1 min or higher

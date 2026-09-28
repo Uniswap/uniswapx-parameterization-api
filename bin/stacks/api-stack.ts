@@ -258,7 +258,7 @@ export class APIStack extends cdk.Stack {
 
     const quoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'Quote', {
       role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
+      runtime: aws_lambda.Runtime.NODEJS_22_X,
       entry: path.join(__dirname, '../../lib/handlers/quote/exports.ts'),
       handler: 'quoteHandler',
       vpc,
@@ -290,7 +290,7 @@ export class APIStack extends cdk.Stack {
 
     const hardQuoteLambda = new aws_lambda_nodejs.NodejsFunction(this, 'HardQuote', {
       role: lambdaRole,
-      runtime: aws_lambda.Runtime.NODEJS_20_X,
+      runtime: aws_lambda.Runtime.NODEJS_22_X,
       entry: path.join(__dirname, '../../lib/handlers/hard-quote/exports.ts'),
       handler: 'hardQuoteHandler',
       vpc,
