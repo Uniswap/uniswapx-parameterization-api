@@ -22,6 +22,7 @@ import {
   SoftQuoteMetricDimension,
   UniswapXParamServiceMetricDimension,
 } from '../../lib/entities';
+import { WEBHOOK_HTTP_CLIENT_ENV, WebhookHttpClient } from '../../lib/quoters/fetch-webhook-http';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
@@ -57,11 +58,16 @@ export class APIStack extends cdk.Stack {
       // Backend accounts that may write analytics records cross-account. Absent (local stack)
       // means no direct-write streams or writer role are created.
       analyticsWriterBackendAccounts?: readonly string[];
+      // HTTP client for market-maker webhooks on the two quote Lambdas. Absent keeps axios.
+      webhookHttpClient?: WebhookHttpClient;
     }
   ) {
     super(parent, name, props);
     const region = cdk.Stack.of(this).region;
     const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
+    const webhookHttpClientEnv = props.webhookHttpClient
+      ? { [WEBHOOK_HTTP_CLIENT_ENV]: props.webhookHttpClient }
+      : undefined;
 
     /*
      *  API Gateway Initialization
@@ -273,6 +279,7 @@ export class APIStack extends cdk.Stack {
         ...props.envVars,
         stage,
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+        ...webhookHttpClientEnv,
       },
       timeout: Duration.seconds(30),
       // NOTE: deliberately no currentVersionOptions.description commit stamping —
@@ -307,6 +314,7 @@ export class APIStack extends cdk.Stack {
         ...props.envVars,
         stage,
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
+        ...webhookHttpClientEnv,
       },
       timeout: Duration.seconds(30),
     });

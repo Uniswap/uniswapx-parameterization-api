@@ -8,7 +8,14 @@ import { BunyanLogger, Context, EmfMetrics } from '../../observability';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
-import { Quoter, WebhookQuoter } from '../../quoters';
+import {
+  fetchWebhookHttp,
+  Quoter,
+  WEBHOOK_HTTP_CLIENT_ENV,
+  WebhookHttp,
+  WebhookHttpClient,
+  WebhookQuoter,
+} from '../../quoters';
 import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
 import { STAGE } from '../../util/stage';
 import { ApiRInj } from '../base/api-handler';
@@ -77,13 +84,25 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
 
   const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
-  const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider)];
+  const quoters: Quoter[] = [
+    new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, selectWebhookHttp(log)),
+  ];
 
   return {
     quoters,
     firehose,
     chainIdRpcMap: buildChainIdRpcMap(),
   };
+}
+
+/**
+ * The market-maker webhook client for this container, chosen by WEBHOOK_HTTP_CLIENT. Undefined
+ * means WebhookQuoter's axios default; logged once per container so the client in use is visible.
+ */
+export function selectWebhookHttp(log: Logger, env: NodeJS.ProcessEnv = process.env): WebhookHttp | undefined {
+  const useFetch = env[WEBHOOK_HTTP_CLIENT_ENV] === WebhookHttpClient.FETCH;
+  log.info({ webhookHttpClient: useFetch ? WebhookHttpClient.FETCH : WebhookHttpClient.AXIOS }, 'Webhook HTTP client');
+  return useFetch ? fetchWebhookHttp() : undefined;
 }
 
 /**
