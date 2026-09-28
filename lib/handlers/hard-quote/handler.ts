@@ -82,7 +82,7 @@ export class QuoteHandler extends APIGLambdaHandler<
       // and circuit-breaker standing for a request it was never able to price. The order
       // service rejects the same shape at POST /order, so the fill could not happen.
       if (!request.hasUniformOutputTokens) {
-        log.error(
+        log.info(
           { tokenOut: request.tokenOut, outputTokens: request.outputTokens, requestId: request.requestId },
           'Order outputs span multiple tokens'
         );
