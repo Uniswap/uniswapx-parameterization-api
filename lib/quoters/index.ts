@@ -16,5 +16,6 @@ export interface Quoter {
   type(): QuoterType;
 }
 
+export * from './fetch-webhook-http';
 export * from './MockQuoter';
 export * from './WebhookQuoter';
