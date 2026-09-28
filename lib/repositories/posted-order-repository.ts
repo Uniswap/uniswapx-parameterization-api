@@ -1,6 +1,12 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { Entity, Table } from 'dynamodb-toolbox';
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+  QueryCommandInput,
+  UpdateCommand,
+} from '@aws-sdk/lib-dynamodb';
 
 import { DYNAMO_TABLE_NAME, POSTED_ORDER_TTL_SECS, POSTED_ORDERS_INDEX } from '../constants';
 
@@ -110,8 +116,7 @@ export interface PostedOrderRepository {
 }
 
 // Constant partition key of the sparse pending index. Present only while outcome is
-// PENDING; the outcome-recording write (later PR) must remove it in the same UpdateItem so
-// the row leaves the index. One partition is fine at hard-quote volume (DynamoDB allows
+// PENDING; recordOutcome removes it in the same UpdateItem so the row leaves the index. One partition is fine at hard-quote volume (DynamoDB allows
 // 1,000 WCU/s per partition key); shard the value by deadline hour if that is ever reached.
 export const PENDING_INDEX_KEY = 'PENDING';
 
@@ -144,16 +149,16 @@ export function postedOrderDocumentClient(maxAttempts: number = POSTED_ORDER_MAX
   );
 }
 
-// Raw item shape as dynamodb-toolbox returns it (record fields plus the index/TTL
-// attributes it manages).
+// Stored item: the record fields plus the index/TTL attributes the repository manages. Rows
+// written before this repository dropped dynamodb-toolbox also carry its _et/_ct/_md
+// bookkeeping attributes; nothing reads them.
 type PostedOrderItem = PostedOrderRecord & {
   pending?: string;
   ttl: number;
 };
 
-// One page of a dynamodb-toolbox query: items plus a `next` that is present only while DynamoDB
-// reported a LastEvaluatedKey (i.e. the 1MB page or the Limit cut the result short).
-type QueryPage = { Items?: unknown[]; next?: () => Promise<QueryPage> };
+// Key condition of an index query, on that index's sort key (deadline).
+type DeadlineCondition = { lt: number } | { between: [number, number] };
 
 export type DynamoPostedOrderRepositoryOptions = {
   // Items requested per DynamoDB page. Production leaves this unset (DynamoDB's 1MB page);
@@ -168,78 +173,45 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
     documentClient: DynamoDBDocumentClient = postedOrderDocumentClient(),
     options: DynamoPostedOrderRepositoryOptions = {}
   ): PostedOrderRepository {
-    const table = new Table({
-      name: DYNAMO_TABLE_NAME.POSTED_ORDERS,
-      partitionKey: DynamoPostedOrderRepository.PARTITION_KEY,
-      indexes: {
-        [POSTED_ORDERS_INDEX.PENDING_DEADLINE]: { partitionKey: 'pending', sortKey: 'deadline' },
-        [POSTED_ORDERS_INDEX.FILLER_DEADLINE]: { partitionKey: 'filler', sortKey: 'deadline' },
-      },
-      DocumentClient: documentClient,
-    });
-
-    const entity = new Entity({
-      name: 'PostedOrder',
-      attributes: {
-        orderHash: { partitionKey: true, type: 'string' },
-        quoteId: { type: 'string', required: true },
-        requestId: { type: 'string', required: true },
-        chainId: { type: 'number', required: true },
-        orderType: { type: 'string', required: true },
-        fillerAddress: { type: 'string', required: true },
-        filler: { type: 'string', required: true },
-        fillerName: { type: 'string', required: true },
-        decayStartTime: { type: 'number' },
-        decayStartBlock: { type: 'number' },
-        deadline: { type: 'number', required: true },
-        tokenIn: { type: 'string', required: true },
-        tokenOut: { type: 'string', required: true },
-        postedAt: { type: 'number', required: true },
-        outcome: { type: 'string', required: true },
-        orderStatus: { type: 'string' },
-        fillBlock: { type: 'number' },
-        fillTimestamp: { type: 'number' },
-        faded: { type: 'number' },
-        resolvedAt: { type: 'number' },
-        resolutionAttempts: { type: 'number' },
-        lastAttemptAt: { type: 'number' },
-        pending: { type: 'string' },
-        ttl: { type: 'number', required: true },
-      },
-      table,
-      autoExecute: true,
-    } as const);
-
-    return new DynamoPostedOrderRepository(entity, options.pageSize);
+    return new DynamoPostedOrderRepository(documentClient, options.pageSize);
   }
 
-  private constructor(private readonly entity: Entity, private readonly pageSize?: number) {}
+  private constructor(private readonly documentClient: DynamoDBDocumentClient, private readonly pageSize?: number) {}
 
   /**
-   * Drains every page of an index query. A single DynamoDB page is at most 1MB (~1,600 of these
-   * rows), and a high-volume filler completes more than that in 24h — an unpaginated read would
-   * silently drop its most recent orders (deadline-ascending index), exactly the ones the
-   * breaker scores. `max` caps the total; DynamoDB's Limit alone cannot, because a Limit page can
-   * still be cut short by the size cap.
+   * Drains every page of an index query, deadline ascending. A single DynamoDB page is at most
+   * 1MB (~1,600 of these rows), and a high-volume filler completes more than that in 24h — an
+   * unpaginated read would silently drop its most recent orders, exactly the ones the breaker
+   * scores. `max` caps the total; DynamoDB's Limit alone cannot, because a Limit page can still
+   * be cut short by the size cap.
    */
   private async queryAll(
+    index: string,
+    partitionKeyName: string,
     partitionKey: string,
-    options: Record<string, unknown>,
+    deadline: DeadlineCondition,
     max?: number
   ): Promise<PostedOrderItem[]> {
     const pageLimit = this.pageSize ?? max;
+    const input: QueryCommandInput = {
+      TableName: DYNAMO_TABLE_NAME.POSTED_ORDERS,
+      IndexName: index,
+      KeyConditionExpression:
+        'lt' in deadline ? '#pk = :pk AND #deadline < :lt' : '#pk = :pk AND #deadline BETWEEN :from AND :to',
+      ExpressionAttributeNames: { '#pk': partitionKeyName, '#deadline': 'deadline' },
+      ExpressionAttributeValues:
+        'lt' in deadline
+          ? { ':pk': partitionKey, ':lt': deadline.lt }
+          : { ':pk': partitionKey, ':from': deadline.between[0], ':to': deadline.between[1] },
+      ...(pageLimit !== undefined && { Limit: pageLimit }),
+    };
     const items: PostedOrderItem[] = [];
-    let page = (await this.entity.query(partitionKey, {
-      ...options,
-      ...(pageLimit !== undefined && { limit: pageLimit }),
-      execute: true,
-      parse: true,
-    })) as QueryPage;
-    for (;;) {
+    for (let startKey: Record<string, unknown> | undefined; ; ) {
+      const page = await this.documentClient.send(new QueryCommand({ ...input, ExclusiveStartKey: startKey }));
       items.push(...((page.Items ?? []) as PostedOrderItem[]));
       if (max !== undefined && items.length >= max) return items.slice(0, max);
-      if (!page.next) return items;
-      page = await page.next();
+      if (!page.LastEvaluatedKey) return items;
+      startKey = page.LastEvaluatedKey;
     }
   }
 
@@ -249,68 +221,88 @@ export class DynamoPostedOrderRepository implements PostedOrderRepository {
       ttl: record.deadline + POSTED_ORDER_TTL_SECS,
       ...(record.outcome === PostedOrderOutcome.PENDING && { pending: PENDING_INDEX_KEY }),
     };
-    await this.entity.put(item, { execute: true });
+    await this.documentClient.send(
+      new PutCommand({ TableName: DYNAMO_TABLE_NAME.POSTED_ORDERS, Item: withoutUndefined(item) })
+    );
   }
 
   public async getPostedOrder(orderHash: string): Promise<PostedOrderRecord | undefined> {
-    const { Item } = await this.entity.get({ orderHash }, { execute: true, parse: true });
+    const { Item } = await this.documentClient.send(
+      new GetCommand({
+        TableName: DYNAMO_TABLE_NAME.POSTED_ORDERS,
+        Key: { [DynamoPostedOrderRepository.PARTITION_KEY]: orderHash },
+      })
+    );
     return Item ? toRecord(Item as PostedOrderItem) : undefined;
   }
 
   public async getPendingPastDeadline(now: number, limit?: number): Promise<PostedOrderRecord[]> {
     const items = await this.queryAll(
+      POSTED_ORDERS_INDEX.PENDING_DEADLINE,
+      'pending',
       PENDING_INDEX_KEY,
-      { index: POSTED_ORDERS_INDEX.PENDING_DEADLINE, lt: now },
+      { lt: now },
       limit
     );
     return items.map(toRecord);
   }
 
   public async getFillerOrdersByDeadline(filler: string, from: number, to: number): Promise<PostedOrderRecord[]> {
-    const items = await this.queryAll(filler, { index: POSTED_ORDERS_INDEX.FILLER_DEADLINE, between: [from, to] });
+    const items = await this.queryAll(POSTED_ORDERS_INDEX.FILLER_DEADLINE, 'filler', filler, {
+      between: [from, to],
+    });
     return items.map(toRecord);
   }
 
   public async recordOutcome(orderHash: string, resolution: PostedOrderResolution): Promise<void> {
     const { outcome, orderStatus, fillBlock, fillTimestamp, faded, resolvedAt } = resolution;
-    await this.entity.update(
-      {
-        orderHash,
-        outcome,
-        orderStatus,
-        resolvedAt,
-        ...(fillBlock !== undefined && { fillBlock }),
-        ...(fillTimestamp !== undefined && { fillTimestamp }),
-        ...(faded !== undefined && { faded }),
+    const set = withoutUndefined({ outcome, orderStatus, resolvedAt, fillBlock, fillTimestamp, faded });
+    const fields = Object.keys(set);
+    await this.documentClient.send(
+      new UpdateCommand({
+        TableName: DYNAMO_TABLE_NAME.POSTED_ORDERS,
+        Key: { [DynamoPostedOrderRepository.PARTITION_KEY]: orderHash },
         // Leaving the sparse pending index is what makes the outcome "recorded" for the
         // cron's next getPendingPastDeadline; it must happen in this same UpdateItem.
-        $remove: ['pending'],
-      },
-      {
-        conditions: { attr: DynamoPostedOrderRepository.PARTITION_KEY, exists: true },
-        execute: true,
-      }
+        UpdateExpression: `SET ${fields.map((f) => `#${f} = :${f}`).join(', ')} REMOVE #pending`,
+        ConditionExpression: 'attribute_exists(#orderHash)',
+        ExpressionAttributeNames: {
+          ...Object.fromEntries(fields.map((f) => [`#${f}`, f])),
+          '#pending': 'pending',
+          '#orderHash': DynamoPostedOrderRepository.PARTITION_KEY,
+        },
+        ExpressionAttributeValues: Object.fromEntries(Object.entries(set).map(([f, v]) => [`:${f}`, v])),
+      })
     );
   }
 
   public async recordUnresolvedAttempt(orderHash: string, attemptedAt: number): Promise<number> {
-    const result = (await this.entity.update(
-      { orderHash, resolutionAttempts: { $add: 1 }, lastAttemptAt: attemptedAt },
-      {
-        conditions: { attr: DynamoPostedOrderRepository.PARTITION_KEY, exists: true },
-        returnValues: 'UPDATED_NEW',
-        execute: true,
-      }
-    )) as UpdatedNew;
-    return result.Attributes?.resolutionAttempts ?? 0;
+    const { Attributes } = await this.documentClient.send(
+      new UpdateCommand({
+        TableName: DYNAMO_TABLE_NAME.POSTED_ORDERS,
+        Key: { [DynamoPostedOrderRepository.PARTITION_KEY]: orderHash },
+        UpdateExpression: 'SET #lastAttemptAt = :lastAttemptAt ADD #resolutionAttempts :one',
+        ConditionExpression: 'attribute_exists(#orderHash)',
+        ExpressionAttributeNames: {
+          '#lastAttemptAt': 'lastAttemptAt',
+          '#resolutionAttempts': 'resolutionAttempts',
+          '#orderHash': DynamoPostedOrderRepository.PARTITION_KEY,
+        },
+        ExpressionAttributeValues: { ':lastAttemptAt': attemptedAt, ':one': 1 },
+        ReturnValues: 'UPDATED_NEW',
+      })
+    );
+    return Number((Attributes as { resolutionAttempts?: number } | undefined)?.resolutionAttempts ?? 0);
   }
 }
 
-// Shape of an UpdateItem response with ReturnValues=UPDATED_NEW as dynamodb-toolbox parses it.
-type UpdatedNew = { Attributes?: { resolutionAttempts?: number } };
+// Drops undefined attributes so writes do not depend on the client's removeUndefinedValues.
+function withoutUndefined<T extends object>(obj: T): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+}
 
-// Picks the record fields out of a stored item, dropping the index/TTL attributes and the
-// toolbox bookkeeping (entity, created, modified) so callers see exactly PostedOrderRecord.
+// Picks the record fields out of a stored item, dropping the index/TTL attributes (and, on
+// older rows, the toolbox bookkeeping) so callers see exactly PostedOrderRecord.
 function toRecord(item: PostedOrderItem): PostedOrderRecord {
   return {
     orderHash: item.orderHash,

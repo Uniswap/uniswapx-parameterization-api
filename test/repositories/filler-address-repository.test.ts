@@ -151,10 +151,9 @@ describe('filler address repository', () => {
   });
 
   it('still resolves address rows written before per-address TTLs existed (no migration)', async () => {
-    // Exact stored shape of a pre-TTL row as dynamodb-toolbox's put() wrote it: its entity
-    // marker is the `_et` attribute (plus `_ct`/`_md` timestamps) and there is no expiresAt.
-    // The marker matters: a row carrying it goes through the entity's parse() on read, which is
-    // the branch every real legacy row takes; an unknown marker is passed through raw instead.
+    // Exact stored shape of a pre-TTL row as the old dynamodb-toolbox put() wrote it: its
+    // bookkeeping attributes (`_et` entity marker, `_ct`/`_md` timestamps) and no expiresAt.
+    // Real legacy rows look like this, so the plain document-client read must still resolve them.
     const legacy = addr(0x4001);
     const writtenAt = '2025-01-01T00:00:00.000Z';
     await documentClient.send(
@@ -173,7 +172,7 @@ describe('filler address repository', () => {
   });
 
   it('a BatchGet page without an entry for the table is warned about, not read as "no rows"', async () => {
-    // dynamodb-toolbox keys Responses by physical table name; a renamed or suffixed table would
+    // BatchGet keys Responses by physical table name; a renamed or suffixed table would
     // otherwise resolve to an empty map and silently unscore every filler for the run.
     const realSend = documentClient.send.bind(documentClient);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
