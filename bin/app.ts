@@ -190,7 +190,7 @@ export class APIPipeline extends Stack {
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.PROD],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.PROD],
       webhookHttpClient: HttpClient.FETCH,
-      orderServiceHttpClient: HttpClient.AXIOS,
+      orderServiceHttpClient: HttpClient.FETCH,
     });
 
     const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);
