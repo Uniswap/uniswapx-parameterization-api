@@ -8,7 +8,7 @@ import { CodeBuildStep, CodePipeline, CodePipelineSource } from 'aws-cdk-lib/pip
 import { Construct } from 'constructs';
 import dotenv from 'dotenv';
 
-import { WebhookHttpClient } from '../lib/quoters/fetch-webhook-http';
+import { HttpClient } from '../lib/util/fetch-http';
 import { STAGE } from '../lib/util/stage';
 import {
   ANALYTICS_WRITER_BACKEND_ACCOUNTS,
@@ -34,7 +34,8 @@ export class APIStage extends Stage {
       hardQuoteCosignerBackendAccounts?: readonly string[];
       egressProxyBackendAccounts?: readonly string[];
       analyticsWriterBackendAccounts?: readonly string[];
-      webhookHttpClient?: WebhookHttpClient;
+      webhookHttpClient?: HttpClient;
+      orderServiceHttpClient?: HttpClient;
     }
   ) {
     super(scope, id, props);
@@ -49,6 +50,7 @@ export class APIStage extends Stage {
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
       webhookHttpClient,
+      orderServiceHttpClient,
     } = props;
 
     const { url } = new APIStack(this, `${SERVICE_NAME}API`, {
@@ -62,6 +64,7 @@ export class APIStage extends Stage {
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
       webhookHttpClient,
+      orderServiceHttpClient,
     });
     this.url = url;
   }
@@ -163,7 +166,8 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.BETA],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.BETA],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.BETA],
-      webhookHttpClient: WebhookHttpClient.FETCH,
+      webhookHttpClient: HttpClient.FETCH,
+      orderServiceHttpClient: HttpClient.FETCH,
     });
 
     const betaUsEast2AppStage = pipeline.addStage(betaUsEast2Stage);
@@ -185,7 +189,8 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.PROD],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.PROD],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.PROD],
-      webhookHttpClient: WebhookHttpClient.FETCH,
+      webhookHttpClient: HttpClient.FETCH,
+      orderServiceHttpClient: HttpClient.AXIOS,
     });
 
     const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);

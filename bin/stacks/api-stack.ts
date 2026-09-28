@@ -22,7 +22,7 @@ import {
   SoftQuoteMetricDimension,
   UniswapXParamServiceMetricDimension,
 } from '../../lib/entities';
-import { WEBHOOK_HTTP_CLIENT_ENV, WebhookHttpClient } from '../../lib/quoters/fetch-webhook-http';
+import { HttpClient, ORDER_SERVICE_HTTP_CLIENT_ENV, WEBHOOK_HTTP_CLIENT_ENV } from '../../lib/util/fetch-http';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
@@ -59,7 +59,10 @@ export class APIStack extends cdk.Stack {
       // means no direct-write streams or writer role are created.
       analyticsWriterBackendAccounts?: readonly string[];
       // HTTP client for market-maker webhooks on the two quote Lambdas. Absent keeps axios.
-      webhookHttpClient?: WebhookHttpClient;
+      webhookHttpClient?: HttpClient;
+      // HTTP client for order-service calls (hard-quote order post, fade cron status reads).
+      // Absent keeps axios.
+      orderServiceHttpClient?: HttpClient;
     }
   ) {
     super(parent, name, props);
@@ -67,6 +70,9 @@ export class APIStack extends cdk.Stack {
     const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
     const webhookHttpClientEnv = props.webhookHttpClient
       ? { [WEBHOOK_HTTP_CLIENT_ENV]: props.webhookHttpClient }
+      : undefined;
+    const orderServiceHttpClientEnv = props.orderServiceHttpClient
+      ? { [ORDER_SERVICE_HTTP_CLIENT_ENV]: props.orderServiceHttpClient }
       : undefined;
 
     /*
@@ -315,6 +321,7 @@ export class APIStack extends cdk.Stack {
         stage,
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
         ...webhookHttpClientEnv,
+        ...orderServiceHttpClientEnv,
       },
       timeout: Duration.seconds(30),
     });
@@ -426,6 +433,7 @@ export class APIStack extends cdk.Stack {
       stage: stage,
       postedOrdersTable,
       orderServiceUrl: props.envVars.ORDER_SERVICE_URL,
+      orderServiceHttpClient: props.orderServiceHttpClient,
     });
 
     /* filler addr table */
