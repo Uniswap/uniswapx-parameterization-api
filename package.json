@@ -82,7 +82,7 @@
     "organizeImportsSkipDestructiveCodeActions": true
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "resolutions": {
     "elliptic": "6.6.1"
