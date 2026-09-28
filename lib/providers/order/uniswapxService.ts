@@ -11,6 +11,7 @@ import {
 } from '.';
 import { ErrorResponse } from '../../handlers/base';
 import { ErrorCode } from '../../util/errors';
+import { fetchHttp, HttpClient, ORDER_SERVICE_HTTP_CLIENT_ENV } from '../../util/fetch-http';
 
 // The order service validates on-chain (RPC) before accepting, so its tail can
 // exceed a couple of seconds; this must stay below the hard-quote Lambda budget
@@ -31,6 +32,19 @@ export const ORDER_STATUS_TIMEOUT_MS = 5000;
 // The subset of axios this client uses (the status read, the order post, and its timeout
 // reconciliation). Injected so tests can substitute a fake without mocking the axios module.
 export type OrderServiceHttp = Pick<AxiosInstance, 'get' | 'post'>;
+
+/**
+ * The order-service client, chosen by ORDER_SERVICE_HTTP_CLIENT. Undefined means
+ * UniswapXServiceProvider's axios default; the choice is logged so the client in use is visible.
+ */
+export function selectOrderServiceHttp(
+  log: Logger,
+  env: NodeJS.ProcessEnv = process.env
+): OrderServiceHttp | undefined {
+  const useFetch = env[ORDER_SERVICE_HTTP_CLIENT_ENV] === HttpClient.FETCH;
+  log.info({ orderServiceHttpClient: useFetch ? HttpClient.FETCH : HttpClient.AXIOS }, 'Order service HTTP client');
+  return useFetch ? fetchHttp() : undefined;
+}
 
 const ORDER_TYPE_MAP = new Map<Function, string>([
   [CosignedV2DutchOrder, OrderType.Dutch_V2],

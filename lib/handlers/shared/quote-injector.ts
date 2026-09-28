@@ -8,15 +8,9 @@ import { BunyanLogger, Context, EmfMetrics } from '../../observability';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
-import {
-  fetchWebhookHttp,
-  Quoter,
-  WEBHOOK_HTTP_CLIENT_ENV,
-  WebhookHttp,
-  WebhookHttpClient,
-  WebhookQuoter,
-} from '../../quoters';
+import { Quoter, WebhookHttp, WebhookQuoter } from '../../quoters';
 import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
+import { fetchHttp, HttpClient, WEBHOOK_HTTP_CLIENT_ENV } from '../../util/fetch-http';
 import { STAGE } from '../../util/stage';
 import { ApiRInj } from '../base/api-handler';
 
@@ -100,9 +94,9 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
  * means WebhookQuoter's axios default; logged once per container so the client in use is visible.
  */
 export function selectWebhookHttp(log: Logger, env: NodeJS.ProcessEnv = process.env): WebhookHttp | undefined {
-  const useFetch = env[WEBHOOK_HTTP_CLIENT_ENV] === WebhookHttpClient.FETCH;
-  log.info({ webhookHttpClient: useFetch ? WebhookHttpClient.FETCH : WebhookHttpClient.AXIOS }, 'Webhook HTTP client');
-  return useFetch ? fetchWebhookHttp() : undefined;
+  const useFetch = env[WEBHOOK_HTTP_CLIENT_ENV] === HttpClient.FETCH;
+  log.info({ webhookHttpClient: useFetch ? HttpClient.FETCH : HttpClient.AXIOS }, 'Webhook HTTP client');
+  return useFetch ? fetchHttp() : undefined;
 }
 
 /**

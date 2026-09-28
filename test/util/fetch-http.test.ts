@@ -1,30 +1,51 @@
 import { TradeType } from '@uniswap/sdk-core';
+import { CosignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
 import axios, { AxiosError } from 'axios';
+import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 import http, { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'http';
 import { AddressInfo } from 'net';
 
-import { AnalyticsEventType, QuoteRequest } from '../../../lib/entities';
-import { selectWebhookHttp } from '../../../lib/handlers/shared/quote-injector';
-import { MockWebhookConfigurationProvider, ProtocolVersion, WebhookConfiguration } from '../../../lib/providers';
-import { MockV2CircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/mock';
-import { fetchWebhookHttp, WEBHOOK_HTTP_CLIENT_ENV, WebhookHttp, WebhookQuoter } from '../../../lib/quoters';
-import { FakeAnalyticsLogger, fakeContext } from '../../fakes';
+import { AnalyticsEventType, QuoteRequest } from '../../lib/entities';
+import { selectWebhookHttp } from '../../lib/handlers/shared/quote-injector';
+import {
+  MockWebhookConfigurationProvider,
+  OrderServiceHttp,
+  ProtocolVersion,
+  selectOrderServiceHttp,
+  UniswapXServiceProvider,
+  WebhookConfiguration,
+} from '../../lib/providers';
+import { MockV2CircuitBreakerConfigurationProvider } from '../../lib/providers/circuit-breaker/mock';
+import { WebhookHttp, WebhookQuoter } from '../../lib/quoters';
+import { fetchHttp, ORDER_SERVICE_HTTP_CLIENT_ENV, WEBHOOK_HTTP_CLIENT_ENV } from '../../lib/util/fetch-http';
+import { FakeAnalyticsLogger, fakeContext } from '../fakes';
 
 // Every test here runs both clients against the same real HTTP server and asserts they agree.
-// The quoter's classification (quote / non-quote / timeout / error) and the analytics records
-// it writes are keyed off what axios resolves and rejects, so "the same" is the contract.
+// The callers' classification of an outcome (the quoter's quote / non-quote / timeout / error and
+// the analytics records it writes; the order post's accepted / rejected / reconciled) is keyed off
+// what axios resolves and rejects, so "the same" is the contract.
 
 interface RecordedRequest {
+  method: string;
+  // Path plus query string, as the server received it.
+  url: string;
   path: string;
   headers: IncomingHttpHeaders;
   body: string;
 }
 
+const ORDER_HASH = '0x' + 'ab'.repeat(32);
+
 const TRICKLE_GAP_MS = 40;
 const TRICKLE_TIMEOUT_MS = 200;
 
 const recorded: RecordedRequest[] = [];
+// How the fake order service treats the next order post: accept it, reject it, or drop the
+// connection without answering (the "did it land?" case). The status read finds a dropped post's
+// order only when `droppedPostLands` is set.
+let orderPostMode: 'accept' | 'reject' | 'drop' = 'accept';
+let droppedPostLands = false;
 let baseUrl = '';
 let closedPortUrl = '';
 let server: http.Server;
@@ -56,8 +77,9 @@ function quoteFor(body: Record<string, unknown>): Record<string, unknown> {
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const body = await readBody(req);
-  const path = (req.url ?? '').split('?')[0];
-  recorded.push({ path, headers: req.headers, body });
+  const url = req.url ?? '';
+  const path = url.split('?')[0];
+  recorded.push({ method: req.method ?? '', url, path, headers: req.headers, body });
   switch (path) {
     case '/json':
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, n: 1 }));
@@ -99,6 +121,24 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       }, TRICKLE_GAP_MS);
       return;
     }
+    case '/dutch-auction/order':
+      if (orderPostMode === 'drop') {
+        req.socket.destroy();
+      } else if (orderPostMode === 'reject') {
+        res
+          .writeHead(400, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ errorCode: 'VALIDATION_ERROR', detail: 'Order expired' }));
+      } else {
+        res.writeHead(201, { 'Content-Type': 'application/json' }).end(JSON.stringify({ hash: ORDER_HASH }));
+      }
+      return;
+    case '/dutch-auction/orders': {
+      const query = new URL(url, 'http://x').searchParams;
+      const hashes = query.get('orderHashes')?.split(',') ?? (droppedPostLands ? [query.get('orderHash')] : []);
+      const orders = hashes.map((orderHash) => ({ orderHash, orderStatus: 'filled', fillBlock: 7 }));
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ orders }));
+      return;
+    }
     case '/quote':
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(quoteFor(JSON.parse(body))));
       return;
@@ -127,6 +167,8 @@ afterAll(async () => {
 
 beforeEach(() => {
   recorded.length = 0;
+  orderPostMode = 'accept';
+  droppedPostLands = false;
 });
 
 type Outcome =
@@ -162,10 +204,10 @@ async function outcomeOf(client: WebhookHttp, url: string, timeout = 500): Promi
 
 const clients: Array<[string, () => WebhookHttp]> = [
   ['axios', () => axios],
-  ['fetch', () => fetchWebhookHttp()],
+  ['fetch', () => fetchHttp()],
 ];
 
-describe('fetchWebhookHttp resolves and rejects like axios', () => {
+describe('fetchHttp resolves and rejects like axios', () => {
   const cases: Array<[string, string, Outcome]> = [
     ['200 JSON', '/json', { kind: 'resolved', status: 200, data: { ok: true, n: 1 } }],
     ['200 non-JSON text', '/text', { kind: 'resolved', status: 200, data: 'not json' }],
@@ -236,14 +278,14 @@ describe('fetchWebhookHttp resolves and rejects like axios', () => {
       status: 200,
       data: { a: 1 },
     });
-    expect(await outcomeOf(fetchWebhookHttp(), `${baseUrl}/trickle`, TRICKLE_TIMEOUT_MS)).toMatchObject({
+    expect(await outcomeOf(fetchHttp(), `${baseUrl}/trickle`, TRICKLE_TIMEOUT_MS)).toMatchObject({
       kind: 'rejected',
       code: 'ECONNABORTED',
     });
   });
 });
 
-describe('fetchWebhookHttp sends what axios sends', () => {
+describe('fetchHttp sends what axios sends', () => {
   async function requestSeenBy(client: WebhookHttp, headers?: Record<string, string>): Promise<RecordedRequest> {
     recorded.length = 0;
     await client.post(`${baseUrl}/json`, { requestId: 'r1', amount: '10' }, { timeout: 500, headers });
@@ -252,7 +294,7 @@ describe('fetchWebhookHttp sends what axios sends', () => {
 
   it('same JSON body, Content-Type and Accept', async () => {
     const viaAxios = await requestSeenBy(axios);
-    const viaFetch = await requestSeenBy(fetchWebhookHttp());
+    const viaFetch = await requestSeenBy(fetchHttp());
     expect(viaFetch.body).toEqual(viaAxios.body);
     expect(viaFetch.headers['content-type']).toEqual(viaAxios.headers['content-type']);
     expect(viaFetch.headers['accept']).toEqual(viaAxios.headers['accept']);
@@ -261,14 +303,14 @@ describe('fetchWebhookHttp sends what axios sends', () => {
   it('per-endpoint headers are sent, and replace a default of the same name in any case', async () => {
     const endpointHeaders = { 'x-api-key': 'secret', 'content-type': 'application/json; charset=utf-8' };
     const viaAxios = await requestSeenBy(axios, endpointHeaders);
-    const viaFetch = await requestSeenBy(fetchWebhookHttp(), endpointHeaders);
+    const viaFetch = await requestSeenBy(fetchHttp(), endpointHeaders);
     expect(viaFetch.headers['x-api-key']).toEqual('secret');
     expect(viaFetch.headers['x-api-key']).toEqual(viaAxios.headers['x-api-key']);
     expect(viaFetch.headers['content-type']).toEqual(viaAxios.headers['content-type']);
   });
 
   it('differs on purpose: User-Agent is no longer axios/<version>', async () => {
-    const viaFetch = await requestSeenBy(fetchWebhookHttp());
+    const viaFetch = await requestSeenBy(fetchHttp());
     expect(viaFetch.headers['user-agent']).not.toMatch(/^axios\//);
   });
 });
@@ -351,7 +393,7 @@ describe('WebhookQuoter classifies every endpoint the same on either client', ()
 
   it('same quotes, analytics records, metrics and block notifications', async () => {
     const viaAxios = await runWith(axios);
-    const viaFetch = await runWith(fetchWebhookHttp());
+    const viaFetch = await runWith(fetchHttp());
 
     expect(viaAxios.quoteCount).toEqual(1);
     expect(viaAxios.byEndpoint).toEqual({
@@ -384,5 +426,96 @@ describe('selectWebhookHttp', () => {
     const env = value === 'unset' ? {} : { [WEBHOOK_HTTP_CLIENT_ENV]: value };
     expect(selectWebhookHttp(log, env)).toBeUndefined();
     expect(log.info).toHaveBeenLastCalledWith({ webhookHttpClient: 'axios' }, 'Webhook HTTP client');
+  });
+});
+
+describe('the order-service client behaves the same on either client', () => {
+  const logger = Logger.createLogger({ name: 'test' });
+  logger.level(Logger.FATAL);
+
+  // ORDER_TYPE_MAP looks the sdk class up via order.constructor, so the stub shares its prototype.
+  function orderStub(): CosignedV2DutchOrder {
+    const order = Object.create(CosignedV2DutchOrder.prototype);
+    order.hash = () => ORDER_HASH;
+    order.serialize = () => '0xencoded';
+    order.chainId = 1;
+    return order;
+  }
+
+  // What the order service sees: method, URL with query, body and the content headers.
+  const seen = () =>
+    recorded.map((r) => ({
+      method: r.method,
+      url: r.url,
+      body: r.body,
+      contentType: r.headers['content-type'],
+      accept: r.headers['accept'],
+    }));
+
+  async function postWith(client: OrderServiceHttp) {
+    recorded.length = 0;
+    const provider = new UniswapXServiceProvider(logger, `${baseUrl}/`, client);
+    const result = await provider.postOrder({ order: orderStub(), signature: '0xsig', quoteId: 'q1', requestId: 'r1' });
+    return { result, requests: seen() };
+  }
+
+  it('an accepted post', async () => {
+    const viaAxios = await postWith(axios);
+    expect(viaAxios.result).toEqual({ statusCode: 201, data: { hash: ORDER_HASH } });
+    expect(await postWith(fetchHttp())).toEqual(viaAxios);
+  });
+
+  it('a rejected post passes the service error through', async () => {
+    orderPostMode = 'reject';
+    const viaAxios = await postWith(axios);
+    expect(viaAxios.result).toEqual({ statusCode: 400, errorCode: 'VALIDATION_ERROR', detail: 'Order expired' });
+    expect(await postWith(fetchHttp())).toEqual(viaAxios);
+  });
+
+  it('a dropped post that landed reconciles to success', async () => {
+    orderPostMode = 'drop';
+    droppedPostLands = true;
+    const viaAxios = await postWith(axios);
+    expect(viaAxios.result).toEqual({ statusCode: 201, data: { hash: ORDER_HASH } });
+    expect(viaAxios.requests.map((r) => r.method)).toEqual(['POST', 'GET']);
+    expect(await postWith(fetchHttp())).toEqual(viaAxios);
+  });
+
+  it('a dropped post that did not land reports indeterminate with the hash', async () => {
+    orderPostMode = 'drop';
+    const viaAxios = await postWith(axios);
+    expect(viaAxios.result).toMatchObject({ statusCode: 500, data: { hash: ORDER_HASH } });
+    expect(await postWith(fetchHttp())).toEqual(viaAxios);
+  });
+
+  it('the status read requests the same URL and parses the same statuses', async () => {
+    const hashes = ['0xAA', '0xbb', '0xcc'];
+    const readWith = async (client: OrderServiceHttp) => {
+      recorded.length = 0;
+      const provider = new UniswapXServiceProvider(logger, `${baseUrl}/`, client);
+      return { statuses: await provider.getOrdersByHashes(hashes), requests: seen() };
+    };
+    const viaAxios = await readWith(axios);
+    expect(viaAxios.statuses).toEqual(
+      hashes.map((h) => ({ orderHash: h.toLowerCase(), orderStatus: 'filled', fillBlock: 7 }))
+    );
+    // axios keeps the commas literal; the fetch client must request the identical URL.
+    expect(viaAxios.requests[0].url).toEqual('/dutch-auction/orders?orderHashes=0xAA,0xbb,0xcc');
+    expect(await readWith(fetchHttp())).toEqual(viaAxios);
+  });
+});
+
+describe('selectOrderServiceHttp', () => {
+  const log = { info: jest.fn() } as any;
+
+  it('uses fetch only when ORDER_SERVICE_HTTP_CLIENT is fetch', () => {
+    expect(selectOrderServiceHttp(log, { [ORDER_SERVICE_HTTP_CLIENT_ENV]: 'fetch' })).toBeDefined();
+    expect(log.info).toHaveBeenLastCalledWith({ orderServiceHttpClient: 'fetch' }, 'Order service HTTP client');
+  });
+
+  it.each([['axios'], ['unset'], ['FETCH']])('keeps axios for %s', (value) => {
+    const env = value === 'unset' ? {} : { [ORDER_SERVICE_HTTP_CLIENT_ENV]: value };
+    expect(selectOrderServiceHttp(log, env)).toBeUndefined();
+    expect(log.info).toHaveBeenLastCalledWith({ orderServiceHttpClient: 'axios' }, 'Order service HTTP client');
   });
 });
