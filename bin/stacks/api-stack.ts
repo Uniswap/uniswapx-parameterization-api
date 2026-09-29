@@ -23,7 +23,6 @@ import {
   UniswapXParamServiceMetricDimension,
 } from '../../lib/entities';
 import { EGRESS_PROXY_URL_ENV, EGRESS_PROXY_WEBHOOK_SHARE_ENV } from '../../lib/quoters/egress-proxy-fetch';
-import { HttpClient, ORDER_SERVICE_HTTP_CLIENT_ENV, WEBHOOK_HTTP_CLIENT_ENV } from '../../lib/util/fetch-http';
 import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
@@ -59,25 +58,14 @@ export class APIStack extends cdk.Stack {
       // Backend accounts that may write analytics records cross-account. Absent (local stack)
       // means no direct-write streams or writer role are created.
       analyticsWriterBackendAccounts?: readonly string[];
-      // HTTP client for market-maker webhooks on the two quote Lambdas. Absent keeps axios.
-      webhookHttpClient?: HttpClient;
-      // HTTP client for order-service calls (hard-quote order post, fade cron status reads).
-      // Absent keeps axios.
-      orderServiceHttpClient?: HttpClient;
       // Share (0-100) of the quote Lambdas' market-maker webhook calls sent through the egress
-      // proxy. Needs the proxy and the fetch client. Absent leaves the Lambdas untouched.
+      // proxy. Needs the proxy. Absent leaves the Lambdas untouched.
       egressProxyWebhookSharePercent?: number;
     }
   ) {
     super(parent, name, props);
     const region = cdk.Stack.of(this).region;
     const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
-    const webhookHttpClientEnv = props.webhookHttpClient
-      ? { [WEBHOOK_HTTP_CLIENT_ENV]: props.webhookHttpClient }
-      : undefined;
-    const orderServiceHttpClientEnv = props.orderServiceHttpClient
-      ? { [ORDER_SERVICE_HTTP_CLIENT_ENV]: props.orderServiceHttpClient }
-      : undefined;
 
     /*
      *  API Gateway Initialization
@@ -289,7 +277,6 @@ export class APIStack extends cdk.Stack {
         ...props.envVars,
         stage,
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
-        ...webhookHttpClientEnv,
       },
       timeout: Duration.seconds(30),
       // NOTE: deliberately no currentVersionOptions.description commit stamping —
@@ -324,8 +311,6 @@ export class APIStack extends cdk.Stack {
         ...props.envVars,
         stage,
         ANALYTICS_STREAM_ARN: firehoseStack.analyticsStreamArn,
-        ...webhookHttpClientEnv,
-        ...orderServiceHttpClientEnv,
       },
       timeout: Duration.seconds(30),
     });
@@ -437,7 +422,6 @@ export class APIStack extends cdk.Stack {
       stage: stage,
       postedOrdersTable,
       orderServiceUrl: props.envVars.ORDER_SERVICE_URL,
-      orderServiceHttpClient: props.orderServiceHttpClient,
     });
 
     /* filler addr table */
@@ -552,7 +536,7 @@ export class APIStack extends cdk.Stack {
       });
       const share = props.egressProxyWebhookSharePercent;
       if (share !== undefined) {
-        validateEgressProxyShare(share, props.webhookHttpClient);
+        validateEgressProxyShare(share);
         for (const fn of [quoteLambda, hardQuoteLambda]) {
           fn.addEnvironment(EGRESS_PROXY_URL_ENV, egressProxy.proxyUrl);
           fn.addEnvironment(EGRESS_PROXY_WEBHOOK_SHARE_ENV, String(share));
@@ -680,11 +664,8 @@ export class APIStack extends cdk.Stack {
 }
 
 // Fails the synth rather than deploying a share the Lambdas would treat as 0.
-export function validateEgressProxyShare(share: number, webhookHttpClient: HttpClient | undefined): void {
+export function validateEgressProxyShare(share: number): void {
   if (!Number.isInteger(share) || share < 0 || share > 100) {
     throw new Error(`egressProxyWebhookSharePercent must be a whole number from 0 to 100, got ${share}`);
-  }
-  if (share > 0 && webhookHttpClient !== HttpClient.FETCH) {
-    throw new Error('egressProxyWebhookSharePercent needs webhookHttpClient: fetch');
   }
 }

@@ -15,11 +15,10 @@ import {
   proxiedFetch,
   Quoter,
   splitFetch,
-  WebhookHttp,
   WebhookQuoter,
 } from '../../quoters';
 import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
-import { fetchHttp, HttpClient, WEBHOOK_HTTP_CLIENT_ENV } from '../../util/fetch-http';
+import { FetchFn, timedFetch } from '../../util/fetch-http';
 import { STAGE } from '../../util/stage';
 import { ApiRInj } from '../base/api-handler';
 
@@ -88,7 +87,7 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
   const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
   const quoters: Quoter[] = [
-    new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, selectWebhookHttp(log)),
+    new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, selectWebhookFetch(log)),
   ];
 
   return {
@@ -99,32 +98,22 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
 }
 
 /**
- * The market-maker webhook client for this container, chosen by WEBHOOK_HTTP_CLIENT. Undefined
- * means WebhookQuoter's axios default. On the fetch client, EGRESS_PROXY_WEBHOOK_SHARE_PERCENT of
- * calls go through the egress proxy at EGRESS_PROXY_URL and the rest go direct. Logged once per
- * container so the client and share in use are visible.
+/**
+ * The fetch the market-maker webhooks use in this container. EGRESS_PROXY_WEBHOOK_SHARE_PERCENT
+ * of calls go through the egress proxy at EGRESS_PROXY_URL; the rest go direct. A missing,
+ * invalid or zero share, or no proxy address, sends every call direct. Logged once per container
+ * so the share in use is visible.
  */
-export function selectWebhookHttp(log: Logger, env: NodeJS.ProcessEnv = process.env): WebhookHttp | undefined {
-  const useFetch = env[WEBHOOK_HTTP_CLIENT_ENV] === HttpClient.FETCH;
+export function selectWebhookFetch(log: Logger, env: NodeJS.ProcessEnv = process.env): FetchFn {
   const proxyUrl = env[EGRESS_PROXY_URL_ENV];
   const rawShare = env[EGRESS_PROXY_WEBHOOK_SHARE_ENV];
   const share = parseEgressProxyShare(rawShare);
   if (rawShare !== undefined && share === undefined) {
     log.warn({ rawShare }, 'Invalid egress proxy share; sending every webhook call direct');
   }
-  // The proxy path is built on the fetch client, so axios always goes direct.
-  const proxyShare = useFetch && proxyUrl ? share ?? 0 : 0;
-  if (!useFetch && share) {
-    log.warn({ share }, 'Egress proxy share ignored: it needs the fetch webhook client');
-  }
-  log.info(
-    { webhookHttpClient: useFetch ? HttpClient.FETCH : HttpClient.AXIOS, egressProxyShare: proxyShare },
-    'Webhook HTTP client'
-  );
-  if (!useFetch) {
-    return undefined;
-  }
-  return proxyUrl && proxyShare > 0 ? fetchHttp(splitFetch(fetch, proxiedFetch(proxyUrl), proxyShare)) : fetchHttp();
+  const proxyShare = proxyUrl ? share ?? 0 : 0;
+  log.info({ egressProxyShare: proxyShare }, 'Webhook egress');
+  return proxyUrl && proxyShare > 0 ? splitFetch(timedFetch, proxiedFetch(proxyUrl), proxyShare) : timedFetch;
 }
 
 /**

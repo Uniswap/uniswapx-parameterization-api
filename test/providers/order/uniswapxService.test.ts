@@ -1,11 +1,10 @@
 import { CosignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { AxiosError } from 'axios';
 import { default as Logger } from 'bunyan';
 
 import { ErrorResponse } from '../../../lib/handlers/base';
 import { UniswapXServiceProvider } from '../../../lib/providers/order';
 import { ErrorCode } from '../../../lib/util/errors';
-import { FakeHttp } from '../../fakes';
+import { FakeFetch, FetchReply, fetchNetworkError, fetchTimeoutError } from '../../fakes';
 
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
@@ -23,71 +22,66 @@ function buildOrderStub(): CosignedV2DutchOrder {
   return order;
 }
 
-function buildTimeoutError(): AxiosError {
-  return new AxiosError('timeout of 7000ms exceeded', AxiosError.ECONNABORTED);
-}
+const buildTimeoutError = fetchTimeoutError;
 
-function buildRejection(): AxiosError {
-  const error = new AxiosError('Request failed with status code 400');
-  error.response = {
-    status: 400,
-    data: { errorCode: 'VALIDATION_ERROR', detail: 'Order expired' },
-  } as never;
-  return error;
+function buildRejection(): FetchReply {
+  return { status: 400, data: { errorCode: 'VALIDATION_ERROR', detail: 'Order expired' } };
 }
 
 describe('UniswapXServiceProvider postOrder', () => {
-  let http: FakeHttp;
+  let http: FakeFetch;
   let provider: UniswapXServiceProvider;
 
   beforeEach(() => {
-    http = new FakeHttp();
-    provider = new UniswapXServiceProvider(logger, SERVICE_URL, http);
+    http = new FakeFetch();
+    provider = new UniswapXServiceProvider(logger, SERVICE_URL, http.fetch);
   });
 
   it('returns the order service response on success', async () => {
-    http.reply('post', { status: 201, data: { hash: ORDER_HASH } });
+    http.reply('POST', { status: 201, data: { hash: ORDER_HASH } });
 
     const response = await provider.postOrder({ order: buildOrderStub(), signature: '0xsig' });
 
     expect(response).toEqual({ statusCode: 201, data: { hash: ORDER_HASH } });
     expect(http.calls).toEqual([
       {
-        method: 'post',
+        method: 'POST',
         url: `${SERVICE_URL}dutch-auction/order`,
         body: expect.objectContaining({ encodedOrder: '0xencoded', chainId: 1 }),
-        config: { timeout: 7000 },
+        headers: {},
+        timeoutMs: 7000,
       },
     ]);
   });
 
   it('passes through a genuine rejection from the order service', async () => {
-    http.reply('post', buildRejection());
+    http.reply('POST', buildRejection());
 
     const response = (await provider.postOrder({ order: buildOrderStub(), signature: '0xsig' })) as ErrorResponse;
 
     expect(response.statusCode).toEqual(400);
     expect(response.detail).toEqual('Order expired');
-    expect(http.callsTo('get')).toHaveLength(0);
+    expect(http.callsTo('GET')).toHaveLength(0);
   });
 
   it('reconciles a timeout and reports success when the order was accepted', async () => {
-    http.reply('post', buildTimeoutError()).reply('get', { data: { orders: [{ orderHash: ORDER_HASH }] } });
+    http.reply('POST', buildTimeoutError()).reply('GET', { data: { orders: [{ orderHash: ORDER_HASH }] } });
 
     const response = await provider.postOrder({ order: buildOrderStub(), signature: '0xsig' });
 
     expect(response).toEqual({ statusCode: 201, data: { hash: ORDER_HASH } });
-    expect(http.callsTo('get')).toEqual([
+    expect(http.callsTo('GET')).toEqual([
       {
-        method: 'get',
-        url: `${SERVICE_URL}dutch-auction/orders`,
-        config: { params: { chainId: 1, orderHash: ORDER_HASH }, timeout: 2000 },
+        method: 'GET',
+        url: `${SERVICE_URL}dutch-auction/orders?chainId=1&orderHash=${ORDER_HASH}`,
+        headers: {},
+        timeoutMs: 2000,
       },
     ]);
   });
 
   it('returns a 500 when a timed-out order cannot be found on reconcile', async () => {
-    http.reply('post', buildTimeoutError()).reply('get', { data: { orders: [] } });
+    http.reply('POST', buildTimeoutError()).reply('GET', { data: { orders: [] } });
 
     const response = (await provider.postOrder({ order: buildOrderStub(), signature: '0xsig' })) as ErrorResponse;
 
@@ -99,7 +93,7 @@ describe('UniswapXServiceProvider postOrder', () => {
   });
 
   it('returns a 500 with the order hash when the reconcile request itself fails', async () => {
-    http.reply('post', buildTimeoutError()).reply('get', new Error('network down'));
+    http.reply('POST', buildTimeoutError()).reply('GET', fetchNetworkError('network down'));
 
     const response = (await provider.postOrder({ order: buildOrderStub(), signature: '0xsig' })) as ErrorResponse;
 
@@ -109,7 +103,7 @@ describe('UniswapXServiceProvider postOrder', () => {
   });
 
   it('does not attach order data to a genuine rejection', async () => {
-    http.reply('post', buildRejection());
+    http.reply('POST', buildRejection());
 
     const response = (await provider.postOrder({ order: buildOrderStub(), signature: '0xsig' })) as ErrorResponse;
 

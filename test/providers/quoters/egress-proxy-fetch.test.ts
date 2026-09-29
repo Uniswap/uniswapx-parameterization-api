@@ -1,18 +1,16 @@
-import { AxiosError } from 'axios';
 import Logger from 'bunyan';
 import http, { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'http';
 import net, { AddressInfo } from 'net';
 
-import { selectWebhookHttp } from '../../../lib/handlers/shared/quote-injector';
+import { selectWebhookFetch } from '../../../lib/handlers/shared/quote-injector';
 import {
   EGRESS_PROXY_URL_ENV,
   EGRESS_PROXY_WEBHOOK_SHARE_ENV,
   parseEgressProxyShare,
   proxiedFetch,
   splitFetch,
-  WebhookHttp,
 } from '../../../lib/quoters';
-import { FetchFn, fetchHttp, WEBHOOK_HTTP_CLIENT_ENV } from '../../../lib/util/fetch-http';
+import { FetchFn, fetchJson, HttpError, timedFetch } from '../../../lib/util/fetch-http';
 
 // A market-maker stand-in and a CONNECT-tunneling forward proxy, both real local servers. The
 // proxy behaves like the squid egress proxy for these purposes: it tunnels CONNECT to any
@@ -118,32 +116,32 @@ beforeEach(() => {
 
 type Outcome =
   | { kind: 'resolved'; status: number; data: unknown }
-  | { kind: 'rejected'; isAxiosError: boolean; code?: string; message: string; responseStatus?: number };
+  | { kind: 'rejected'; errorKind: HttpError['kind'] | 'unexpected'; message: string; status?: number; data?: unknown };
 
-async function outcomeOf(client: WebhookHttp, url: string, timeout = 500): Promise<Outcome> {
+// A webhook call exactly as WebhookQuoter makes it: fetchJson over the given fetch.
+async function outcomeOf(fetchFn: FetchFn, url: string, timeoutMs = 500): Promise<Outcome> {
   try {
-    const res = await client.post(url, { hello: 'world' }, { timeout, headers: { 'x-api-key': 'k' } });
+    const res = await fetchJson<unknown>(fetchFn, url, {
+      method: 'POST',
+      body: { hello: 'world' },
+      headers: { 'x-api-key': 'k' },
+      timeoutMs,
+    });
     return { kind: 'resolved', status: res.status, data: res.data };
   } catch (e) {
-    const err = e as AxiosError;
-    return {
-      kind: 'rejected',
-      isAxiosError: e instanceof AxiosError,
-      code: err.code,
-      message: err.message,
-      responseStatus: err.response?.status,
-    };
+    return e instanceof HttpError
+      ? { kind: 'rejected', errorKind: e.kind, message: e.message, status: e.status, data: e.data }
+      : { kind: 'rejected', errorKind: 'unexpected', message: String(e) };
   }
 }
 
 describe('proxiedFetch', () => {
-  const direct = () => fetchHttp();
-  const viaProxy = () => fetchHttp(proxiedFetch(proxyUrl));
+  const viaProxy = () => proxiedFetch(proxyUrl);
 
   it.each([['/json'], ['/text'], ['/empty'], ['/no-content'], ['/not-found'], ['/server-error']])(
     '%s resolves or rejects exactly as a direct call does, through a tunnel',
     async (path) => {
-      const expected = await outcomeOf(direct(), `${baseUrl}${path}`);
+      const expected = await outcomeOf(timedFetch, `${baseUrl}${path}`);
       const actual = await outcomeOf(viaProxy(), `${baseUrl}${path}`);
       expect(actual).toEqual(expected);
       expect(tunnels).toEqual([new URL(baseUrl).host]);
@@ -151,7 +149,7 @@ describe('proxiedFetch', () => {
   );
 
   it('delivers the same method, body and headers to the market maker', async () => {
-    await outcomeOf(direct(), `${baseUrl}/json`);
+    await outcomeOf(timedFetch, `${baseUrl}/json`);
     await outcomeOf(viaProxy(), `${baseUrl}/json`);
     const [viaDirect, proxied] = recorded;
     expect(proxied.body).toEqual(viaDirect.body);
@@ -160,24 +158,23 @@ describe('proxiedFetch', () => {
     }
   });
 
-  it('keeps the timeout: a response slower than the deadline is a timeout (ECONNABORTED)', async () => {
+  it('keeps the whole-request deadline: a response slower than it is a timeout', async () => {
     const outcome = await outcomeOf(viaProxy(), `${baseUrl}/slow`, 200);
-    expect(outcome).toMatchObject({ kind: 'rejected', isAxiosError: true, code: 'ECONNABORTED' });
+    expect(outcome).toMatchObject({ kind: 'rejected', errorKind: 'timeout', message: 'timeout of 200ms exceeded' });
   });
 
-  it('an unreachable market maker is a network error, not a timeout or an HTTP response', async () => {
+  it('an unreachable market maker is a network error, not a timeout or an HTTP status', async () => {
     const outcome = await outcomeOf(viaProxy(), `${closedPortUrl}/json`);
-    expect(outcome).toMatchObject({ kind: 'rejected', isAxiosError: true, responseStatus: undefined });
-    expect(outcome).not.toMatchObject({ code: 'ECONNABORTED' });
+    expect(outcome).toMatchObject({ kind: 'rejected', errorKind: 'network', status: undefined });
   });
 });
 
 describe('splitFetch', () => {
   const direct: FetchFn = async () => new Response('direct');
   const proxied: FetchFn = async () => new Response('proxied');
-  const routeOf = async (fn: FetchFn) => (await fn('http://x', {})).text();
+  const routeOf = async (fn: FetchFn) => (await fn('http://x')).text();
 
-  it('returns the direct client at 0% and the proxied client at 100%', () => {
+  it('returns the direct fetch at 0% and the proxied fetch at 100%', () => {
     expect(splitFetch(direct, proxied, 0)).toBe(direct);
     expect(splitFetch(direct, proxied, 100)).toBe(proxied);
   });
@@ -188,6 +185,17 @@ describe('splitFetch', () => {
     const routes = [];
     for (let i = 0; i < 4; i++) routes.push(await routeOf(split));
     expect(routes).toEqual(['proxied', 'direct', 'proxied', 'direct']);
+  });
+
+  it('passes the timeout config through to the chosen fetch', async () => {
+    const seen: Array<number | undefined> = [];
+    const recording: FetchFn = async (_i, _init, config) => {
+      seen.push(config?.timeoutMs);
+      return new Response('');
+    };
+    await splitFetch(recording, recording, 50, () => 0)('http://x', {}, { timeoutMs: 123 });
+    await splitFetch(recording, recording, 50, () => 0.9)('http://x', {}, { timeoutMs: 456 });
+    expect(seen).toEqual([123, 456]);
   });
 });
 
@@ -203,60 +211,33 @@ describe('parseEgressProxyShare', () => {
   );
 });
 
-describe('selectWebhookHttp with the egress proxy', () => {
+describe('selectWebhookFetch', () => {
   const log = { info: jest.fn(), warn: jest.fn() };
-  const select = (env: NodeJS.ProcessEnv) => selectWebhookHttp(log as unknown as Logger, env);
-  const defined = (client: WebhookHttp | undefined): WebhookHttp => {
-    if (!client) throw new Error('expected the fetch client');
-    return client;
-  };
+  const select = (env: NodeJS.ProcessEnv) => selectWebhookFetch(log as unknown as Logger, env);
   beforeEach(() => jest.clearAllMocks());
 
-  const fetchEnv = (extra: Record<string, string>) => ({ [WEBHOOK_HTTP_CLIENT_ENV]: 'fetch', ...extra });
-
   it('sends every call through the proxy at 100%', async () => {
-    const client = select(fetchEnv({ [EGRESS_PROXY_URL_ENV]: proxyUrl, [EGRESS_PROXY_WEBHOOK_SHARE_ENV]: '100' }));
-    expect(await outcomeOf(defined(client), `${baseUrl}/json`)).toMatchObject({ kind: 'resolved', status: 200 });
+    const fetchFn = select({ [EGRESS_PROXY_URL_ENV]: proxyUrl, [EGRESS_PROXY_WEBHOOK_SHARE_ENV]: '100' });
+    expect(await outcomeOf(fetchFn, `${baseUrl}/json`)).toMatchObject({ kind: 'resolved', status: 200 });
     expect(tunnels).toHaveLength(1);
-    expect(log.info).toHaveBeenLastCalledWith(
-      { webhookHttpClient: 'fetch', egressProxyShare: 100 },
-      'Webhook HTTP client'
-    );
+    expect(log.info).toHaveBeenLastCalledWith({ egressProxyShare: 100 }, 'Webhook egress');
   });
 
-  it('goes direct with no share, a zero share, or no proxy address', async () => {
+  it('goes direct with no share, a zero share, or no proxy address', () => {
     for (const env of [
-      fetchEnv({ [EGRESS_PROXY_URL_ENV]: proxyUrl }),
-      fetchEnv({ [EGRESS_PROXY_URL_ENV]: proxyUrl, [EGRESS_PROXY_WEBHOOK_SHARE_ENV]: '0' }),
-      fetchEnv({ [EGRESS_PROXY_WEBHOOK_SHARE_ENV]: '100' }),
+      { [EGRESS_PROXY_URL_ENV]: proxyUrl },
+      { [EGRESS_PROXY_URL_ENV]: proxyUrl, [EGRESS_PROXY_WEBHOOK_SHARE_ENV]: '0' },
+      { [EGRESS_PROXY_WEBHOOK_SHARE_ENV]: '100' },
+      {},
     ]) {
-      const client = select(env);
-      expect(await outcomeOf(defined(client), `${baseUrl}/json`)).toMatchObject({ kind: 'resolved' });
-      expect(log.info).toHaveBeenLastCalledWith(
-        { webhookHttpClient: 'fetch', egressProxyShare: 0 },
-        'Webhook HTTP client'
-      );
+      expect(select(env)).toBe(timedFetch);
+      expect(log.info).toHaveBeenLastCalledWith({ egressProxyShare: 0 }, 'Webhook egress');
     }
-    expect(tunnels).toHaveLength(0);
   });
 
-  it('warns and goes direct on an invalid share', async () => {
-    const client = select(fetchEnv({ [EGRESS_PROXY_URL_ENV]: proxyUrl, [EGRESS_PROXY_WEBHOOK_SHARE_ENV]: '150' }));
-    await outcomeOf(defined(client), `${baseUrl}/json`);
-    expect(tunnels).toHaveLength(0);
+  it('warns and goes direct on an invalid share', () => {
+    const fetchFn = select({ [EGRESS_PROXY_URL_ENV]: proxyUrl, [EGRESS_PROXY_WEBHOOK_SHARE_ENV]: '150' });
+    expect(fetchFn).toBe(timedFetch);
     expect(log.warn).toHaveBeenCalledWith({ rawShare: '150' }, expect.stringContaining('Invalid egress proxy share'));
-  });
-
-  it('ignores the share on the axios client, with a warning', () => {
-    const client = select({
-      [EGRESS_PROXY_URL_ENV]: proxyUrl,
-      [EGRESS_PROXY_WEBHOOK_SHARE_ENV]: '100',
-    });
-    expect(client).toBeUndefined();
-    expect(log.warn).toHaveBeenCalledWith({ share: 100 }, expect.stringContaining('needs the fetch webhook client'));
-    expect(log.info).toHaveBeenLastCalledWith(
-      { webhookHttpClient: 'axios', egressProxyShare: 0 },
-      'Webhook HTTP client'
-    );
   });
 });

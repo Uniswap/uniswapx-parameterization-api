@@ -21,11 +21,12 @@ export function parseEgressProxyShare(raw: string | undefined): number | undefin
 }
 
 /**
- * A fetch that sends every request through the forward proxy at `proxyUrl`. Both HTTPS and
- * plain-HTTP targets go through a CONNECT tunnel (undici's default), so the proxy passes the
- * bytes through untouched and a market maker receives exactly what a direct call would send.
- * undici's own fetch is used with its own ProxyAgent, so the two always match. It is pinned to the
- * latest 6.x, the major Node 22's built-in fetch ships, on a version with no known advisories.
+ * A fetch that sends every request through the forward proxy at `proxyUrl`, with the same
+ * whole-request deadline as `timedFetch`. Both HTTPS and plain-HTTP targets go through a CONNECT
+ * tunnel (undici's default), so the proxy passes the bytes through untouched and a market maker
+ * receives exactly what a direct call would send. undici's own fetch is used with its own
+ * ProxyAgent, so the two always match. It is pinned to the latest 6.x, the major Node 22's
+ * built-in fetch ships, on a version with no known advisories.
  *
  * One behavior differs from a direct call: when the market maker can't be reached, the proxy
  * answers the tunnel request with an error status, so the failure reads as a proxy tunnel error
@@ -34,17 +35,18 @@ export function parseEgressProxyShare(raw: string | undefined): number | undefin
  */
 export function proxiedFetch(proxyUrl: string): FetchFn {
   const dispatcher = new ProxyAgent(proxyUrl);
-  return async (input, init) => {
+  return async (input, init, config) => {
+    const signal = config?.timeoutMs ? AbortSignal.timeout(config.timeoutMs) : init?.signal ?? undefined;
     const response = await undiciFetch(input, {
-      method: init.method,
-      headers: headerEntries(init.headers),
-      body: typeof init.body === 'string' ? init.body : undefined,
-      signal: init.signal ?? undefined,
+      method: init?.method,
+      headers: [...new Headers(init?.headers).entries()],
+      body: typeof init?.body === 'string' ? init.body : undefined,
+      signal,
       dispatcher,
     });
-    // The quoter reads only status, statusText and the text body; a built-in Response carries
-    // those unchanged and keeps FetchFn's return type. An empty body becomes null because the
-    // Response constructor rejects any body, even '', on a no-body status such as 204.
+    // Callers read only status, statusText and the text body; a built-in Response carries those
+    // unchanged and keeps FetchFn's return type. An empty body becomes null because the Response
+    // constructor rejects any body, even '', on a no-body status such as 204.
     const text = await response.text();
     return new Response(text === '' ? null : text, { status: response.status, statusText: response.statusText });
   };
@@ -66,9 +68,6 @@ export function splitFetch(
   if (sharePercent >= 100) {
     return proxied;
   }
-  return (input, init) => (random() * 100 < sharePercent ? proxied(input, init) : direct(input, init));
-}
-
-function headerEntries(headers: RequestInit['headers']): [string, string][] {
-  return [...new Headers(headers).entries()];
+  return (input, init, config) =>
+    random() * 100 < sharePercent ? proxied(input, init, config) : direct(input, init, config);
 }

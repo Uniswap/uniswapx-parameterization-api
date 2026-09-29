@@ -75,7 +75,7 @@ export enum Metric {
   RFQ_WASTED_WAIT = 'RFQ_WASTED_WAIT',
   // Emitted once per fan-out for the endpoint that finished last (set the wall).
   RFQ_STRAGGLER = 'RFQ_STRAGGLER',
-  // Webhook attempts that hit the axios timeout (ECONNABORTED). A strict subset of
+  // Webhook attempts that hit the client timeout (ECONNABORTED). A strict subset of
   // RFQ_FAIL_ERROR, split out because timeouts are the wasted-wait driver.
   RFQ_TIMEOUT = 'RFQ_TIMEOUT',
   // End-to-end handler latency on every response path (200, 404, thrown errors), unlike

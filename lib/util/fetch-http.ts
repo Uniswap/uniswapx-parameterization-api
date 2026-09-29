@@ -1,96 +1,84 @@
-import axios, { AxiosError, AxiosHeaders, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-
-// Which HTTP client a Lambda uses for its outbound calls, set per stage in bin/app.ts, one flag
-// per call site. Anything other than 'fetch' (including unset) keeps axios, so rolling back is a
-// one-line config change.
-export enum HttpClient {
-  AXIOS = 'axios',
-  FETCH = 'fetch',
-}
-
-/** Market-maker webhooks and block notifications, on the two quote Lambdas. */
-export const WEBHOOK_HTTP_CLIENT_ENV = 'WEBHOOK_HTTP_CLIENT';
-/** Order-service calls: the hard-quote order post and its reconciliation, and the fade cron's status reads. */
-export const ORDER_SERVICE_HTTP_CLIENT_ENV = 'ORDER_SERVICE_HTTP_CLIENT';
-
-/** The fetch signature this client needs; injectable so tests can run it without a network. */
-export type FetchFn = (input: string, init: RequestInit) => Promise<Response>;
-
-/** The axios subset the fetch client stands in for. */
-export type FetchHttp = Pick<AxiosInstance, 'get' | 'post'>;
-
-// The headers axios sends, so servers see the same request from either client. Per-call headers
-// are applied on top, case-insensitively. User-Agent is deliberately not copied: it becomes
-// fetch's default instead of `axios/<version>`. Axios only sends Content-Type with a body.
-const ACCEPT = 'application/json, text/plain, */*';
-const JSON_CONTENT_TYPE = 'application/json';
+/**
+ * The outbound fetch every caller takes: the monorepo's `ctx.fetch` shape, with the timeout as a
+ * third argument, so the port can hand in `ctx.fetch` unchanged.
+ */
+export type FetchFn = (input: string, init?: RequestInit, config?: { timeoutMs?: number }) => Promise<Response>;
 
 /**
- * A fetch-based stand-in for the axios `get` and `post` this service uses. It resolves and
- * rejects exactly as axios does, so callers' classification of the outcome (and anything built
- * from it, like analytics records) doesn't change with the client:
- * - 2xx resolves `{ status, data }`, with the body JSON-parsed when it parses and left as text
- *   when it doesn't (an empty body is `''`), matching axios's default response handling.
- * - Any other status rejects an AxiosError `Request failed with status code N` (code
- *   ERR_BAD_REQUEST for 4xx, ERR_BAD_RESPONSE otherwise) carrying the parsed response.
- * - A timeout rejects an AxiosError `timeout of Nms exceeded` with code ECONNABORTED.
- * - A network failure rejects an AxiosError with the underlying message and code.
- * GET `params` are serialized by axios itself, so the URL is byte-for-byte what axios requests.
- *
- * One behavior differs on purpose: the timeout is a wall-clock deadline for the whole request,
- * body included. Axios's timeout restarts on socket activity, so a response that trickles in
- * could outlast it; here it can't.
+ * The global fetch with `timeoutMs` as a wall-clock deadline over the whole request. The abort
+ * also cancels a body still arriving, so a server that trickles its reply can't outlast it.
+ * (The monorepo's `ctx.fetch` timeout bounds response headers only; the port should keep a
+ * whole-request signal alongside it.)
  */
-export function fetchHttp(fetchFn: FetchFn = fetch): FetchHttp {
-  return {
-    get: (url: string, config?: AxiosRequestConfig) =>
-      request(fetchFn, 'GET', config?.params ? axios.getUri({ url, params: config.params }) : url, undefined, config),
-    post: (url: string, body?: unknown, config?: AxiosRequestConfig) => request(fetchFn, 'POST', url, body, config),
-  } as FetchHttp;
+export const timedFetch: FetchFn = (input, init, config) =>
+  fetch(input, config?.timeoutMs ? { ...init, signal: AbortSignal.timeout(config.timeoutMs) } : init);
+
+/**
+ * A request that didn't produce a 2xx: the server answered with another status (`status` and the
+ * parsed body in `data`), the deadline passed, or the connection failed. Only `status` failures
+ * mean the server saw and refused the request.
+ */
+export class HttpError extends Error {
+  override readonly name = 'HttpError';
+
+  constructor(
+    message: string,
+    readonly kind: 'status' | 'timeout' | 'network',
+    readonly status?: number,
+    readonly data?: unknown
+  ) {
+    super(message);
+  }
 }
 
-async function request(
+export interface JsonRequest {
+  method: 'GET' | 'POST';
+  body?: unknown;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+/**
+ * Sends a request with a JSON body (when there is one) and reads the reply, JSON-parsed when it
+ * parses and text when it doesn't (`''` when empty). A 2xx resolves; anything else throws an
+ * HttpError. The messages are the ones the analytics records and logs have always carried.
+ */
+export async function fetchJson<T>(
   fetchFn: FetchFn,
-  method: 'GET' | 'POST',
   url: string,
-  body: unknown,
-  config: AxiosRequestConfig | undefined
-): Promise<AxiosResponse> {
-  const timeoutMs = config?.timeout;
-  const headers = new Headers({ Accept: ACCEPT, ...(body !== undefined && { 'Content-Type': JSON_CONTENT_TYPE }) });
-  for (const [name, value] of Object.entries(config?.headers ?? {})) {
-    if (typeof value === 'string') {
-      headers.set(name, value);
-    }
+  { method, body, headers, timeoutMs }: JsonRequest
+): Promise<{ status: number; data: T }> {
+  // Per-endpoint headers replace a default of the same name, whatever its case.
+  const requestHeaders = new Headers({
+    Accept: 'application/json, text/plain, */*',
+    ...(body !== undefined && { 'Content-Type': 'application/json' }),
+  });
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    requestHeaders.set(name, value);
   }
 
   let response: Response;
   let text: string;
   try {
-    response = await fetchFn(url, {
-      method,
-      headers,
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
-    });
-    // Read under the same deadline: the signal also aborts a body still arriving.
+    response = await fetchFn(
+      url,
+      { method, headers: requestHeaders, ...(body !== undefined && { body: JSON.stringify(body) }) },
+      { timeoutMs }
+    );
+    // Read under the same deadline: the abort also cancels a body still arriving.
     text = await response.text();
   } catch (e) {
-    throw toAxiosError(e, timeoutMs);
+    throw isTimeout(e)
+      ? new HttpError(timeoutMs ? `timeout of ${timeoutMs}ms exceeded` : 'timeout exceeded', 'timeout')
+      : new HttpError(networkMessage(e), 'network');
   }
 
   const data = parseBody(text);
-  const axiosResponse = toAxiosResponse(response.status, response.statusText, data);
-  if (response.status >= 200 && response.status < 300) {
-    return axiosResponse;
+  if (!response.ok) {
+    throw new HttpError(`Request failed with status code ${response.status}`, 'status', response.status, data);
   }
-  throw new AxiosError(
-    `Request failed with status code ${response.status}`,
-    response.status >= 400 && response.status < 500 ? AxiosError.ERR_BAD_REQUEST : AxiosError.ERR_BAD_RESPONSE,
-    undefined,
-    undefined,
-    axiosResponse
-  );
+  // The body's type is the caller's claim about the server; it is not validated here.
+  return { status: response.status, data: data as T };
 }
 
 function parseBody(text: string): unknown {
@@ -104,31 +92,25 @@ function parseBody(text: string): unknown {
   }
 }
 
-function toAxiosResponse(status: number, statusText: string, data: unknown): AxiosResponse {
-  return { status, statusText, data, headers: {}, config: { headers: new AxiosHeaders() } };
+// By name, not instanceof: the abort is a DOMException, which isn't an Error subclass in every
+// runtime, and the monorepo's ErrTimeout may come from another bundle's copy of the class.
+function isTimeout(e: unknown): boolean {
+  const name = field(e, 'name');
+  return name === 'TimeoutError' || name === 'AbortError' || name === 'ErrTimeout';
 }
 
-function toAxiosError(e: unknown, timeoutMs: number | undefined): AxiosError {
-  // Checked by name, not instanceof: the abort is a DOMException, which isn't an Error subclass
-  // in every runtime.
-  const name = errorField(e, 'name');
-  if (name === 'TimeoutError' || name === 'AbortError') {
-    return new AxiosError(
-      timeoutMs ? `timeout of ${timeoutMs}ms exceeded` : 'timeout exceeded',
-      AxiosError.ECONNABORTED
-    );
-  }
-  // fetch reports network failures as `TypeError: fetch failed` with the socket error as the cause.
-  // Wrapped with AxiosError.from, as axios does, so the error keeps the socket error's name, message
-  // and code (e.g. `Error: connect ECONNREFUSED ...`).
+// fetch reports a network failure as `TypeError: fetch failed` with the socket error as the cause;
+// the cause's message (e.g. `connect ECONNREFUSED 10.0.0.1:443`) is the useful part.
+function networkMessage(e: unknown): string {
   const cause = typeof e === 'object' && e !== null && 'cause' in e && e.cause ? e.cause : e;
-  return AxiosError.from(cause, errorField(cause, 'code'));
+  return field(cause, 'message') ?? String(cause);
 }
 
-function errorField(e: unknown, field: 'name' | 'message' | 'code'): string | undefined {
-  if (typeof e !== 'object' || e === null || !(field in e)) {
+// Duck-typed: errors thrown by Node's own fetch fail `instanceof Error` under jest's realm.
+function field(e: unknown, name: 'name' | 'message'): string | undefined {
+  if (typeof e !== 'object' || e === null || !(name in e)) {
     return undefined;
   }
-  const value = (e as Record<string, unknown>)[field];
+  const value = (e as Record<string, unknown>)[name];
   return typeof value === 'string' ? value : undefined;
 }

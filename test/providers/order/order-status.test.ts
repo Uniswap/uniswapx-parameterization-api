@@ -3,9 +3,9 @@ import { default as Logger } from 'bunyan';
 import {
   ORDER_SERVICE_MAX_ORDER_HASHES,
   ORDER_STATUS_TIMEOUT_MS,
-  OrderServiceHttp,
   UniswapXServiceProvider,
 } from '../../../lib/providers/order/uniswapxService';
+import { FakeFetch, fetchTimeoutError } from '../../fakes';
 
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
@@ -13,39 +13,28 @@ logger.level(Logger.FATAL);
 const SERVICE_URL = 'https://api.example.com/';
 const hash = (i: number) => `0x${i.toString(16).padStart(64, '0')}`;
 
-// Records every GET and answers with a canned body; no axios module mocking.
-class FakeHttp implements OrderServiceHttp {
-  public calls: { url: string; config: unknown }[] = [];
-  constructor(private readonly body: unknown = {}, private readonly error?: Error) {}
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  get = async (url: string, config?: unknown): Promise<any> => {
-    this.calls.push({ url, config });
-    if (this.error) throw this.error;
-    return { status: 200, data: this.body };
-  };
-  // The status read never posts; fail loudly if that ever changes.
-  post = async (url: string): Promise<never> => {
-    throw new Error(`unexpected POST ${url}`);
-  };
-}
+// The status read only GETs: each test queues exactly the bodies it expects to be asked for.
+const answering = (...bodies: unknown[]) => new FakeFetch().reply('GET', ...bodies.map((data) => ({ data })));
 
 describe('UniswapXServiceProvider getOrdersByHashes', () => {
   it('queries GET /dutch-auction/orders with a comma-joined orderHashes param and a bounded timeout', async () => {
-    const http = new FakeHttp({ orders: [] });
-    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, http);
+    const http = answering({ orders: [] });
+    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, http.fetch);
 
     await provider.getOrdersByHashes([hash(1), hash(2)]);
 
     expect(http.calls).toEqual([
       {
-        url: `${SERVICE_URL}dutch-auction/orders`,
-        config: { params: { orderHashes: `${hash(1)},${hash(2)}` }, timeout: ORDER_STATUS_TIMEOUT_MS },
+        method: 'GET',
+        url: `${SERVICE_URL}dutch-auction/orders?orderHashes=${hash(1)},${hash(2)}`,
+        headers: {},
+        timeoutMs: ORDER_STATUS_TIMEOUT_MS,
       },
     ]);
   });
 
   it('maps status and fill timing, lowercases hashes, and drops malformed items', async () => {
-    const http = new FakeHttp({
+    const http = answering({
       orders: [
         {
           orderHash: hash(1).toUpperCase().replace('0X', '0x'),
@@ -61,7 +50,7 @@ describe('UniswapXServiceProvider getOrdersByHashes', () => {
         null,
       ],
     });
-    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, http);
+    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, http.fetch);
 
     const statuses = await provider.getOrdersByHashes([hash(1), hash(2), hash(3), hash(4)]);
 
@@ -74,21 +63,21 @@ describe('UniswapXServiceProvider getOrdersByHashes', () => {
   });
 
   it('returns [] for an empty batch without calling the service', async () => {
-    const http = new FakeHttp();
-    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, http);
+    const http = answering();
+    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, http.fetch);
 
     expect(await provider.getOrdersByHashes([])).toEqual([]);
     expect(http.calls).toEqual([]);
   });
 
   it('returns [] when the body has no orders array', async () => {
-    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, new FakeHttp({ detail: 'weird' }));
+    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, answering({ detail: 'weird' }).fetch);
     expect(await provider.getOrdersByHashes([hash(1)])).toEqual([]);
   });
 
   it('refuses a batch over the order service cap instead of sending a request that would 400', async () => {
-    const http = new FakeHttp({ orders: [] });
-    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, http);
+    const http = answering({ orders: [] });
+    const provider = new UniswapXServiceProvider(logger, SERVICE_URL, http.fetch);
     const tooMany = Array.from({ length: ORDER_SERVICE_MAX_ORDER_HASHES + 1 }, (_, i) => hash(i + 1));
 
     await expect(provider.getOrdersByHashes(tooMany)).rejects.toThrow(/exceeds the order service cap/);
@@ -100,7 +89,7 @@ describe('UniswapXServiceProvider getOrdersByHashes', () => {
     const provider = new UniswapXServiceProvider(
       logger,
       SERVICE_URL,
-      new FakeHttp(undefined, new Error('timeout of 5000ms exceeded'))
+      new FakeFetch().reply('GET', fetchTimeoutError()).fetch
     );
     await expect(provider.getOrdersByHashes([hash(1)])).rejects.toThrow('timeout of 5000ms exceeded');
   });

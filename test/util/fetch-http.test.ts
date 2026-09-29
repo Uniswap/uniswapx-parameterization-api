@@ -1,30 +1,27 @@
 import { TradeType } from '@uniswap/sdk-core';
 import { CosignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import axios, { AxiosError } from 'axios';
 import { default as Logger } from 'bunyan';
 import { ethers } from 'ethers';
 import http, { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'http';
 import { AddressInfo } from 'net';
 
 import { AnalyticsEventType, QuoteRequest } from '../../lib/entities';
-import { selectWebhookHttp } from '../../lib/handlers/shared/quote-injector';
 import {
   MockWebhookConfigurationProvider,
-  OrderServiceHttp,
   ProtocolVersion,
-  selectOrderServiceHttp,
   UniswapXServiceProvider,
   WebhookConfiguration,
 } from '../../lib/providers';
 import { MockV2CircuitBreakerConfigurationProvider } from '../../lib/providers/circuit-breaker/mock';
-import { WebhookHttp, WebhookQuoter } from '../../lib/quoters';
-import { fetchHttp, ORDER_SERVICE_HTTP_CLIENT_ENV, WEBHOOK_HTTP_CLIENT_ENV } from '../../lib/util/fetch-http';
+import { WebhookQuoter } from '../../lib/quoters';
+import { fetchJson, HttpError, timedFetch } from '../../lib/util/fetch-http';
 import { FakeAnalyticsLogger, fakeContext } from '../fakes';
 
-// Every test here runs both clients against the same real HTTP server and asserts they agree.
-// The callers' classification of an outcome (the quoter's quote / non-quote / timeout / error and
-// the analytics records it writes; the order post's accepted / rejected / reconciled) is keyed off
-// what axios resolves and rejects, so "the same" is the contract.
+// Every test here runs the client against a real local HTTP server. The expected values are the
+// ones the service produced on axios, which its analytics records, logs and dashboards were built
+// on: the callers' classification of an outcome (the quoter's quote / non-quote / timeout / error;
+// the order post's accepted / rejected / reconciled) is keyed off how the client resolves and
+// rejects, so those are pinned exactly.
 
 interface RecordedRequest {
   method: string;
@@ -175,39 +172,35 @@ type Outcome =
   | { kind: 'resolved'; status: number; data: unknown }
   | {
       kind: 'rejected';
-      isAxiosError: boolean;
+      isHttpError: boolean;
       code?: string;
       message: string;
       asString: string;
-      responseStatus?: number;
-      responseData?: unknown;
+      errorKind: string;
+      status?: number;
+      data?: unknown;
     };
 
-async function outcomeOf(client: WebhookHttp, url: string, timeout = 500): Promise<Outcome> {
+async function outcomeOf(url: string, timeout = 500): Promise<Outcome> {
   try {
-    const res = await client.post(url, { hello: 'world' }, { timeout });
+    const res = await fetchJson(timedFetch, url, { method: 'POST', body: { hello: 'world' }, timeoutMs: timeout });
     return { kind: 'resolved', status: res.status, data: res.data };
   } catch (e) {
-    const err = e as AxiosError;
+    const err = e as HttpError;
     return {
       kind: 'rejected',
-      isAxiosError: e instanceof AxiosError,
-      code: err.code,
+      isHttpError: e instanceof HttpError,
+      errorKind: err.kind,
       message: err.message,
       // What the quoter writes into the analytics record's `axiosError` field.
       asString: `${e}`,
-      responseStatus: err.response?.status,
-      responseData: err.response?.data,
+      status: err.status,
+      data: err.data,
     };
   }
 }
 
-const clients: Array<[string, () => WebhookHttp]> = [
-  ['axios', () => axios],
-  ['fetch', () => fetchHttp()],
-];
-
-describe('fetchHttp resolves and rejects like axios', () => {
+describe('fetchJson resolves and rejects', () => {
   const cases: Array<[string, string, Outcome]> = [
     ['200 JSON', '/json', { kind: 'resolved', status: 200, data: { ok: true, n: 1 } }],
     ['200 non-JSON text', '/text', { kind: 'resolved', status: 200, data: 'not json' }],
@@ -219,12 +212,12 @@ describe('fetchHttp resolves and rejects like axios', () => {
       '/not-found',
       {
         kind: 'rejected',
-        isAxiosError: true,
-        code: 'ERR_BAD_REQUEST',
+        isHttpError: true,
+        errorKind: 'status',
         message: 'Request failed with status code 404',
-        asString: 'AxiosError: Request failed with status code 404',
-        responseStatus: 404,
-        responseData: { error: 'nope' },
+        asString: 'HttpError: Request failed with status code 404',
+        status: 404,
+        data: { error: 'nope' },
       },
     ],
     [
@@ -232,90 +225,89 @@ describe('fetchHttp resolves and rejects like axios', () => {
       '/server-error',
       {
         kind: 'rejected',
-        isAxiosError: true,
-        code: 'ERR_BAD_RESPONSE',
+        isHttpError: true,
+        errorKind: 'status',
         message: 'Request failed with status code 500',
-        asString: 'AxiosError: Request failed with status code 500',
-        responseStatus: 500,
-        responseData: 'boom',
+        asString: 'HttpError: Request failed with status code 500',
+        status: 500,
+        data: 'boom',
       },
     ],
   ];
 
   it.each(cases)('%s', async (_name, path, expected) => {
-    for (const [, make] of clients) {
-      expect(await outcomeOf(make(), `${baseUrl}${path}`)).toEqual(expected);
-    }
+    expect(await outcomeOf(`${baseUrl}${path}`)).toEqual(expected);
   });
 
-  it('a response slower than the timeout is a timeout (ECONNABORTED), same message', async () => {
-    const expected: Outcome = {
+  it('a response slower than the timeout is a timeout with no status', async () => {
+    expect(await outcomeOf(`${baseUrl}/slow`, 50)).toEqual({
       kind: 'rejected',
-      isAxiosError: true,
-      code: 'ECONNABORTED',
+      isHttpError: true,
+      errorKind: 'timeout',
       message: 'timeout of 50ms exceeded',
-      asString: 'AxiosError: timeout of 50ms exceeded',
-      responseStatus: undefined,
-      responseData: undefined,
-    };
-    for (const [, make] of clients) {
-      expect(await outcomeOf(make(), `${baseUrl}/slow`, 50)).toEqual(expected);
-    }
-  });
-
-  it('a refused connection is a network error with the same code and message', async () => {
-    const [viaAxios, viaFetch] = await Promise.all(clients.map(([, make]) => outcomeOf(make(), closedPortUrl)));
-    expect(viaAxios).toMatchObject({ kind: 'rejected', isAxiosError: true, code: 'ECONNREFUSED' });
-    expect(viaFetch).toEqual(viaAxios);
-  });
-
-  it('differs on purpose: a body still trickling in at the deadline times out on fetch', async () => {
-    // Axios's timeout restarts on socket activity: 40ms gaps sit far inside a 200ms timeout, so it
-    // resolves. fetch's deadline covers the whole ~480ms body, so it times out. Both margins are
-    // wide enough that a slow CI runner can't flip either result.
-    expect(await outcomeOf(axios, `${baseUrl}/trickle`, TRICKLE_TIMEOUT_MS)).toEqual({
-      kind: 'resolved',
-      status: 200,
-      data: { a: 1 },
+      asString: 'HttpError: timeout of 50ms exceeded',
+      status: undefined,
+      data: undefined,
     });
-    expect(await outcomeOf(fetchHttp(), `${baseUrl}/trickle`, TRICKLE_TIMEOUT_MS)).toMatchObject({
+  });
+
+  it('a refused connection is a network error carrying the socket message', async () => {
+    const outcome = await outcomeOf(closedPortUrl);
+    expect(outcome).toMatchObject({
       kind: 'rejected',
-      code: 'ECONNABORTED',
+      isHttpError: true,
+      errorKind: 'network',
+      status: undefined,
+    });
+    expect(outcome.kind === 'rejected' && outcome.asString).toMatch(
+      /^HttpError: connect ECONNREFUSED 127\.0\.0\.1:\d+$/
+    );
+  });
+
+  it('the deadline covers the whole body: one still trickling in when it passes times out', async () => {
+    // 40ms gaps would each sit well inside the 200ms timeout, but the whole ~480ms body does not.
+    expect(await outcomeOf(`${baseUrl}/trickle`, TRICKLE_TIMEOUT_MS)).toMatchObject({
+      kind: 'rejected',
+      errorKind: 'timeout',
     });
   });
 });
 
-describe('fetchHttp sends what axios sends', () => {
-  async function requestSeenBy(client: WebhookHttp, headers?: Record<string, string>): Promise<RecordedRequest> {
+describe('fetchJson sends', () => {
+  async function postSeen(headers?: Record<string, string>): Promise<RecordedRequest> {
     recorded.length = 0;
-    await client.post(`${baseUrl}/json`, { requestId: 'r1', amount: '10' }, { timeout: 500, headers });
+    await fetchJson(timedFetch, `${baseUrl}/json`, {
+      method: 'POST',
+      body: { requestId: 'r1', amount: '10' },
+      headers,
+      timeoutMs: 500,
+    });
     return recorded[0];
   }
 
-  it('same JSON body, Content-Type and Accept', async () => {
-    const viaAxios = await requestSeenBy(axios);
-    const viaFetch = await requestSeenBy(fetchHttp());
-    expect(viaFetch.body).toEqual(viaAxios.body);
-    expect(viaFetch.headers['content-type']).toEqual(viaAxios.headers['content-type']);
-    expect(viaFetch.headers['accept']).toEqual(viaAxios.headers['accept']);
+  it('the JSON body with JSON Content-Type and the Accept header servers have always seen', async () => {
+    const seen = await postSeen();
+    expect(seen.body).toEqual('{"requestId":"r1","amount":"10"}');
+    expect(seen.headers['content-type']).toEqual('application/json');
+    expect(seen.headers['accept']).toEqual('application/json, text/plain, */*');
   });
 
-  it('per-endpoint headers are sent, and replace a default of the same name in any case', async () => {
-    const endpointHeaders = { 'x-api-key': 'secret', 'content-type': 'application/json; charset=utf-8' };
-    const viaAxios = await requestSeenBy(axios, endpointHeaders);
-    const viaFetch = await requestSeenBy(fetchHttp(), endpointHeaders);
-    expect(viaFetch.headers['x-api-key']).toEqual('secret');
-    expect(viaFetch.headers['x-api-key']).toEqual(viaAxios.headers['x-api-key']);
-    expect(viaFetch.headers['content-type']).toEqual(viaAxios.headers['content-type']);
+  it('per-endpoint headers, replacing a default of the same name in any case', async () => {
+    const seen = await postSeen({ 'x-api-key': 'secret', 'content-type': 'application/json; charset=utf-8' });
+    expect(seen.headers['x-api-key']).toEqual('secret');
+    expect(seen.headers['content-type']).toEqual('application/json; charset=utf-8');
   });
 
-  it('differs on purpose: User-Agent is no longer axios/<version>', async () => {
-    const viaFetch = await requestSeenBy(fetchHttp());
-    expect(viaFetch.headers['user-agent']).not.toMatch(/^axios\//);
+  it('a GET with Accept only and no body', async () => {
+    recorded.length = 0;
+    await fetchJson(timedFetch, `${baseUrl}/json?x=1`, { method: 'GET' });
+    expect(recorded[0]).toMatchObject({ method: 'GET', url: '/json?x=1', body: '' });
+    expect(recorded[0].headers['content-type']).toBeUndefined();
+    expect(recorded[0].headers['accept']).toEqual('application/json, text/plain, */*');
   });
 });
 
-describe('WebhookQuoter classifies every endpoint the same on either client', () => {
+describe('WebhookQuoter on the fetch client', () => {
   const now = Math.floor(Date.now() / 1000);
   // Built per run: the server's port is only known once it's listening.
   const endpointsAt = (base: string): WebhookConfiguration[] => [
@@ -339,7 +331,8 @@ describe('WebhookQuoter classifies every endpoint the same on either client', ()
     protocol: ProtocolVersion.V2,
   });
 
-  async function runWith(client: WebhookHttp) {
+  // No client injected: this is the quoter's default, the one the Lambdas run.
+  it('classifies every endpoint, records it in analytics and notifies the benched one', async () => {
     const configs = endpointsAt(baseUrl);
     const benched = configs.find((c) => c.name === 'benched')!;
     const breaker = new MockV2CircuitBreakerConfigurationProvider(
@@ -365,13 +358,13 @@ describe('WebhookQuoter classifies every endpoint the same on either client', ()
     } as any;
     const analytics = new FakeAnalyticsLogger();
     const fakes = fakeContext('test');
-    recorded.length = 0;
 
-    const quoter = new WebhookQuoter(logger, analytics, new MockWebhookConfigurationProvider(configs), breaker, client);
+    const quoter = new WebhookQuoter(logger, analytics, new MockWebhookConfigurationProvider(configs), breaker);
     const quotes = await quoter.quote(fakes.ctx, request);
     // Block notifications are fire-and-forget; give them a moment to land.
     await new Promise((r) => setTimeout(r, 50));
 
+    expect(quotes).toHaveLength(1);
     const byEndpoint = Object.fromEntries(
       analytics.events
         .filter((e) => e.eventType === AnalyticsEventType.WEBHOOK_RESPONSE)
@@ -380,62 +373,19 @@ describe('WebhookQuoter classifies every endpoint the same on either client', ()
           return [p.name, { responseType: p.responseType, status: p.status, axiosError: p.axiosError }];
         })
     );
-    const notifications = recorded
-      .filter((r) => r.path === '/notify')
-      .map((r) => ({ body: r.body, apiKey: r.headers['x-api-key'] }));
-    return {
-      quoteCount: quotes.length,
-      byEndpoint,
-      metricNames: fakes.metrics.names().slice().sort(),
-      notifications,
-    };
-  }
-
-  it('same quotes, analytics records, metrics and block notifications', async () => {
-    const viaAxios = await runWith(axios);
-    const viaFetch = await runWith(fetchHttp());
-
-    expect(viaAxios.quoteCount).toEqual(1);
-    expect(viaAxios.byEndpoint).toEqual({
+    expect(byEndpoint).toEqual({
       quotes: { responseType: 'OK', status: 200, axiosError: undefined },
       declines: { responseType: 'NON_QUOTE', status: 204, axiosError: undefined },
-      errors: {
-        responseType: 'HTTP_ERROR',
-        status: 500,
-        axiosError: 'AxiosError: Request failed with status code 500',
-      },
-      slow: { responseType: 'TIMEOUT', status: undefined, axiosError: 'AxiosError: timeout of 50ms exceeded' },
+      errors: { responseType: 'HTTP_ERROR', status: 500, axiosError: 'HttpError: Request failed with status code 500' },
+      slow: { responseType: 'TIMEOUT', status: undefined, axiosError: 'HttpError: timeout of 50ms exceeded' },
     });
-    expect(viaAxios.notifications).toEqual([
-      { body: JSON.stringify({ blockUntilTimestamp: now + 100000 }), apiKey: 'k' },
-    ]);
-
-    expect(viaFetch).toEqual(viaAxios);
+    expect(
+      recorded.filter((r) => r.path === '/notify').map((r) => ({ body: r.body, apiKey: r.headers['x-api-key'] }))
+    ).toEqual([{ body: JSON.stringify({ blockUntilTimestamp: now + 100000 }), apiKey: 'k' }]);
   });
 });
 
-describe('selectWebhookHttp', () => {
-  const log = { info: jest.fn(), warn: jest.fn() } as any;
-
-  it('uses fetch only when WEBHOOK_HTTP_CLIENT is fetch', () => {
-    expect(selectWebhookHttp(log, { [WEBHOOK_HTTP_CLIENT_ENV]: 'fetch' })).toBeDefined();
-    expect(log.info).toHaveBeenLastCalledWith(
-      { webhookHttpClient: 'fetch', egressProxyShare: 0 },
-      'Webhook HTTP client'
-    );
-  });
-
-  it.each([['axios'], ['unset'], ['FETCH'], ['anything else']])('keeps axios for %s', (value) => {
-    const env = value === 'unset' ? {} : { [WEBHOOK_HTTP_CLIENT_ENV]: value };
-    expect(selectWebhookHttp(log, env)).toBeUndefined();
-    expect(log.info).toHaveBeenLastCalledWith(
-      { webhookHttpClient: 'axios', egressProxyShare: 0 },
-      'Webhook HTTP client'
-    );
-  });
-});
-
-describe('the order-service client behaves the same on either client', () => {
+describe('UniswapXServiceProvider on the fetch client', () => {
   const logger = Logger.createLogger({ name: 'test' });
   logger.level(Logger.FATAL);
 
@@ -453,75 +403,78 @@ describe('the order-service client behaves the same on either client', () => {
     recorded.map((r) => ({
       method: r.method,
       url: r.url,
-      body: r.body,
+      body: r.body === '' ? undefined : JSON.parse(r.body),
       contentType: r.headers['content-type'],
-      accept: r.headers['accept'],
     }));
 
-  async function postWith(client: OrderServiceHttp) {
+  const POSTED = {
+    method: 'POST',
+    url: '/dutch-auction/order',
+    body: {
+      encodedOrder: '0xencoded',
+      signature: '0xsig',
+      chainId: 1,
+      quoteId: 'q1',
+      requestId: 'r1',
+      orderType: 'Dutch_V2',
+    },
+    contentType: 'application/json',
+  };
+  const RECONCILE_READ = {
+    method: 'GET',
+    url: `/dutch-auction/orders?chainId=1&orderHash=${ORDER_HASH}`,
+    body: undefined,
+    contentType: undefined,
+  };
+
+  // No client injected: this is the provider's default, the one the Lambdas run.
+  async function post() {
     recorded.length = 0;
-    const provider = new UniswapXServiceProvider(logger, `${baseUrl}/`, client);
+    const provider = new UniswapXServiceProvider(logger, `${baseUrl}/`);
     const result = await provider.postOrder({ order: orderStub(), signature: '0xsig', quoteId: 'q1', requestId: 'r1' });
     return { result, requests: seen() };
   }
 
   it('an accepted post', async () => {
-    const viaAxios = await postWith(axios);
-    expect(viaAxios.result).toEqual({ statusCode: 201, data: { hash: ORDER_HASH } });
-    expect(await postWith(fetchHttp())).toEqual(viaAxios);
+    expect(await post()).toEqual({ result: { statusCode: 201, data: { hash: ORDER_HASH } }, requests: [POSTED] });
   });
 
   it('a rejected post passes the service error through', async () => {
     orderPostMode = 'reject';
-    const viaAxios = await postWith(axios);
-    expect(viaAxios.result).toEqual({ statusCode: 400, errorCode: 'VALIDATION_ERROR', detail: 'Order expired' });
-    expect(await postWith(fetchHttp())).toEqual(viaAxios);
+    expect(await post()).toEqual({
+      result: { statusCode: 400, errorCode: 'VALIDATION_ERROR', detail: 'Order expired' },
+      requests: [POSTED],
+    });
   });
 
   it('a dropped post that landed reconciles to success', async () => {
     orderPostMode = 'drop';
     droppedPostLands = true;
-    const viaAxios = await postWith(axios);
-    expect(viaAxios.result).toEqual({ statusCode: 201, data: { hash: ORDER_HASH } });
-    expect(viaAxios.requests.map((r) => r.method)).toEqual(['POST', 'GET']);
-    expect(await postWith(fetchHttp())).toEqual(viaAxios);
+    expect(await post()).toEqual({
+      result: { statusCode: 201, data: { hash: ORDER_HASH } },
+      requests: [POSTED, RECONCILE_READ],
+    });
   });
 
   it('a dropped post that did not land reports indeterminate with the hash', async () => {
     orderPostMode = 'drop';
-    const viaAxios = await postWith(axios);
-    expect(viaAxios.result).toMatchObject({ statusCode: 500, data: { hash: ORDER_HASH } });
-    expect(await postWith(fetchHttp())).toEqual(viaAxios);
+    const { result, requests } = await post();
+    expect(result).toMatchObject({ statusCode: 500, data: { hash: ORDER_HASH } });
+    expect(requests).toEqual([POSTED, RECONCILE_READ]);
   });
 
-  it('the status read requests the same URL and parses the same statuses', async () => {
+  it('the status read keeps the commas literal and parses the statuses', async () => {
+    recorded.length = 0;
     const hashes = ['0xAA', '0xbb', '0xcc'];
-    const readWith = async (client: OrderServiceHttp) => {
-      recorded.length = 0;
-      const provider = new UniswapXServiceProvider(logger, `${baseUrl}/`, client);
-      return { statuses: await provider.getOrdersByHashes(hashes), requests: seen() };
-    };
-    const viaAxios = await readWith(axios);
-    expect(viaAxios.statuses).toEqual(
-      hashes.map((h) => ({ orderHash: h.toLowerCase(), orderStatus: 'filled', fillBlock: 7 }))
-    );
-    // axios keeps the commas literal; the fetch client must request the identical URL.
-    expect(viaAxios.requests[0].url).toEqual('/dutch-auction/orders?orderHashes=0xAA,0xbb,0xcc');
-    expect(await readWith(fetchHttp())).toEqual(viaAxios);
-  });
-});
-
-describe('selectOrderServiceHttp', () => {
-  const log = { info: jest.fn() } as any;
-
-  it('uses fetch only when ORDER_SERVICE_HTTP_CLIENT is fetch', () => {
-    expect(selectOrderServiceHttp(log, { [ORDER_SERVICE_HTTP_CLIENT_ENV]: 'fetch' })).toBeDefined();
-    expect(log.info).toHaveBeenLastCalledWith({ orderServiceHttpClient: 'fetch' }, 'Order service HTTP client');
-  });
-
-  it.each([['axios'], ['unset'], ['FETCH']])('keeps axios for %s', (value) => {
-    const env = value === 'unset' ? {} : { [ORDER_SERVICE_HTTP_CLIENT_ENV]: value };
-    expect(selectOrderServiceHttp(log, env)).toBeUndefined();
-    expect(log.info).toHaveBeenLastCalledWith({ orderServiceHttpClient: 'axios' }, 'Order service HTTP client');
+    const statuses = await new UniswapXServiceProvider(logger, `${baseUrl}/`).getOrdersByHashes(hashes);
+    expect(statuses).toEqual(hashes.map((h) => ({ orderHash: h.toLowerCase(), orderStatus: 'filled', fillBlock: 7 })));
+    expect(seen()).toEqual([
+      {
+        method: 'GET',
+        url: '/dutch-auction/orders?orderHashes=0xAA,0xbb,0xcc',
+        body: undefined,
+        contentType: undefined,
+      },
+    ]);
   });
 });

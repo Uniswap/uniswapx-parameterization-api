@@ -817,7 +817,7 @@ const FailingRFQLogsWidget = (region: string, logGroup: string): LambdaWidget =>
       // Insights treats "double quotes" as a field reference, so the old `msg like "..."` matched
       // nothing at all. The regex needs an inline (?i) flag (Insights rejects a trailing /i) to
       // catch both WebhookQuoter branches, which differ only in case: 'Error fetching quote from'
-      // and 'Axios error fetching quote from'.
+      // and 'HTTP error fetching quote from'.
       query: `SOURCE '${logGroup}' | fields @timestamp, msg\n| filter quoter = 'WebhookQuoter' and msg like /(?i)error fetching quote from/\n| sort @timestamp desc\n| limit 20`,
       region,
       stacked: false,

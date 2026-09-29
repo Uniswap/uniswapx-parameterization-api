@@ -5,7 +5,6 @@ import { NatProvider, Vpc } from 'aws-cdk-lib/aws-ec2';
 import { EGRESS_PROXY_BACKEND_ACCOUNTS, EGRESS_PROXY_WEBHOOK_SHARE_PERCENT } from '../../bin/config';
 import { validateEgressProxyShare } from '../../bin/stacks/api-stack';
 import { EGRESS_PROXY_PORT, EgressProxy } from '../../bin/stacks/egress-proxy';
-import { HttpClient } from '../../lib/util/fetch-http';
 import { STAGE } from '../../lib/util/stage';
 
 // A VPC shaped like the quote Lambdas' VPC: one NAT gateway on a fixed Elastic IP.
@@ -101,17 +100,9 @@ describe('egress proxy webhook share', () => {
     expect(EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.PROD]).toBeUndefined();
   });
 
-  it.each([[0], [5], [100]])('accepts %s on the fetch client', (share) =>
-    expect(() => validateEgressProxyShare(share, HttpClient.FETCH)).not.toThrow()
-  );
+  it.each([[0], [5], [100]])('accepts %s', (share) => expect(() => validateEgressProxyShare(share)).not.toThrow());
 
   it.each([[-1], [101], [2.5], [NaN]])('fails the synth on %s', (share) =>
-    expect(() => validateEgressProxyShare(share, HttpClient.FETCH)).toThrow(/whole number from 0 to 100/)
+    expect(() => validateEgressProxyShare(share)).toThrow(/whole number from 0 to 100/)
   );
-
-  it('fails the synth on a positive share without the fetch client', () => {
-    expect(() => validateEgressProxyShare(10, undefined)).toThrow(/needs webhookHttpClient: fetch/);
-    expect(() => validateEgressProxyShare(10, HttpClient.AXIOS)).toThrow(/needs webhookHttpClient: fetch/);
-    expect(() => validateEgressProxyShare(0, undefined)).not.toThrow();
-  });
 });
