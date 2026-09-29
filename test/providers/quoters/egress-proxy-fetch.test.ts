@@ -1,6 +1,12 @@
 import Logger from 'bunyan';
+import { execFileSync } from 'child_process';
+import fs from 'fs';
 import http, { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'http';
+import https from 'https';
 import net, { AddressInfo } from 'net';
+import os from 'os';
+import path from 'path';
+import { TLSSocket } from 'tls';
 
 import { selectWebhookFetch } from '../../../lib/handlers/shared/quote-injector';
 import {
@@ -12,14 +18,16 @@ import {
 } from '../../../lib/quoters';
 import { FetchFn, fetchJson, HttpError, timedFetch } from '../../../lib/util/fetch-http';
 
-// A market-maker stand-in and a CONNECT-tunneling forward proxy, both real local servers. The
-// proxy behaves like the squid egress proxy for these purposes: it tunnels CONNECT to any
-// host:port and answers 503 when the target can't be reached.
+// A market-maker stand-in (plain HTTP and HTTPS) and a CONNECT-tunneling forward proxy, all real
+// local servers. The proxy behaves like the squid egress proxy for these purposes: it tunnels
+// CONNECT to any host:port and answers 503 when the target can't be reached.
 
 interface RecordedRequest {
   path: string;
   headers: IncomingHttpHeaders;
+  rawHeaders: string[];
   body: string;
+  servername?: string;
 }
 
 const recorded: RecordedRequest[] = [];
@@ -27,10 +35,13 @@ const tunnels: string[] = [];
 // Tunnel sockets leave the proxy server's connection tracking, so they're closed explicitly.
 const tunnelSockets: net.Socket[] = [];
 let target: http.Server;
+let tlsTarget: https.Server;
 let proxy: http.Server;
 let baseUrl = '';
+let tlsPort = 0;
 let closedPortUrl = '';
 let proxyUrl = '';
+let ca = '';
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
@@ -43,7 +54,9 @@ function readBody(req: IncomingMessage): Promise<string> {
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const body = await readBody(req);
   const path = (req.url ?? '').split('?')[0];
-  recorded.push({ path, headers: req.headers, body });
+  const socket = req.socket as TLSSocket;
+  const servername = typeof socket.servername === 'string' ? socket.servername : undefined;
+  recorded.push({ path, headers: req.headers, rawHeaders: req.rawHeaders, body, servername });
   switch (path) {
     case '/json':
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true }));
@@ -71,13 +84,48 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 }
 
-function listen(server: http.Server): Promise<number> {
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve((server.address() as AddressInfo).port)));
+function listen(server: net.Server, host = '127.0.0.1'): Promise<number> {
+  return new Promise((resolve) => server.listen(0, host, () => resolve((server.address() as AddressInfo).port)));
+}
+
+// A throwaway certificate for localhost, so TLS through the tunnel is verified against the
+// hostname just as a direct call verifies it. openssl is on every developer machine and CI image.
+function selfSignedCertificate(): { key: string; cert: string } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'egress-proxy-tls-'));
+  const key = path.join(dir, 'key.pem');
+  const cert = path.join(dir, 'cert.pem');
+  execFileSync(
+    'openssl',
+    [
+      'req',
+      '-x509',
+      '-newkey',
+      'rsa:2048',
+      '-nodes',
+      '-keyout',
+      key,
+      '-out',
+      cert,
+      '-days',
+      '2',
+      '-subj',
+      '/CN=localhost',
+      '-addext',
+      'subjectAltName=DNS:localhost',
+    ],
+    { stdio: 'ignore' }
+  );
+  return { key: fs.readFileSync(key, 'utf8'), cert: fs.readFileSync(cert, 'utf8') };
 }
 
 beforeAll(async () => {
   target = http.createServer((req, res) => void handle(req, res));
   baseUrl = `http://127.0.0.1:${await listen(target)}`;
+
+  const { key, cert } = selfSignedCertificate();
+  ca = cert;
+  tlsTarget = https.createServer({ key, cert }, (req, res) => void handle(req, res));
+  tlsPort = await listen(tlsTarget, 'localhost');
 
   const probe = http.createServer();
   closedPortUrl = `http://127.0.0.1:${await listen(probe)}`;
@@ -103,7 +151,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const socket of tunnelSockets) socket.destroy();
-  for (const server of [target, proxy]) {
+  for (const server of [target, tlsTarget, proxy]) {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
@@ -148,14 +196,14 @@ describe('proxiedFetch', () => {
     }
   );
 
-  it('delivers the same method, body and headers to the market maker', async () => {
+  it('sends the market maker byte-for-byte what a direct call sends: same headers, casing, order and user agent', async () => {
     await outcomeOf(timedFetch, `${baseUrl}/json`);
     await outcomeOf(viaProxy(), `${baseUrl}/json`);
     const [viaDirect, proxied] = recorded;
     expect(proxied.body).toEqual(viaDirect.body);
-    for (const name of ['content-type', 'accept', 'x-api-key', 'host']) {
-      expect(proxied.headers[name]).toEqual(viaDirect.headers[name]);
-    }
+    expect(proxied.rawHeaders).toEqual(viaDirect.rawHeaders);
+    expect(viaDirect.rawHeaders).toContain('Content-Type');
+    expect(viaDirect.headers['user-agent']).toEqual('node');
   });
 
   it('keeps the whole-request deadline: a response slower than it is a timeout', async () => {
@@ -166,6 +214,14 @@ describe('proxiedFetch', () => {
   it('an unreachable market maker is a network error, not a timeout or an HTTP status', async () => {
     const outcome = await outcomeOf(viaProxy(), `${closedPortUrl}/json`);
     expect(outcome).toMatchObject({ kind: 'rejected', errorKind: 'network', status: undefined });
+  });
+
+  it('negotiates TLS over the tunnel with the hostname as the server name', async () => {
+    const outcome = await outcomeOf(proxiedFetch(proxyUrl, { tls: { ca } }), `https://localhost:${tlsPort}/json`);
+    expect(outcome).toEqual({ kind: 'resolved', status: 200, data: { ok: true } });
+    expect(tunnels).toEqual([`localhost:${tlsPort}`]);
+    expect(recorded[0].servername).toEqual('localhost');
+    expect(recorded[0].headers.host).toEqual(`localhost:${tlsPort}`);
   });
 });
 
