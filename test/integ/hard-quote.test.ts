@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { RPC_HEADERS } from '../../lib/constants';
 import { HardQuoteRequestBody } from '../../lib/handlers/hard-quote';
 import { checkDefined } from '../../lib/preconditions/preconditions';
-import AxiosUtils from '../util/axios';
+import IntegHttp from '../util/integ-http';
 
 chai.use(chaiAsPromised);
 chai.use(chaiSubset);
@@ -193,7 +193,7 @@ describe('Hard Quote endpoint integration test', function () {
         tokenOutChainId: SEPOLIA,
       };
 
-      const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
+      const { data, status } = await IntegHttp.callPassThroughFail('POST', PARAM_API, quoteReq);
       expect(data.detail).to.equal('"innerSig" is required');
       expect(status).to.equal(400);
     });
@@ -206,7 +206,7 @@ describe('Hard Quote endpoint integration test', function () {
         tokenOutChainId: SEPOLIA,
       };
 
-      const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
+      const { data, status } = await IntegHttp.callPassThroughFail('POST', PARAM_API, quoteReq);
       expect(data.detail).to.equal('"encodedInnerOrder" is required');
       expect(status).to.equal(400);
     });
@@ -230,7 +230,7 @@ describe('Hard Quote endpoint integration test', function () {
         tokenOutChainId: SEPOLIA,
       };
 
-      const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
+      const { data, status } = await IntegHttp.callPassThroughFail('POST', PARAM_API, quoteReq);
       expect(data.detail).to.equal('"requestId" is required');
       expect(status).to.equal(400);
     });
@@ -255,7 +255,7 @@ describe('Hard Quote endpoint integration test', function () {
         tokenOutChainId: SEPOLIA,
       };
 
-      const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
+      const { data, status } = await IntegHttp.callPassThroughFail('POST', PARAM_API, quoteReq);
       expect(data.detail).to.equal('Unknown cosigner');
       expect(status).to.equal(400);
     });
@@ -284,7 +284,7 @@ describe('Hard Quote endpoint integration test', function () {
         allowNoQuote: true,
       };
 
-      const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
+      const { data, status } = await IntegHttp.callPassThroughFail('POST', PARAM_API, quoteReq);
       console.log(data);
       expect(status).to.be.oneOf([200, 201]);
       expect(data.chainId).to.equal(SEPOLIA);
@@ -314,7 +314,7 @@ describe('Hard Quote endpoint integration test', function () {
         forceOpenOrder: true,
       };
 
-      const { data, status } = await AxiosUtils.callPassThroughFail('POST', PARAM_API, quoteReq);
+      const { data, status } = await IntegHttp.callPassThroughFail('POST', PARAM_API, quoteReq);
       console.log(data);
       expect(status).to.be.oneOf([200, 201]);
       expect(data.chainId).to.equal(SEPOLIA);

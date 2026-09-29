@@ -1,5 +1,4 @@
 import { TradeType } from '@uniswap/sdk-core';
-import { AxiosError } from 'axios';
 import { BigNumber, ethers } from 'ethers';
 
 import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
@@ -7,6 +6,7 @@ import { NOTIFICATION_TIMEOUT_MS } from '../../../lib/constants';
 import { AnalyticsEventType, Metric, metricContext, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
 import { WebhookHttp, WebhookQuoter } from '../../../lib/quoters';
+import { HttpError } from '../../../lib/util/fetch-http';
 import { FakeAnalyticsLogger, fakeContext } from '../../fakes';
 import {
   MOCK_V2_CB_PROVIDER,
@@ -33,7 +33,7 @@ describe('WebhookQuoter tests', () => {
     fakes.metrics.reset();
     fakes.logger.reset();
     analytics.reset();
-    // Dispatch order is randomized in WebhookQuoter; pin it so the positional axios mocks
+    // Dispatch order is randomized in WebhookQuoter; pin it so the positional HTTP mocks
     // below (real response first, opposing second) line up deterministically.
     jest.spyOn(Math, 'random').mockReturnValue(0);
   });
@@ -65,7 +65,7 @@ describe('WebhookQuoter tests', () => {
   ]);
 
   const logger = { child: jest.fn(() => logger), info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
-  // Injected in place of axios and Firehose: every webhook call and analytics event lands here.
+  // Injected in place of the HTTP client and Firehose: every webhook call and analytics event lands here.
   const http = { post: jest.fn() } as unknown as jest.Mocked<WebhookHttp>;
   const analytics = new FakeAnalyticsLogger();
   const webhookQuoter = new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http);
@@ -115,11 +115,13 @@ describe('WebhookQuoter tests', () => {
     http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             ...quote,
             tokenIn: request.tokenOut,
@@ -138,9 +140,10 @@ describe('WebhookQuoter tests', () => {
   describe('opposing request obfuscation', () => {
     // Market makers echo back the requestId they received; mirror that so the real-leg
     // requestId check (which validates the echo against the obfuscated id we sent) passes.
-    const echoReal = (req: any) => Promise.resolve({ data: { ...quote, requestId: req.requestId } });
+    const echoReal = (req: any) => Promise.resolve({ status: 200, data: { ...quote, requestId: req.requestId } });
     const echoOpposing = (req: any) =>
       Promise.resolve({
+        status: 200,
         data: { ...quote, tokenIn: request.tokenOut, tokenOut: request.tokenIn, requestId: req.requestId },
       });
 
@@ -222,11 +225,13 @@ describe('WebhookQuoter tests', () => {
     http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             ...quote,
             tokenIn: request.tokenOut,
@@ -236,11 +241,13 @@ describe('WebhookQuoter tests', () => {
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             ...quote,
             tokenIn: request.tokenOut,
@@ -267,11 +274,13 @@ describe('WebhookQuoter tests', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: request.tokenOut,
@@ -308,11 +317,13 @@ describe('WebhookQuoter tests', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: request.tokenOut,
@@ -338,6 +349,7 @@ describe('WebhookQuoter tests', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: PERMISSIONED_TOKENS[0].address,
@@ -346,6 +358,7 @@ describe('WebhookQuoter tests', () => {
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: request.tokenOut,
@@ -381,6 +394,7 @@ describe('WebhookQuoter tests', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenOut: PERMISSIONED_TOKENS[0].address,
@@ -389,6 +403,7 @@ describe('WebhookQuoter tests', () => {
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: PERMISSIONED_TOKENS[0].address,
@@ -424,6 +439,7 @@ describe('WebhookQuoter tests', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: PERMISSIONED_TOKENS[0].address,
@@ -432,6 +448,7 @@ describe('WebhookQuoter tests', () => {
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: request.tokenOut,
@@ -493,11 +510,13 @@ describe('WebhookQuoter tests', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: request.tokenOut,
@@ -533,11 +552,13 @@ describe('WebhookQuoter tests', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: request.tokenOut,
@@ -576,11 +597,13 @@ describe('WebhookQuoter tests', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: { ...quote, requestId: (_req as any).requestId },
           });
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               ...quote,
               tokenIn: request.tokenOut,
@@ -620,11 +643,13 @@ describe('WebhookQuoter tests', () => {
     http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             ...quote,
             tokenIn: request.tokenOut,
@@ -665,11 +690,13 @@ describe('WebhookQuoter tests', () => {
     http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             ...quote,
             tokenIn: request.tokenOut,
@@ -704,11 +731,13 @@ describe('WebhookQuoter tests', () => {
     http.post
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: { ...quote, requestId: (_req as any).requestId },
         });
       })
       .mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             ...quote,
             tokenIn: request.tokenOut,
@@ -758,8 +787,8 @@ describe('WebhookQuoter tests', () => {
 
     http.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
-        data: quote,
         status: 200,
+        data: quote,
       });
     });
     const response = await webhookQuoter.quote(fakes.ctx, request);
@@ -824,8 +853,8 @@ describe('WebhookQuoter tests', () => {
 
     http.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
-        data: quote,
         status: 200,
+        data: quote,
       });
     });
     const response = await webhookQuoter.quote(fakes.ctx, request);
@@ -901,24 +930,13 @@ describe('WebhookQuoter tests', () => {
     expect(response.length).toEqual(0);
   });
 
-  // 204 is the only status that signals a non-quote. axios's default validateStatus rejects non-2xx,
-  // so a 404 never reaches isNonQuote — it rejects into the catch and is recorded as an HTTP_ERROR.
-  // Pinned here so widening validateStatus, which would silently reclassify every 4xx as a
-  // non-quote, shows up as a test failure instead.
+  // 204 is the only status that signals a non-quote. The HTTP client rejects every non-2xx (pinned
+  // in test/util/fetch-http.test.ts), so a 404 never reaches isNonQuote — it rejects into the catch
+  // and is recorded as an HTTP_ERROR.
   it('Counts a 404 as an HTTP error, not a non-quote', async () => {
-    // Resolve or reject the way real axios would for the config the quoter actually passes. A mock
-    // that rejects unconditionally would keep passing even if validateStatus were widened, which is
-    // what let the unreachable branch sit here unnoticed in the first place.
-    http.post.mockImplementation((_endpoint, _req, options) => {
-      const validateStatus = (options as any)?.validateStatus ?? ((s: number) => s >= 200 && s < 300);
-      if (validateStatus(404)) {
-        return Promise.resolve({ status: 404, data: '' });
-      }
-      const notFound = new AxiosError('Request failed with status code 404');
-      (notFound as any).code = 'ERR_BAD_REQUEST';
-      (notFound as any).response = { status: 404, data: '' };
-      return Promise.reject(notFound);
-    });
+    http.post.mockRejectedValue(
+      new HttpError('Request failed with status code 404', HttpError.BAD_REQUEST, { status: 404, data: '' })
+    );
 
     const response = await webhookQuoter.quote(fakes.ctx, request);
 
@@ -954,8 +972,8 @@ describe('WebhookQuoter tests', () => {
 
     http.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
-        data: quote,
         status: 200,
+        data: quote,
       });
     });
     const response = await webhookQuoter.quote(fakes.ctx, request);
@@ -997,8 +1015,8 @@ describe('WebhookQuoter tests', () => {
 
     http.post.mockImplementationOnce((_endpoint, _req, _options) => {
       return Promise.resolve({
-        data: quote,
         status: 200,
+        data: quote,
       });
     });
     const response = await webhookQuoter.quote(
@@ -1043,10 +1061,11 @@ describe('WebhookQuoter tests', () => {
     const mockSimpleSuccess = () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
-          return Promise.resolve({ data: { ...quote, requestId: (_req as any).requestId } });
+          return Promise.resolve({ status: 200, data: { ...quote, requestId: (_req as any).requestId } });
         })
         .mockImplementation((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: { ...quote, tokenIn: request.tokenOut, tokenOut: request.tokenIn },
           });
         });
@@ -1070,10 +1089,8 @@ describe('WebhookQuoter tests', () => {
       expect(perFillerStragglers).toHaveLength(1);
     });
 
-    it('emits RFQ_TIMEOUT (bare and per-filler) only for axios timeouts', async () => {
-      const timeoutError = new AxiosError('timeout of 500ms exceeded');
-      (timeoutError as any).code = 'ECONNABORTED';
-      http.post.mockRejectedValue(timeoutError);
+    it('emits RFQ_TIMEOUT (bare and per-filler) only for client timeouts', async () => {
+      http.post.mockRejectedValue(new HttpError('timeout of 500ms exceeded', HttpError.TIMEOUT));
 
       const response = await webhookQuoter.quote(fakes.ctx, request);
 
@@ -1091,9 +1108,9 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('does not emit RFQ_TIMEOUT for non-timeout errors', async () => {
-      const httpError = new AxiosError('Request failed with status code 500');
-      (httpError as any).code = 'ERR_BAD_RESPONSE';
-      http.post.mockRejectedValue(httpError);
+      http.post.mockRejectedValue(
+        new HttpError('Request failed with status code 500', HttpError.BAD_RESPONSE, { status: 500, data: '' })
+      );
 
       await webhookQuoter.quote(fakes.ctx, request);
 
@@ -1125,7 +1142,7 @@ describe('WebhookQuoter tests', () => {
     // in-flight quotes must never report into each other's metrics.
     it('reports each concurrent quote only into the ctx it was given', async () => {
       http.post.mockImplementation((_endpoint, req) =>
-        Promise.resolve({ data: { ...quote, requestId: (req as { requestId: string }).requestId } })
+        Promise.resolve({ status: 200, data: { ...quote, requestId: (req as { requestId: string }).requestId } })
       );
       const a = fakeContext('request-a');
       const b = fakeContext('request-b');

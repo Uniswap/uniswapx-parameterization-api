@@ -1,4 +1,3 @@
-import { AxiosError, AxiosInstance } from 'axios';
 import Logger from 'bunyan';
 
 import { CosignedV2DutchOrder, CosignedV3DutchOrder, OrderType } from '@uniswap/uniswapx-sdk';
@@ -11,7 +10,7 @@ import {
 } from '.';
 import { ErrorResponse } from '../../handlers/base';
 import { ErrorCode } from '../../util/errors';
-import { fetchHttp } from '../../util/fetch-http';
+import { fetchHttp, HttpClient, HttpError } from '../../util/fetch-http';
 
 // The order service validates on-chain (RPC) before accepting, so its tail can
 // exceed a couple of seconds; this must stay below the hard-quote Lambda budget
@@ -29,9 +28,9 @@ export const ORDER_SERVICE_MAX_ORDER_HASHES = 50;
 // quote path, but a stalled order service must not eat the cron's whole budget either.
 export const ORDER_STATUS_TIMEOUT_MS = 5000;
 
-// The axios-shaped subset this client uses (the status read, the order post, and its timeout
+// The HTTP client this provider uses (the status read, the order post, and its timeout
 // reconciliation). Injected so tests can substitute a fake.
-export type OrderServiceHttp = Pick<AxiosInstance, 'get' | 'post'>;
+export type OrderServiceHttp = HttpClient;
 
 const ORDER_TYPE_MAP = new Map<Function, string>([
   [CosignedV2DutchOrder, OrderType.Dutch_V2],
@@ -90,7 +89,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
       throw new Error(`Unsupported order type: ${order.constructor.name}`);
     }
 
-    const axiosConfig = {
+    const httpConfig = {
       timeout: ORDER_SERVICE_TIMEOUT_MS,
     };
     try {
@@ -104,7 +103,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
           requestId: requestId,
           orderType: orderType,
         },
-        axiosConfig
+        httpConfig
       );
       this.log.info({ response: response, orderHash }, 'Order posted to UniswapX Service');
       return {
@@ -112,7 +111,7 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
         data: response.data,
       };
     } catch (e) {
-      if (e instanceof AxiosError) {
+      if (e instanceof HttpError) {
         // No response means we timed out or the connection dropped — the order
         // service may still have accepted the order (its Lambda keeps running
         // after we hang up), so the outcome is indeterminate, not a rejection.
@@ -144,10 +143,12 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
           { error: e.response?.data, httpStatus: e.response?.status, code: e.code },
           'Error posting order to UniswapX Service'
         );
+        const body = orderServiceErrorBody(e.response?.data);
         return {
           statusCode: (e.response?.status ?? 500) as ErrorResponse['statusCode'],
-          errorCode: e.response?.data?.errorCode ?? ErrorCode.InternalError,
-          detail: e.response?.data?.detail ?? e.message,
+          // Passed through as the order service reported it; its codes are not all ours.
+          errorCode: (body.errorCode as ErrorCode | undefined) ?? ErrorCode.InternalError,
+          detail: body.detail ?? e.message,
         };
       } else {
         this.log.error({ error: e }, 'Unknown error posting order to UniswapX Service');
@@ -174,6 +175,18 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
       return false;
     }
   }
+}
+
+// The order service's error body is `{ errorCode, detail }`; anything else yields neither.
+function orderServiceErrorBody(data: unknown): { errorCode?: string; detail?: string } {
+  if (typeof data !== 'object' || data === null) {
+    return {};
+  }
+  const { errorCode, detail } = data as Record<string, unknown>;
+  return {
+    ...(typeof errorCode === 'string' && { errorCode }),
+    ...(typeof detail === 'string' && { detail }),
+  };
 }
 
 // One GET /orders item reduced to the breaker's view. Anything without a hash and status is

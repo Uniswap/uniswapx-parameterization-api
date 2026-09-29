@@ -1,6 +1,5 @@
-import { AxiosRequestConfig, AxiosResponse } from 'axios';
-
 import { OrderServiceHttp } from '../../lib/providers/order/uniswapxService';
+import { HttpRequestConfig, HttpResponse } from '../../lib/util/fetch-http';
 
 export type HttpMethod = 'get' | 'post';
 
@@ -11,11 +10,11 @@ export interface RecordedHttpCall {
   method: HttpMethod;
   url: string;
   body?: unknown;
-  config?: AxiosRequestConfig;
+  config?: HttpRequestConfig;
 }
 
 /**
- * Scripted stand-in for the axios subset the order-service client uses. Queue replies per
+ * Scripted stand-in for the HTTP client the order-service client uses. Queue replies per
  * method with `reply`, then assert on `calls`. A call with nothing queued fails loudly, so a
  * test can't silently exercise a request it didn't expect.
  */
@@ -32,16 +31,17 @@ export class FakeHttp implements OrderServiceHttp {
     return this.calls.filter((c) => c.method === method);
   }
 
-  public get = async <T = unknown, R = AxiosResponse<T>>(url: string, config?: AxiosRequestConfig): Promise<R> =>
-    this.answer<R>({ method: 'get', url, config });
+  public get = async <T = unknown>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>> =>
+    this.answer<T>({ method: 'get', url, config });
 
-  public post = async <T = unknown, R = AxiosResponse<T>>(
+  public post = async <T = unknown>(
     url: string,
     body?: unknown,
-    config?: AxiosRequestConfig
-  ): Promise<R> => this.answer<R>({ method: 'post', url, body, config });
+    config?: HttpRequestConfig
+  ): Promise<HttpResponse<T>> => this.answer<T>({ method: 'post', url, body, config });
 
-  private async answer<R>(call: RecordedHttpCall): Promise<R> {
+  // The scripted body stands in for whatever the caller expects the server to send.
+  private async answer<T>(call: RecordedHttpCall): Promise<HttpResponse<T>> {
     this.calls.push(call);
     const next = this.queues[call.method].shift();
     if (next === undefined) {
@@ -50,6 +50,6 @@ export class FakeHttp implements OrderServiceHttp {
     if (next instanceof Error) {
       throw next;
     }
-    return { status: 200, data: undefined, ...next } as unknown as R;
+    return { status: 200, data: undefined, ...next } as HttpResponse<T>;
   }
 }

@@ -1,10 +1,10 @@
 import { CosignedV2DutchOrder } from '@uniswap/uniswapx-sdk';
-import { AxiosError } from 'axios';
 import { default as Logger } from 'bunyan';
 
 import { ErrorResponse } from '../../../lib/handlers/base';
 import { UniswapXServiceProvider } from '../../../lib/providers/order';
 import { ErrorCode } from '../../../lib/util/errors';
+import { HttpError } from '../../../lib/util/fetch-http';
 import { FakeHttp } from '../../fakes';
 
 const logger = Logger.createLogger({ name: 'test' });
@@ -23,17 +23,15 @@ function buildOrderStub(): CosignedV2DutchOrder {
   return order;
 }
 
-function buildTimeoutError(): AxiosError {
-  return new AxiosError('timeout of 7000ms exceeded', AxiosError.ECONNABORTED);
+function buildTimeoutError(): HttpError {
+  return new HttpError('timeout of 7000ms exceeded', HttpError.TIMEOUT);
 }
 
-function buildRejection(): AxiosError {
-  const error = new AxiosError('Request failed with status code 400');
-  error.response = {
+function buildRejection(): HttpError {
+  return new HttpError('Request failed with status code 400', HttpError.BAD_REQUEST, {
     status: 400,
     data: { errorCode: 'VALIDATION_ERROR', detail: 'Order expired' },
-  } as never;
-  return error;
+  });
 }
 
 describe('UniswapXServiceProvider postOrder', () => {

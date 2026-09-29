@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { PostQuoteRequestBody } from '../../lib/handlers/quote';
 import { ProtocolVersion } from '../../lib/providers';
-import AxiosUtils from '../util/axios';
+import IntegHttp from '../util/integ-http';
 
 chai.use(chaiAsPromised);
 chai.use(chaiSubset);
@@ -37,7 +37,7 @@ describe('Quote endpoint integration test', function () {
       protocol: ProtocolVersion.V1,
     };
 
-    const { data, status } = await AxiosUtils.callPassThroughFail('POST', API, quoteReq);
+    const { data, status } = await IntegHttp.callPassThroughFail('POST', API, quoteReq);
     expect([404, 200]).to.include(status);
     if (status == 404) {
       expect(data.detail).to.be.equal('No quotes available');
@@ -82,7 +82,7 @@ describe('Quote endpoint integration test', function () {
       numOutputs: 12341234,
     };
 
-    await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
+    await IntegHttp.callAndExpectFail('POST', API, quoteReq, {
       status: 400,
       data: {
         detail: '"requestId" must be a valid GUID',
@@ -103,7 +103,7 @@ describe('Quote endpoint integration test', function () {
       numOutputs: 12341234,
     };
 
-    await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
+    await IntegHttp.callAndExpectFail('POST', API, quoteReq, {
       status: 400,
       data: {
         detail: '"amount" is required',
@@ -125,7 +125,7 @@ describe('Quote endpoint integration test', function () {
       numOutputs: 12341234,
     };
 
-    await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
+    await IntegHttp.callAndExpectFail('POST', API, quoteReq, {
       status: 400,
       data: {
         detail: '"type" must be one of [EXACT_INPUT, EXACT_OUTPUT]',
@@ -147,7 +147,7 @@ describe('Quote endpoint integration test', function () {
       numOutputs: 12341234,
     };
 
-    await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
+    await IntegHttp.callAndExpectFail('POST', API, quoteReq, {
       status: 400,
       data: {
         detail: 'Invalid address',
@@ -169,7 +169,7 @@ describe('Quote endpoint integration test', function () {
       numOutputs: 12341234,
     };
 
-    await AxiosUtils.callAndExpectFail('POST', API, quoteReq, {
+    await IntegHttp.callAndExpectFail('POST', API, quoteReq, {
       status: 400,
       data: {
         detail: '"tokenOutChainId" must be [ref:tokenInChainId]',

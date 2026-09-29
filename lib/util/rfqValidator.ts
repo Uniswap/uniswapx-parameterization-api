@@ -68,7 +68,7 @@ export class RFQValidator {
    */
   public static async validatePermissionedTokens(
     request: QuoteRequestData,
-    data: PostQuoteResponse,
+    data: Pick<PostQuoteResponse, 'filler'>,
     amountIn: BigNumber,
     amountOut: BigNumber,
     provider?: ethers.providers.StaticJsonRpcProvider,
