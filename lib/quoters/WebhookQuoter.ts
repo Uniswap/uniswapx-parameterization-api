@@ -1,5 +1,5 @@
 import { TradeType } from '@uniswap/sdk-core';
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
+import { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { ethers } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,6 +21,7 @@ import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { IAnalyticsLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
+import { fetchHttp } from '../util/fetch-http';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
 
@@ -54,7 +55,7 @@ export function deriveFanoutStats(
   };
 }
 
-/** The axios subset WebhookQuoter uses for market-maker webhooks and block notifications. */
+/** The axios-shaped subset WebhookQuoter uses for market-maker webhooks and block notifications. */
 export type WebhookHttp = Pick<AxiosInstance, 'post'>;
 
 // Quoter which fetches quotes from http endpoints
@@ -67,7 +68,7 @@ export class WebhookQuoter implements Quoter {
     private firehose: IAnalyticsLogger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    private readonly http: WebhookHttp = axios
+    private readonly http: WebhookHttp = fetchHttp()
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
@@ -450,7 +451,8 @@ export class WebhookQuoter implements Quoter {
 // valid non-quote responses:
 // - 204, the signal the filler docs ask for
 // - 0 amount quote
-// Note that non-2xx statuses never get here: axios's default validateStatus rejects them, so they
+// Note that non-2xx statuses never get here: the HTTP client rejects them (as axios's default
+// validateStatus did), so they
 // land in the caller's catch as an HTTP_ERROR. A 404 is an error, not an election not to quote.
 function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedResponse: QuoteResponse): boolean {
   // A 204 means "no content", so the status alone decides — a body that arrives with it is not a quote.

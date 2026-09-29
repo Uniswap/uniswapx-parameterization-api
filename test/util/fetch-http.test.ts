@@ -7,24 +7,23 @@ import http, { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'http
 import { AddressInfo } from 'net';
 
 import { AnalyticsEventType, QuoteRequest } from '../../lib/entities';
-import { selectWebhookHttp } from '../../lib/handlers/shared/quote-injector';
 import {
   MockWebhookConfigurationProvider,
   OrderServiceHttp,
   ProtocolVersion,
-  selectOrderServiceHttp,
   UniswapXServiceProvider,
   WebhookConfiguration,
 } from '../../lib/providers';
 import { MockV2CircuitBreakerConfigurationProvider } from '../../lib/providers/circuit-breaker/mock';
 import { WebhookHttp, WebhookQuoter } from '../../lib/quoters';
-import { fetchHttp, ORDER_SERVICE_HTTP_CLIENT_ENV, WEBHOOK_HTTP_CLIENT_ENV } from '../../lib/util/fetch-http';
+import { fetchHttp } from '../../lib/util/fetch-http';
 import { FakeAnalyticsLogger, fakeContext } from '../fakes';
 
-// Every test here runs both clients against the same real HTTP server and asserts they agree.
-// The callers' classification of an outcome (the quoter's quote / non-quote / timeout / error and
-// the analytics records it writes; the order post's accepted / rejected / reconciled) is keyed off
-// what axios resolves and rejects, so "the same" is the contract.
+// Every test here runs the fetch client and axios against the same real HTTP server and asserts
+// they agree. The callers were written against axios, and their classification of an outcome (the
+// quoter's quote / non-quote / timeout / error and the analytics records it writes; the order
+// post's accepted / rejected / reconciled) is keyed off what axios resolved and rejected, so axios
+// stays here as the reference: "the same" is the contract.
 
 interface RecordedRequest {
   method: string;
@@ -339,7 +338,7 @@ describe('WebhookQuoter classifies every endpoint the same on either client', ()
     protocol: ProtocolVersion.V2,
   });
 
-  async function runWith(client: WebhookHttp) {
+  async function runWith(client?: WebhookHttp) {
     const configs = endpointsAt(baseUrl);
     const benched = configs.find((c) => c.name === 'benched')!;
     const breaker = new MockV2CircuitBreakerConfigurationProvider(
@@ -412,20 +411,12 @@ describe('WebhookQuoter classifies every endpoint the same on either client', ()
 
     expect(viaFetch).toEqual(viaAxios);
   });
-});
 
-describe('selectWebhookHttp', () => {
-  const log = { info: jest.fn() } as any;
-
-  it('uses fetch only when WEBHOOK_HTTP_CLIENT is fetch', () => {
-    expect(selectWebhookHttp(log, { [WEBHOOK_HTTP_CLIENT_ENV]: 'fetch' })).toBeDefined();
-    expect(log.info).toHaveBeenLastCalledWith({ webhookHttpClient: 'fetch' }, 'Webhook HTTP client');
-  });
-
-  it.each([['axios'], ['unset'], ['FETCH'], ['anything else']])('keeps axios for %s', (value) => {
-    const env = value === 'unset' ? {} : { [WEBHOOK_HTTP_CLIENT_ENV]: value };
-    expect(selectWebhookHttp(log, env)).toBeUndefined();
-    expect(log.info).toHaveBeenLastCalledWith({ webhookHttpClient: 'axios' }, 'Webhook HTTP client');
+  it('defaults to the fetch client', async () => {
+    const { quoteCount } = await runWith();
+    expect(quoteCount).toEqual(1);
+    expect(recorded.length).toBeGreaterThan(0);
+    expect(recorded.filter((r) => /^axios\//.test(r.headers['user-agent'] ?? ''))).toEqual([]);
   });
 });
 
@@ -488,6 +479,16 @@ describe('the order-service client behaves the same on either client', () => {
     expect(await postWith(fetchHttp())).toEqual(viaAxios);
   });
 
+  it('defaults to the fetch client', async () => {
+    recorded.length = 0;
+    const result = await new UniswapXServiceProvider(logger, `${baseUrl}/`).postOrder({
+      order: orderStub(),
+      signature: '0xsig',
+    });
+    expect(result).toEqual({ statusCode: 201, data: { hash: ORDER_HASH } });
+    expect(recorded[0].headers['user-agent']).not.toMatch(/^axios\//);
+  });
+
   it('the status read requests the same URL and parses the same statuses', async () => {
     const hashes = ['0xAA', '0xbb', '0xcc'];
     const readWith = async (client: OrderServiceHttp) => {
@@ -502,20 +503,5 @@ describe('the order-service client behaves the same on either client', () => {
     // axios keeps the commas literal; the fetch client must request the identical URL.
     expect(viaAxios.requests[0].url).toEqual('/dutch-auction/orders?orderHashes=0xAA,0xbb,0xcc');
     expect(await readWith(fetchHttp())).toEqual(viaAxios);
-  });
-});
-
-describe('selectOrderServiceHttp', () => {
-  const log = { info: jest.fn() } as any;
-
-  it('uses fetch only when ORDER_SERVICE_HTTP_CLIENT is fetch', () => {
-    expect(selectOrderServiceHttp(log, { [ORDER_SERVICE_HTTP_CLIENT_ENV]: 'fetch' })).toBeDefined();
-    expect(log.info).toHaveBeenLastCalledWith({ orderServiceHttpClient: 'fetch' }, 'Order service HTTP client');
-  });
-
-  it.each([['axios'], ['unset'], ['FETCH']])('keeps axios for %s', (value) => {
-    const env = value === 'unset' ? {} : { [ORDER_SERVICE_HTTP_CLIENT_ENV]: value };
-    expect(selectOrderServiceHttp(log, env)).toBeUndefined();
-    expect(log.info).toHaveBeenLastCalledWith({ orderServiceHttpClient: 'axios' }, 'Order service HTTP client');
   });
 });

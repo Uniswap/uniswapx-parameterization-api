@@ -5,7 +5,7 @@ import { default as Logger } from 'bunyan';
 import { HardQuoteBL, kmsCosignerFactory } from '../../core';
 import { HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { checkDefined } from '../../preconditions/preconditions';
-import { selectOrderServiceHttp, UniswapXServiceProvider } from '../../providers';
+import { UniswapXServiceProvider } from '../../providers';
 import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
 import { DynamoPostedOrderRepository } from '../../repositories/posted-order-repository';
 import { ApiInjector } from '../base/api-handler';
@@ -38,7 +38,7 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
       hardQuote: new HardQuoteBL({
         quoters: base.quoters,
         chainIdRpcMap: base.chainIdRpcMap,
-        orderServiceProvider: new UniswapXServiceProvider(log, orderServiceUrl, selectOrderServiceHttp(log)),
+        orderServiceProvider: new UniswapXServiceProvider(log, orderServiceUrl),
         // Both build their own bounded DynamoDB client (the writes sit in series with the
         // response); construction is lazy (no I/O).
         postedOrderRepository: DynamoPostedOrderRepository.create(),

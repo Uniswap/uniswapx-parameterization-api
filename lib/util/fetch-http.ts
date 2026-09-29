@@ -1,18 +1,5 @@
 import axios, { AxiosError, AxiosHeaders, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
-// Which HTTP client a Lambda uses for its outbound calls, set per stage in bin/app.ts, one flag
-// per call site. Anything other than 'fetch' (including unset) keeps axios, so rolling back is a
-// one-line config change.
-export enum HttpClient {
-  AXIOS = 'axios',
-  FETCH = 'fetch',
-}
-
-/** Market-maker webhooks and block notifications, on the two quote Lambdas. */
-export const WEBHOOK_HTTP_CLIENT_ENV = 'WEBHOOK_HTTP_CLIENT';
-/** Order-service calls: the hard-quote order post and its reconciliation, and the fade cron's status reads. */
-export const ORDER_SERVICE_HTTP_CLIENT_ENV = 'ORDER_SERVICE_HTTP_CLIENT';
-
 /** The fetch signature this client needs; injectable so tests can run it without a network. */
 export type FetchFn = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -26,8 +13,9 @@ const ACCEPT = 'application/json, text/plain, */*';
 const JSON_CONTENT_TYPE = 'application/json';
 
 /**
- * A fetch-based stand-in for the axios `get` and `post` this service uses. It resolves and
- * rejects exactly as axios does, so callers' classification of the outcome (and anything built
+ * The HTTP client for every outbound call (market-maker webhooks, block notifications, the order
+ * service): fetch behind the axios `get`/`post` shape the callers were written against. It resolves
+ * and rejects exactly as axios did, so callers' classification of the outcome (and anything built
  * from it, like analytics records) doesn't change with the client:
  * - 2xx resolves `{ status, data }`, with the body JSON-parsed when it parses and left as text
  *   when it doesn't (an empty body is `''`), matching axios's default response handling.
