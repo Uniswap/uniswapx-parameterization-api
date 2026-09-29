@@ -8,8 +8,17 @@ import { BunyanLogger, Context, EmfMetrics } from '../../observability';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
-import { Quoter, WebhookQuoter } from '../../quoters';
+import {
+  EGRESS_PROXY_URL_ENV,
+  EGRESS_PROXY_WEBHOOK_SHARE_ENV,
+  parseEgressProxyShare,
+  proxiedFetch,
+  Quoter,
+  splitFetch,
+  WebhookQuoter,
+} from '../../quoters';
 import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
+import { FetchFn, timedFetch } from '../../util/fetch-http';
 import { STAGE } from '../../util/stage';
 import { ApiRInj } from '../base/api-handler';
 
@@ -77,13 +86,34 @@ export function buildQuoteContainerInjected(log: Logger, stage: string | undefin
 
   const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
 
-  const quoters: Quoter[] = [new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider)];
+  const quoters: Quoter[] = [
+    new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, selectWebhookFetch(log)),
+  ];
 
   return {
     quoters,
     firehose,
     chainIdRpcMap: buildChainIdRpcMap(),
   };
+}
+
+/**
+/**
+ * The fetch the market-maker webhooks use in this container. EGRESS_PROXY_WEBHOOK_SHARE_PERCENT
+ * of calls go through the egress proxy at EGRESS_PROXY_URL; the rest go direct. A missing,
+ * invalid or zero share, or no proxy address, sends every call direct. Logged once per container
+ * so the share in use is visible.
+ */
+export function selectWebhookFetch(log: Logger, env: NodeJS.ProcessEnv = process.env): FetchFn {
+  const proxyUrl = env[EGRESS_PROXY_URL_ENV];
+  const rawShare = env[EGRESS_PROXY_WEBHOOK_SHARE_ENV];
+  const share = parseEgressProxyShare(rawShare);
+  if (rawShare !== undefined && share === undefined) {
+    log.warn({ rawShare }, 'Invalid egress proxy share; sending every webhook call direct');
+  }
+  const proxyShare = proxyUrl ? share ?? 0 : 0;
+  log.info({ egressProxyShare: proxyShare }, 'Webhook egress');
+  return proxyUrl && proxyShare > 0 ? splitFetch(timedFetch, proxiedFetch(proxyUrl), proxyShare) : timedFetch;
 }
 
 /**

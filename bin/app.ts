@@ -12,6 +12,7 @@ import { STAGE } from '../lib/util/stage';
 import {
   ANALYTICS_WRITER_BACKEND_ACCOUNTS,
   EGRESS_PROXY_BACKEND_ACCOUNTS,
+  EGRESS_PROXY_WEBHOOK_SHARE_PERCENT,
   HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS,
 } from './config';
 import { SERVICE_NAME } from './constants';
@@ -33,6 +34,7 @@ export class APIStage extends Stage {
       hardQuoteCosignerBackendAccounts?: readonly string[];
       egressProxyBackendAccounts?: readonly string[];
       analyticsWriterBackendAccounts?: readonly string[];
+      egressProxyWebhookSharePercent?: number;
     }
   ) {
     super(scope, id, props);
@@ -46,6 +48,7 @@ export class APIStage extends Stage {
       hardQuoteCosignerBackendAccounts,
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
+      egressProxyWebhookSharePercent,
     } = props;
 
     const { url } = new APIStack(this, `${SERVICE_NAME}API`, {
@@ -58,6 +61,7 @@ export class APIStage extends Stage {
       hardQuoteCosignerBackendAccounts,
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
+      egressProxyWebhookSharePercent,
     });
     this.url = url;
   }
@@ -159,6 +163,7 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.BETA],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.BETA],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.BETA],
+      egressProxyWebhookSharePercent: EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.BETA],
     });
 
     const betaUsEast2AppStage = pipeline.addStage(betaUsEast2Stage);
@@ -180,6 +185,7 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.PROD],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.PROD],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.PROD],
+      egressProxyWebhookSharePercent: EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.PROD],
     });
 
     const prodUsEast2AppStage = pipeline.addStage(prodUsEast2Stage);
