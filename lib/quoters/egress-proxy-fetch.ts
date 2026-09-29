@@ -1,4 +1,4 @@
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { buildConnector, ProxyAgent } from 'undici';
 
 import { FetchFn } from '../util/fetch-http';
 
@@ -20,35 +20,36 @@ export function parseEgressProxyShare(raw: string | undefined): number | undefin
   return share <= 100 ? share : undefined;
 }
 
+export interface ProxiedFetchOptions {
+  /** TLS options for the connection to an HTTPS market maker, e.g. a private CA in tests. */
+  tls?: buildConnector.BuildOptions;
+}
+
 /**
  * A fetch that sends every request through the forward proxy at `proxyUrl`, with the same
- * whole-request deadline as `timedFetch`. Both HTTPS and plain-HTTP targets go through a CONNECT
- * tunnel (undici's default), so the proxy passes the bytes through untouched and a market maker
- * receives exactly what a direct call would send. undici's own fetch is used with its own
- * ProxyAgent, so the two always match. It is pinned to the latest 6.x, the major Node 22's
- * built-in fetch ships, on a version with no known advisories.
+ * whole-request deadline as `timedFetch`. It is Node's own fetch with undici's ProxyAgent as the
+ * dispatcher, so a market maker receives byte-for-byte what a direct call sends: same header
+ * names, casing and order, same `User-Agent`. Both HTTPS and plain-HTTP targets go through a
+ * CONNECT tunnel, so the proxy passes the bytes through untouched; HTTPS negotiates TLS over the
+ * tunnel with the hostname as the server name, exactly as a direct call would.
+ *
+ * The proxy resolves the hostname and connects, so its address handling is what the call gets:
+ * squid tries a multi-address answer one address at a time, bounded by its `connect_timeout`
+ * (see squid.conf). A direct call would instead move to the next address after 250 ms. That
+ * difference is accepted here rather than worked around in this client, because the backend
+ * service reaches the same proxy through Bun's fetch and gets the proxy's behavior regardless;
+ * a fallback that only this client had would prove nothing about what the backend will see.
  *
  * One behavior differs from a direct call: when the market maker can't be reached, the proxy
  * answers the tunnel request with an error status, so the failure reads as a proxy tunnel error
  * rather than a socket error such as ECONNREFUSED. It is still a network failure, classified the
  * same way.
  */
-export function proxiedFetch(proxyUrl: string): FetchFn {
-  const dispatcher = new ProxyAgent(proxyUrl);
-  return async (input, init, config) => {
+export function proxiedFetch(proxyUrl: string, options: ProxiedFetchOptions = {}): FetchFn {
+  const dispatcher = new ProxyAgent({ uri: proxyUrl, requestTls: options.tls });
+  return (input, init, config) => {
     const signal = config?.timeoutMs ? AbortSignal.timeout(config.timeoutMs) : init?.signal ?? undefined;
-    const response = await undiciFetch(input, {
-      method: init?.method,
-      headers: [...new Headers(init?.headers).entries()],
-      body: typeof init?.body === 'string' ? init.body : undefined,
-      signal,
-      dispatcher,
-    });
-    // Callers read only status, statusText and the text body; a built-in Response carries those
-    // unchanged and keeps FetchFn's return type. An empty body becomes null because the Response
-    // constructor rejects any body, even '', on a no-body status such as 204.
-    const text = await response.text();
-    return new Response(text === '' ? null : text, { status: response.status, statusText: response.statusText });
+    return fetch(input, { ...init, signal, dispatcher });
   };
 }
 
