@@ -17,8 +17,13 @@ import {
 } from './config';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
+import AWS from 'aws-sdk';
 
 dotenv.config();
+
+AWS.config.update({
+  correctClockSkew: true,
+})
 
 export class APIStage extends Stage {
   public readonly url: CfnOutput;
