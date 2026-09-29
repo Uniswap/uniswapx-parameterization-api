@@ -13,8 +13,8 @@ import {
 } from '../../../lib/handlers/quote';
 import { QuoteHandler } from '../../../lib/handlers/quote/handler';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
-import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookHttp, WebhookQuoter } from '../../../lib/quoters';
-import { FakeAnalyticsLogger, fakeContext, softQuoteContainer } from '../../fakes';
+import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, WebhookQuoter } from '../../../lib/quoters';
+import { FakeAnalyticsLogger, fakeContext, jsonFetchMock, softQuoteContainer } from '../../fakes';
 import { MOCK_V2_CB_PROVIDER } from '../../fixtures';
 
 const QUOTE_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
@@ -29,7 +29,7 @@ const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
 // Injected in place of the HTTP client and Firehose for the WebhookQuoter-backed tests.
-const http = { post: jest.fn() } as unknown as jest.Mocked<WebhookHttp>;
+const http = jsonFetchMock();
 const analytics = new FakeAnalyticsLogger();
 
 describe('Quote handler', () => {
@@ -269,7 +269,7 @@ describe('Quote handler', () => {
         { endpoint: 'https://foo.org', headers: {}, name: 'foo', hash: '0xfoo' },
       ]);
 
-      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http)];
+      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http.fetch)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
@@ -373,13 +373,13 @@ describe('Quote handler', () => {
           hash: '0xfoo',
         },
       ]);
-      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http)];
+      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http.fetch)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString(), 'EXACT_INPUT', ProtocolVersion.V2);
 
       http.post
         .mockImplementationOnce((_endpoint, _req, options: any) => {
-          expect(options.headers['X-Authentication']).toEqual('1234');
+          expect(options.headers['x-authentication']).toEqual('1234');
           return Promise.resolve({
             status: 200,
             data: {
@@ -389,7 +389,7 @@ describe('Quote handler', () => {
           });
         })
         .mockImplementationOnce((_endpoint, _req, options: any) => {
-          expect(options.headers['X-Authentication']).toEqual('1234');
+          expect(options.headers['x-authentication']).toEqual('1234');
           const res = responseFromRequest(request, { amountOut: amountIn.mul(3).toString() });
           return Promise.resolve({
             status: 200,
@@ -448,7 +448,7 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http)];
+      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http.fetch)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -472,7 +472,7 @@ describe('Quote handler', () => {
       const webhookProvider = new MockWebhookConfigurationProvider([
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
-      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http)];
+      const quoters = [new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http.fetch)];
       const amountIn = ethers.utils.parseEther('1');
       const request = getRequest(amountIn.toString());
 
@@ -499,7 +499,7 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http),
+        new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http.fetch),
         new MockQuoter(logger, 1, 1),
         new MockQuoter(logger, 1, 2),
       ];
@@ -531,7 +531,7 @@ describe('Quote handler', () => {
         { name: 'foo', endpoint: 'https://foo.org', headers: {}, hash: '0xfoo' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http),
+        new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http.fetch),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
@@ -588,7 +588,7 @@ describe('Quote handler', () => {
         { name: 'uniswap', endpoint: 'https://uniswap.org', headers: {}, hash: '0xuni' },
       ]);
       const quoters = [
-        new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http),
+        new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http.fetch),
         new MockQuoter(logger, 1, 1),
       ];
       const amountIn = ethers.utils.parseEther('1');
