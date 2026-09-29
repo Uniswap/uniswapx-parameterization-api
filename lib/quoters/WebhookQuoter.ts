@@ -21,7 +21,7 @@ import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { IAnalyticsLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
-import { fetchHttp, HttpClient, HttpError, HttpRequestConfig, HttpResponse } from '../util/fetch-http';
+import { FetchFn, fetchJson, HttpError, timedFetch } from '../util/fetch-http';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
 
@@ -55,9 +55,6 @@ export function deriveFanoutStats(
   };
 }
 
-/** The HTTP subset WebhookQuoter uses for market-maker webhooks and block notifications. */
-export type WebhookHttp = Pick<HttpClient, 'post'>;
-
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
 export class WebhookQuoter implements Quoter {
@@ -68,7 +65,7 @@ export class WebhookQuoter implements Quoter {
     private firehose: IAnalyticsLogger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    private readonly http: WebhookHttp = fetchHttp()
+    private readonly fetchFn: FetchFn = timedFetch
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
@@ -191,10 +188,7 @@ export class WebhookQuoter implements Quoter {
     const before = Date.now();
     const timeoutOverride = config.overrides?.timeout;
 
-    const httpConfig: HttpRequestConfig = {
-      timeout: timeoutOverride ? Number(timeoutOverride) : getWebhookTimeoutMs(request.tokenInChainId),
-      ...(!!headers && { headers }),
-    };
+    const timeoutMs = timeoutOverride ? Number(timeoutOverride) : getWebhookTimeoutMs(request.tokenInChainId);
 
     const requestContext = {
       requestId: cleanRequest.requestId,
@@ -202,7 +196,7 @@ export class WebhookQuoter implements Quoter {
       name: name,
       endpoint: endpoint,
       requestTime: timestampInMstoISOString(before),
-      timeoutSettingMs: httpConfig.timeout,
+      timeoutSettingMs: timeoutMs,
     };
 
     try {
@@ -213,8 +207,11 @@ export class WebhookQuoter implements Quoter {
       const orderedRequests = realRequestFirst
         ? [realWireRequest, opposingWireRequest]
         : [opposingWireRequest, realWireRequest];
+      // Either side failing fails the pair, as soon as it fails.
       const [firstResponse, secondResponse] = await Promise.all(
-        orderedRequests.map((req) => this.http.post<RfqResponse>(endpoint, req, httpConfig))
+        orderedRequests.map((req) =>
+          fetchJson<RfqResponse>(this.fetchFn, endpoint, { method: 'POST', body: req, headers, timeoutMs })
+        )
       );
       const hookResponse = realRequestFirst ? firstResponse : secondResponse;
       const opposite = realRequestFirst ? secondResponse : firstResponse;
@@ -388,7 +385,7 @@ export class WebhookQuoter implements Quoter {
         responseTime: timestampInMstoISOString(Date.now()),
         latencyMs: Date.now() - before,
       };
-      const timedOut = e instanceof HttpError && e.code === HttpError.TIMEOUT;
+      const timedOut = e instanceof HttpError && e.kind === 'timeout';
       // Timeouts are a strict subset of RFQ_FAIL_ERROR, split out because an endpoint that
       // times out holds the fan-out open for the full timeout budget — it is the
       // wasted-wait driver, while other errors typically fail fast.
@@ -397,16 +394,13 @@ export class WebhookQuoter implements Quoter {
         void ctx.metrics.count(metricContext(Metric.RFQ_TIMEOUT, name));
       }
       if (e instanceof HttpError) {
-        log.error(
-          { endpoint, status: e.response?.status?.toString() },
-          `HTTP error fetching quote from ${endpoint}: ${e}`
-        );
+        log.error({ endpoint, status: e.status?.toString() }, `HTTP error fetching quote from ${endpoint}: ${e}`);
         const httpResponseType = timedOut ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
         this.firehose.sendAnalyticsEvent(
           new AnalyticsEvent(AnalyticsEventType.WEBHOOK_RESPONSE, {
             ...requestContext,
-            status: e.response?.status,
-            data: e.response?.data,
+            status: e.status,
+            data: e.data,
             ...errorLatency,
             responseType: httpResponseType,
             // The field keeps its original name: BigQuery's webhook_quoter_response_logs view
@@ -430,21 +424,13 @@ export class WebhookQuoter implements Quoter {
   }
 
   private async notifyBlock(status: { webhook: WebhookConfiguration; blockUntil: number }): Promise<void> {
-    const httpConfig: HttpRequestConfig = {
-      timeout: NOTIFICATION_TIMEOUT_MS,
-      ...(!!status.webhook.headers && { headers: status.webhook.headers }),
-    };
-    this.http
-      .post(
-        status.webhook.endpoint,
-        {
-          blockUntilTimestamp: status.blockUntil,
-        },
-        httpConfig
-      )
-      .catch((_e) => {
-        return;
-      });
+    // Fire-and-forget: a filler that misses the notice is still benched.
+    fetchJson(this.fetchFn, status.webhook.endpoint, {
+      method: 'POST',
+      body: { blockUntilTimestamp: status.blockUntil },
+      headers: status.webhook.headers,
+      timeoutMs: NOTIFICATION_TIMEOUT_MS,
+    }).catch(() => undefined);
   }
 }
 
@@ -455,7 +441,7 @@ export class WebhookQuoter implements Quoter {
 // - 0 amount quote
 // Note that non-2xx statuses never get here: the HTTP client rejects them, so they land in the
 // caller's catch as an HTTP_ERROR. A 404 is an error, not an election not to quote.
-function isNonQuote(request: QuoteRequest, hookResponse: HttpResponse, parsedResponse: QuoteResponse): boolean {
+function isNonQuote(request: QuoteRequest, hookResponse: { status: number }, parsedResponse: QuoteResponse): boolean {
   // A 204 means "no content", so the status alone decides — a body that arrives with it is not a quote.
   if (hookResponse.status === 204) {
     return true;

@@ -5,9 +5,8 @@ import { PERMISSIONED_TOKENS } from '@uniswap/uniswapx-sdk';
 import { NOTIFICATION_TIMEOUT_MS } from '../../../lib/constants';
 import { AnalyticsEventType, Metric, metricContext, QuoteRequest, WebhookResponseType } from '../../../lib/entities';
 import { MockWebhookConfigurationProvider, ProtocolVersion } from '../../../lib/providers';
-import { WebhookHttp, WebhookQuoter } from '../../../lib/quoters';
-import { HttpError } from '../../../lib/util/fetch-http';
-import { FakeAnalyticsLogger, fakeContext } from '../../fakes';
+import { WebhookQuoter } from '../../../lib/quoters';
+import { FakeAnalyticsLogger, fakeContext, fetchTimeoutError, jsonFetchMock } from '../../fakes';
 import {
   MOCK_V2_CB_PROVIDER,
   WEBHOOK_URL,
@@ -66,9 +65,9 @@ describe('WebhookQuoter tests', () => {
 
   const logger = { child: jest.fn(() => logger), info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
   // Injected in place of the HTTP client and Firehose: every webhook call and analytics event lands here.
-  const http = { post: jest.fn() } as unknown as jest.Mocked<WebhookHttp>;
+  const http = jsonFetchMock();
   const analytics = new FakeAnalyticsLogger();
-  const webhookQuoter = new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http);
+  const webhookQuoter = new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http.fetch);
 
   const makeQuoteRequest = (overrides: Partial<QuoteRequest>): QuoteRequest => {
     return new QuoteRequest({
@@ -293,12 +292,12 @@ describe('WebhookQuoter tests', () => {
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).not.toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
@@ -308,7 +307,7 @@ describe('WebhookQuoter tests', () => {
         },
         {
           headers: {},
-          timeout: 500,
+          timeoutMs: 500,
         }
       );
     });
@@ -340,7 +339,7 @@ describe('WebhookQuoter tests', () => {
         },
         {
           headers: {},
-          timeout: NOTIFICATION_TIMEOUT_MS,
+          timeoutMs: NOTIFICATION_TIMEOUT_MS,
         }
       );
     });
@@ -376,17 +375,17 @@ describe('WebhookQuoter tests', () => {
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
     });
 
@@ -421,17 +420,17 @@ describe('WebhookQuoter tests', () => {
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
     });
 
@@ -466,17 +465,17 @@ describe('WebhookQuoter tests', () => {
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).not.toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { quoteId: expect.any(String), ...permissionedTokenRequest.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
     });
   });
@@ -505,7 +504,7 @@ describe('WebhookQuoter tests', () => {
         hash: '0xfoo',
       },
     ]);
-    const webhookQuoter = new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http);
+    const webhookQuoter = new WebhookQuoter(logger, analytics, webhookProvider, MOCK_V2_CB_PROVIDER, http.fetch);
     it('v1 quote request only sent to fillers supporting v1', async () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
@@ -530,21 +529,21 @@ describe('WebhookQuoter tests', () => {
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL_ONEINCH,
         { blockUntilTimestamp: expect.any(Number) },
-        { headers: {}, timeout: NOTIFICATION_TIMEOUT_MS }
+        { headers: {}, timeoutMs: NOTIFICATION_TIMEOUT_MS }
       );
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).not.toBeCalledWith(WEBHOOK_URL, request.toCleanJSON(), {
         headers: {},
-        timeout: 500,
+        timeoutMs: 500,
       });
       // empty supportedVersions defaults to v2 and v3
       expect(http.post).not.toBeCalledWith(WEBHOOK_URL_FOO, request.toCleanJSON(), {
         headers: {},
-        timeout: 500,
+        timeoutMs: 500,
       });
     });
 
@@ -572,14 +571,14 @@ describe('WebhookQuoter tests', () => {
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
           headers: {},
-          timeout: 500,
+          timeoutMs: 500,
         }
       );
       // empty config defaults to v2 and v3
@@ -588,7 +587,7 @@ describe('WebhookQuoter tests', () => {
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
           headers: {},
-          timeout: 500,
+          timeoutMs: 500,
         }
       );
     });
@@ -617,14 +616,14 @@ describe('WebhookQuoter tests', () => {
       expect(http.post).toBeCalledWith(
         WEBHOOK_URL,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
-        { headers: {}, timeout: 500 }
+        { headers: {}, timeoutMs: 500 }
       );
       expect(http.post).not.toBeCalledWith(
         WEBHOOK_URL_SEARCHER,
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
           headers: {},
-          timeout: 500,
+          timeoutMs: 500,
         }
       );
       // empty config defaults to v2 and v3
@@ -633,7 +632,7 @@ describe('WebhookQuoter tests', () => {
         { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
         {
           headers: {},
-          timeout: 500,
+          timeoutMs: 500,
         }
       );
     });
@@ -665,12 +664,12 @@ describe('WebhookQuoter tests', () => {
       WEBHOOK_URL,
       // opposing request carries a distinct, randomized requestId (obfuscation)
       { quoteId: expect.any(String), ...request.toOpposingCleanJSON(), requestId: expect.any(String) },
-      { headers: {}, timeout: 500 }
+      { headers: {}, timeoutMs: 500 }
     );
     expect(http.post).toBeCalledWith(
       WEBHOOK_URL,
       { quoteId: expect.any(String), ...request.toCleanJSON(), requestId: expect.any(String) },
-      { headers: {}, timeout: 500 }
+      { headers: {}, timeoutMs: 500 }
     );
   });
 
@@ -714,7 +713,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1], hash: '0xuni' },
     ]);
-    const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, http);
+    const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, http.fetch);
     const request = makeQuoteRequest({ tokenInChainId: 1, tokenOutChainId: 1, protocol: ProtocolVersion.V2 });
     const quote = {
       amountOut: ethers.utils.parseEther('2').toString(),
@@ -756,7 +755,7 @@ describe('WebhookQuoter tests', () => {
     const provider = new MockWebhookConfigurationProvider([
       { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [4, 5, 6], hash: '0xuni' },
     ]);
-    const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, http);
+    const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, http.fetch);
 
     const response = await quoter.quote(fakes.ctx, request);
 
@@ -934,9 +933,7 @@ describe('WebhookQuoter tests', () => {
   // in test/util/fetch-http.test.ts), so a 404 never reaches isNonQuote — it rejects into the catch
   // and is recorded as an HTTP_ERROR.
   it('Counts a 404 as an HTTP error, not a non-quote', async () => {
-    http.post.mockRejectedValue(
-      new HttpError('Request failed with status code 404', HttpError.BAD_REQUEST, { status: 404, data: '' })
-    );
+    http.post.mockResolvedValue({ status: 404, data: '' });
 
     const response = await webhookQuoter.quote(fakes.ctx, request);
 
@@ -1090,7 +1087,7 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('emits RFQ_TIMEOUT (bare and per-filler) only for client timeouts', async () => {
-      http.post.mockRejectedValue(new HttpError('timeout of 500ms exceeded', HttpError.TIMEOUT));
+      http.post.mockRejectedValue(fetchTimeoutError());
 
       const response = await webhookQuoter.quote(fakes.ctx, request);
 
@@ -1108,9 +1105,7 @@ describe('WebhookQuoter tests', () => {
     });
 
     it('does not emit RFQ_TIMEOUT for non-timeout errors', async () => {
-      http.post.mockRejectedValue(
-        new HttpError('Request failed with status code 500', HttpError.BAD_RESPONSE, { status: 500, data: '' })
-      );
+      http.post.mockResolvedValue({ status: 500, data: '' });
 
       await webhookQuoter.quote(fakes.ctx, request);
 
@@ -1125,7 +1120,7 @@ describe('WebhookQuoter tests', () => {
       const v1OnlyProvider = new MockWebhookConfigurationProvider([
         { name: 'v1only', endpoint: WEBHOOK_URL, headers: {}, hash: '0xv1', supportedVersions: [ProtocolVersion.V1] },
       ]);
-      const quoter = new WebhookQuoter(logger, analytics, v1OnlyProvider, MOCK_V2_CB_PROVIDER, http);
+      const quoter = new WebhookQuoter(logger, analytics, v1OnlyProvider, MOCK_V2_CB_PROVIDER, http.fetch);
 
       const response = await quoter.quote(fakes.ctx, makeQuoteRequest({ protocol: ProtocolVersion.V2 }));
 

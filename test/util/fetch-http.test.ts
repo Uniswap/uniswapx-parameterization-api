@@ -14,14 +14,14 @@ import {
 } from '../../lib/providers';
 import { MockV2CircuitBreakerConfigurationProvider } from '../../lib/providers/circuit-breaker/mock';
 import { WebhookQuoter } from '../../lib/quoters';
-import { fetchHttp, HttpError } from '../../lib/util/fetch-http';
+import { fetchJson, HttpError, timedFetch } from '../../lib/util/fetch-http';
 import { FakeAnalyticsLogger, fakeContext } from '../fakes';
 
 // Every test here runs the client against a real local HTTP server. The expected values are the
 // ones the service produced on axios, which its analytics records, logs and dashboards were built
 // on: the callers' classification of an outcome (the quoter's quote / non-quote / timeout / error;
 // the order post's accepted / rejected / reconciled) is keyed off how the client resolves and
-// rejects, so those are pinned exactly. Only the error's class name changed (AxiosError -> HttpError).
+// rejects, so those are pinned exactly.
 
 interface RecordedRequest {
   method: string;
@@ -176,30 +176,31 @@ type Outcome =
       code?: string;
       message: string;
       asString: string;
-      responseStatus?: number;
-      responseData?: unknown;
+      errorKind: string;
+      status?: number;
+      data?: unknown;
     };
 
 async function outcomeOf(url: string, timeout = 500): Promise<Outcome> {
   try {
-    const res = await fetchHttp().post(url, { hello: 'world' }, { timeout });
+    const res = await fetchJson(timedFetch, url, { method: 'POST', body: { hello: 'world' }, timeoutMs: timeout });
     return { kind: 'resolved', status: res.status, data: res.data };
   } catch (e) {
     const err = e as HttpError;
     return {
       kind: 'rejected',
       isHttpError: e instanceof HttpError,
-      code: err.code,
+      errorKind: err.kind,
       message: err.message,
       // What the quoter writes into the analytics record's `axiosError` field.
       asString: `${e}`,
-      responseStatus: err.response?.status,
-      responseData: err.response?.data,
+      status: err.status,
+      data: err.data,
     };
   }
 }
 
-describe('fetchHttp resolves and rejects', () => {
+describe('fetchJson resolves and rejects', () => {
   const cases: Array<[string, string, Outcome]> = [
     ['200 JSON', '/json', { kind: 'resolved', status: 200, data: { ok: true, n: 1 } }],
     ['200 non-JSON text', '/text', { kind: 'resolved', status: 200, data: 'not json' }],
@@ -212,11 +213,11 @@ describe('fetchHttp resolves and rejects', () => {
       {
         kind: 'rejected',
         isHttpError: true,
-        code: 'ERR_BAD_REQUEST',
+        errorKind: 'status',
         message: 'Request failed with status code 404',
         asString: 'HttpError: Request failed with status code 404',
-        responseStatus: 404,
-        responseData: { error: 'nope' },
+        status: 404,
+        data: { error: 'nope' },
       },
     ],
     [
@@ -225,11 +226,11 @@ describe('fetchHttp resolves and rejects', () => {
       {
         kind: 'rejected',
         isHttpError: true,
-        code: 'ERR_BAD_RESPONSE',
+        errorKind: 'status',
         message: 'Request failed with status code 500',
         asString: 'HttpError: Request failed with status code 500',
-        responseStatus: 500,
-        responseData: 'boom',
+        status: 500,
+        data: 'boom',
       },
     ],
   ];
@@ -238,25 +239,25 @@ describe('fetchHttp resolves and rejects', () => {
     expect(await outcomeOf(`${baseUrl}${path}`)).toEqual(expected);
   });
 
-  it('a response slower than the timeout is a timeout (ECONNABORTED) with no response', async () => {
+  it('a response slower than the timeout is a timeout with no status', async () => {
     expect(await outcomeOf(`${baseUrl}/slow`, 50)).toEqual({
       kind: 'rejected',
       isHttpError: true,
-      code: 'ECONNABORTED',
+      errorKind: 'timeout',
       message: 'timeout of 50ms exceeded',
       asString: 'HttpError: timeout of 50ms exceeded',
-      responseStatus: undefined,
-      responseData: undefined,
+      status: undefined,
+      data: undefined,
     });
   });
 
-  it('a refused connection is a network error carrying the socket code and message', async () => {
+  it('a refused connection is a network error carrying the socket message', async () => {
     const outcome = await outcomeOf(closedPortUrl);
     expect(outcome).toMatchObject({
       kind: 'rejected',
       isHttpError: true,
-      code: 'ECONNREFUSED',
-      responseStatus: undefined,
+      errorKind: 'network',
+      status: undefined,
     });
     expect(outcome.kind === 'rejected' && outcome.asString).toMatch(
       /^HttpError: connect ECONNREFUSED 127\.0\.0\.1:\d+$/
@@ -267,15 +268,20 @@ describe('fetchHttp resolves and rejects', () => {
     // 40ms gaps would each sit well inside the 200ms timeout, but the whole ~480ms body does not.
     expect(await outcomeOf(`${baseUrl}/trickle`, TRICKLE_TIMEOUT_MS)).toMatchObject({
       kind: 'rejected',
-      code: 'ECONNABORTED',
+      errorKind: 'timeout',
     });
   });
 });
 
-describe('fetchHttp sends', () => {
+describe('fetchJson sends', () => {
   async function postSeen(headers?: Record<string, string>): Promise<RecordedRequest> {
     recorded.length = 0;
-    await fetchHttp().post(`${baseUrl}/json`, { requestId: 'r1', amount: '10' }, { timeout: 500, headers });
+    await fetchJson(timedFetch, `${baseUrl}/json`, {
+      method: 'POST',
+      body: { requestId: 'r1', amount: '10' },
+      headers,
+      timeoutMs: 500,
+    });
     return recorded[0];
   }
 
@@ -292,23 +298,12 @@ describe('fetchHttp sends', () => {
     expect(seen.headers['content-type']).toEqual('application/json; charset=utf-8');
   });
 
-  it('GETs with Accept only, and query params encoded exactly as axios encoded them', async () => {
+  it('a GET with Accept only and no body', async () => {
     recorded.length = 0;
-    await fetchHttp().get(`${baseUrl}/json`, {
-      params: { orderHashes: '0xAA,0xbb', chainId: 1, spaced: 'a b', odd: 'x:y$z[1]&=?/#é', skipped: undefined },
-    });
-    // The literal is what axios.getUri produced for the same params.
-    expect(recorded[0].url).toEqual(
-      '/json?orderHashes=0xAA,0xbb&chainId=1&spaced=a+b&odd=x:y$z%5B1%5D%26%3D%3F%2F%23%C3%A9'
-    );
+    await fetchJson(timedFetch, `${baseUrl}/json?x=1`, { method: 'GET' });
+    expect(recorded[0]).toMatchObject({ method: 'GET', url: '/json?x=1', body: '' });
     expect(recorded[0].headers['content-type']).toBeUndefined();
     expect(recorded[0].headers['accept']).toEqual('application/json, text/plain, */*');
-  });
-
-  it('GET params append to an existing query and drop a fragment', async () => {
-    recorded.length = 0;
-    await fetchHttp().get(`${baseUrl}/json?keep=1#frag`, { params: { n: 2 } });
-    expect(recorded[0].url).toEqual('/json?keep=1&n=2');
   });
 });
 

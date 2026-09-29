@@ -10,7 +10,7 @@ import {
 } from '.';
 import { ErrorResponse } from '../../handlers/base';
 import { ErrorCode } from '../../util/errors';
-import { fetchHttp, HttpClient, HttpError } from '../../util/fetch-http';
+import { FetchFn, fetchJson, HttpError, timedFetch } from '../../util/fetch-http';
 
 // The order service validates on-chain (RPC) before accepting, so its tail can
 // exceed a couple of seconds; this must stay below the hard-quote Lambda budget
@@ -28,10 +28,6 @@ export const ORDER_SERVICE_MAX_ORDER_HASHES = 50;
 // quote path, but a stalled order service must not eat the cron's whole budget either.
 export const ORDER_STATUS_TIMEOUT_MS = 5000;
 
-// The HTTP client this provider uses (the status read, the order post, and its timeout
-// reconciliation). Injected so tests can substitute a fake.
-export type OrderServiceHttp = HttpClient;
-
 const ORDER_TYPE_MAP = new Map<Function, string>([
   [CosignedV2DutchOrder, OrderType.Dutch_V2],
   [CosignedV3DutchOrder, OrderType.Dutch_V3],
@@ -46,7 +42,7 @@ interface GetOrdersResponse {
 export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatusProvider {
   private log: Logger;
 
-  constructor(_log: Logger, private uniswapxServiceUrl: string, private readonly http: OrderServiceHttp = fetchHttp()) {
+  constructor(_log: Logger, private uniswapxServiceUrl: string, private readonly fetchFn: FetchFn = timedFetch) {
     this.log = _log.child({ quoter: 'UniswapXOrderService' });
   }
 
@@ -63,10 +59,12 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
         `getOrdersByHashes: ${orderHashes.length} hashes exceeds the order service cap of ${ORDER_SERVICE_MAX_ORDER_HASHES}`
       );
     }
-    const response = await this.http.get<GetOrdersResponse>(`${this.uniswapxServiceUrl}dutch-auction/orders`, {
-      params: { orderHashes: orderHashes.join(',') },
-      timeout: ORDER_STATUS_TIMEOUT_MS,
-    });
+    // Hex hashes need no encoding; the service takes them comma-joined.
+    const response = await fetchJson<GetOrdersResponse>(
+      this.fetchFn,
+      `${this.uniswapxServiceUrl}dutch-auction/orders?orderHashes=${orderHashes.join(',')}`,
+      { method: 'GET', timeoutMs: ORDER_STATUS_TIMEOUT_MS }
+    );
     const orders = Array.isArray(response.data?.orders) ? response.data.orders : [];
     const statuses = orders.flatMap((order) => {
       const status = toOrderStatus(order);
@@ -89,13 +87,10 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
       throw new Error(`Unsupported order type: ${order.constructor.name}`);
     }
 
-    const httpConfig = {
-      timeout: ORDER_SERVICE_TIMEOUT_MS,
-    };
     try {
-      const response = await this.http.post(
-        `${this.uniswapxServiceUrl}dutch-auction/order`,
-        {
+      const response = await fetchJson(this.fetchFn, `${this.uniswapxServiceUrl}dutch-auction/order`, {
+        method: 'POST',
+        body: {
           encodedOrder: order.serialize(),
           signature: signature,
           chainId: order.chainId,
@@ -103,8 +98,8 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
           requestId: requestId,
           orderType: orderType,
         },
-        httpConfig
-      );
+        timeoutMs: ORDER_SERVICE_TIMEOUT_MS,
+      });
       this.log.info({ response: response, orderHash }, 'Order posted to UniswapX Service');
       return {
         statusCode: response.status,
@@ -117,8 +112,8 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
         // after we hang up), so the outcome is indeterminate, not a rejection.
         // Reporting it as a failure makes clients treat a live, fillable order
         // as rejected (SWAP-2839), so reconcile before reporting.
-        if (!e.response) {
-          this.log.warn({ orderHash, code: e.code, error: e.message }, 'Order post timed out; reconciling');
+        if (e.kind !== 'status') {
+          this.log.warn({ orderHash, kind: e.kind, error: e.message }, 'Order post timed out; reconciling');
           const accepted = await this.orderExists(order.chainId, orderHash);
           if (accepted) {
             this.log.info({ orderHash }, 'Order accepted by UniswapX Service despite post timeout');
@@ -139,13 +134,10 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
             data: { hash: orderHash },
           };
         }
-        this.log.error(
-          { error: e.response?.data, httpStatus: e.response?.status, code: e.code },
-          'Error posting order to UniswapX Service'
-        );
-        const body = orderServiceErrorBody(e.response?.data);
+        this.log.error({ error: e.data, httpStatus: e.status }, 'Error posting order to UniswapX Service');
+        const body = orderServiceErrorBody(e.data);
         return {
-          statusCode: (e.response?.status ?? 500) as ErrorResponse['statusCode'],
+          statusCode: (e.status ?? 500) as ErrorResponse['statusCode'],
           // Passed through as the order service reported it; its codes are not all ours.
           errorCode: (body.errorCode as ErrorCode | undefined) ?? ErrorCode.InternalError,
           detail: body.detail ?? e.message,
@@ -165,10 +157,11 @@ export class UniswapXServiceProvider implements OrderServiceProvider, OrderStatu
     try {
       // Give the order service's in-flight request a moment to persist.
       await new Promise((resolve) => setTimeout(resolve, ORDER_RECONCILE_DELAY_MS));
-      const response = await this.http.get<GetOrdersResponse>(`${this.uniswapxServiceUrl}dutch-auction/orders`, {
-        params: { chainId, orderHash },
-        timeout: ORDER_RECONCILE_TIMEOUT_MS,
-      });
+      const response = await fetchJson<GetOrdersResponse>(
+        this.fetchFn,
+        `${this.uniswapxServiceUrl}dutch-auction/orders?chainId=${chainId}&orderHash=${orderHash}`,
+        { method: 'GET', timeoutMs: ORDER_RECONCILE_TIMEOUT_MS }
+      );
       return Array.isArray(response.data?.orders) && response.data.orders.length > 0;
     } catch (e) {
       this.log.error({ orderHash, error: e instanceof Error ? e.message : e }, 'Failed to reconcile order post');
