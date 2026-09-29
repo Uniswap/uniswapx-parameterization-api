@@ -13,7 +13,7 @@ logger.level(Logger.FATAL);
 const SERVICE_URL = 'https://api.example.com/';
 const hash = (i: number) => `0x${i.toString(16).padStart(64, '0')}`;
 
-// Records every GET and answers with a canned body; no axios module mocking.
+// Records every GET and answers with a canned body; no module mocking.
 class FakeHttp implements OrderServiceHttp {
   public calls: { url: string; config: unknown }[] = [];
   constructor(private readonly body: unknown = {}, private readonly error?: Error) {}

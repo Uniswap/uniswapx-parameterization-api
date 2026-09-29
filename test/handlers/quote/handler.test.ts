@@ -28,7 +28,7 @@ const CHAIN_ID = 1;
 const logger = Logger.createLogger({ name: 'test' });
 logger.level(Logger.FATAL);
 
-// Injected in place of axios and Firehose for the WebhookQuoter-backed tests.
+// Injected in place of the HTTP client and Firehose for the WebhookQuoter-backed tests.
 const http = { post: jest.fn() } as unknown as jest.Mocked<WebhookHttp>;
 const analytics = new FakeAnalyticsLogger();
 
@@ -79,7 +79,7 @@ describe('Quote handler', () => {
     fakes.metrics.reset();
     fakes.logger.reset();
     // WebhookQuoter randomizes which side (real vs. opposing) is dispatched first; pin it
-    // so the positional axios mocks in these tests (real request first) stay deterministic.
+    // so the positional HTTP mocks in these tests (real request first) stay deterministic.
     jest.spyOn(Math, 'random').mockReturnValue(0);
   });
 
@@ -276,6 +276,7 @@ describe('Quote handler', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               amountOut: amountIn.mul(2).toString(),
               requestId: (_req as any).requestId,
@@ -291,6 +292,7 @@ describe('Quote handler', () => {
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               amountOut: amountIn.mul(3).toString(),
               requestId: (_req as any).requestId,
@@ -306,6 +308,7 @@ describe('Quote handler', () => {
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               amountOut: amountIn.mul(1).toString(),
               requestId: (_req as any).requestId,
@@ -321,6 +324,7 @@ describe('Quote handler', () => {
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               amountOut: amountIn.mul(1).toString(),
               requestId: (_req as any).requestId,
@@ -377,6 +381,7 @@ describe('Quote handler', () => {
         .mockImplementationOnce((_endpoint, _req, options: any) => {
           expect(options.headers['X-Authentication']).toEqual('1234');
           return Promise.resolve({
+            status: 200,
             data: {
               ...responseFromRequest(request, { amountOut: amountIn.mul(2).toString() }),
               requestId: (_req as any).requestId,
@@ -387,6 +392,7 @@ describe('Quote handler', () => {
           expect(options.headers['X-Authentication']).toEqual('1234');
           const res = responseFromRequest(request, { amountOut: amountIn.mul(3).toString() });
           return Promise.resolve({
+            status: 200,
             data: {
               ...res,
               tokenIn: res.tokenOut,
@@ -396,6 +402,7 @@ describe('Quote handler', () => {
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               amountOut: amountIn.mul(1).toString(),
               requestId: (_req as any).requestId,
@@ -412,6 +419,7 @@ describe('Quote handler', () => {
         .mockImplementationOnce((_endpoint, _req, _options) => {
           const res = responseFromRequest(request, { amountOut: amountIn.mul(1).toString() });
           return Promise.resolve({
+            status: 200,
             data: {
               ...res,
               tokenIn: res.tokenOut,
@@ -446,6 +454,7 @@ describe('Quote handler', () => {
 
       http.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             ...request,
           },
@@ -469,6 +478,7 @@ describe('Quote handler', () => {
 
       http.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             requestId: '1234',
             amountOut: amountIn.toString(),
@@ -498,6 +508,7 @@ describe('Quote handler', () => {
 
       http.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             ...request,
             quoteId: QUOTE_ID,
@@ -529,6 +540,7 @@ describe('Quote handler', () => {
       http.post
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               amountOut: amountIn.mul(2).toString(),
               tokenIn: request.tokenIn,
@@ -544,6 +556,7 @@ describe('Quote handler', () => {
         })
         .mockImplementationOnce((_endpoint, _req, _options) => {
           return Promise.resolve({
+            status: 200,
             data: {
               amountOut: amountIn.div(2).toString(),
               tokenIn: request.tokenOut,
@@ -583,6 +596,7 @@ describe('Quote handler', () => {
 
       http.post.mockImplementationOnce((_endpoint, _req, _options) => {
         return Promise.resolve({
+          status: 200,
           data: {
             amountOut: amountIn.div(2).toString(),
             tokenIn: request.tokenIn,

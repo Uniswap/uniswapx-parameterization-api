@@ -1,5 +1,4 @@
 import { TradeType } from '@uniswap/sdk-core';
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import Logger from 'bunyan';
 import { ethers } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,10 +16,12 @@ import {
   QuoteResponse,
   WebhookResponseType,
 } from '../entities';
+import { RfqResponse } from '../handlers/quote/schema';
 import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { IAnalyticsLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
+import { fetchHttp, HttpClient, HttpError, HttpRequestConfig, HttpResponse } from '../util/fetch-http';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
 
@@ -54,8 +55,8 @@ export function deriveFanoutStats(
   };
 }
 
-/** The axios subset WebhookQuoter uses for market-maker webhooks and block notifications. */
-export type WebhookHttp = Pick<AxiosInstance, 'post'>;
+/** The HTTP subset WebhookQuoter uses for market-maker webhooks and block notifications. */
+export type WebhookHttp = Pick<HttpClient, 'post'>;
 
 // Quoter which fetches quotes from http endpoints
 // endpoints must return well-formed QuoteResponse JSON
@@ -67,7 +68,7 @@ export class WebhookQuoter implements Quoter {
     private firehose: IAnalyticsLogger,
     private webhookProvider: WebhookConfigurationProvider,
     private circuitBreakerProvider: CircuitBreakerConfigurationProvider,
-    private readonly http: WebhookHttp = axios
+    private readonly http: WebhookHttp = fetchHttp()
   ) {
     this.log = _log.child({ quoter: 'WebhookQuoter' });
   }
@@ -190,7 +191,7 @@ export class WebhookQuoter implements Quoter {
     const before = Date.now();
     const timeoutOverride = config.overrides?.timeout;
 
-    const axiosConfig = {
+    const httpConfig: HttpRequestConfig = {
       timeout: timeoutOverride ? Number(timeoutOverride) : getWebhookTimeoutMs(request.tokenInChainId),
       ...(!!headers && { headers }),
     };
@@ -201,7 +202,7 @@ export class WebhookQuoter implements Quoter {
       name: name,
       endpoint: endpoint,
       requestTime: timestampInMstoISOString(before),
-      timeoutSettingMs: axiosConfig.timeout,
+      timeoutSettingMs: httpConfig.timeout,
     };
 
     try {
@@ -213,7 +214,7 @@ export class WebhookQuoter implements Quoter {
         ? [realWireRequest, opposingWireRequest]
         : [opposingWireRequest, realWireRequest];
       const [firstResponse, secondResponse] = await Promise.all(
-        orderedRequests.map((req) => this.http.post(endpoint, req, axiosConfig))
+        orderedRequests.map((req) => this.http.post<RfqResponse>(endpoint, req, httpConfig))
       );
       const hookResponse = realRequestFirst ? firstResponse : secondResponse;
       const opposite = realRequestFirst ? secondResponse : firstResponse;
@@ -387,7 +388,7 @@ export class WebhookQuoter implements Quoter {
         responseTime: timestampInMstoISOString(Date.now()),
         latencyMs: Date.now() - before,
       };
-      const timedOut = e instanceof AxiosError && e.code === 'ECONNABORTED';
+      const timedOut = e instanceof HttpError && e.code === HttpError.TIMEOUT;
       // Timeouts are a strict subset of RFQ_FAIL_ERROR, split out because an endpoint that
       // times out holds the fan-out open for the full timeout budget — it is the
       // wasted-wait driver, while other errors typically fail fast.
@@ -395,19 +396,21 @@ export class WebhookQuoter implements Quoter {
         void ctx.metrics.count(Metric.RFQ_TIMEOUT);
         void ctx.metrics.count(metricContext(Metric.RFQ_TIMEOUT, name));
       }
-      if (e instanceof AxiosError) {
+      if (e instanceof HttpError) {
         log.error(
           { endpoint, status: e.response?.status?.toString() },
-          `Axios error fetching quote from ${endpoint}: ${e}`
+          `HTTP error fetching quote from ${endpoint}: ${e}`
         );
-        const axiosResponseType = timedOut ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
+        const httpResponseType = timedOut ? WebhookResponseType.TIMEOUT : WebhookResponseType.HTTP_ERROR;
         this.firehose.sendAnalyticsEvent(
           new AnalyticsEvent(AnalyticsEventType.WEBHOOK_RESPONSE, {
             ...requestContext,
             status: e.response?.status,
             data: e.response?.data,
             ...errorLatency,
-            responseType: axiosResponseType,
+            responseType: httpResponseType,
+            // The field keeps its original name: BigQuery's webhook_quoter_response_logs view
+            // exposes it as `axios_error`.
             axiosError: `${e}`,
           })
         );
@@ -427,7 +430,7 @@ export class WebhookQuoter implements Quoter {
   }
 
   private async notifyBlock(status: { webhook: WebhookConfiguration; blockUntil: number }): Promise<void> {
-    const axiosConfig = {
+    const httpConfig: HttpRequestConfig = {
       timeout: NOTIFICATION_TIMEOUT_MS,
       ...(!!status.webhook.headers && { headers: status.webhook.headers }),
     };
@@ -437,7 +440,7 @@ export class WebhookQuoter implements Quoter {
         {
           blockUntilTimestamp: status.blockUntil,
         },
-        axiosConfig
+        httpConfig
       )
       .catch((_e) => {
         return;
@@ -450,9 +453,9 @@ export class WebhookQuoter implements Quoter {
 // valid non-quote responses:
 // - 204, the signal the filler docs ask for
 // - 0 amount quote
-// Note that non-2xx statuses never get here: axios's default validateStatus rejects them, so they
-// land in the caller's catch as an HTTP_ERROR. A 404 is an error, not an election not to quote.
-function isNonQuote(request: QuoteRequest, hookResponse: AxiosResponse, parsedResponse: QuoteResponse): boolean {
+// Note that non-2xx statuses never get here: the HTTP client rejects them, so they land in the
+// caller's catch as an HTTP_ERROR. A 404 is an error, not an election not to quote.
+function isNonQuote(request: QuoteRequest, hookResponse: HttpResponse, parsedResponse: QuoteResponse): boolean {
   // A 204 means "no content", so the status alone decides — a body that arrives with it is not a quote.
   if (hookResponse.status === 204) {
     return true;
