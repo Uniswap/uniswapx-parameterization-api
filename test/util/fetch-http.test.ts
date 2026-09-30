@@ -653,6 +653,30 @@ describe('fetchJson gives up on a request its deadline cannot settle', () => {
     }
   });
 
+  it('survives a late-settle callback that throws, and cancels the body of a late Response', async () => {
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    let finish!: (r: Response) => void;
+    const cancelled = jest.fn();
+    const late = new Response(new ReadableStream({ start: () => undefined, cancel: cancelled }));
+    try {
+      await expect(
+        fetchJson(() => new Promise((resolve) => (finish = resolve)), 'http://unused', {
+          ...post,
+          onLateSettle: () => {
+            throw new Error('logger is gone');
+          },
+        })
+      ).rejects.toMatchObject({ unsettled: 'headers' });
+      finish(late);
+      await new Promise((r) => setTimeout(r, 5));
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(cancelled).toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
   it('holds a live timer only while the request is in flight', async () => {
     const before = liveTimers();
     let finish!: (r: Response) => void;

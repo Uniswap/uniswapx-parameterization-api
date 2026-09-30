@@ -21,7 +21,7 @@ import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { IAnalyticsLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
-import { FetchFn, fetchJson, HttpError, timedFetch, WebhookRoute } from '../util/fetch-http';
+import { errorDetail, FetchFn, fetchJson, HttpError, timedFetch, WebhookRoute } from '../util/fetch-http';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
 
@@ -170,9 +170,9 @@ export class WebhookQuoter implements Quoter {
         onRoute: (route) => void ctx.metrics.count(routeMetric(route, 'REQUEST')),
         // Evidence for the open question of why the abort does not settle some requests: whether
         // the abandoned promise ever settles, how, and how long after we gave up on it.
-        onLateSettle: (settled) =>
+        onLateSettle: ({ error, ...settled }) =>
           log.warn(
-            { endpoint, ...settled, error: settled.error === undefined ? undefined : `${settled.error}` },
+            { endpoint, ...settled, ...(error !== undefined && { error: errorDetail(error) }) },
             `Webhook request to ${endpoint} settled after its deadline had passed`
           ),
       });

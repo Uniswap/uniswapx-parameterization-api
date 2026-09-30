@@ -1294,19 +1294,28 @@ describe('WebhookQuoter tests', () => {
       );
     });
 
-    it('logs how a request it gave up on eventually settled', async () => {
-      let finish!: (r: Response) => void;
-      const settlesWhenTold: FetchFn = () => new Promise((resolve) => (finish = resolve));
-      const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, settlesWhenTold);
+    it('logs how a request it gave up on eventually settled, with the socket error behind a failure', async () => {
+      let fail!: (e: unknown) => void;
+      const failsWhenTold: FetchFn = () => new Promise((_, reject) => (fail = reject));
+      const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, failsWhenTold);
 
       await quoter.quote(fakes.ctx, request);
-      // Let both requests' deadlines pass before the abandoned one answers.
+      // Let both requests' deadlines pass before the abandoned one fails.
       await new Promise((r) => setTimeout(r, 5));
-      finish(new Response('{}', { status: 200 }));
+      fail(
+        Object.assign(new TypeError('fetch failed'), {
+          cause: Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' }),
+        })
+      );
       await new Promise((r) => setTimeout(r, 5));
 
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ endpoint: WEBHOOK_URL, phase: 'headers', outcome: 'resolved' }),
+        expect.objectContaining({
+          endpoint: WEBHOOK_URL,
+          phase: 'headers',
+          outcome: 'rejected',
+          error: { message: 'other side closed', code: 'UND_ERR_SOCKET' },
+        }),
         expect.stringContaining('settled after its deadline')
       );
     });

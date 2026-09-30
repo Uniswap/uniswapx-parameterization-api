@@ -171,13 +171,36 @@ class Deadline {
     this.unsettled = pending.phase;
     pending.reject(timeoutError());
     const gaveUpAt = Date.now();
-    const report = (outcome: LateSettlement['outcome'], error?: unknown) =>
-      this.onLateSettle?.({ phase: pending.phase, outcome, afterMs: Date.now() - gaveUpAt, error });
+    // The report runs in whatever invocation is current when the promise settles; a throwing
+    // callback must not become an unhandled rejection there.
+    const report = (outcome: LateSettlement['outcome'], error?: unknown) => {
+      try {
+        this.onLateSettle?.({ phase: pending.phase, outcome, afterMs: Date.now() - gaveUpAt, error });
+      } catch {
+        // nothing to do
+      }
+    };
     pending.promise.then(
-      () => report('resolved'),
+      (value) => {
+        // A Response nobody will read would hold its pooled connection until the peer closes it.
+        if (value instanceof Response) {
+          void value.body?.cancel().catch(() => undefined);
+        }
+        report('resolved');
+      },
       (error) => report('rejected', error)
     );
   }
+}
+
+/**
+ * The message worth logging for a failed request, and the socket-level code when there is one:
+ * fetch wraps the cause (`ECONNRESET`, `UND_ERR_SOCKET`, ...) in `TypeError: fetch failed`.
+ */
+export function errorDetail(e: unknown): { message: string; code?: string } {
+  const cause = typeof e === 'object' && e !== null && 'cause' in e && e.cause ? e.cause : e;
+  const code = field(cause, 'code');
+  return { message: networkMessage(e), ...(code !== undefined && { code }) };
 }
 
 /**
@@ -271,7 +294,7 @@ function networkMessage(e: unknown): string {
 }
 
 // Duck-typed: errors thrown by Node's own fetch fail `instanceof Error` under jest's realm.
-function field(e: unknown, name: 'name' | 'message'): string | undefined {
+function field(e: unknown, name: 'name' | 'message' | 'code'): string | undefined {
   if (typeof e !== 'object' || e === null || !(name in e)) {
     return undefined;
   }
