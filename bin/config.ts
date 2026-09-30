@@ -26,11 +26,11 @@ export const EGRESS_PROXY_BACKEND_ACCOUNTS: Record<STAGE.BETA | STAGE.PROD, read
 
 // Share (0-100) of each stage's market-maker webhook calls the quote Lambdas send through the
 // egress proxy, to prove it on real traffic before the backend uniswapx service depends on it.
-// A stage that is absent is left untouched (no env change, so no new Lambda version). Prod ramps
-// by editing its entry: a small share first, then 100.
+// A stage that is absent is left untouched (no env change, so no new Lambda version). Prod was
+// ramped by editing its entry: 10, then 50, then 100.
 export const EGRESS_PROXY_WEBHOOK_SHARE_PERCENT: Partial<Record<STAGE.BETA | STAGE.PROD, number>> = {
   [STAGE.BETA]: 100,
-  [STAGE.PROD]: 50,
+  [STAGE.PROD]: 100,
 };
 
 // Backend accounts allowed to write GPA analytics records into each stage's S3 -> BigQuery path

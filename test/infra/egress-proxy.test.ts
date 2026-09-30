@@ -138,9 +138,9 @@ describe('EgressProxy', () => {
 });
 
 describe('egress proxy webhook share', () => {
-  it('routes all of beta and half of prod', () => {
+  it('routes all of beta and all of prod', () => {
     expect(EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.BETA]).toBe(100);
-    expect(EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.PROD]).toBe(50);
+    expect(EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.PROD]).toBe(100);
   });
 
   it.each([[0], [5], [100]])('accepts %s', (share) => expect(() => validateEgressProxyShare(share)).not.toThrow());
