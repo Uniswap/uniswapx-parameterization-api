@@ -21,7 +21,7 @@ import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { IAnalyticsLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
-import { FetchFn, fetchJson, HttpError, timedFetch, WebhookRoute } from '../util/fetch-http';
+import { errorDetail, FetchFn, fetchJson, HttpError, timedFetch, WebhookRoute } from '../util/fetch-http';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
 
@@ -155,6 +155,7 @@ export class WebhookQuoter implements Quoter {
    */
   private async sendRfq(
     ctx: Context,
+    log: Logger,
     endpoint: string,
     body: unknown,
     headers: Record<string, string> | undefined,
@@ -167,8 +168,22 @@ export class WebhookQuoter implements Quoter {
         headers,
         timeoutMs,
         onRoute: (route) => void ctx.metrics.count(routeMetric(route, 'REQUEST')),
+        // Evidence for the open question of why the abort does not settle some requests: whether
+        // the abandoned promise ever settles, how, and how long after we gave up on it.
+        onLateSettle: ({ error, ...settled }) =>
+          log.warn(
+            { endpoint, ...settled, ...(error !== undefined && { error: errorDetail(error) }) },
+            `Webhook request to ${endpoint} settled after its deadline had passed`
+          ),
       });
     } catch (e) {
+      if (e instanceof HttpError && e.unsettled) {
+        void ctx.metrics.count(Metric.RFQ_UNSETTLED_AT_DEADLINE);
+        log.warn(
+          { endpoint, phase: e.unsettled, route: e.route, timeoutMs },
+          `Webhook request to ${endpoint} had not settled at its deadline; answered without it`
+        );
+      }
       if (e instanceof HttpError && e.route) {
         void ctx.metrics.count(routeMetric(e.route, 'FAIL_ERROR'));
         if (e.kind === 'timeout') {
@@ -260,7 +275,7 @@ export class WebhookQuoter implements Quoter {
         : [opposingWireRequest, realWireRequest];
       // Either side failing fails the pair, as soon as it fails.
       const [firstResponse, secondResponse] = await Promise.all(
-        orderedRequests.map((req) => this.sendRfq(ctx, endpoint, req, headers, timeoutMs))
+        orderedRequests.map((req) => this.sendRfq(ctx, log, endpoint, req, headers, timeoutMs))
       );
       const hookResponse = realRequestFirst ? firstResponse : secondResponse;
       const opposite = realRequestFirst ? secondResponse : firstResponse;
