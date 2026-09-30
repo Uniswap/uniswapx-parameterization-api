@@ -55,8 +55,9 @@ export function deriveFanoutStats(
   };
 }
 
-// The per-path counterparts of RFQ_FAIL_ERROR and RFQ_TIMEOUT, plus a per-request send count, so
-// the proxied share's outcomes can be read apart from the direct ones while the share ramps.
+// Per-path request and failure counts, so the proxied share's outcomes can be read apart from the
+// direct ones while the share ramps. Unlike RFQ_FAIL_ERROR / RFQ_TIMEOUT, which count a pair's
+// failure once, these count every request under its own path (see sendRfq).
 const ROUTE_METRICS: Record<WebhookRoute, Record<'REQUEST' | 'FAIL_ERROR' | 'TIMEOUT', Metric>> = {
   direct: {
     REQUEST: Metric.RFQ_DIRECT_REQUEST,
@@ -147,6 +148,37 @@ export class WebhookQuoter implements Quoter {
     return this.circuitBreakerProvider.getEndpointStatuses(endpoints);
   }
 
+  /**
+   * Sends one of a pair's two requests and counts its own outcome under the path it took. The
+   * pair fails as soon as either request does, so a mixed pair (one direct, one proxied) would
+   * otherwise credit every failure to the faster-failing path and drop the other outcome.
+   */
+  private async sendRfq(
+    ctx: Context,
+    endpoint: string,
+    body: unknown,
+    headers: Record<string, string> | undefined,
+    timeoutMs: number
+  ): Promise<{ status: number; data: RfqResponse }> {
+    try {
+      return await fetchJson<RfqResponse>(this.fetchFn, endpoint, {
+        method: 'POST',
+        body,
+        headers,
+        timeoutMs,
+        onRoute: (route) => void ctx.metrics.count(routeMetric(route, 'REQUEST')),
+      });
+    } catch (e) {
+      if (e instanceof HttpError && e.route) {
+        void ctx.metrics.count(routeMetric(e.route, 'FAIL_ERROR'));
+        if (e.kind === 'timeout') {
+          void ctx.metrics.count(routeMetric(e.route, 'TIMEOUT'));
+        }
+      }
+      throw e;
+    }
+  }
+
   // Returns null only for attempts skipped before any request was sent (chain/protocol
   // mismatch); once a webhook request goes out, every path returns a FetchOutcome so the
   // caller can attribute fan-out wall time (response is null on non-quote/invalid/error).
@@ -228,15 +260,7 @@ export class WebhookQuoter implements Quoter {
         : [opposingWireRequest, realWireRequest];
       // Either side failing fails the pair, as soon as it fails.
       const [firstResponse, secondResponse] = await Promise.all(
-        orderedRequests.map((req) =>
-          fetchJson<RfqResponse>(this.fetchFn, endpoint, {
-            method: 'POST',
-            body: req,
-            headers,
-            timeoutMs,
-            onRoute: (route) => void ctx.metrics.count(routeMetric(route, 'REQUEST')),
-          })
-        )
+        orderedRequests.map((req) => this.sendRfq(ctx, endpoint, req, headers, timeoutMs))
       );
       const hookResponse = realRequestFirst ? firstResponse : secondResponse;
       const opposite = realRequestFirst ? secondResponse : firstResponse;
@@ -417,13 +441,6 @@ export class WebhookQuoter implements Quoter {
       if (timedOut) {
         void ctx.metrics.count(Metric.RFQ_TIMEOUT);
         void ctx.metrics.count(metricContext(Metric.RFQ_TIMEOUT, name));
-      }
-      const route = e instanceof HttpError ? e.route : undefined;
-      if (route) {
-        void ctx.metrics.count(routeMetric(route, 'FAIL_ERROR'));
-        if (timedOut) {
-          void ctx.metrics.count(routeMetric(route, 'TIMEOUT'));
-        }
       }
       if (e instanceof HttpError) {
         log.error({ endpoint, status: e.status?.toString() }, `HTTP error fetching quote from ${endpoint}: ${e}`);

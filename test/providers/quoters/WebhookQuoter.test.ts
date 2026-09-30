@@ -1181,7 +1181,7 @@ describe('WebhookQuoter tests', () => {
     const routeCounts = () =>
       Object.fromEntries(routeMetrics.map((m) => [m, callsOf(m).length]).filter(([, n]) => (n as number) > 0));
 
-    it('counts each proxied request, and a proxied timeout under both proxied failure metrics', async () => {
+    it('counts each proxied request and each proxied timeout, under both proxied failure metrics', async () => {
       http.post.mockRejectedValue(fetchTimeoutError());
       const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, routed('proxy'));
 
@@ -1189,10 +1189,10 @@ describe('WebhookQuoter tests', () => {
 
       expect(routeCounts()).toEqual({
         [Metric.RFQ_PROXIED_REQUEST]: 2,
-        [Metric.RFQ_PROXIED_FAIL_ERROR]: 1,
-        [Metric.RFQ_PROXIED_TIMEOUT]: 1,
+        [Metric.RFQ_PROXIED_FAIL_ERROR]: 2,
+        [Metric.RFQ_PROXIED_TIMEOUT]: 2,
       });
-      // The path split does not re-bucket the existing metrics.
+      // The path split does not re-bucket the existing metrics, which count the pair once.
       expect(callsOf(Metric.RFQ_TIMEOUT)).toHaveLength(1);
       expect(callsOf(Metric.RFQ_FAIL_ERROR)).toHaveLength(1);
     });
@@ -1203,7 +1203,40 @@ describe('WebhookQuoter tests', () => {
 
       await quoter.quote(fakes.ctx, request);
 
-      expect(routeCounts()).toEqual({ [Metric.RFQ_DIRECT_REQUEST]: 2, [Metric.RFQ_DIRECT_FAIL_ERROR]: 1 });
+      expect(routeCounts()).toEqual({ [Metric.RFQ_DIRECT_REQUEST]: 2, [Metric.RFQ_DIRECT_FAIL_ERROR]: 2 });
+    });
+
+    it('counts each request of a mixed pair under its own path, including the one that fails later', async () => {
+      // The direct request is refused at once and fails the pair; the proxied one times out later.
+      const routes: WebhookRoute[] = ['direct', 'proxy'];
+      const alternating: FetchFn = (input, init, config) => {
+        config?.onRoute?.(routes.shift() ?? 'direct');
+        return http.fetch(input, init, config);
+      };
+      http.post
+        .mockResolvedValueOnce({ status: 500, data: '' })
+        .mockImplementationOnce(() => new Promise((_, reject) => setTimeout(() => reject(fetchTimeoutError()), 20)));
+      const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, alternating);
+
+      await quoter.quote(fakes.ctx, request);
+
+      // The pair has already failed on the direct refusal while the proxied outcome is pending.
+      expect(routeCounts()).toEqual({
+        [Metric.RFQ_DIRECT_REQUEST]: 1,
+        [Metric.RFQ_PROXIED_REQUEST]: 1,
+        [Metric.RFQ_DIRECT_FAIL_ERROR]: 1,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(routeCounts()).toEqual({
+        [Metric.RFQ_DIRECT_REQUEST]: 1,
+        [Metric.RFQ_PROXIED_REQUEST]: 1,
+        [Metric.RFQ_DIRECT_FAIL_ERROR]: 1,
+        [Metric.RFQ_PROXIED_FAIL_ERROR]: 1,
+        [Metric.RFQ_PROXIED_TIMEOUT]: 1,
+      });
+      // The pair-level metrics still count the attempt once, as the refusal it failed on.
+      expect(callsOf(Metric.RFQ_FAIL_ERROR)).toHaveLength(1);
+      expect(callsOf(Metric.RFQ_TIMEOUT)).toHaveLength(0);
     });
 
     it('emits only the request count when the pair comes back', async () => {

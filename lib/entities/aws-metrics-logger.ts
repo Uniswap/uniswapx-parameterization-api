@@ -78,11 +78,13 @@ export enum Metric {
   // Webhook attempts that hit the client timeout (ECONNABORTED). A strict subset of
   // RFQ_FAIL_ERROR, split out because timeouts are the wasted-wait driver.
   RFQ_TIMEOUT = 'RFQ_TIMEOUT',
-  // Webhook calls by egress path, emitted while a share of them goes through the egress proxy:
+  // Webhook requests by egress path, emitted while a share of them goes through the egress proxy:
   // one REQUEST per request sent (two per endpoint per quote) and one FAIL_ERROR / TIMEOUT per
-  // failed endpoint attempt, under the path of the request that failed. Proxied and direct rates
-  // are comparable with each other. Nothing is emitted while every call goes direct (no proxy
-  // address, or a 0% share): the plain fetch reports no path.
+  // failed request, under its own path. Every request counts its own outcome, whichever of its
+  // pair fails the endpoint attempt first, so PROXIED_FAIL_ERROR / PROXIED_REQUEST is the share
+  // of proxied requests that failed and compares directly with the DIRECT ratio. Nothing is
+  // emitted while every call goes direct (no proxy address, or a 0% share): the plain fetch
+  // reports no path.
   RFQ_DIRECT_REQUEST = 'RFQ_DIRECT_REQUEST',
   RFQ_PROXIED_REQUEST = 'RFQ_PROXIED_REQUEST',
   RFQ_DIRECT_FAIL_ERROR = 'RFQ_DIRECT_FAIL_ERROR',
