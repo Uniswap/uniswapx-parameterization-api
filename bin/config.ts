@@ -30,7 +30,7 @@ export const EGRESS_PROXY_BACKEND_ACCOUNTS: Record<STAGE.BETA | STAGE.PROD, read
 // by editing its entry: a small share first, then 100.
 export const EGRESS_PROXY_WEBHOOK_SHARE_PERCENT: Partial<Record<STAGE.BETA | STAGE.PROD, number>> = {
   [STAGE.BETA]: 100,
-  [STAGE.PROD]: 10,
+  [STAGE.PROD]: 50,
 };
 
 // Backend accounts allowed to write GPA analytics records into each stage's S3 -> BigQuery path
