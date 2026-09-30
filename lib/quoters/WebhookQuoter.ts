@@ -21,7 +21,7 @@ import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { IAnalyticsLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
-import { FetchFn, fetchJson, HttpError, timedFetch } from '../util/fetch-http';
+import { FetchFn, fetchJson, HttpError, timedFetch, WebhookRoute } from '../util/fetch-http';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
 
@@ -53,6 +53,25 @@ export function deriveFanoutStats(
     wastedWaitMs: Math.max(0, fanoutWallMs - lastUsefulMs),
     stragglerName,
   };
+}
+
+// The per-path counterparts of RFQ_FAIL_ERROR and RFQ_TIMEOUT, plus a per-request send count, so
+// the proxied share's outcomes can be read apart from the direct ones while the share ramps.
+const ROUTE_METRICS: Record<WebhookRoute, Record<'REQUEST' | 'FAIL_ERROR' | 'TIMEOUT', Metric>> = {
+  direct: {
+    REQUEST: Metric.RFQ_DIRECT_REQUEST,
+    FAIL_ERROR: Metric.RFQ_DIRECT_FAIL_ERROR,
+    TIMEOUT: Metric.RFQ_DIRECT_TIMEOUT,
+  },
+  proxy: {
+    REQUEST: Metric.RFQ_PROXIED_REQUEST,
+    FAIL_ERROR: Metric.RFQ_PROXIED_FAIL_ERROR,
+    TIMEOUT: Metric.RFQ_PROXIED_TIMEOUT,
+  },
+};
+
+function routeMetric(route: WebhookRoute, outcome: 'REQUEST' | 'FAIL_ERROR' | 'TIMEOUT'): Metric {
+  return ROUTE_METRICS[route][outcome];
 }
 
 // Quoter which fetches quotes from http endpoints
@@ -210,7 +229,13 @@ export class WebhookQuoter implements Quoter {
       // Either side failing fails the pair, as soon as it fails.
       const [firstResponse, secondResponse] = await Promise.all(
         orderedRequests.map((req) =>
-          fetchJson<RfqResponse>(this.fetchFn, endpoint, { method: 'POST', body: req, headers, timeoutMs })
+          fetchJson<RfqResponse>(this.fetchFn, endpoint, {
+            method: 'POST',
+            body: req,
+            headers,
+            timeoutMs,
+            onRoute: (route) => void ctx.metrics.count(routeMetric(route, 'REQUEST')),
+          })
         )
       );
       const hookResponse = realRequestFirst ? firstResponse : secondResponse;
@@ -392,6 +417,13 @@ export class WebhookQuoter implements Quoter {
       if (timedOut) {
         void ctx.metrics.count(Metric.RFQ_TIMEOUT);
         void ctx.metrics.count(metricContext(Metric.RFQ_TIMEOUT, name));
+      }
+      const route = e instanceof HttpError ? e.route : undefined;
+      if (route) {
+        void ctx.metrics.count(routeMetric(route, 'FAIL_ERROR'));
+        if (timedOut) {
+          void ctx.metrics.count(routeMetric(route, 'TIMEOUT'));
+        }
       }
       if (e instanceof HttpError) {
         log.error({ endpoint, status: e.status?.toString() }, `HTTP error fetching quote from ${endpoint}: ${e}`);

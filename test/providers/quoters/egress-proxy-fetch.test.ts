@@ -228,19 +228,28 @@ describe('proxiedFetch', () => {
 describe('splitFetch', () => {
   const direct: FetchFn = async () => new Response('direct');
   const proxied: FetchFn = async () => new Response('proxied');
-  const routeOf = async (fn: FetchFn) => (await fn('http://x')).text();
+  // Which fetch answered, and which route the split reported for the call.
+  const routeOf = async (fn: FetchFn) => {
+    const reported: string[] = [];
+    const answered = await (await fn('http://x', {}, { onRoute: (r) => reported.push(r) })).text();
+    return `${answered}/${reported.join(',')}`;
+  };
 
-  it('returns the direct fetch at 0% and the proxied fetch at 100%', () => {
-    expect(splitFetch(direct, proxied, 0)).toBe(direct);
-    expect(splitFetch(direct, proxied, 100)).toBe(proxied);
+  it('sends every call direct at 0% and through the proxy at 100%, reporting the path each time', async () => {
+    expect(await routeOf(splitFetch(direct, proxied, 0))).toBe('direct/direct');
+    expect(await routeOf(splitFetch(direct, proxied, 100))).toBe('proxied/proxy');
   });
 
-  it('sends a call through the proxy when the draw falls under the share', async () => {
+  it('sends a call through the proxy when the draw falls under the share, and reports which', async () => {
     const draws = [0.1, 0.5, 0.29, 0.3];
     const split = splitFetch(direct, proxied, 30, () => draws.shift() ?? 1);
     const routes = [];
     for (let i = 0; i < 4; i++) routes.push(await routeOf(split));
-    expect(routes).toEqual(['proxied', 'direct', 'proxied', 'direct']);
+    expect(routes).toEqual(['proxied/proxy', 'direct/direct', 'proxied/proxy', 'direct/direct']);
+  });
+
+  it('works for a caller that does not ask for the route', async () => {
+    expect(await (await splitFetch(direct, proxied, 100)('http://x')).text()).toBe('proxied');
   });
 
   it('passes the timeout config through to the chosen fetch', async () => {

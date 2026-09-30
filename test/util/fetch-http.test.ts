@@ -14,8 +14,8 @@ import {
 } from '../../lib/providers';
 import { MockV2CircuitBreakerConfigurationProvider } from '../../lib/providers/circuit-breaker/mock';
 import { WebhookQuoter } from '../../lib/quoters';
-import { fetchJson, fetchUnderDeadline, HttpError, timedFetch } from '../../lib/util/fetch-http';
-import { FakeAnalyticsLogger, fakeContext } from '../fakes';
+import { FetchFn, fetchJson, fetchUnderDeadline, HttpError, timedFetch, WebhookRoute } from '../../lib/util/fetch-http';
+import { FakeAnalyticsLogger, fakeContext, fetchTimeoutError } from '../fakes';
 
 // Every test here runs the client against a real local HTTP server. The expected values are the
 // ones the service produced on axios, which its analytics records, logs and dashboards were built
@@ -532,5 +532,51 @@ describe('fetchUnderDeadline keeps the event loop alive until the deadline', () 
     const before = liveTimers();
     await expect(fetchUnderDeadline(1_000, () => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
     expect(liveTimers()).toBe(before);
+  });
+});
+
+describe('fetchJson carries the route a routing fetch reports', () => {
+  // A fetch that announces its path, then answers as told.
+  const reporting =
+    (route: WebhookRoute, answer: () => Promise<Response>): FetchFn =>
+    async (_input, _init, config) => {
+      config?.onRoute?.(route);
+      return answer();
+    };
+  const post = { method: 'POST' as const, body: {}, timeoutMs: 50 };
+
+  it('returns the route with a successful response and passes it to the caller', async () => {
+    const seen: WebhookRoute[] = [];
+    const result = await fetchJson(
+      reporting('proxy', async () => new Response('{"ok":true}', { status: 200 })),
+      'http://unused',
+      { ...post, onRoute: (r) => seen.push(r) }
+    );
+    expect(result).toEqual({ status: 200, data: { ok: true }, route: 'proxy' });
+    expect(seen).toEqual(['proxy']);
+  });
+
+  it.each([
+    ['a timeout', () => Promise.reject(fetchTimeoutError()), 'timeout'],
+    ['a refused status', async () => new Response('nope', { status: 503 }), 'status'],
+    [
+      'a connection failure',
+      () => Promise.reject(Object.assign(new TypeError('fetch failed'), { cause: new Error('ECONNRESET') })),
+      'network',
+    ],
+  ] as const)('attaches the route to the HttpError for %s', async (_label, answer, kind) => {
+    await expect(fetchJson(reporting('direct', answer), 'http://unused', post)).rejects.toMatchObject({
+      kind,
+      route: 'direct',
+    });
+  });
+
+  it('leaves the route undefined for a fetch that reports none', async () => {
+    const result = await fetchJson(async () => new Response('', { status: 200 }), 'http://unused', post);
+    expect(result.route).toBeUndefined();
+    await expect(fetchJson(() => Promise.reject(fetchTimeoutError()), 'http://unused', post)).rejects.toMatchObject({
+      kind: 'timeout',
+      route: undefined,
+    });
   });
 });
