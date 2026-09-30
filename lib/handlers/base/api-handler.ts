@@ -118,7 +118,7 @@ export abstract class APIGLambdaHandler<
   }
 
   get handler(): APIGatewayProxyHandler {
-    return metricScope(
+    const scoped = metricScope(
       (metric: MetricsLogger) =>
         async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> => {
           const requestStart = new Date().getTime();
@@ -145,6 +145,13 @@ export abstract class APIGLambdaHandler<
           };
         }
     );
+    // metricScope's wrapper is compiled with __awaiter, so it is not an AsyncFunction. When the
+    // event loop drains before the handler settles, the Lambda Node runtime fails the invocation
+    // (Invoke Error + Errors metric) only if the exported handler is an AsyncFunction; for anything
+    // else it silently posts a null response, which API Gateway turns into a 502 with no Lambda
+    // error or log line. A native async wrapper makes that failure mode loud instead of invisible.
+    return async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> =>
+      scoped(event, context);
   }
 
   protected buildHandler(): APIGatewayProxyHandler {

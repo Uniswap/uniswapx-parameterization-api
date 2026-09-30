@@ -14,7 +14,7 @@ import {
 } from '../../lib/providers';
 import { MockV2CircuitBreakerConfigurationProvider } from '../../lib/providers/circuit-breaker/mock';
 import { WebhookQuoter } from '../../lib/quoters';
-import { fetchJson, HttpError, timedFetch } from '../../lib/util/fetch-http';
+import { fetchJson, fetchUnderDeadline, HttpError, timedFetch } from '../../lib/util/fetch-http';
 import { FakeAnalyticsLogger, fakeContext } from '../fakes';
 
 // Every test here runs the client against a real local HTTP server. The expected values are the
@@ -476,5 +476,61 @@ describe('UniswapXServiceProvider on the fetch client', () => {
         contentType: undefined,
       },
     ]);
+  });
+});
+
+describe('fetchUnderDeadline keeps the event loop alive until the deadline', () => {
+  // Node counts only resources that keep the event loop alive, so an unref'd timer is invisible here.
+  const liveTimers = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
+
+  // A request that never answers on its own but honours the abort, like a stranded socket would.
+  const neverAnswers = (signal: AbortSignal) =>
+    new Promise<Response>((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+
+  it("AbortSignal.timeout()'s timer does not keep the loop alive, which is why it is not used", () => {
+    const before = liveTimers();
+    const signal = AbortSignal.timeout(1_000);
+    expect(signal.aborted).toBe(false);
+    expect(liveTimers()).toBe(before);
+  });
+
+  it('holds a live timer while the request is pending, then aborts it with a TimeoutError', async () => {
+    const before = liveTimers();
+    const pending = fetchUnderDeadline(50, neverAnswers);
+    expect(liveTimers()).toBe(before + 1);
+
+    await expect(pending).rejects.toMatchObject({
+      name: 'TimeoutError',
+      message: 'The operation was aborted due to timeout',
+    });
+    expect(liveTimers()).toBe(before);
+  });
+
+  it('fetchJson reads that abort as the same timeout it has always reported', async () => {
+    await expect(
+      fetchJson((_input, _init, config) => fetchUnderDeadline(config!.timeoutMs!, neverAnswers), 'http://unused', {
+        method: 'POST',
+        body: {},
+        timeoutMs: 50,
+      })
+    ).rejects.toMatchObject({ kind: 'timeout', message: 'timeout of 50ms exceeded' });
+  });
+
+  it('stops holding the loop once the headers are in, but still bounds the body read', async () => {
+    const before = liveTimers();
+    const controllerSeen: AbortSignal[] = [];
+    const response = await fetchUnderDeadline(1_000, async (signal) => {
+      controllerSeen.push(signal);
+      return new Response('ok');
+    });
+    expect(liveTimers()).toBe(before);
+    expect(controllerSeen[0].aborted).toBe(false);
+    expect(await response.text()).toBe('ok');
+  });
+
+  it('clears the timer when the request fails before the deadline', async () => {
+    const before = liveTimers();
+    await expect(fetchUnderDeadline(1_000, () => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
+    expect(liveTimers()).toBe(before);
   });
 });

@@ -11,7 +11,44 @@ export type FetchFn = (input: string, init?: RequestInit, config?: { timeoutMs?:
  * whole-request signal alongside it.)
  */
 export const timedFetch: FetchFn = (input, init, config) =>
-  fetch(input, config?.timeoutMs ? { ...init, signal: AbortSignal.timeout(config.timeoutMs) } : init);
+  config?.timeoutMs
+    ? fetchUnderDeadline(config.timeoutMs, (signal) => fetch(input, { ...init, signal }))
+    : fetch(input, init);
+
+/**
+ * Runs one fetch under a whole-request deadline whose timer keeps the event loop alive.
+ *
+ * `AbortSignal.timeout()` is the obvious tool, but its timer is unref'd. If the request it guards
+ * ends up with no live handle of its own (seen in prod at roughly 1 in 500 webhook timeouts), the
+ * event loop drains before the deadline fires; inside Lambda the Node runtime then treats the
+ * invocation as finished and posts a null response, which API Gateway reports as a 502
+ * "Malformed Lambda proxy response" with no Lambda error or log line. A ref'd timer holds the
+ * loop open until the abort fires, so the request always settles and the handler always answers.
+ *
+ * Once the response headers are in, the timer is unref'd rather than cleared: it still bounds the
+ * body read (the abort cancels a body still arriving), but no longer holds the process open by
+ * itself. The abort reason carries the same name and message as `AbortSignal.timeout()`'s, so
+ * callers classify it the same way.
+ */
+export async function fetchUnderDeadline(
+  timeoutMs: number,
+  run: (signal: AbortSignal) => Promise<Response>
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () =>
+      controller.abort(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })),
+    timeoutMs
+  );
+  try {
+    const response = await run(controller.signal);
+    timer.unref();
+    return response;
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
 
 /**
  * A request that didn't produce a 2xx: the server answered with another status (`status` and the

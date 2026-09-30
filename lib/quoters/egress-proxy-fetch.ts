@@ -1,6 +1,6 @@
 import { buildConnector, ProxyAgent } from 'undici';
 
-import { FetchFn } from '../util/fetch-http';
+import { FetchFn, fetchUnderDeadline } from '../util/fetch-http';
 
 // The egress proxy's address and the share (0-100) of market-maker webhook calls the quote
 // Lambdas send through it, both set per stage in bin/app.ts. The backend uniswapx service will
@@ -47,10 +47,10 @@ export interface ProxiedFetchOptions {
  */
 export function proxiedFetch(proxyUrl: string, options: ProxiedFetchOptions = {}): FetchFn {
   const dispatcher = new ProxyAgent({ uri: proxyUrl, requestTls: options.tls });
-  return (input, init, config) => {
-    const signal = config?.timeoutMs ? AbortSignal.timeout(config.timeoutMs) : init?.signal ?? undefined;
-    return fetch(input, { ...init, signal, dispatcher });
-  };
+  return (input, init, config) =>
+    config?.timeoutMs
+      ? fetchUnderDeadline(config.timeoutMs, (signal) => fetch(input, { ...init, signal, dispatcher }))
+      : fetch(input, { ...init, dispatcher });
 }
 
 /**
