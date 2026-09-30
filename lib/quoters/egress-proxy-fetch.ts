@@ -1,6 +1,6 @@
 import { buildConnector, ProxyAgent } from 'undici';
 
-import { FetchFn } from '../util/fetch-http';
+import { FetchFn, fetchUnderDeadline, WebhookRoute } from '../util/fetch-http';
 
 // The egress proxy's address and the share (0-100) of market-maker webhook calls the quote
 // Lambdas send through it, both set per stage in bin/app.ts. The backend uniswapx service will
@@ -47,15 +47,17 @@ export interface ProxiedFetchOptions {
  */
 export function proxiedFetch(proxyUrl: string, options: ProxiedFetchOptions = {}): FetchFn {
   const dispatcher = new ProxyAgent({ uri: proxyUrl, requestTls: options.tls });
-  return (input, init, config) => {
-    const signal = config?.timeoutMs ? AbortSignal.timeout(config.timeoutMs) : init?.signal ?? undefined;
-    return fetch(input, { ...init, signal, dispatcher });
-  };
+  return (input, init, config) =>
+    config?.timeoutMs
+      ? fetchUnderDeadline(config.timeoutMs, (signal) => fetch(input, { ...init, signal, dispatcher }))
+      : fetch(input, { ...init, dispatcher });
 }
 
 /**
  * Sends `sharePercent` percent of calls through `proxied` and the rest through `direct`,
- * choosing per call. 0 and 100 skip the coin flip entirely.
+ * choosing per call. 0 and 100 skip the coin flip entirely. Every call reports the path it took
+ * through `config.onRoute`, so the caller can tell proxied outcomes from direct ones while the
+ * share ramps.
  */
 export function splitFetch(
   direct: FetchFn,
@@ -63,12 +65,20 @@ export function splitFetch(
   sharePercent: number,
   random: () => number = Math.random
 ): FetchFn {
+  const routed =
+    (route: WebhookRoute, fetchFn: FetchFn): FetchFn =>
+    (input, init, config) => {
+      config?.onRoute?.(route);
+      return fetchFn(input, init, config);
+    };
+  const viaDirect = routed('direct', direct);
+  const viaProxy = routed('proxy', proxied);
   if (sharePercent <= 0) {
-    return direct;
+    return viaDirect;
   }
   if (sharePercent >= 100) {
-    return proxied;
+    return viaProxy;
   }
   return (input, init, config) =>
-    random() * 100 < sharePercent ? proxied(input, init, config) : direct(input, init, config);
+    random() * 100 < sharePercent ? viaProxy(input, init, config) : viaDirect(input, init, config);
 }

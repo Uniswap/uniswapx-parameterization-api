@@ -56,6 +56,10 @@ describe('Quote handler', () => {
 
   const getQuoteHandler = (quoters: Quoter[]) => new QuoteHandler('quote', injectorPromiseMock(quoters));
 
+  it('exports a native async function, so a drained event loop fails the invocation instead of returning null', () => {
+    expect(getQuoteHandler([]).handler.constructor.name).toBe('AsyncFunction');
+  });
+
   const getEvent = (request: PostQuoteRequestBody): APIGatewayProxyEvent =>
     ({
       body: JSON.stringify(request),

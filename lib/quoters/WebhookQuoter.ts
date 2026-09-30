@@ -21,7 +21,7 @@ import { Context } from '../observability';
 import { ProtocolVersion, WebhookConfiguration, WebhookConfigurationProvider } from '../providers';
 import { IAnalyticsLogger } from '../providers/analytics';
 import { CircuitBreakerConfigurationProvider, EndpointStatuses } from '../providers/circuit-breaker';
-import { FetchFn, fetchJson, HttpError, timedFetch } from '../util/fetch-http';
+import { FetchFn, fetchJson, HttpError, timedFetch, WebhookRoute } from '../util/fetch-http';
 import { RFQValidator } from '../util/rfqValidator';
 import { timestampInMstoISOString } from '../util/time';
 
@@ -53,6 +53,26 @@ export function deriveFanoutStats(
     wastedWaitMs: Math.max(0, fanoutWallMs - lastUsefulMs),
     stragglerName,
   };
+}
+
+// Per-path request and failure counts, so the proxied share's outcomes can be read apart from the
+// direct ones while the share ramps. Unlike RFQ_FAIL_ERROR / RFQ_TIMEOUT, which count a pair's
+// failure once, these count every request under its own path (see sendRfq).
+const ROUTE_METRICS: Record<WebhookRoute, Record<'REQUEST' | 'FAIL_ERROR' | 'TIMEOUT', Metric>> = {
+  direct: {
+    REQUEST: Metric.RFQ_DIRECT_REQUEST,
+    FAIL_ERROR: Metric.RFQ_DIRECT_FAIL_ERROR,
+    TIMEOUT: Metric.RFQ_DIRECT_TIMEOUT,
+  },
+  proxy: {
+    REQUEST: Metric.RFQ_PROXIED_REQUEST,
+    FAIL_ERROR: Metric.RFQ_PROXIED_FAIL_ERROR,
+    TIMEOUT: Metric.RFQ_PROXIED_TIMEOUT,
+  },
+};
+
+function routeMetric(route: WebhookRoute, outcome: 'REQUEST' | 'FAIL_ERROR' | 'TIMEOUT'): Metric {
+  return ROUTE_METRICS[route][outcome];
 }
 
 // Quoter which fetches quotes from http endpoints
@@ -126,6 +146,37 @@ export class WebhookQuoter implements Quoter {
   private async getEndpointStatuses(ctx: Context): Promise<EndpointStatuses> {
     const endpoints = await this.webhookProvider.getEndpoints(ctx);
     return this.circuitBreakerProvider.getEndpointStatuses(endpoints);
+  }
+
+  /**
+   * Sends one of a pair's two requests and counts its own outcome under the path it took. The
+   * pair fails as soon as either request does, so a mixed pair (one direct, one proxied) would
+   * otherwise credit every failure to the faster-failing path and drop the other outcome.
+   */
+  private async sendRfq(
+    ctx: Context,
+    endpoint: string,
+    body: unknown,
+    headers: Record<string, string> | undefined,
+    timeoutMs: number
+  ): Promise<{ status: number; data: RfqResponse }> {
+    try {
+      return await fetchJson<RfqResponse>(this.fetchFn, endpoint, {
+        method: 'POST',
+        body,
+        headers,
+        timeoutMs,
+        onRoute: (route) => void ctx.metrics.count(routeMetric(route, 'REQUEST')),
+      });
+    } catch (e) {
+      if (e instanceof HttpError && e.route) {
+        void ctx.metrics.count(routeMetric(e.route, 'FAIL_ERROR'));
+        if (e.kind === 'timeout') {
+          void ctx.metrics.count(routeMetric(e.route, 'TIMEOUT'));
+        }
+      }
+      throw e;
+    }
   }
 
   // Returns null only for attempts skipped before any request was sent (chain/protocol
@@ -209,9 +260,7 @@ export class WebhookQuoter implements Quoter {
         : [opposingWireRequest, realWireRequest];
       // Either side failing fails the pair, as soon as it fails.
       const [firstResponse, secondResponse] = await Promise.all(
-        orderedRequests.map((req) =>
-          fetchJson<RfqResponse>(this.fetchFn, endpoint, { method: 'POST', body: req, headers, timeoutMs })
-        )
+        orderedRequests.map((req) => this.sendRfq(ctx, endpoint, req, headers, timeoutMs))
       );
       const hookResponse = realRequestFirst ? firstResponse : secondResponse;
       const opposite = realRequestFirst ? secondResponse : firstResponse;
