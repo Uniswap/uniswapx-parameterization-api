@@ -42,13 +42,14 @@ describe('EgressProxy', () => {
     }
   });
 
-  it('runs two private Fargate tasks behind an internal load balancer', () => {
+  it('runs private Fargate tasks behind an internal load balancer, each sized to a full core', () => {
     const template = synth(true);
     template.hasResourceProperties('AWS::ECS::Service', {
-      DesiredCount: 2,
+      DesiredCount: Match.absent(),
       LaunchType: 'FARGATE',
       NetworkConfiguration: { AwsvpcConfiguration: Match.objectLike({ AssignPublicIp: 'DISABLED' }) },
     });
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', { Cpu: '1024', Memory: '2048' });
     template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
       Type: 'network',
       Scheme: 'internal',
@@ -56,6 +57,48 @@ describe('EgressProxy', () => {
     template.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {
       Port: EGRESS_PROXY_PORT,
       Protocol: 'TCP',
+    });
+  });
+
+  it('keeps at least four tasks, adds more on CPU quickly, and removes them slowly', () => {
+    const template = synth(true);
+    template.hasResourceProperties('AWS::ApplicationAutoScaling::ScalableTarget', {
+      MinCapacity: 4,
+      MaxCapacity: 12,
+      ScalableDimension: 'ecs:service:DesiredCount',
+    });
+    template.hasResourceProperties('AWS::ApplicationAutoScaling::ScalingPolicy', {
+      PolicyType: 'TargetTrackingScaling',
+      TargetTrackingScalingPolicyConfiguration: Match.objectLike({
+        DisableScaleIn: Match.absent(),
+        TargetValue: 50,
+        ScaleOutCooldown: 60,
+        ScaleInCooldown: 1800,
+        PredefinedMetricSpecification: { PredefinedMetricType: 'ECSServiceAverageCPUUtilization' },
+      }),
+    });
+  });
+
+  it('alarms on losing more than one task, and on CPU or memory running hot', () => {
+    const template = synth(true);
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'GoudaParameterization-SEV3-EgressProxy-HealthyHosts',
+      Threshold: 3,
+      EvaluationPeriods: 10,
+      ComparisonOperator: 'LessThanThreshold',
+      TreatMissingData: 'breaching',
+    });
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'GoudaParameterization-SEV3-EgressProxy-Cpu',
+      MetricName: 'CPUUtilization',
+      Threshold: 70,
+      ComparisonOperator: 'GreaterThanThreshold',
+    });
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'GoudaParameterization-SEV3-EgressProxy-Memory',
+      MetricName: 'MemoryUtilization',
+      Threshold: 80,
+      ComparisonOperator: 'GreaterThanThreshold',
     });
   });
 

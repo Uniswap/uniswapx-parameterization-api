@@ -12,6 +12,29 @@ import * as path from 'path';
 
 export const EGRESS_PROXY_PORT = 3128;
 
+// Squid is a single process, so one task can use at most one vCPU; this is that ceiling. Two
+// gigabytes leaves room for tens of thousands of open tunnels (each holds two sockets and their
+// buffers) plus squid's own pools.
+const TASK_CPU_UNITS = 1024;
+const TASK_MEMORY_MIB = 2048;
+// Four tasks spread across the three availability zones carry today's whole webhook volume with
+// most of each core to spare; autoscaling adds tasks on sustained CPU up to the maximum and
+// removes them slowly once it falls. Removing a task is cheap: the load balancer drains it for
+// 30 s, squid finishes in-flight requests before exiting, and callers reconnect idle keep-alive
+// tunnels on their own, so only a request in flight at that instant fails.
+const MIN_TASKS = 4;
+const MAX_TASKS = 12;
+const SCALE_OUT_CPU_PERCENT = 50;
+const SCALE_IN_COOLDOWN = Duration.minutes(30);
+// Alarm thresholds: losing one task is tolerable, losing two is not; CPU this high on average
+// means autoscaling is at its maximum or not keeping up. The healthy-hosts alarm waits ten
+// minutes so the first deploy, which grows the service from two tasks to the minimum while the
+// threshold rises, cannot trip it.
+const HEALTHY_TASKS_ALARM_BELOW = MIN_TASKS - 1;
+const HEALTHY_TASKS_ALARM_MINUTES = 10;
+const CPU_ALARM_PERCENT = 70;
+const MEMORY_ALARM_PERCENT = 80;
+
 export interface EgressProxyProps {
   // The quote Lambdas' VPC. Its single NAT gateway carries the Elastic IP market makers allowlist.
   vpc: aws_ec2.IVpc;
@@ -49,8 +72,8 @@ export class EgressProxy extends Construct {
     });
 
     const taskDefinition = new aws_ecs.FargateTaskDefinition(this, 'TaskDef', {
-      cpu: 256,
-      memoryLimitMiB: 512,
+      cpu: TASK_CPU_UNITS,
+      memoryLimitMiB: TASK_MEMORY_MIB,
       runtimePlatform: {
         cpuArchitecture: aws_ecs.CpuArchitecture.X86_64,
         operatingSystemFamily: aws_ecs.OperatingSystemFamily.LINUX,
@@ -76,18 +99,23 @@ export class EgressProxy extends Construct {
       'Load balancer and PrivateLink traffic'
     );
 
-    // Two tasks, spread across availability zones, so one crash or zone problem does not cut
-    // off the backend service's market-maker traffic.
+    // The task count is owned by autoscaling (no desiredCount here, so a deploy leaves the
+    // running count alone); the minimum spreads tasks across availability zones so one crash or
+    // zone problem does not cut off the backend service's market-maker traffic.
     const service = new aws_ecs.FargateService(this, 'Service', {
       cluster,
       taskDefinition,
-      desiredCount: 2,
       minHealthyPercent: 100,
       maxHealthyPercent: 200,
       assignPublicIp: false,
       vpcSubnets: privateSubnets,
       securityGroups: [securityGroup],
       circuitBreaker: { rollback: true },
+    });
+    service.autoScaleTaskCount({ minCapacity: MIN_TASKS, maxCapacity: MAX_TASKS }).scaleOnCpuUtilization('Cpu', {
+      targetUtilizationPercent: SCALE_OUT_CPU_PERCENT,
+      scaleOutCooldown: Duration.minutes(1),
+      scaleInCooldown: SCALE_IN_COOLDOWN,
     });
 
     // A PrivateLink endpoint service must front a Network Load Balancer.
@@ -122,18 +150,39 @@ export class EgressProxy extends Construct {
     });
     this.endpointServiceName = endpointService.vpcEndpointServiceName;
 
-    const healthyHostsAlarm = new aws_cloudwatch.Alarm(this, 'HealthyHostsAlarm', {
-      alarmName: 'GoudaParameterization-SEV3-EgressProxy-HealthyHosts',
-      alarmDescription:
-        'Fewer than two healthy egress proxy tasks; the backend uniswapx market-maker traffic depends on them',
-      metric: targetGroup.metrics.healthyHostCount({ period: Duration.minutes(1), statistic: 'Minimum' }),
-      threshold: 2,
-      comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-      evaluationPeriods: 5,
-      treatMissingData: aws_cloudwatch.TreatMissingData.BREACHING,
-    });
+    const alarms = [
+      new aws_cloudwatch.Alarm(this, 'HealthyHostsAlarm', {
+        alarmName: 'GoudaParameterization-SEV3-EgressProxy-HealthyHosts',
+        alarmDescription: `Fewer than ${HEALTHY_TASKS_ALARM_BELOW} healthy egress proxy tasks; the backend uniswapx market-maker traffic depends on them`,
+        metric: targetGroup.metrics.healthyHostCount({ period: Duration.minutes(1), statistic: 'Minimum' }),
+        threshold: HEALTHY_TASKS_ALARM_BELOW,
+        comparisonOperator: aws_cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        evaluationPeriods: HEALTHY_TASKS_ALARM_MINUTES,
+        treatMissingData: aws_cloudwatch.TreatMissingData.BREACHING,
+      }),
+      new aws_cloudwatch.Alarm(this, 'CpuAlarm', {
+        alarmName: 'GoudaParameterization-SEV3-EgressProxy-Cpu',
+        alarmDescription: `Egress proxy tasks above ${CPU_ALARM_PERCENT}% CPU on average; autoscaling is at its maximum or not keeping up, and tunnel setup slows down`,
+        metric: service.metricCpuUtilization({ period: Duration.minutes(1), statistic: 'Average' }),
+        threshold: CPU_ALARM_PERCENT,
+        comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        evaluationPeriods: 5,
+        treatMissingData: aws_cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+      new aws_cloudwatch.Alarm(this, 'MemoryAlarm', {
+        alarmName: 'GoudaParameterization-SEV3-EgressProxy-Memory',
+        alarmDescription: `Egress proxy tasks above ${MEMORY_ALARM_PERCENT}% memory on average; open tunnels are approaching what the tasks can hold`,
+        metric: service.metricMemoryUtilization({ period: Duration.minutes(1), statistic: 'Average' }),
+        threshold: MEMORY_ALARM_PERCENT,
+        comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        evaluationPeriods: 5,
+        treatMissingData: aws_cloudwatch.TreatMissingData.NOT_BREACHING,
+      }),
+    ];
     if (chatbotTopic) {
-      healthyHostsAlarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotTopic));
+      for (const alarm of alarms) {
+        alarm.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatbotTopic));
+      }
     }
   }
 }
