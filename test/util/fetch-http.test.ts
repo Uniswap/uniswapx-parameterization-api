@@ -14,7 +14,15 @@ import {
 } from '../../lib/providers';
 import { MockV2CircuitBreakerConfigurationProvider } from '../../lib/providers/circuit-breaker/mock';
 import { WebhookQuoter } from '../../lib/quoters';
-import { FetchFn, fetchJson, fetchUnderDeadline, HttpError, timedFetch, WebhookRoute } from '../../lib/util/fetch-http';
+import {
+  FetchFn,
+  fetchJson,
+  fetchUnderDeadline,
+  HttpError,
+  LateSettlement,
+  timedFetch,
+  WebhookRoute,
+} from '../../lib/util/fetch-http';
 import { FakeAnalyticsLogger, fakeContext, fetchTimeoutError } from '../fakes';
 
 // Every test here runs the client against a real local HTTP server. The expected values are the
@@ -578,5 +586,83 @@ describe('fetchJson carries the route a routing fetch reports', () => {
       kind: 'timeout',
       route: undefined,
     });
+  });
+});
+
+describe('fetchJson gives up on a request its deadline cannot settle', () => {
+  const liveTimers = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
+  const post = { method: 'POST' as const, body: {}, timeoutMs: 30 };
+  // A fetch whose promise never settles, abort or not: what the stranded prod requests looked like.
+  const neverSettles: FetchFn = () => new Promise(() => undefined);
+
+  it('rejects as the usual timeout, flagged unsettled at the headers step, when the fetch never settles', async () => {
+    const started = Date.now();
+    await expect(fetchJson(neverSettles, 'http://unused', post)).rejects.toMatchObject({
+      kind: 'timeout',
+      message: 'timeout of 30ms exceeded',
+      unsettled: 'headers',
+    });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(30);
+  });
+
+  it('flags the body step when the headers arrived but the body never ends', async () => {
+    const headersOnly: FetchFn = async () =>
+      new Response(new ReadableStream({ start: () => undefined }), { status: 200 });
+    await expect(fetchJson(headersOnly, 'http://unused', post)).rejects.toMatchObject({
+      kind: 'timeout',
+      unsettled: 'body',
+    });
+  });
+
+  it('leaves a request the fetch itself times out unflagged', async () => {
+    const abortsItself: FetchFn = (_input, _init, config) =>
+      new Promise((_, reject) => setTimeout(() => reject(fetchTimeoutError()), config?.timeoutMs));
+    const error = await fetchJson(abortsItself, 'http://unused', post).catch((e) => e);
+    expect(error).toMatchObject({ kind: 'timeout', message: 'timeout of 30ms exceeded' });
+    expect(error.unsettled).toBeUndefined();
+  });
+
+  it.each([
+    [
+      'resolves',
+      (finish: (r: Response) => void, _fail: (e: unknown) => void) => finish(new Response('late')),
+      'resolved',
+    ],
+    ['rejects', (_finish: (r: Response) => void, fail: (e: unknown) => void) => fail(new Error('reset')), 'rejected'],
+  ] as const)('reports if the abandoned promise later %s, and how long after', async (_label, end, outcome) => {
+    let finish!: (r: Response) => void;
+    let fail!: (e: unknown) => void;
+    const settlesWhenTold: FetchFn = () =>
+      new Promise((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      });
+    const settled: LateSettlement[] = [];
+    await expect(
+      fetchJson(settlesWhenTold, 'http://unused', { ...post, onLateSettle: (s) => settled.push(s) })
+    ).rejects.toMatchObject({ unsettled: 'headers' });
+    expect(settled).toEqual([]);
+
+    end(finish, fail);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(settled).toHaveLength(1);
+    expect(settled[0]).toMatchObject({ phase: 'headers', outcome });
+    expect(settled[0].afterMs).toBeGreaterThanOrEqual(0);
+    if (outcome === 'rejected') {
+      expect(String(settled[0].error)).toContain('reset');
+    }
+  });
+
+  it('holds a live timer only while the request is in flight', async () => {
+    const before = liveTimers();
+    let finish!: (r: Response) => void;
+    const pending = fetchJson(() => new Promise((resolve) => (finish = resolve)), 'http://unused', {
+      ...post,
+      timeoutMs: 1_000,
+    });
+    expect(liveTimers()).toBe(before + 1);
+    finish(new Response('ok'));
+    await pending;
+    expect(liveTimers()).toBe(before);
   });
 });

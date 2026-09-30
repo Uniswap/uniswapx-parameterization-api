@@ -64,7 +64,13 @@ describe('WebhookQuoter tests', () => {
     },
   ]);
 
-  const logger = { child: jest.fn(() => logger), info: jest.fn(), error: jest.fn(), debug: jest.fn() } as any;
+  const logger = {
+    child: jest.fn(() => logger),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  } as any;
   // Injected in place of the HTTP client and Firehose: every webhook call and analytics event lands here.
   const http = jsonFetchMock();
   const analytics = new FakeAnalyticsLogger();
@@ -1255,6 +1261,54 @@ describe('WebhookQuoter tests', () => {
 
       expect(routeCounts()).toEqual({});
       expect(callsOf(Metric.RFQ_TIMEOUT)).toHaveLength(1);
+    });
+  });
+
+  describe('a webhook request that never settles', () => {
+    // The stranded prod case: the fetch's promise stays pending after its abort. The quoter must
+    // still answer at the deadline, count it as the timeout it is, and flag what happened.
+    const provider = new MockWebhookConfigurationProvider([
+      { name: 'uniswap', endpoint: WEBHOOK_URL, headers: {}, chainIds: [1], hash: '0xuni', overrides: { timeout: 30 } },
+    ]);
+    const request = makeQuoteRequest({ tokenInChainId: 1, tokenOutChainId: 1, protocol: ProtocolVersion.V2 });
+
+    it('answers at the deadline, counts the timeout, and flags both requests as unsettled', async () => {
+      const neverSettles: FetchFn = () => new Promise(() => undefined);
+      const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, neverSettles);
+
+      const started = Date.now();
+      const quotes = await quoter.quote(fakes.ctx, request);
+      const answeredAfter = Date.now() - started;
+      // The pair fails on the first request's deadline; the second one's fires a tick later.
+      await new Promise((r) => setTimeout(r, 5));
+
+      expect(quotes).toEqual([]);
+      expect(answeredAfter).toBeGreaterThanOrEqual(30);
+      expect(answeredAfter).toBeLessThan(1_000);
+      expect(callsOf(Metric.RFQ_TIMEOUT)).toHaveLength(1);
+      expect(callsOf(Metric.RFQ_FAIL_ERROR)).toHaveLength(1);
+      expect(callsOf(Metric.RFQ_UNSETTLED_AT_DEADLINE)).toHaveLength(2);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: WEBHOOK_URL, phase: 'headers', timeoutMs: 30 }),
+        expect.stringContaining('had not settled at its deadline')
+      );
+    });
+
+    it('logs how a request it gave up on eventually settled', async () => {
+      let finish!: (r: Response) => void;
+      const settlesWhenTold: FetchFn = () => new Promise((resolve) => (finish = resolve));
+      const quoter = new WebhookQuoter(logger, analytics, provider, MOCK_V2_CB_PROVIDER, settlesWhenTold);
+
+      await quoter.quote(fakes.ctx, request);
+      // Let both requests' deadlines pass before the abandoned one answers.
+      await new Promise((r) => setTimeout(r, 5));
+      finish(new Response('{}', { status: 200 }));
+      await new Promise((r) => setTimeout(r, 5));
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: WEBHOOK_URL, phase: 'headers', outcome: 'resolved' }),
+        expect.stringContaining('settled after its deadline')
+      );
     });
   });
 });

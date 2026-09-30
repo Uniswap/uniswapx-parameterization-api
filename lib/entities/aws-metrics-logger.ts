@@ -85,6 +85,12 @@ export enum Metric {
   // of proxied requests that failed and compares directly with the DIRECT ratio. Nothing is
   // emitted while every call goes direct (no proxy address, or a 0% share): the plain fetch
   // reports no path.
+  // Webhook requests whose promise had still not settled a grace period after the deadline's
+  // abort, so fetchJson answered without them. A strict subset of RFQ_TIMEOUT. These are the
+  // requests that used to drain the event loop mid-invocation (API Gateway 502s, then
+  // Runtime.NodeJsExit errors); the counter exists to watch them, and to see them stop once the
+  // underlying cause is found.
+  RFQ_UNSETTLED_AT_DEADLINE = 'RFQ_UNSETTLED_AT_DEADLINE',
   RFQ_DIRECT_REQUEST = 'RFQ_DIRECT_REQUEST',
   RFQ_PROXIED_REQUEST = 'RFQ_PROXIED_REQUEST',
   RFQ_DIRECT_FAIL_ERROR = 'RFQ_DIRECT_FAIL_ERROR',
