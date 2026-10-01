@@ -140,7 +140,7 @@ describe('EgressProxy', () => {
 describe('egress proxy webhook share', () => {
   // Not the literal values: a ramp step or an emergency `0` must not have to edit a test.
   it('gives both stages a share the synth accepts', () => {
-    for (const stage of [STAGE.BETA, STAGE.PROD]) {
+    for (const stage of [STAGE.BETA, STAGE.PROD] as const) {
       const share = EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[stage];
       expect(share).toBeDefined();
       expect(() => validateEgressProxyShare(share as number)).not.toThrow();
