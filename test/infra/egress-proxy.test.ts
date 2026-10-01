@@ -138,9 +138,13 @@ describe('EgressProxy', () => {
 });
 
 describe('egress proxy webhook share', () => {
-  it('routes all of beta and half of prod', () => {
-    expect(EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.BETA]).toBe(100);
-    expect(EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.PROD]).toBe(50);
+  // Not the literal values: a ramp step or an emergency `0` must not have to edit a test.
+  it('gives both stages a share the synth accepts', () => {
+    for (const stage of [STAGE.BETA, STAGE.PROD] as const) {
+      const share = EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[stage];
+      expect(share).toBeDefined();
+      expect(() => validateEgressProxyShare(share as number)).not.toThrow();
+    }
   });
 
   it.each([[0], [5], [100]])('accepts %s', (share) => expect(() => validateEgressProxyShare(share)).not.toThrow());
