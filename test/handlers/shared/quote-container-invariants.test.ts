@@ -1,5 +1,6 @@
 import bunyan from 'bunyan';
 
+import { loadQuoteConfig } from '../../../lib/config';
 import { HardQuoteInjector } from '../../../lib/handlers/hard-quote';
 import { QuoteInjector } from '../../../lib/handlers/quote/injector';
 import { buildQuoteContainerInjected } from '../../../lib/handlers/shared/quote-injector';
@@ -28,9 +29,12 @@ import { WebhookQuoter } from '../../../lib/quoters';
 const log = bunyan.createLogger({ name: 'quote-container-invariants.test', level: bunyan.FATAL });
 
 const ENV_KEYS = [
+  'stage',
   'RPC_PREFIX_URL',
   'ANALYTICS_STREAM_ARN',
   'ORDER_SERVICE_URL',
+  'KMS_KEY_ID',
+  'REGION',
   ...Object.values(QUOTE_ANALYTICS_STREAM_ENV),
 ] as const;
 const savedEnv: Partial<Record<string, string | undefined>> = {};
@@ -40,7 +44,10 @@ beforeAll(() => {
   // buildChainIdRpcMap throws without a prefix; the firehose ARN is only stored, never used
   // at construction time. No I/O happens: every AWS client in the graph is lazy.
   process.env.RPC_PREFIX_URL = 'https://rpc.example/';
-  process.env.ANALYTICS_STREAM_ARN = 'arn:aws:firehose:us-east-2:1:deliverystream/dummy';
+  process.env.ANALYTICS_STREAM_ARN = 'arn:aws:firehose:us-east-2:123456789012:deliverystream/dummy';
+  process.env.stage = 'beta';
+  process.env.KMS_KEY_ID = 'test-key-id';
+  process.env.REGION = 'us-east-2';
 });
 
 afterAll(() => {
@@ -55,7 +62,7 @@ describe('buildQuoteContainerInjected wiring invariants', () => {
     let quoter: any;
 
     beforeAll(() => {
-      const container = buildQuoteContainerInjected(log, stage);
+      const container = buildQuoteContainerInjected(log, loadQuoteConfig({ ...process.env, stage }));
       expect(container.quoters).toHaveLength(1);
       quoter = container.quoters[0];
     });

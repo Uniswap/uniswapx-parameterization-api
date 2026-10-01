@@ -278,7 +278,11 @@ describe('parseEgressProxyShare', () => {
 
 describe('selectWebhookFetch', () => {
   const log = { info: jest.fn(), warn: jest.fn() };
-  const select = (env: NodeJS.ProcessEnv) => selectWebhookFetch(log as unknown as Logger, env);
+  const select = (env: NodeJS.ProcessEnv) =>
+    selectWebhookFetch(log as unknown as Logger, {
+      url: env[EGRESS_PROXY_URL_ENV],
+      rawShare: env[EGRESS_PROXY_WEBHOOK_SHARE_ENV],
+    });
   beforeEach(() => jest.clearAllMocks());
 
   it('sends every call through the proxy at 100%', async () => {

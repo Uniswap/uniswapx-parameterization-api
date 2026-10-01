@@ -144,10 +144,10 @@ export class APIPipeline extends Stack {
       secretCompleteArn: 'arn:aws:secretsmanager:us-east-2:644039819003:secret:prod/param-api/rpc-urls-HJyniu',
     });
 
-    // The Lambda's getRpcUrl reads RPC_PREFIX_URL at runtime and appends the
-    // chainId to form per-chain RPC URLs. RPC_HEADER_SECRET authenticates those
-    // outbound requests via the `x-internal-service-secret` header (see
-    // RPC_HEADERS in lib/constants.ts).
+    // The quote Lambdas read RPC_PREFIX_URL at container build (lib/config.ts) and append
+    // the chainId to form per-chain RPC URLs. RPC_HEADER_SECRET authenticates those
+    // outbound requests via the `x-internal-service-secret` header (see rpcHeaders in
+    // lib/constants.ts).
     const jsonRpcProviders = {
       RPC_PREFIX_URL: rpcUrls.secretValueFromJson('RPC_PREFIX_URL').toString(),
       RPC_HEADER_SECRET: rpcUrls.secretValueFromJson('RPC_HEADER_SECRET').toString(),
@@ -300,8 +300,8 @@ const envVars: { [key: string]: string } = {};
 envVars['BOT_ACCOUNT'] = process.env['BOT_ACCOUNT'] || '';
 envVars['UNISWAP_API'] = process.env['UNISWAP_API'] || '';
 envVars['ORDER_SERVICE_URL'] = process.env['ORDER_SERVICE_URL'] || '';
-// Local dev: Lambda runtime reads RPC_PREFIX_URL via getRpcUrl. RPC_HEADER_SECRET
-// is optional locally and omitted from RPC_HEADERS when unset.
+// Local dev: the quote Lambdas read RPC_PREFIX_URL at container build (lib/config.ts).
+// RPC_HEADER_SECRET is optional locally and its header is omitted when unset.
 const jsonRpcProviders: { [chainKey: string]: string } = {
   RPC_PREFIX_URL: process.env['RPC_PREFIX_URL'] || '',
   RPC_HEADER_SECRET: process.env['RPC_HEADER_SECRET'] || '',

@@ -5,7 +5,7 @@ import chaiSubset from 'chai-subset';
 import { BigNumber, ethers } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
 
-import { RPC_HEADERS } from '../../lib/constants';
+import { rpcHeaders } from '../../lib/constants';
 import { HardQuoteRequestBody } from '../../lib/handlers/hard-quote';
 import { checkDefined } from '../../lib/preconditions/preconditions';
 import IntegHttp from '../util/integ-http';
@@ -97,11 +97,11 @@ describe('Hard Quote endpoint integration test', function () {
   before(async function () {
     this.timeout(180_000);
     // The RPC gateway requires the x-internal-service-secret header (see
-    // RPC_HEADERS in lib/constants.ts), so attach it the same way the Lambda
+    // rpcHeaders in lib/constants.ts), so attach it the same way the Lambda
     // injectors do. Without it the gateway rejects requests and ethers reports
     // "could not detect network".
     provider = new ethers.providers.JsonRpcProvider(
-      { url: SEPOLIA_RPC, headers: RPC_HEADERS, timeout: RPC_TIMEOUT_MS },
+      { url: SEPOLIA_RPC, headers: rpcHeaders(process.env.RPC_HEADER_SECRET), timeout: RPC_TIMEOUT_MS },
       SEPOLIA
     );
     faucetSigner = faucetWallet.connect(provider);

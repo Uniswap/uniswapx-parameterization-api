@@ -2,9 +2,9 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 
+import { loadHardQuoteConfig } from '../../config';
 import { HardQuoteBL, kmsCosignerFactory } from '../../core';
 import { HardQuoteMetricDimension } from '../../entities/aws-metrics-logger';
-import { checkDefined } from '../../preconditions/preconditions';
 import { UniswapXServiceProvider } from '../../providers';
 import { HARD_QUOTE_ANALYTICS_EVENT_TYPES, QuoteAnalytics, selectQuoteAnalytics } from '../../providers/analytics';
 import { DynamoFillerAddressRepository } from '../../repositories/filler-address-repository';
@@ -30,23 +30,21 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
   public async buildContainerInjected(): Promise<ContainerInjected> {
     const log: Logger = createInjectorLogger(this.injectorName);
 
-    const stage = process.env['stage'];
+    const config = loadHardQuoteConfig();
 
-    const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
-
-    const analytics = selectQuoteAnalytics(log, HARD_QUOTE_ANALYTICS_EVENT_TYPES);
-    const base = buildQuoteContainerInjected(log, stage, analytics);
+    const analytics = selectQuoteAnalytics(log, HARD_QUOTE_ANALYTICS_EVENT_TYPES, config.quoteAnalyticsStreams);
+    const base = buildQuoteContainerInjected(log, config, analytics);
 
     return {
       hardQuote: new HardQuoteBL({
         quoters: base.quoters,
         chainIdRpcMap: base.chainIdRpcMap,
-        orderServiceProvider: new UniswapXServiceProvider(log, orderServiceUrl),
+        orderServiceProvider: new UniswapXServiceProvider(log, config.orderServiceUrl),
         // Both build their own bounded DynamoDB client (the writes sit in series with the
         // response); construction is lazy (no I/O).
         postedOrderRepository: DynamoPostedOrderRepository.create(),
         fillerAddressRepository: DynamoFillerAddressRepository.create(),
-        cosignerFactory: kmsCosignerFactory(),
+        cosignerFactory: kmsCosignerFactory(config.cosigner),
         analytics,
       }),
       analytics,
