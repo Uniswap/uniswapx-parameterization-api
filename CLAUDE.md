@@ -5,8 +5,10 @@ Guidance for AI agents (and humans) working in this repo.
 ## Analytics tables are defined in another repo — verify columns before relying on them
 
 This repo no longer has a Redshift cluster and runs no SQL against analytics tables. Its analytics
-role is to emit log lines (`QuoteRequest`, `QuoteResponse`, `HardRequest`, `HardResponse`) that
-the analytics stack's Firehose streams deliver to S3, from which data-eng loads BigQuery
+role is to emit quote records (`QuoteRequest`, `QuoteResponse`, `HardRequest`, `HardResponse`),
+written straight to the direct-write Firehose streams (`lib/providers/analytics/quote-analytics.ts`;
+log lines carried by subscription filters are only the fallback), which deliver to S3, from which
+data-eng loads BigQuery
 (`uniswap_x.*`). The fade circuit breaker reads the `PostedOrders` DynamoDB table plus the order
 service (`lib/cron/order-service-fades-source.ts`), not any analytics table. The table schemas are
 **not defined here**; they are owned by the `data-eng-workflows` repo, in the load configs:

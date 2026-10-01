@@ -29,17 +29,23 @@ export class QuoteHandler extends APIGLambdaHandler<
     const {
       requestInjected: { ctx },
       requestBody,
-      containerInjected: { softQuote },
+      containerInjected: { softQuote, analytics },
     } = params;
 
-    const { bestQuote, allQuotes } = await softQuote.getQuote(ctx, QuoteRequest.fromRequestBody(requestBody));
-    return {
-      statusCode: 200,
-      body: {
-        ...bestQuote.toResponseJSON(),
-        allQuotes: allQuotes.map((q) => q.toResponseJSON()),
-      },
-    };
+    try {
+      const { bestQuote, allQuotes } = await softQuote.getQuote(ctx, QuoteRequest.fromRequestBody(requestBody));
+      return {
+        statusCode: 200,
+        body: {
+          ...bestQuote.toResponseJSON(),
+          allQuotes: allQuotes.map((q) => q.toResponseJSON()),
+        },
+      };
+    } finally {
+      // Lambda freezes the environment once the handler returns, so queued analytics puts must
+      // finish first. Never throws.
+      await analytics.flush(ctx);
+    }
   }
 
   protected requestBodySchema(): Joi.ObjectSchema | null {

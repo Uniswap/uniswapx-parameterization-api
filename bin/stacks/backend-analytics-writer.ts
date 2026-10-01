@@ -4,7 +4,35 @@ import * as aws_firehose from 'aws-cdk-lib/aws-kinesisfirehose';
 import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
-import { BACKEND_COSIGNER_ROLE_NAME_PATTERN } from '../constants';
+import { BACKEND_COSIGNER_ROLE_NAME_PATTERN, SERVICE_NAME } from '../constants';
+
+export type QuoteAnalyticsStreamKey = 'rfqRequest' | 'rfqResponse' | 'hardRequest' | 'hardResponse';
+
+/**
+ * The direct-write streams' names, fixed per stage. The quote Lambdas (API stack) are given these
+ * names and a grant on them directly: referencing the streams' generated names instead would make
+ * the Lambdas depend on this nested stack, which already depends on the Lambdas for its log
+ * subscriptions.
+ *
+ * Fixed names cost one thing: CloudFormation creates a replacement before deleting the original,
+ * and Firehose refuses a second stream with the same name, so a change that forces replacement
+ * (destination bucket, encryption) must also rename the stream (change the suffix here).
+ */
+export function quoteAnalyticsDirectStreamNames(stage: string): Record<QuoteAnalyticsStreamKey, string> {
+  const name = (suffix: string) => {
+    const n = `${SERVICE_NAME}-${stage}-${suffix}`;
+    if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(n)) {
+      throw new Error(`Invalid Firehose delivery stream name: ${n}`);
+    }
+    return n;
+  };
+  return {
+    rfqRequest: name('RfqRequestDirect'),
+    rfqResponse: name('RfqResponseDirect'),
+    hardRequest: name('HardRequestDirect'),
+    hardResponse: name('HardResponseDirect'),
+  };
+}
 
 export const BACKEND_ANALYTICS_WRITER_ACTIONS = ['firehose:PutRecord', 'firehose:PutRecordBatch'];
 
@@ -14,12 +42,9 @@ const DIRECT_WRITE_S3_BUFFERING = { sizeInMBs: 5, intervalInSeconds: 300 };
 
 export interface BackendAnalyticsWriterProps {
   // Buckets of the existing quote analytics streams, keyed by the record type they hold.
-  buckets: {
-    rfqRequest: aws_s3.IBucket;
-    rfqResponse: aws_s3.IBucket;
-    hardRequest: aws_s3.IBucket;
-    hardResponse: aws_s3.IBucket;
-  };
+  buckets: Record<QuoteAnalyticsStreamKey, aws_s3.IBucket>;
+  // Fixed stream names (quoteAnalyticsDirectStreamNames), so other stacks can reference them.
+  streamNames: Record<QuoteAnalyticsStreamKey, string>;
   // The Firehose delivery role that already writes to those buckets.
   firehoseRole: IRole;
   // The webhook-response stream (FirehoseStack), which already takes direct PutRecord writes.
@@ -29,19 +54,20 @@ export interface BackendAnalyticsWriterProps {
 }
 
 /**
- * Lets the backend `uniswapx` service write GPA's analytics records into this account's existing
- * S3 → BigQuery path after the port, without changing any bucket, table, or query downstream.
+ * Direct-write path into this account's existing S3 → BigQuery analytics buckets, without changing
+ * any bucket, table, or query downstream. The quote Lambdas write to it, and the backend `uniswapx`
+ * service will after the port.
  *
  * - Four direct-write streams, one per quote record type, delivering into the SAME buckets as the
  *   log-driven streams. They have no transform Lambda: callers put records already in load shape,
- *   one JSON object per record, newline-terminated. Idle until the backend service starts writing.
+ *   one JSON object per record, newline-terminated.
  * - One role the backend task role assumes to put records into those four streams and into the
  *   existing webhook-response stream. Firehose has no resource policies, so cross-account writes
  *   need an assumed role.
  */
 export class BackendAnalyticsWriter extends Construct {
   public readonly role: Role;
-  public readonly streams: Record<keyof BackendAnalyticsWriterProps['buckets'], aws_firehose.CfnDeliveryStream>;
+  public readonly streams: Record<QuoteAnalyticsStreamKey, aws_firehose.CfnDeliveryStream>;
 
   constructor(scope: Construct, id: string, props: BackendAnalyticsWriterProps) {
     super(scope, id);
@@ -55,10 +81,11 @@ export class BackendAnalyticsWriter extends Construct {
       throw new Error('BackendAnalyticsWriter needs at least one allowed account');
     }
 
-    const directStream = (streamId: string, bucket: aws_s3.IBucket) =>
+    const directStream = (streamId: string, key: QuoteAnalyticsStreamKey) =>
       new aws_firehose.CfnDeliveryStream(this, streamId, {
+        deliveryStreamName: props.streamNames[key],
         extendedS3DestinationConfiguration: {
-          bucketArn: bucket.bucketArn,
+          bucketArn: props.buckets[key].bucketArn,
           roleArn: props.firehoseRole.roleArn,
           compressionFormat: 'UNCOMPRESSED',
           bufferingHints: DIRECT_WRITE_S3_BUFFERING,
@@ -66,10 +93,10 @@ export class BackendAnalyticsWriter extends Construct {
       });
 
     this.streams = {
-      rfqRequest: directStream('RfqRequestDirectStream', props.buckets.rfqRequest),
-      rfqResponse: directStream('RfqResponseDirectStream', props.buckets.rfqResponse),
-      hardRequest: directStream('HardRequestDirectStream', props.buckets.hardRequest),
-      hardResponse: directStream('HardResponseDirectStream', props.buckets.hardResponse),
+      rfqRequest: directStream('RfqRequestDirectStream', 'rfqRequest'),
+      rfqResponse: directStream('RfqResponseDirectStream', 'rfqResponse'),
+      hardRequest: directStream('HardRequestDirectStream', 'hardRequest'),
+      hardResponse: directStream('HardResponseDirectStream', 'hardResponse'),
     };
 
     // One trust statement per account so each condition names only the account its principal

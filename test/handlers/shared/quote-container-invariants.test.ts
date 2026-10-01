@@ -1,7 +1,10 @@
 import bunyan from 'bunyan';
 
+import { HardQuoteInjector } from '../../../lib/handlers/hard-quote';
+import { QuoteInjector } from '../../../lib/handlers/quote/injector';
 import { buildQuoteContainerInjected } from '../../../lib/handlers/shared/quote-injector';
 import { S3WebhookConfigurationProvider } from '../../../lib/providers';
+import { DirectQuoteAnalytics, QUOTE_ANALYTICS_STREAM_ENV } from '../../../lib/providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../../lib/providers/circuit-breaker/dynamo';
 import { WebhookQuoter } from '../../../lib/quoters';
 
@@ -24,8 +27,13 @@ import { WebhookQuoter } from '../../../lib/quoters';
 
 const log = bunyan.createLogger({ name: 'quote-container-invariants.test', level: bunyan.FATAL });
 
-const ENV_KEYS = ['RPC_PREFIX_URL', 'ANALYTICS_STREAM_ARN'] as const;
-const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
+const ENV_KEYS = [
+  'RPC_PREFIX_URL',
+  'ANALYTICS_STREAM_ARN',
+  'ORDER_SERVICE_URL',
+  ...Object.values(QUOTE_ANALYTICS_STREAM_ENV),
+] as const;
+const savedEnv: Partial<Record<string, string | undefined>> = {};
 
 beforeAll(() => {
   for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
@@ -64,5 +72,33 @@ describe('buildQuoteContainerInjected wiring invariants', () => {
       );
       expect(providerFields).toHaveLength(0);
     });
+  });
+});
+
+/**
+ * Direct quote analytics only works if the flow, the quoter and the handler share ONE sink: the
+ * flow and quoter queue records, and the handler flushes the container's sink before the Lambda
+ * returns. A second instance anywhere would queue records nobody sends.
+ */
+describe('quote analytics sink wiring (stream names set)', () => {
+  beforeAll(() => {
+    process.env.ORDER_SERVICE_URL = 'https://orders.example/';
+    for (const [eventType, key] of Object.entries(QUOTE_ANALYTICS_STREAM_ENV)) process.env[key] = `stream-${eventType}`;
+  });
+
+  it('/quote: the handler flushes the same sink the flow and the quoter write to', async () => {
+    const container: any = await new QuoteInjector('quote-invariants').buildContainerInjected();
+    expect(container.analytics).toBeInstanceOf(DirectQuoteAnalytics);
+    expect(container.softQuote.analytics).toBe(container.analytics);
+    expect(container.softQuote.quoters[0].analytics).toBe(container.analytics);
+    expect(Object.keys(container.analytics.streams).sort()).toEqual(['QuoteRequest', 'QuoteResponse']);
+  });
+
+  it('/hard-quote: the handler flushes the same sink the flow and the quoter write to', async () => {
+    const container: any = await new HardQuoteInjector('hard-quote-invariants').buildContainerInjected();
+    expect(container.analytics).toBeInstanceOf(DirectQuoteAnalytics);
+    expect(container.hardQuote.deps.analytics).toBe(container.analytics);
+    expect(container.hardQuote.deps.quoters[0].analytics).toBe(container.analytics);
+    expect(Object.keys(container.analytics.streams).sort()).toEqual(['HardRequest', 'HardResponse']);
   });
 });

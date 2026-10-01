@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { HardQuoteBL, HardQuoteDeps, SoftQuoteBL } from '../../lib/core';
 import { ContainerInjected as HardQuoteContainerInjected } from '../../lib/handlers/hard-quote/injector';
 import { ContainerInjected as SoftQuoteContainerInjected } from '../../lib/handlers/quote/injector';
+import { LOG_LINE_QUOTE_ANALYTICS, QuoteAnalytics } from '../../lib/providers/analytics';
 import { MockOrderServiceProvider } from '../../lib/providers/order/mock';
 import { Quoter } from '../../lib/quoters';
 import { MockFillerAddressRepository } from '../../lib/repositories/filler-address-repository';
@@ -22,9 +23,11 @@ export function offlineRpcMap(): RpcMap {
  */
 export function softQuoteContainer(
   quoters: Quoter[],
-  chainIdRpcMap: RpcMap = offlineRpcMap()
+  chainIdRpcMap: RpcMap = offlineRpcMap(),
+  analytics: QuoteAnalytics = LOG_LINE_QUOTE_ANALYTICS
 ): SoftQuoteContainerInjected {
-  return { softQuote: new SoftQuoteBL(quoters, chainIdRpcMap) };
+  // One sink shared by the flow and the handler that flushes it, as the injector wires it.
+  return { softQuote: new SoftQuoteBL(quoters, chainIdRpcMap, analytics), analytics };
 }
 
 /**
@@ -42,5 +45,6 @@ export function hardQuoteContainer(
       fillerAddressRepository: new MockFillerAddressRepository(),
       ...deps,
     }),
+    analytics: deps.analytics ?? LOG_LINE_QUOTE_ANALYTICS,
   };
 }

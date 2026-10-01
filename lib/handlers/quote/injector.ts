@@ -4,6 +4,7 @@ import { default as Logger } from 'bunyan';
 
 import { SoftQuoteBL } from '../../core';
 import { SoftQuoteMetricDimension } from '../../entities/aws-metrics-logger';
+import { QuoteAnalytics, selectQuoteAnalytics, SOFT_QUOTE_ANALYTICS_EVENT_TYPES } from '../../providers/analytics';
 import { ApiInjector } from '../base/api-handler';
 import {
   BaseQuoteRequestInjected,
@@ -13,9 +14,10 @@ import {
 } from '../shared/quote-injector';
 import { PostQuoteRequestBody } from './schema';
 
-/** What the /quote handler reads: only the flow. Its dependencies live inside it. */
+/** What the /quote handler reads: the flow, and the analytics sink it flushes after each request. */
 export interface ContainerInjected {
   softQuote: SoftQuoteBL;
+  analytics: QuoteAnalytics;
 }
 
 export interface RequestInjected extends BaseQuoteRequestInjected {}
@@ -26,8 +28,9 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const stage = process.env['stage'];
 
-    const base = buildQuoteContainerInjected(log, stage);
-    return { softQuote: new SoftQuoteBL(base.quoters, base.chainIdRpcMap) };
+    const analytics = selectQuoteAnalytics(log, SOFT_QUOTE_ANALYTICS_EVENT_TYPES);
+    const base = buildQuoteContainerInjected(log, stage, analytics);
+    return { softQuote: new SoftQuoteBL(base.quoters, base.chainIdRpcMap, analytics), analytics };
   }
 
   public async getRequestInjected(

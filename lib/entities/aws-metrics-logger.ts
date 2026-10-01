@@ -64,6 +64,19 @@ export enum Metric {
   // deleted by hand or expires.
   FILLER_ADDRESS_CLAIM_REJECTED = 'FILLER_ADDRESS_CLAIM_REJECTED',
 
+  // Quote analytics records written straight to the direct-write Firehose streams. Values are record
+  // counts per request flush.
+  QUOTE_ANALYTICS_RECORDS_SENT = 'QUOTE_ANALYTICS_RECORDS_SENT',
+  // Records Firehose provably did not take (rejected, errored before sending, or too large) and that
+  // were written as today's analytics log line instead, so the log-driven path still carries them.
+  QUOTE_ANALYTICS_RECORDS_FALLBACK = 'QUOTE_ANALYTICS_RECORDS_FALLBACK',
+  // Records whose put timed out after the connection opened: Firehose may already hold them, so they
+  // are neither retried nor logged (a duplicate row double-counts downstream joins). A non-zero rate
+  // is lost analytics rows.
+  QUOTE_ANALYTICS_RECORDS_DROPPED = 'QUOTE_ANALYTICS_RECORDS_DROPPED',
+  // Time the handler waits for the per-request flush before responding.
+  QUOTE_ANALYTICS_FLUSH_LATENCY = 'QUOTE_ANALYTICS_FLUSH_LATENCY',
+
   // Latency-attribution metrics.
   // Time spent resolving webhook config + circuit-breaker state before fan-out.
   RFQ_PHASE_ENDPOINT_STATUSES = 'RFQ_PHASE_ENDPOINT_STATUSES',

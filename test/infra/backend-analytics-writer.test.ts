@@ -10,7 +10,7 @@ import {
   BACKEND_PROD_ACCOUNT,
   BACKEND_STAGING_ACCOUNT,
 } from '../../bin/constants';
-import { BackendAnalyticsWriter } from '../../bin/stacks/backend-analytics-writer';
+import { BackendAnalyticsWriter, quoteAnalyticsDirectStreamNames } from '../../bin/stacks/backend-analytics-writer';
 import { STAGE } from '../../lib/util/stage';
 
 const BETA_ACCOUNT = '801328487475';
@@ -41,6 +41,7 @@ function synth(ownAccount: string, allowedAccounts: readonly string[]) {
   new BackendAnalyticsWriter(stack, 'BackendAnalyticsWriter', {
     buckets,
     firehoseRole,
+    streamNames: quoteAnalyticsDirectStreamNames(STAGE.BETA),
     webhookResponseStreamArn: WEBHOOK_STREAM_ARN,
     allowedAccounts,
   });
@@ -92,6 +93,23 @@ describe('BackendAnalyticsWriter', () => {
       return s3.BucketARN['Fn::GetAtt'][0];
     });
     expect(targetBuckets.sort()).toEqual(Object.values(bucketIds).sort());
+  });
+
+  it('names each direct stream per stage, so the quote Lambdas can reference them without a cross-stack token', () => {
+    expect(quoteAnalyticsDirectStreamNames(STAGE.BETA)).toEqual({
+      rfqRequest: 'GoudaParameterization-beta-RfqRequestDirect',
+      rfqResponse: 'GoudaParameterization-beta-RfqResponseDirect',
+      hardRequest: 'GoudaParameterization-beta-HardRequestDirect',
+      hardResponse: 'GoudaParameterization-beta-HardResponseDirect',
+    });
+    expect(quoteAnalyticsDirectStreamNames(STAGE.PROD).rfqRequest).toEqual(
+      'GoudaParameterization-prod-RfqRequestDirect'
+    );
+    const { template } = synth(BETA_ACCOUNT, ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.BETA]);
+    const names = Object.values(template.findResources('AWS::KinesisFirehose::DeliveryStream')).map(
+      (s) => s.Properties.DeliveryStreamName
+    );
+    expect(names.sort()).toEqual(Object.values(quoteAnalyticsDirectStreamNames(STAGE.BETA)).sort());
   });
 
   it('beta: the writer role trusts exactly backend dev and staging task roles, never prod', () => {
