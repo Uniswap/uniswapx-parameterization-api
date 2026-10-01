@@ -51,14 +51,15 @@ export const LOG_LINE_QUOTE_ANALYTICS: QuoteAnalytics = new LogLineQuoteAnalytic
 
 /** What the direct sink needs from Firehose: one batch put, reporting which records were refused. */
 export interface FirehoseBatchWriter {
-  /** Resolves with one flag per record, `true` where Firehose refused that record. */
-  putRecordBatch(streamName: string, records: Uint8Array[]): Promise<boolean[]>;
+  /** Resolves with one entry per record: Firehose's `ErrorCode` where it refused that record. */
+  putRecordBatch(streamName: string, records: Uint8Array[]): Promise<(string | undefined)[]>;
 }
 
-// The flush sits in series with the response, so a stalled put must not hold the request. One
-// attempt: a refused batch falls back to the log line, which is the retry.
-export const QUOTE_ANALYTICS_FIREHOSE_CONNECTION_TIMEOUT_MS = 300;
-export const QUOTE_ANALYTICS_FIREHOSE_REQUEST_TIMEOUT_MS = 500;
+// The flush sits in series with the response, so a stalled put must not hold the request (puts
+// from these Lambdas average ~8 ms). One attempt: a refused batch falls back to the log line, which
+// is the retry. Widen if QUOTE_ANALYTICS_RECORDS_DROPPED shows the request timeout is too tight.
+export const QUOTE_ANALYTICS_FIREHOSE_CONNECTION_TIMEOUT_MS = 100;
+export const QUOTE_ANALYTICS_FIREHOSE_REQUEST_TIMEOUT_MS = 250;
 export const QUOTE_ANALYTICS_FIREHOSE_MAX_ATTEMPTS = 1;
 
 // PutRecordBatch limits.
@@ -80,7 +81,7 @@ export function firehoseBatchWriter(): FirehoseBatchWriter {
         new PutRecordBatchCommand({ DeliveryStreamName: streamName, Records: records.map((Data) => ({ Data })) })
       );
       const responses = res.RequestResponses ?? [];
-      return records.map((_, i) => responses[i]?.ErrorCode !== undefined);
+      return records.map((_, i) => responses[i]?.ErrorCode);
     },
   };
 }
@@ -111,11 +112,11 @@ interface FlushTally {
  * glued at its batch boundaries).
  *
  * Failure handling keeps the table free of duplicates:
- * - Refused records, a request that failed before reaching Firehose, and oversized records are
- *   written as their log line instead. The subscription filters still exist, so that line reaches
- *   the same bucket.
- * - A timeout after the connection opened is ambiguous (Firehose may hold the records), so those
- *   records are dropped and counted, never re-sent.
+ * - Records Firehose refused or provably never received (see `provablyNotDelivered`), and oversized
+ *   records, are written as their log line instead. The subscription filters still exist, so that
+ *   line reaches the same bucket.
+ * - Any other failure is ambiguous (Firehose may hold the records), so those records are dropped
+ *   and counted, never re-sent.
  */
 export class DirectQuoteAnalytics implements QuoteAnalytics {
   private queue: PendingRecord[] = [];
@@ -126,9 +127,21 @@ export class DirectQuoteAnalytics implements QuoteAnalytics {
   ) {}
 
   public record(eventType: QuoteAnalyticsEventType, body: object, writeLogLine: AnalyticsLogLine): void {
-    // Not a record type this Lambda's subscription filters carry today (see the EVENT_TYPES above).
-    if (!this.streams[eventType]) return;
-    this.queue.push({ eventType, body, writeLogLine, data: Buffer.from(JSON.stringify(body) + '\n') });
+    // Not a record type this Lambda's subscription filters carry (see the EVENT_TYPES above): keep
+    // today's log line, which nothing forwards.
+    if (!this.streams[eventType]) {
+      writeLogLine({ eventType, body });
+      return;
+    }
+    let data: Uint8Array;
+    try {
+      data = Buffer.from(JSON.stringify(body) + '\n');
+    } catch {
+      // A BigInt or a cycle: bunyan's safe serializer still writes a degraded line.
+      writeLogLine({ eventType, body });
+      return;
+    }
+    this.queue.push({ eventType, body, writeLogLine, data });
   }
 
   public async flush(ctx: Context): Promise<void> {
@@ -161,28 +174,39 @@ export class DirectQuoteAnalytics implements QuoteAnalytics {
     }
     if (tally.dropped > 0) {
       void ctx.metrics.count(Metric.QUOTE_ANALYTICS_RECORDS_DROPPED, tally.dropped, {
-        tags: ['status:failure', 'reason:timeout'],
+        tags: ['status:failure', 'reason:ambiguous'],
       });
     }
   }
 
   private async sendBatch(ctx: Context, stream: string, records: PendingRecord[], tally: FlushTally): Promise<void> {
     try {
-      const refused = await this.writer.putRecordBatch(
+      const errorCodes = await this.writer.putRecordBatch(
         stream,
         records.map((r) => r.data)
       );
+      const refused = new Map<string, number>();
       records.forEach((r, i) => {
-        if (refused[i]) {
+        const code = errorCodes[i];
+        if (code !== undefined) {
+          refused.set(code, (refused.get(code) ?? 0) + 1);
           fallBack(r, FallbackReason.REJECTED, tally);
         } else {
           tally.sent += 1;
         }
       });
+      if (refused.size > 0) {
+        ctx.logger.warn('Quote analytics records refused; written as log lines', {
+          stream,
+          records: records.length,
+          failedPutCount: [...refused.values()].reduce((a, b) => a + b, 0),
+          errorCodes: Object.fromEntries(refused),
+        });
+      }
     } catch (e) {
-      if (isAmbiguousTimeout(e)) {
+      if (!provablyNotDelivered(e)) {
         tally.dropped += records.length;
-        ctx.logger.warn('Quote analytics put timed out; records dropped', {
+        ctx.logger.warn('Quote analytics put may have been delivered; records dropped', {
           stream,
           records: records.length,
           error: errorMessage(e),
@@ -240,14 +264,24 @@ export function chunkForBatch<T extends { data: Uint8Array }>(records: T[]): T[]
   return chunks;
 }
 
+// Failures before a connection exists, so nothing was sent.
+const PRE_CONNECT_ERROR_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH']);
+
 /**
- * True when a put may have reached Firehose. The SDK's HTTP handler names every timeout
- * `TimeoutError`; only the connection timeout ("without establishing a connection") proves nothing
- * was sent. Resets and request timeouts after connecting are ambiguous.
+ * True only when a failed put provably left nothing in Firehose, so re-emitting the records as log
+ * lines cannot duplicate them: Firehose answered with an error (a service exception carries its
+ * HTTP status), the connection timeout fired ("without establishing a connection"; the SDK names
+ * every timeout `TimeoutError`), the connection itself failed, or credentials could not be loaded.
+ * Everything else after connecting (request timeouts, resets, hang-ups on a stale keep-alive
+ * socket) is ambiguous.
  */
-export function isAmbiguousTimeout(e: unknown): boolean {
-  if (!(e instanceof Error) || e.name !== 'TimeoutError') return false;
-  return !e.message.includes('without establishing a connection');
+export function provablyNotDelivered(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const err = e as Error & { $metadata?: { httpStatusCode?: number }; code?: string };
+  if (typeof err.$metadata?.httpStatusCode === 'number') return true;
+  if (err.name === 'TimeoutError') return err.message.includes('without establishing a connection');
+  if (err.name === 'CredentialsProviderError') return true;
+  return err.code !== undefined && PRE_CONNECT_ERROR_CODES.has(err.code);
 }
 
 function errorMessage(e: unknown): string {

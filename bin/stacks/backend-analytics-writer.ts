@@ -13,6 +13,10 @@ export type QuoteAnalyticsStreamKey = 'rfqRequest' | 'rfqResponse' | 'hardReques
  * names and a grant on them directly: referencing the streams' generated names instead would make
  * the Lambdas depend on this nested stack, which already depends on the Lambdas for its log
  * subscriptions.
+ *
+ * Fixed names cost one thing: CloudFormation creates a replacement before deleting the original,
+ * and Firehose refuses a second stream with the same name, so a change that forces replacement
+ * (destination bucket, encryption) must also rename the stream (change the suffix here).
  */
 export function quoteAnalyticsDirectStreamNames(stage: string): Record<QuoteAnalyticsStreamKey, string> {
   const name = (suffix: string) => {

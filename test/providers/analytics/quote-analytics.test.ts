@@ -10,8 +10,8 @@ import {
   FIREHOSE_MAX_BATCH_RECORDS,
   FIREHOSE_MAX_RECORD_BYTES,
   HARD_QUOTE_ANALYTICS_EVENT_TYPES,
-  isAmbiguousTimeout,
   LOG_LINE_QUOTE_ANALYTICS,
+  provablyNotDelivered,
   QUOTE_ANALYTICS_STREAM_ENV,
   QuoteAnalyticsEventType,
   selectQuoteAnalytics,
@@ -40,6 +40,15 @@ function lineRecorder() {
 
 function timeoutError(message: string): Error {
   return Object.assign(new Error(message), { name: 'TimeoutError' });
+}
+
+/** The shape of an SDK service exception: Firehose answered. */
+function serviceError(name: string, httpStatusCode: number): Error {
+  return Object.assign(new Error(name), { name, $metadata: { httpStatusCode } });
+}
+
+function errnoError(code: string): Error {
+  return Object.assign(new Error(`connect ${code} 1.2.3.4:443`), { code });
 }
 
 describe('LOG_LINE_QUOTE_ANALYTICS', () => {
@@ -106,7 +115,7 @@ describe('DirectQuoteAnalytics', () => {
     expect(c.metrics.names()).toEqual([]);
   });
 
-  it("skips record types this Lambda's subscription filters never carried, writing no log line either", async () => {
+  it("keeps today's log line, and sends nothing, for record types this Lambda's filters never carried", async () => {
     // The hard-quote Lambda logs QuoteResponse lines for opposing-side responses; no filter on its
     // log group forwards them, so the direct path must not start writing them.
     const writer = new FakeFirehoseBatchWriter();
@@ -116,13 +125,26 @@ describe('DirectQuoteAnalytics', () => {
     );
     const { lines, writeLogLine } = lineRecorder();
     analytics.record('QuoteResponse', { n: 1 }, writeLogLine);
+    expect(lines).toEqual([{ eventType: 'QuoteResponse', body: { n: 1 } }]);
     await analytics.flush(ctx());
     expect(writer.puts).toEqual([]);
-    expect(lines).toEqual([]);
+  });
+
+  it('writes a body JSON cannot serialize as its log line instead of throwing', async () => {
+    const writer = new FakeFirehoseBatchWriter();
+    const analytics = new DirectQuoteAnalytics(SOFT_STREAMS, writer);
+    const { lines, writeLogLine } = lineRecorder();
+    const unserializable: Record<string, unknown> = { amount: BigInt(1) };
+    expect(() => analytics.record('QuoteRequest', unserializable, writeLogLine)).not.toThrow();
+    expect(lines).toEqual([{ eventType: 'QuoteRequest', body: unserializable }]);
+    await analytics.flush(ctx());
+    expect(writer.puts).toEqual([]);
   });
 
   it('writes records Firehose refused as their log line, and only those', async () => {
-    const writer = new FakeFirehoseBatchWriter({ [STREAMS.QuoteResponse]: [false, true, false] });
+    const writer = new FakeFirehoseBatchWriter({
+      [STREAMS.QuoteResponse]: [undefined, 'ServiceUnavailableException', undefined],
+    });
     const analytics = new DirectQuoteAnalytics(SOFT_STREAMS, writer);
     const { lines, writeLogLine } = lineRecorder();
     [1, 2, 3].forEach((n) => analytics.record('QuoteResponse', { n }, writeLogLine));
@@ -134,12 +156,18 @@ describe('DirectQuoteAnalytics', () => {
     expect(fallback).toEqual([
       expect.objectContaining({ value: 1, opts: { tags: ['status:failure', 'reason:rejected'] } }),
     ]);
+    expect(c.logger.atLevel('warn')).toEqual([
+      expect.objectContaining({
+        fields: expect.objectContaining({ failedPutCount: 1, errorCodes: { ServiceUnavailableException: 1 } }),
+      }),
+    ]);
   });
 
-  it('writes the whole batch as log lines when the put fails before reaching Firehose', async () => {
+  it('writes the whole batch as log lines when Firehose provably did not take it', async () => {
     for (const error of [
-      Object.assign(new Error('Stream not found'), { name: 'ResourceNotFoundException' }),
-      timeoutError('Socket timed out without establishing a connection within 300 ms'),
+      serviceError('ResourceNotFoundException', 400),
+      timeoutError('Socket timed out without establishing a connection within 100 ms'),
+      errnoError('ECONNREFUSED'),
     ]) {
       const writer = new FakeFirehoseBatchWriter({ [STREAMS.QuoteRequest]: error });
       const analytics = new DirectQuoteAnalytics(SOFT_STREAMS, writer);
@@ -157,20 +185,20 @@ describe('DirectQuoteAnalytics', () => {
     }
   });
 
-  it('drops and counts records when the put timed out after connecting, never re-sending them', async () => {
-    const writer = new FakeFirehoseBatchWriter({
-      [STREAMS.QuoteRequest]: timeoutError('Connection timed out after 500 ms'),
-    });
-    const analytics = new DirectQuoteAnalytics(SOFT_STREAMS, writer);
-    const { lines, writeLogLine } = lineRecorder();
-    analytics.record('QuoteRequest', { n: 1 }, writeLogLine);
-    analytics.record('QuoteResponse', { n: 2 }, writeLogLine);
-    const c = ctx();
-    await analytics.flush(c);
-    expect(lines).toEqual([]);
-    expect(c.metrics.values(Metric.QUOTE_ANALYTICS_RECORDS_DROPPED)).toEqual([1]);
-    expect(c.metrics.values(Metric.QUOTE_ANALYTICS_RECORDS_SENT)).toEqual([1]);
-    expect(c.logger.atLevel('warn')).toHaveLength(1);
+  it('drops and counts records when the put may have been delivered, never re-sending them', async () => {
+    for (const error of [timeoutError('Connection timed out after 250 ms'), errnoError('ECONNRESET')]) {
+      const writer = new FakeFirehoseBatchWriter({ [STREAMS.QuoteRequest]: error });
+      const analytics = new DirectQuoteAnalytics(SOFT_STREAMS, writer);
+      const { lines, writeLogLine } = lineRecorder();
+      analytics.record('QuoteRequest', { n: 1 }, writeLogLine);
+      analytics.record('QuoteResponse', { n: 2 }, writeLogLine);
+      const c = ctx();
+      await analytics.flush(c);
+      expect(lines).toEqual([]);
+      expect(c.metrics.values(Metric.QUOTE_ANALYTICS_RECORDS_DROPPED)).toEqual([1]);
+      expect(c.metrics.values(Metric.QUOTE_ANALYTICS_RECORDS_SENT)).toEqual([1]);
+      expect(c.logger.atLevel('warn')).toHaveLength(1);
+    }
   });
 
   it('writes an oversized record as its log line without sending it', async () => {
@@ -215,14 +243,22 @@ describe('chunkForBatch', () => {
   });
 });
 
-describe('isAmbiguousTimeout', () => {
-  it('treats only post-connect timeouts as ambiguous', () => {
-    expect(isAmbiguousTimeout(timeoutError('Connection timed out after 500 ms'))).toBe(true);
-    expect(isAmbiguousTimeout(timeoutError('Socket timed out without establishing a connection within 300 ms'))).toBe(
-      false
+describe('provablyNotDelivered', () => {
+  it('is true only when Firehose answered or no connection was made', () => {
+    expect(provablyNotDelivered(serviceError('ServiceUnavailableException', 503))).toBe(true);
+    expect(provablyNotDelivered(timeoutError('Socket timed out without establishing a connection within 100 ms'))).toBe(
+      true
     );
-    expect(isAmbiguousTimeout(new Error('Connection timed out after 500 ms'))).toBe(false);
-    expect(isAmbiguousTimeout('TimeoutError')).toBe(false);
+    expect(provablyNotDelivered(errnoError('ENOTFOUND'))).toBe(true);
+    expect(provablyNotDelivered(Object.assign(new Error('no creds'), { name: 'CredentialsProviderError' }))).toBe(true);
+  });
+
+  it('treats every other failure as possibly delivered', () => {
+    expect(provablyNotDelivered(timeoutError('Connection timed out after 250 ms'))).toBe(false);
+    expect(provablyNotDelivered(errnoError('ECONNRESET'))).toBe(false);
+    expect(provablyNotDelivered(errnoError('EPIPE'))).toBe(false);
+    expect(provablyNotDelivered(new Error('socket hang up'))).toBe(false);
+    expect(provablyNotDelivered('TimeoutError')).toBe(false);
   });
 });
 
