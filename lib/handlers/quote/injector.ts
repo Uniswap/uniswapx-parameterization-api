@@ -2,6 +2,7 @@ import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
 
+import { loadQuoteConfig } from '../../config';
 import { SoftQuoteBL } from '../../core';
 import { SoftQuoteMetricDimension } from '../../entities/aws-metrics-logger';
 import { QuoteAnalytics, selectQuoteAnalytics, SOFT_QUOTE_ANALYTICS_EVENT_TYPES } from '../../providers/analytics';
@@ -26,10 +27,10 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
   public async buildContainerInjected(): Promise<ContainerInjected> {
     const log: Logger = createInjectorLogger(this.injectorName);
 
-    const stage = process.env['stage'];
+    const config = loadQuoteConfig();
 
-    const analytics = selectQuoteAnalytics(log, SOFT_QUOTE_ANALYTICS_EVENT_TYPES);
-    const base = buildQuoteContainerInjected(log, stage, analytics);
+    const analytics = selectQuoteAnalytics(log, SOFT_QUOTE_ANALYTICS_EVENT_TYPES, config.quoteAnalyticsStreams);
+    const base = buildQuoteContainerInjected(log, config, analytics);
     return { softQuote: new SoftQuoteBL(base.quoters, base.chainIdRpcMap, analytics), analytics };
   }
 

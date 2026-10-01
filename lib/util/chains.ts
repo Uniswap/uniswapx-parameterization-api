@@ -37,14 +37,5 @@ export const SUPPORTED_CHAINS: ChainId[] = [
  */
 export const TESTNET_CHAINS: ChainId[] = [ChainId.GOERLI, ChainId.SEPOLIA];
 
-/**
- * Resolve the RPC URL for a given chainId by appending it to RPC_PREFIX_URL.
- * Throws if the prefix is not set.
- */
-export const getRpcUrl = (chainId: number): string => {
-  const prefix = process.env.RPC_PREFIX_URL;
-  if (!prefix) {
-    throw new Error(`No RPC for chain ${chainId}: set RPC_PREFIX_URL`);
-  }
-  return `${prefix.replace(/\/$/, '')}/${chainId}`;
-};
+/** The RPC URL for a chain: the internal provider's prefix (RPC_PREFIX_URL) with the chainId appended. */
+export const getRpcUrl = (prefixUrl: string, chainId: number): string => `${prefixUrl.replace(/\/$/, '')}/${chainId}`;

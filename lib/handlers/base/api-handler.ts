@@ -7,6 +7,7 @@ import {
 } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 import Joi from 'joi';
+import { isTestRun } from '../../config';
 
 import { Metric, MetricDimension } from '../../entities';
 import { CustomError, ErrorCode } from '../../util/errors';
@@ -161,7 +162,7 @@ export abstract class APIGLambdaHandler<
           let log: Logger = bunyan.createLogger({
             name: this.handlerName,
             serializers: bunyan.stdSerializers,
-            level: process.env.NODE_ENV == 'test' ? bunyan.FATAL + 1 : bunyan.INFO,
+            level: isTestRun() ? bunyan.FATAL + 1 : bunyan.INFO,
             requestId: context.awsRequestId,
           });
 

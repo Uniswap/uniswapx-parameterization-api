@@ -23,8 +23,10 @@ const log = bunyan.createLogger({ name: 'quote-injector.test', level: bunyan.FAT
 beforeAll(() => {
   process.env.stage = 'beta';
   process.env.RPC_PREFIX_URL = 'https://rpc.example/';
-  process.env.ANALYTICS_STREAM_ARN = 'arn:aws:firehose:us-east-2:1:deliverystream/dummy';
+  process.env.ANALYTICS_STREAM_ARN = 'arn:aws:firehose:us-east-2:123456789012:deliverystream/dummy';
   process.env.ORDER_SERVICE_URL = 'https://order.example';
+  process.env.KMS_KEY_ID = 'test-key-id';
+  process.env.REGION = 'us-east-2';
 });
 
 function stubMetricsLogger() {

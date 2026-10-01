@@ -6,16 +6,11 @@ import { EventBridgeEvent } from 'aws-lambda/trigger/eventbridge';
 import Logger from 'bunyan';
 import { randomUUID } from 'crypto';
 
-import {
-  BETA_S3_KEY,
-  FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV,
-  PRODUCTION_S3_KEY,
-  WEBHOOK_CONFIG_BUCKET,
-} from '../constants';
+import { CircuitBreakerConfig, loadCircuitBreakerConfig } from '../config';
+import { BETA_S3_KEY, PRODUCTION_S3_KEY, WEBHOOK_CONFIG_BUCKET } from '../constants';
 import { CircuitBreakerBL, CircuitBreakerDeps } from '../core/circuit-breaker';
 import { CircuitBreakerMetricDimension } from '../entities';
 import { BunyanLogger, Context, EmfMetrics } from '../observability';
-import { checkDefined } from '../preconditions/preconditions';
 import { S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../providers';
 import { DynamoFillerAddressRepository } from '../repositories/filler-address-repository';
 import { DynamoPostedOrderRepository } from '../repositories/posted-order-repository';
@@ -34,20 +29,34 @@ const log = Logger.createLogger({
 });
 const defaultLog = log;
 
-/* set up aws clients */
-const stage = process.env['stage'];
-const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
-const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
-const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-  marshallOptions: {
-    convertEmptyValues: true,
-  },
-  unmarshallOptions: {
-    wrapNumbers: true,
-  },
-});
-const fillerAddressRepo = DynamoFillerAddressRepository.create(documentClient);
-const timestampDB = TimestampRepository.create();
+/**
+ * The long-lived production clients, built once per Lambda execution environment on the first run
+ * and reused by warm invocations, so the webhook roster keeps its refresh window across runs. Built
+ * lazily rather than at import so a config error fails the run with its message, and so importing
+ * this module (tests) reads no environment. The fades source is per run (it holds the run's
+ * deadline and resolution summary), so main() builds it each time.
+ */
+type ProductionClients = Omit<CircuitBreakerDeps, 'source'> & { config: CircuitBreakerConfig };
+let productionClients: ProductionClients | undefined;
+
+function buildProductionClients(config: CircuitBreakerConfig): ProductionClients {
+  const s3Key = config.stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
+  const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${config.stage}-1`, s3Key);
+  const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+    marshallOptions: {
+      convertEmptyValues: true,
+    },
+    unmarshallOptions: {
+      wrapNumbers: true,
+    },
+  });
+  return {
+    config,
+    webhookProvider,
+    fillerAddressRepo: DynamoFillerAddressRepository.create(documentClient),
+    timestampDB: TimestampRepository.create(),
+  };
+}
 
 export const handler: ScheduledHandler = metricScope(
   (metrics) => async (_event: EventBridgeEvent<string, void>, context) => {
@@ -70,19 +79,21 @@ export type FadeRateCronDeps = CircuitBreakerDeps & {
 };
 
 async function main(metrics: MetricsLogger, remainingTimeMs: () => number, requestId: string) {
+  productionClients ??= buildProductionClients(loadCircuitBreakerConfig());
+  const { config, ...clients } = productionClients;
   await runFadeRateCron(metrics, {
-    source: buildOrderServiceSource(),
-    webhookProvider,
-    fillerAddressRepo,
-    timestampDB,
+    ...clients,
+    source: buildOrderServiceSource(config, () => clients.webhookProvider.fillerEndpoints()),
     remainingTimeMs,
     requestId,
   });
 }
 
 /** Production wiring of the fades source (lib/cron/order-service-fades-source.ts). */
-function buildOrderServiceSource(): OrderServiceFadesSource {
-  const orderServiceUrl = checkDefined(process.env.ORDER_SERVICE_URL, 'ORDER_SERVICE_URL is not defined');
+function buildOrderServiceSource(
+  config: CircuitBreakerConfig,
+  fillerEndpoints: () => string[]
+): OrderServiceFadesSource {
   return new OrderServiceFadesSource({
     postedOrders: DynamoPostedOrderRepository.create(
       // Not the hard-quote path's 200/300ms-bounded client: the cron is not in series with a
@@ -92,13 +103,13 @@ function buildOrderServiceSource(): OrderServiceFadesSource {
         unmarshallOptions: { wrapNumbers: false },
       })
     ),
-    orderStatus: new UniswapXServiceProvider(log, orderServiceUrl),
-    fillerEndpoints: () => webhookProvider.fillerEndpoints(),
+    orderStatus: new UniswapXServiceProvider(log, config.orderServiceUrl),
+    fillerEndpoints,
     log,
     // Policy flag (default off): cancelled / insufficient-funds / error orders are excluded, as
     // the retired Redshift breaker effectively excluded them. 'true' scores them as fades.
     // Expiries always count regardless.
-    policy: { countNeverFilledTerminalAsFade: process.env[FADES_COUNT_NEVER_FILLED_TERMINAL_AS_FADE_ENV] === 'true' },
+    policy: { countNeverFilledTerminalAsFade: config.countNeverFilledTerminalAsFade },
   });
 }
 

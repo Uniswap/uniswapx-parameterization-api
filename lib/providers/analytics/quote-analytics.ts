@@ -303,13 +303,13 @@ function errorMessage(e: unknown): string {
 export function selectQuoteAnalytics(
   log: { info(fields: object, msg: string): void; error(fields: object, msg: string): void },
   eventTypes: readonly QuoteAnalyticsEventType[],
-  env: NodeJS.ProcessEnv = process.env,
+  configuredStreams: Partial<Record<QuoteAnalyticsEventType, string>>,
   writer: () => FirehoseBatchWriter = firehoseBatchWriter
 ): QuoteAnalytics {
   const streams: Partial<Record<QuoteAnalyticsEventType, string>> = {};
   const missing: string[] = [];
   for (const eventType of eventTypes) {
-    const name = env[QUOTE_ANALYTICS_STREAM_ENV[eventType]];
+    const name = configuredStreams[eventType];
     if (name) {
       streams[eventType] = name;
     } else {

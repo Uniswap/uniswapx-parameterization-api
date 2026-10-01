@@ -272,9 +272,8 @@ describe('provablyNotDelivered', () => {
 
 describe('selectQuoteAnalytics', () => {
   const log = () => ({ info: jest.fn(), error: jest.fn() });
-  const directEnv = (types: readonly QuoteAnalyticsEventType[]) => ({
-    ...Object.fromEntries(types.map((t) => [QUOTE_ANALYTICS_STREAM_ENV[t], STREAMS[t]])),
-  });
+  const directEnv = (types: readonly QuoteAnalyticsEventType[]): Partial<Record<QuoteAnalyticsEventType, string>> =>
+    Object.fromEntries(types.map((t) => [t, STREAMS[t]]));
 
   it('keeps the log lines where no stream names are set (local stack, tests)', () => {
     const l = log();

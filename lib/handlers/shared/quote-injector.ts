@@ -3,20 +3,13 @@ import { Context as LambdaContext } from 'aws-lambda';
 import { default as bunyan, default as Logger } from 'bunyan';
 
 import { ethers } from 'ethers';
-import { BETA_S3_KEY, PRODUCTION_S3_KEY, RPC_HEADERS, WEBHOOK_CONFIG_BUCKET } from '../../constants';
+import { EgressProxyConfig, QuoteConfig, RpcConfig } from '../../config';
+import { BETA_S3_KEY, PRODUCTION_S3_KEY, rpcHeaders, WEBHOOK_CONFIG_BUCKET } from '../../constants';
 import { BunyanLogger, Context, EmfMetrics } from '../../observability';
 import { S3WebhookConfigurationProvider } from '../../providers';
 import { FirehoseLogger, LOG_LINE_QUOTE_ANALYTICS, QuoteAnalytics } from '../../providers/analytics';
 import { DynamoCircuitBreakerConfigurationProvider } from '../../providers/circuit-breaker/dynamo';
-import {
-  EGRESS_PROXY_URL_ENV,
-  EGRESS_PROXY_WEBHOOK_SHARE_ENV,
-  parseEgressProxyShare,
-  proxiedFetch,
-  Quoter,
-  splitFetch,
-  WebhookQuoter,
-} from '../../quoters';
+import { parseEgressProxyShare, proxiedFetch, Quoter, splitFetch, WebhookQuoter } from '../../quoters';
 import { ChainId, getRpcUrl, SUPPORTED_CHAINS } from '../../util/chains';
 import { FetchFn, timedFetch } from '../../util/fetch-http';
 import { STAGE } from '../../util/stage';
@@ -55,13 +48,14 @@ export function createInjectorLogger(injectorName: string): Logger {
  * argument so ethers treats the network as static and skips an `eth_chainId` round trip
  * on cold start.
  */
-export function buildChainIdRpcMap(): Map<ChainId, ethers.providers.StaticJsonRpcProvider> {
+export function buildChainIdRpcMap(rpc: RpcConfig): Map<ChainId, ethers.providers.StaticJsonRpcProvider> {
   const chainIdRpcMap = new Map<ChainId, ethers.providers.StaticJsonRpcProvider>();
+  const headers = rpcHeaders(rpc.headerSecret);
   SUPPORTED_CHAINS.forEach((chainId) => {
     const provider = new ethers.providers.StaticJsonRpcProvider(
       {
-        url: getRpcUrl(chainId),
-        headers: RPC_HEADERS,
+        url: getRpcUrl(rpc.prefixUrl, chainId),
+        headers,
       },
       chainId
     );
@@ -82,38 +76,43 @@ export function buildChainIdRpcMap(): Map<ChainId, ethers.providers.StaticJsonRp
  */
 export function buildQuoteContainerInjected(
   log: Logger,
-  stage: string | undefined,
+  config: QuoteConfig,
   analytics: QuoteAnalytics = LOG_LINE_QUOTE_ANALYTICS
 ): BaseQuoteContainerInjected {
-  const s3Key = stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
+  const s3Key = config.stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
 
-  const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${stage}-1`, s3Key);
+  const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${config.stage}-1`, s3Key);
   const circuitBreakerProvider = new DynamoCircuitBreakerConfigurationProvider(log);
 
-  const firehose = new FirehoseLogger(log, process.env.ANALYTICS_STREAM_ARN!);
+  const firehose = new FirehoseLogger(log, config.webhookResponseStreamArn);
 
   const quoters: Quoter[] = [
-    new WebhookQuoter(log, firehose, webhookProvider, circuitBreakerProvider, selectWebhookFetch(log), analytics),
+    new WebhookQuoter(
+      log,
+      firehose,
+      webhookProvider,
+      circuitBreakerProvider,
+      selectWebhookFetch(log, config.egressProxy),
+      analytics
+    ),
   ];
 
   return {
     quoters,
     firehose,
     analytics,
-    chainIdRpcMap: buildChainIdRpcMap(),
+    chainIdRpcMap: buildChainIdRpcMap(config.rpc),
   };
 }
 
-/**
 /**
  * The fetch the market-maker webhooks use in this container. EGRESS_PROXY_WEBHOOK_SHARE_PERCENT
  * of calls go through the egress proxy at EGRESS_PROXY_URL; the rest go direct. A missing,
  * invalid or zero share, or no proxy address, sends every call direct. Logged once per container
  * so the share in use is visible.
  */
-export function selectWebhookFetch(log: Logger, env: NodeJS.ProcessEnv = process.env): FetchFn {
-  const proxyUrl = env[EGRESS_PROXY_URL_ENV];
-  const rawShare = env[EGRESS_PROXY_WEBHOOK_SHARE_ENV];
+export function selectWebhookFetch(log: Logger, egressProxy: EgressProxyConfig): FetchFn {
+  const { url: proxyUrl, rawShare } = egressProxy;
   const share = parseEgressProxyShare(rawShare);
   if (rawShare !== undefined && share === undefined) {
     log.warn({ rawShare }, 'Invalid egress proxy share; sending every webhook call direct');
