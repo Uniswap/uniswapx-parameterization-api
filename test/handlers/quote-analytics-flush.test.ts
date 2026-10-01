@@ -21,8 +21,7 @@ import { CHAIN_ID, getOrder } from '../fixtures/hard-quote';
 /**
  * The Lambda adapters must flush the analytics sink before responding on every exit path,
  * including thrown ones: Lambda freezes the environment once the handler returns, and unsent puts
- * are lost with it. In direct mode no analytics log lines are written, so the log-driven path
- * cannot double-count.
+ * are lost with it.
  */
 
 const logger = Logger.createLogger({ name: 'test' });
