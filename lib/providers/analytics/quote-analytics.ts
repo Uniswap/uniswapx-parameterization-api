@@ -2,6 +2,7 @@ import { FirehoseClient, PutRecordBatchCommand } from '@aws-sdk/client-firehose'
 
 import { Metric } from '../../entities/aws-metrics-logger';
 import { Context } from '../../observability';
+import { STAGE } from '../../util/stage';
 
 /** The four quote record types. Each is one BigQuery table downstream. */
 export type QuoteAnalyticsEventType = 'QuoteRequest' | 'QuoteResponse' | 'HardRequest' | 'HardResponse';
@@ -15,15 +16,14 @@ export const QUOTE_ANALYTICS_STREAM_ENV: Record<QuoteAnalyticsEventType, string>
 };
 
 /**
- * The record types each Lambda's subscription filters carry today (bin/stacks/analytics-stack.ts).
- * The direct sink routes exactly these, so it writes the same rows: the hard-quote Lambda also logs
- * `QuoteResponse` lines (the quoter's opposing-side responses), but no filter on its log group ever
- * forwarded them.
+ * The record types each Lambda writes to its streams. The hard-quote Lambda also produces
+ * `QuoteResponse` records (the quoter's opposing-side responses); those were never loaded and stay
+ * log lines.
  */
 export const SOFT_QUOTE_ANALYTICS_EVENT_TYPES: readonly QuoteAnalyticsEventType[] = ['QuoteRequest', 'QuoteResponse'];
 export const HARD_QUOTE_ANALYTICS_EVENT_TYPES: readonly QuoteAnalyticsEventType[] = ['HardRequest', 'HardResponse'];
 
-/** Writes today's analytics log line. The log-driven path's subscription filters match on `eventType`. */
+/** Writes a record as a log line: the local stack's sink, and the form for record types no stream takes. */
 export type AnalyticsLogLine = (fields: { eventType: QuoteAnalyticsEventType; body: object }) => void;
 
 /**
@@ -36,7 +36,7 @@ export interface QuoteAnalytics {
   flush(ctx: Context): Promise<void>;
 }
 
-/** Every record is its log line, written immediately. Used where no direct-write streams exist. */
+/** Every record is its log line, written immediately. Used where no streams exist (local stack, tests). */
 export class LogLineQuoteAnalytics implements QuoteAnalytics {
   public record(eventType: QuoteAnalyticsEventType, body: object, writeLogLine: AnalyticsLogLine): void {
     writeLogLine({ eventType, body });
@@ -56,8 +56,8 @@ export interface FirehoseBatchWriter {
 }
 
 // The flush sits in series with the response, so a stalled put must not hold the request (puts
-// from these Lambdas average ~8 ms). One attempt: a refused batch falls back to the log line, which
-// is the retry. Widen if QUOTE_ANALYTICS_RECORDS_DROPPED shows the request timeout is too tight.
+// from these Lambdas average ~8 ms). One attempt, no retry: a failed record is dropped and counted.
+// Widen if QUOTE_ANALYTICS_RECORDS_DROPPED shows the request timeout is too tight.
 export const QUOTE_ANALYTICS_FIREHOSE_CONNECTION_TIMEOUT_MS = 100;
 export const QUOTE_ANALYTICS_FIREHOSE_REQUEST_TIMEOUT_MS = 250;
 export const QUOTE_ANALYTICS_FIREHOSE_MAX_ATTEMPTS = 1;
@@ -86,7 +86,7 @@ export function firehoseBatchWriter(): FirehoseBatchWriter {
   };
 }
 
-enum FallbackReason {
+enum DropReason {
   REJECTED = 'rejected',
   REQUEST_FAILED = 'request_failed',
   TOO_LARGE = 'too_large',
@@ -94,29 +94,21 @@ enum FallbackReason {
 
 interface PendingRecord {
   eventType: QuoteAnalyticsEventType;
-  body: object;
-  writeLogLine: AnalyticsLogLine;
   data: Uint8Array;
 }
 
 interface FlushTally {
   sent: number;
-  fellBack: Map<FallbackReason, number>;
-  dropped: number;
+  dropped: Map<DropReason, number>;
 }
 
 /**
- * Sends each record as its own Firehose record, one flat JSON object per line, into the
- * direct-write streams. The bytes match what the log-driven path's transform Lambda produces for
- * the same record (`JSON.stringify(body)`), plus the trailing newline that path omits (records
- * glued at its batch boundaries).
+ * Sends each record as its own Firehose record, one flat JSON object per line (`JSON.stringify(body)`
+ * plus a newline), into the quote analytics streams.
  *
- * Failure handling keeps the table free of duplicates:
- * - Records Firehose refused or provably never received (see `provablyNotDelivered`), and oversized
- *   records, are written as their log line instead. The subscription filters still exist, so that
- *   line reaches the same bucket.
- * - Any other failure is ambiguous (Firehose may hold the records), so those records are dropped
- *   and counted, never re-sent.
+ * Delivery is best-effort, as in the monorepo's ETLLogger: records Firehose refused, records in a
+ * failed put, and oversized records are dropped and counted by reason, never re-sent, so a put that
+ * did reach Firehose can't produce a duplicate row.
  */
 export class DirectQuoteAnalytics implements QuoteAnalytics {
   private queue: PendingRecord[] = [];
@@ -127,8 +119,7 @@ export class DirectQuoteAnalytics implements QuoteAnalytics {
   ) {}
 
   public record(eventType: QuoteAnalyticsEventType, body: object, writeLogLine: AnalyticsLogLine): void {
-    // Not a record type this Lambda's subscription filters carry (see the EVENT_TYPES above): keep
-    // today's log line, which nothing forwards.
+    // Not a record type this Lambda loads (see the EVENT_TYPES above): keep it a log line.
     if (!this.streams[eventType]) {
       writeLogLine({ eventType, body });
       return;
@@ -137,11 +128,11 @@ export class DirectQuoteAnalytics implements QuoteAnalytics {
     try {
       data = Buffer.from(JSON.stringify(body) + '\n');
     } catch {
-      // A BigInt or a cycle: bunyan's safe serializer still writes a degraded line.
+      // A BigInt or a cycle: not loadable either way. bunyan's safe serializer still logs it.
       writeLogLine({ eventType, body });
       return;
     }
-    this.queue.push({ eventType, body, writeLogLine, data });
+    this.queue.push({ eventType, data });
   }
 
   public async flush(ctx: Context): Promise<void> {
@@ -150,13 +141,13 @@ export class DirectQuoteAnalytics implements QuoteAnalytics {
     if (pending.length === 0) return;
 
     const start = Date.now();
-    const tally: FlushTally = { sent: 0, fellBack: new Map(), dropped: 0 };
+    const tally: FlushTally = { sent: 0, dropped: new Map() };
     const batches: { stream: string; records: PendingRecord[] }[] = [];
     for (const [stream, records] of groupByStream(pending, this.streams)) {
       const sendable: PendingRecord[] = [];
       for (const r of records) {
         if (r.data.byteLength > FIREHOSE_MAX_RECORD_BYTES) {
-          fallBack(r, FallbackReason.TOO_LARGE, tally);
+          drop(DropReason.TOO_LARGE, 1, tally);
         } else {
           sendable.push(r);
         }
@@ -167,14 +158,9 @@ export class DirectQuoteAnalytics implements QuoteAnalytics {
 
     void ctx.metrics.timer(Metric.QUOTE_ANALYTICS_FLUSH_LATENCY, Date.now() - start);
     if (tally.sent > 0) void ctx.metrics.count(Metric.QUOTE_ANALYTICS_RECORDS_SENT, tally.sent);
-    for (const [reason, n] of tally.fellBack) {
-      void ctx.metrics.count(Metric.QUOTE_ANALYTICS_RECORDS_FALLBACK, n, {
+    for (const [reason, n] of tally.dropped) {
+      void ctx.metrics.count(Metric.QUOTE_ANALYTICS_RECORDS_DROPPED, n, {
         tags: ['status:failure', `reason:${reason}`],
-      });
-    }
-    if (tally.dropped > 0) {
-      void ctx.metrics.count(Metric.QUOTE_ANALYTICS_RECORDS_DROPPED, tally.dropped, {
-        tags: ['status:failure', 'reason:ambiguous'],
       });
     }
   }
@@ -186,46 +172,33 @@ export class DirectQuoteAnalytics implements QuoteAnalytics {
         records.map((r) => r.data)
       );
       const refused = new Map<string, number>();
-      records.forEach((r, i) => {
-        const code = errorCodes[i];
-        if (code !== undefined) {
-          refused.set(code, (refused.get(code) ?? 0) + 1);
-          fallBack(r, FallbackReason.REJECTED, tally);
-        } else {
-          tally.sent += 1;
-        }
+      errorCodes.forEach((code) => {
+        if (code !== undefined) refused.set(code, (refused.get(code) ?? 0) + 1);
       });
-      if (refused.size > 0) {
-        ctx.logger.warn('Quote analytics records refused; written as log lines', {
+      const refusedCount = [...refused.values()].reduce((x, y) => x + y, 0);
+      tally.sent += records.length - refusedCount;
+      if (refusedCount > 0) {
+        drop(DropReason.REJECTED, refusedCount, tally);
+        ctx.logger.warn('Quote analytics records refused; dropped', {
           stream,
           records: records.length,
-          failedPutCount: [...refused.values()].reduce((a, b) => a + b, 0),
+          failedPutCount: refusedCount,
           errorCodes: Object.fromEntries(refused),
         });
       }
     } catch (e) {
-      if (!provablyNotDelivered(e)) {
-        tally.dropped += records.length;
-        ctx.logger.warn('Quote analytics put may have been delivered; records dropped', {
-          stream,
-          records: records.length,
-          error: errorMessage(e),
-        });
-      } else {
-        ctx.logger.warn('Quote analytics put failed; records written as log lines', {
-          stream,
-          records: records.length,
-          error: errorMessage(e),
-        });
-        records.forEach((r) => fallBack(r, FallbackReason.REQUEST_FAILED, tally));
-      }
+      drop(DropReason.REQUEST_FAILED, records.length, tally);
+      ctx.logger.warn('Quote analytics put failed; records dropped', {
+        stream,
+        records: records.length,
+        error: errorMessage(e),
+      });
     }
   }
 }
 
-function fallBack(r: PendingRecord, reason: FallbackReason, tally: FlushTally): void {
-  r.writeLogLine({ eventType: r.eventType, body: r.body });
-  tally.fellBack.set(reason, (tally.fellBack.get(reason) ?? 0) + 1);
+function drop(reason: DropReason, n: number, tally: FlushTally): void {
+  tally.dropped.set(reason, (tally.dropped.get(reason) ?? 0) + n);
 }
 
 function groupByStream(
@@ -264,44 +237,19 @@ export function chunkForBatch<T extends { data: Uint8Array }>(records: T[]): T[]
   return chunks;
 }
 
-// The SDK's connection-timeout message. Older @smithy/node-http-handler releases (this repo's
-// node_modules) say "Socket timed out without establishing a connection within N ms"; newer ones (the
-// Lambda runtime's bundled SDK, which the deployed functions use) say "the request socket did not
-// establish a connection with the server within the configured timeout of N ms".
-const CONNECTION_TIMEOUT_MESSAGE = /without establishing a connection|did not establish a connection/;
-
-// Failures before a connection exists, so nothing was sent.
-const PRE_CONNECT_ERROR_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH']);
-
-/**
- * True only when a failed put provably left nothing in Firehose, so re-emitting the records as log
- * lines cannot duplicate them: Firehose answered with an error (a service exception carries its
- * HTTP status), the connection timeout fired (CONNECTION_TIMEOUT_MESSAGE; the SDK names every
- * timeout `TimeoutError`), the connection itself failed, or credentials could not be loaded.
- * Everything else after connecting (request timeouts, resets, hang-ups on a stale keep-alive
- * socket) is ambiguous.
- */
-export function provablyNotDelivered(e: unknown): boolean {
-  if (!(e instanceof Error)) return false;
-  const err = e as Error & { $metadata?: { httpStatusCode?: number }; code?: string };
-  if (typeof err.$metadata?.httpStatusCode === 'number') return true;
-  if (err.name === 'TimeoutError') return CONNECTION_TIMEOUT_MESSAGE.test(err.message);
-  if (err.name === 'CredentialsProviderError') return true;
-  return err.code !== undefined && PRE_CONNECT_ERROR_CODES.has(err.code);
-}
-
 function errorMessage(e: unknown): string {
   return e instanceof Error ? `${e.name}: ${e.message}` : String(e);
 }
 
 /**
  * The sink for this container. The API stack sets a stream name for every record type a quote
- * Lambda writes wherever the direct-write streams exist; with none (local stack, tests) records stay
- * log lines. A partial set is a deploy bug, and also keeps log lines rather than dropping rows.
- * Logged once per container so the path in use is visible.
+ * Lambda writes in every deployed stage. A deployed stage missing any of them is a deploy bug and
+ * fails the container build, since records would otherwise be lost silently; the local stack has no
+ * streams and logs its records. Logged once per container so the path in use is visible.
  */
 export function selectQuoteAnalytics(
-  log: { info(fields: object, msg: string): void; error(fields: object, msg: string): void },
+  log: { info(fields: object, msg: string): void },
+  stage: STAGE,
   eventTypes: readonly QuoteAnalyticsEventType[],
   configuredStreams: Partial<Record<QuoteAnalyticsEventType, string>>,
   writer: () => FirehoseBatchWriter = firehoseBatchWriter
@@ -316,16 +264,12 @@ export function selectQuoteAnalytics(
       missing.push(QUOTE_ANALYTICS_STREAM_ENV[eventType]);
     }
   }
-  if (missing.length === eventTypes.length) {
+  if (stage === STAGE.LOCAL && missing.length === eventTypes.length) {
     log.info({ quoteAnalyticsSink: 'logs' }, 'Quote analytics sink');
     return LOG_LINE_QUOTE_ANALYTICS;
   }
   if (missing.length > 0) {
-    log.error(
-      { quoteAnalyticsSink: 'logs', missing },
-      'Quote analytics sink: some stream names missing; using log lines'
-    );
-    return LOG_LINE_QUOTE_ANALYTICS;
+    throw new Error(`Quote analytics stream names not set: ${missing.join(', ')}`);
   }
   log.info({ quoteAnalyticsSink: 'direct', streams }, 'Quote analytics sink');
   return new DirectQuoteAnalytics(streams, writer());

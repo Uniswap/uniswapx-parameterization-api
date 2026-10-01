@@ -44,9 +44,7 @@ export class SoftQuoteBL {
     try {
       const provider = this.chainIdRpcMap.get(request.tokenInChainId);
 
-      // The log-line form keys on eventType for the CloudWatch subscription filter, not the
-      // message. The message is empty on purpose: bunyan writes `"msg":""` for a fields-only
-      // call, so the record is byte-identical to the one this replaces.
+      // In the log-line form (local stack only) the record is the fields; the message is empty.
       this.analytics.record(
         'QuoteRequest',
         {

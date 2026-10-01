@@ -117,9 +117,7 @@ export class HardQuoteBL {
       }
       // Instead of decoding the order, we rely on frontend passing in the requestId
       //   from indicative quote
-      // The log-line form keys on eventType for the CloudWatch subscription filter, not the
-      // message. The message is empty on purpose — bunyan writes `"msg":""` for a fields-only
-      // call, so the record is byte-identical to the one this replaces.
+      // In the log-line form (local stack only) the record is the fields; the message is empty.
       analytics.record(
         'HardRequest',
         {

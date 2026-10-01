@@ -10,10 +10,8 @@ import { BACKEND_COSIGNER_ROLE_NAME_PATTERN, SERVICE_NAME } from '../constants';
 export type QuoteAnalyticsStreamKey = 'rfqRequest' | 'rfqResponse' | 'hardRequest' | 'hardResponse';
 
 /**
- * The direct-write streams' names, fixed per stage. The quote Lambdas (API stack) are given these
- * names and a grant on them directly: referencing the streams' generated names instead would make
- * the Lambdas depend on this nested stack, which already depends on the Lambdas for its log
- * subscriptions.
+ * The quote analytics streams' names, fixed per stage. The quote Lambdas (API stack) are given these
+ * names and a grant on them directly, without referencing this nested stack.
  *
  * Fixed names cost one thing: CloudFormation creates a replacement before deleting the original,
  * and Firehose refuses a second stream with the same name, so a change that forces replacement
@@ -37,8 +35,8 @@ export function quoteAnalyticsDirectStreamNames(stage: string): Record<QuoteAnal
 
 export const BACKEND_ANALYTICS_WRITER_ACTIONS = ['firehose:PutRecord', 'firehose:PutRecordBatch'];
 
-// Must match the existing log-driven streams' S3 delivery (see AnalyticsStack) so the files these
-// streams write land in the same hourly folders data-eng's BigQuery loader already lists.
+// Unchanged from the streams these replaced, so files land in the same hourly folders data-eng's
+// BigQuery loader lists, with the same sizes and cadence.
 const DIRECT_WRITE_S3_BUFFERING = { sizeInMBs: 5, intervalInSeconds: 300 };
 
 // Firehose writes S3 delivery failures (permissions, a missing bucket) here, one log stream per
@@ -46,7 +44,7 @@ const DIRECT_WRITE_S3_BUFFERING = { sizeInMBs: 5, intervalInSeconds: 300 };
 const DELIVERY_ERROR_LOG_STREAM = 'DestinationDelivery';
 
 export interface BackendAnalyticsWriterProps {
-  // Buckets of the existing quote analytics streams, keyed by the record type they hold.
+  // The quote analytics buckets data-eng loads, keyed by the record type they hold.
   buckets: Record<QuoteAnalyticsStreamKey, aws_s3.IBucket>;
   // Fixed stream names (quoteAnalyticsDirectStreamNames), so other stacks can reference them.
   streamNames: Record<QuoteAnalyticsStreamKey, string>;
@@ -59,13 +57,12 @@ export interface BackendAnalyticsWriterProps {
 }
 
 /**
- * Direct-write path into this account's existing S3 → BigQuery analytics buckets, without changing
- * any bucket, table, or query downstream. The quote Lambdas write to it, and the backend `uniswapx`
- * service will after the port.
+ * The quote analytics path into this account's S3 → BigQuery buckets. The quote Lambdas write to
+ * it, and the backend `uniswapx` service will after the port.
  *
- * - Four direct-write streams, one per quote record type, delivering into the SAME buckets as the
- *   log-driven streams. They have no transform Lambda: callers put records already in load shape,
- *   one JSON object per record, newline-terminated.
+ * - Four streams, one per quote record type, each delivering into that type's bucket. They have no
+ *   transform Lambda: callers put records already in load shape, one JSON object per record,
+ *   newline-terminated.
  * - One role the backend task role assumes to put records into those four streams and into the
  *   existing webhook-response stream. Firehose has no resource policies, so cross-account writes
  *   need an assumed role.

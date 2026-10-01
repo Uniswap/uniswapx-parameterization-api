@@ -4,7 +4,7 @@ import bunyan from 'bunyan';
 
 import { QuoteInjector as HardQuoteInjector } from '../../../lib/handlers/hard-quote/injector';
 import { QuoteInjector as SoftQuoteInjector } from '../../../lib/handlers/quote/injector';
-import { LOG_LINE_QUOTE_ANALYTICS } from '../../../lib/providers/analytics';
+import { DirectQuoteAnalytics, QUOTE_ANALYTICS_STREAM_ENV } from '../../../lib/providers/analytics';
 import { SUPPORTED_CHAINS } from '../../../lib/util/chains';
 
 /**
@@ -27,6 +27,15 @@ beforeAll(() => {
   process.env.ORDER_SERVICE_URL = 'https://order.example';
   process.env.KMS_KEY_ID = 'test-key-id';
   process.env.REGION = 'us-east-2';
+  for (const name of Object.values(QUOTE_ANALYTICS_STREAM_ENV)) {
+    process.env[name] = `dummy-${name}`;
+  }
+});
+
+afterAll(() => {
+  for (const name of Object.values(QUOTE_ANALYTICS_STREAM_ENV)) {
+    delete process.env[name];
+  }
 });
 
 function stubMetricsLogger() {
@@ -60,8 +69,8 @@ describe('shared quote injector wiring', () => {
       expect(Object.keys(container)).toEqual([flowKey, 'analytics']);
     });
 
-    it('keeps the analytics log lines when no stream names are set', () => {
-      expect(container.analytics).toBe(LOG_LINE_QUOTE_ANALYTICS);
+    it('writes analytics straight to the quote analytics streams', () => {
+      expect(container.analytics).toBeInstanceOf(DirectQuoteAnalytics);
     });
 
     it('gives the quoter a firehose logger for its analytics events', () => {

@@ -45,8 +45,7 @@ export async function getBestQuote(
 
   // return the response with the highest amountOut value
   const bestQuote = responses.reduce((best: QuoteResponse | null, quote: QuoteResponse) => {
-    // The log-line form keys on eventType for the CloudWatch subscription filter, and an empty
-    // message writes the same record bunyan writes for a fields-only call.
+    // In the log-line form (local stack only) the record is the fields; the message is empty.
     analytics.record(
       eventType,
       { ...quote.toLog(), offerer: quote.swapper, endpoint: quote.endpoint, fillerName: quote.fillerName },

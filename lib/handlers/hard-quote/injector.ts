@@ -32,7 +32,12 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const config = loadHardQuoteConfig();
 
-    const analytics = selectQuoteAnalytics(log, HARD_QUOTE_ANALYTICS_EVENT_TYPES, config.quoteAnalyticsStreams);
+    const analytics = selectQuoteAnalytics(
+      log,
+      config.stage,
+      HARD_QUOTE_ANALYTICS_EVENT_TYPES,
+      config.quoteAnalyticsStreams
+    );
     const base = buildQuoteContainerInjected(log, config, analytics);
 
     return {

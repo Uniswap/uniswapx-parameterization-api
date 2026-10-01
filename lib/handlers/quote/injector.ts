@@ -29,7 +29,12 @@ export class QuoteInjector extends ApiInjector<ContainerInjected, RequestInjecte
 
     const config = loadQuoteConfig();
 
-    const analytics = selectQuoteAnalytics(log, SOFT_QUOTE_ANALYTICS_EVENT_TYPES, config.quoteAnalyticsStreams);
+    const analytics = selectQuoteAnalytics(
+      log,
+      config.stage,
+      SOFT_QUOTE_ANALYTICS_EVENT_TYPES,
+      config.quoteAnalyticsStreams
+    );
     const base = buildQuoteContainerInjected(log, config, analytics);
     return { softQuote: new SoftQuoteBL(base.quoters, base.chainIdRpcMap, analytics), analytics };
   }

@@ -73,9 +73,9 @@ export class APIStack extends cdk.Stack {
     const region = cdk.Stack.of(this).region;
     const { provisionedConcurrency, internalApiKey, stage, chatbotSNSArn } = props;
 
-    // The direct-write streams exist only where the analytics writer does (AnalyticsStack). Their
+    // The quote analytics streams exist only where the analytics writer does (AnalyticsStack). Their
     // names are fixed per stage, so the Lambdas get names and a grant without referencing the
-    // nested stack (which depends on the Lambdas for its log subscriptions).
+    // nested stack.
     const directStreams = props.analyticsWriterBackendAccounts?.length
       ? quoteAnalyticsDirectStreamNames(stage)
       : undefined;
@@ -412,8 +412,6 @@ export class APIStack extends cdk.Stack {
      * Analytics Stack Initialization
      */
     new AnalyticsStack(this, 'AnalyticsStack', {
-      quoteLambda,
-      hardQuoteLambda,
       envVars: props.envVars,
       analyticsStreamArn: firehoseStack.analyticsStreamArn,
       stage,
