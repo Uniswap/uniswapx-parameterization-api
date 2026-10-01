@@ -43,3 +43,11 @@ export const ANALYTICS_WRITER_BACKEND_ACCOUNTS: Record<STAGE.BETA | STAGE.PROD, 
   [STAGE.BETA]: [BACKEND_DEV_ACCOUNT, BACKEND_STAGING_ACCOUNT],
   [STAGE.PROD]: [BACKEND_PROD_ACCOUNT],
 };
+
+// Backend accounts that may use this stage's circuit-breaker tables and market-maker roster during
+// the percentage ramp (bin/stacks/backend-ramp-access.ts). Same mapping: beta state is shared only
+// with backend dev and staging, prod state only with backend prod.
+export const RAMP_ACCESS_BACKEND_ACCOUNTS: Record<STAGE.BETA | STAGE.PROD, readonly string[]> = {
+  [STAGE.BETA]: [BACKEND_DEV_ACCOUNT, BACKEND_STAGING_ACCOUNT],
+  [STAGE.PROD]: [BACKEND_PROD_ACCOUNT],
+};

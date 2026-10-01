@@ -14,6 +14,7 @@ import {
   EGRESS_PROXY_BACKEND_ACCOUNTS,
   EGRESS_PROXY_WEBHOOK_SHARE_PERCENT,
   HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS,
+  RAMP_ACCESS_BACKEND_ACCOUNTS,
 } from './config';
 import { SERVICE_NAME } from './constants';
 import { APIStack } from './stacks/api-stack';
@@ -34,6 +35,7 @@ export class APIStage extends Stage {
       hardQuoteCosignerBackendAccounts?: readonly string[];
       egressProxyBackendAccounts?: readonly string[];
       analyticsWriterBackendAccounts?: readonly string[];
+      rampAccessBackendAccounts?: readonly string[];
       egressProxyWebhookSharePercent?: number;
     }
   ) {
@@ -48,6 +50,7 @@ export class APIStage extends Stage {
       hardQuoteCosignerBackendAccounts,
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
+      rampAccessBackendAccounts,
       egressProxyWebhookSharePercent,
     } = props;
 
@@ -61,6 +64,7 @@ export class APIStage extends Stage {
       hardQuoteCosignerBackendAccounts,
       egressProxyBackendAccounts,
       analyticsWriterBackendAccounts,
+      rampAccessBackendAccounts,
       egressProxyWebhookSharePercent,
     });
     this.url = url;
@@ -163,6 +167,7 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.BETA],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.BETA],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.BETA],
+      rampAccessBackendAccounts: RAMP_ACCESS_BACKEND_ACCOUNTS[STAGE.BETA],
       egressProxyWebhookSharePercent: EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.BETA],
     });
 
@@ -185,6 +190,7 @@ export class APIPipeline extends Stack {
       hardQuoteCosignerBackendAccounts: HARD_QUOTE_COSIGNER_BACKEND_ACCOUNTS[STAGE.PROD],
       egressProxyBackendAccounts: EGRESS_PROXY_BACKEND_ACCOUNTS[STAGE.PROD],
       analyticsWriterBackendAccounts: ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.PROD],
+      rampAccessBackendAccounts: RAMP_ACCESS_BACKEND_ACCOUNTS[STAGE.PROD],
       egressProxyWebhookSharePercent: EGRESS_PROXY_WEBHOOK_SHARE_PERCENT[STAGE.PROD],
     });
 
