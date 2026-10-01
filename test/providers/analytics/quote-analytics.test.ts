@@ -249,6 +249,14 @@ describe('provablyNotDelivered', () => {
     expect(provablyNotDelivered(timeoutError('Socket timed out without establishing a connection within 100 ms'))).toBe(
       true
     );
+    // The wording of the Lambda runtime's bundled SDK, seen in prod.
+    expect(
+      provablyNotDelivered(
+        timeoutError(
+          '@smithy/node-http-handler - the request socket did not establish a connection with the server within the configured timeout of 100 ms.'
+        )
+      )
+    ).toBe(true);
     expect(provablyNotDelivered(errnoError('ENOTFOUND'))).toBe(true);
     expect(provablyNotDelivered(Object.assign(new Error('no creds'), { name: 'CredentialsProviderError' }))).toBe(true);
   });
