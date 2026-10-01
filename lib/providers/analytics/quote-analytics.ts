@@ -264,14 +264,20 @@ export function chunkForBatch<T extends { data: Uint8Array }>(records: T[]): T[]
   return chunks;
 }
 
+// The SDK's connection-timeout message. Older @smithy/node-http-handler releases (this repo's
+// node_modules) say "Socket timed out without establishing a connection within N ms"; newer ones (the
+// Lambda runtime's bundled SDK, which the deployed functions use) say "the request socket did not
+// establish a connection with the server within the configured timeout of N ms".
+const CONNECTION_TIMEOUT_MESSAGE = /without establishing a connection|did not establish a connection/;
+
 // Failures before a connection exists, so nothing was sent.
 const PRE_CONNECT_ERROR_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH']);
 
 /**
  * True only when a failed put provably left nothing in Firehose, so re-emitting the records as log
  * lines cannot duplicate them: Firehose answered with an error (a service exception carries its
- * HTTP status), the connection timeout fired ("without establishing a connection"; the SDK names
- * every timeout `TimeoutError`), the connection itself failed, or credentials could not be loaded.
+ * HTTP status), the connection timeout fired (CONNECTION_TIMEOUT_MESSAGE; the SDK names every
+ * timeout `TimeoutError`), the connection itself failed, or credentials could not be loaded.
  * Everything else after connecting (request timeouts, resets, hang-ups on a stale keep-alive
  * socket) is ambiguous.
  */
@@ -279,7 +285,7 @@ export function provablyNotDelivered(e: unknown): boolean {
   if (!(e instanceof Error)) return false;
   const err = e as Error & { $metadata?: { httpStatusCode?: number }; code?: string };
   if (typeof err.$metadata?.httpStatusCode === 'number') return true;
-  if (err.name === 'TimeoutError') return err.message.includes('without establishing a connection');
+  if (err.name === 'TimeoutError') return CONNECTION_TIMEOUT_MESSAGE.test(err.message);
   if (err.name === 'CredentialsProviderError') return true;
   return err.code !== undefined && PRE_CONNECT_ERROR_CODES.has(err.code);
 }
