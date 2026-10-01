@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 import { ToUpdateTimestampRow } from '../../lib/repositories';
 import { TimestampRepository, UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../../lib/repositories/timestamp-repository';
@@ -108,5 +108,50 @@ describe('Dynamo TimestampRepo tests', () => {
         },
       ])
     );
+  });
+
+  it('writes more than one BatchWriteItem worth (25) of rows', async () => {
+    const many: ToUpdateTimestampRow[] = Array.from({ length: 30 }, (_, i) => ({
+      hash: `0xbulk${i}`,
+      lastExaminedTimestamp: 100 + i,
+      blockUntilTimestamp: 200 + i,
+      fadeWindowStart: 150 + i,
+      consecutiveBlocks: 1,
+      consecutiveCleanRuns: 0,
+    }));
+    await repo.updateTimestampsBatch(many);
+    const res = await repo.getTimestampsBatch(many.map((r) => r.hash));
+    expect(res).toHaveLength(30);
+    expect(res.find((r) => r.hash === '0xbulk29')?.blockUntilTimestamp).toBe(229);
+  });
+
+  it('reads a row in the shape the old dynamodb-toolbox writer stored', async () => {
+    // Real rows carry toolbox bookkeeping (_et entity marker, _ct/_md timestamps).
+    await documentClient.send(
+      new PutCommand({
+        TableName: 'FillerCBTimestampsV2',
+        Item: {
+          hash: '0xlegacy',
+          lastExaminedTimestamp: 7,
+          blockUntilTimestamp: 9,
+          fadeWindowStart: 8,
+          consecutiveBlocks: 2,
+          consecutiveCleanRuns: 1,
+          _et: 'FillerTimestampEntity',
+          _ct: '2025-01-01T00:00:00.000Z',
+          _md: '2025-01-01T00:00:00.000Z',
+        },
+      })
+    );
+    expect(await repo.getTimestampsBatch(['0xlegacy'])).toEqual([
+      {
+        hash: '0xlegacy',
+        lastExaminedTimestamp: 7,
+        blockUntilTimestamp: 9,
+        fadeWindowStart: 8,
+        consecutiveBlocks: 2,
+        consecutiveCleanRuns: 1,
+      },
+    ]);
   });
 });

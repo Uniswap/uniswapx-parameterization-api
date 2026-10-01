@@ -14,10 +14,6 @@ export type TimestampRepoRow = {
   consecutiveCleanRuns: number;
 };
 
-// Rows round-trip as native numbers now (number-typed attributes read via a wrapNumbers:false
-// client), so the raw shape matches TimestampRepoRow — no string parsing.
-export type DynamoTimestampRepoRow = TimestampRepoRow;
-
 // consecutiveCleanRuns stays required here: updateTimestampsBatch does a full-item put, so an
 // optional field a caller forgets to set would silently wipe the stored streak (reads default
 // missing attributes to 0).

@@ -67,7 +67,6 @@
     "chai-subset": "^1.6.0",
     "constructs": "^10.1.137",
     "dotenv": "^16.0.3",
-    "dynamodb-toolbox": "^0.8.5",
     "joi": "^17.7.0",
     "mocha": "^10.2.0",
     "ts-mocha": "^11.1.0",

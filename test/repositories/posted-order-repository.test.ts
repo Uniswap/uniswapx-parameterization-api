@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { OrderType } from '@uniswap/uniswapx-sdk';
 
 import { POSTED_ORDER_TTL_SECS } from '../../lib/constants';
@@ -189,6 +189,27 @@ describe('DynamoPostedOrderRepository', () => {
       await expect(repo.recordOutcome('0xdoesnotexist', resolution)).rejects.toThrow();
       expect(await repo.getPostedOrder('0xdoesnotexist')).toBeUndefined();
     });
+  });
+
+  it('reads a row in the shape the old dynamodb-toolbox writer stored, by hash and by index', async () => {
+    const legacy = record({ orderHash: '0xlegacy', filler: 'https://filler-legacy.example/rfq', deadline: NOW - 5 });
+    await documentClient.send(
+      new PutCommand({
+        TableName: 'PostedOrders',
+        Item: {
+          ...legacy,
+          decayStartBlock: undefined,
+          pending: PENDING_INDEX_KEY,
+          ttl: legacy.deadline + POSTED_ORDER_TTL_SECS,
+          _et: 'PostedOrder',
+          _ct: '2026-09-04T21:29:00.000Z',
+          _md: '2026-09-04T21:29:00.000Z',
+        },
+      })
+    );
+    expect(await repo.getPostedOrder('0xlegacy')).toEqual(legacy);
+    expect(await repo.getFillerOrdersByDeadline(legacy.filler, NOW - 10, NOW)).toEqual([legacy]);
+    expect((await repo.getPendingPastDeadline(NOW)).map((r) => r.orderHash)).toContain('0xlegacy');
   });
 
   describe('pagination', () => {
