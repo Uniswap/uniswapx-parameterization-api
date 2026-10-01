@@ -29,6 +29,7 @@ import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
 import { quoteAnalyticsDirectStreamNames } from './backend-analytics-writer';
+import { BackendRampAccess } from './backend-ramp-access';
 import { CronStack } from './cron-stack';
 import { EgressProxy } from './egress-proxy';
 import { FirehoseStack } from './firehose-stack';
@@ -60,6 +61,9 @@ export class APIStack extends cdk.Stack {
       // Backend accounts that may write analytics records cross-account. Absent (local stack)
       // means no direct-write streams or writer role are created.
       analyticsWriterBackendAccounts?: readonly string[];
+      // Backend accounts that may read the circuit-breaker bench state and roster, and record posted
+      // orders and filler addresses, during the ramp. Absent (local stack) means no role is created.
+      rampAccessBackendAccounts?: readonly string[];
       // Share (0-100) of the quote Lambdas' market-maker webhook calls sent through the egress
       // proxy. Needs the proxy. Absent leaves the Lambdas untouched.
       egressProxyWebhookSharePercent?: number;
@@ -575,6 +579,12 @@ export class APIStack extends cdk.Stack {
       }
     } else if (props.egressProxyWebhookSharePercent !== undefined) {
       throw new Error('egressProxyWebhookSharePercent needs the egress proxy (egressProxyBackendAccounts)');
+    }
+    if (props.rampAccessBackendAccounts?.length) {
+      new BackendRampAccess(this, 'BackendRampAccess', {
+        stage,
+        allowedAccounts: props.rampAccessBackendAccounts,
+      });
     }
     /* custom metric alarms */
     // Alarm on calls to RFQ providers
