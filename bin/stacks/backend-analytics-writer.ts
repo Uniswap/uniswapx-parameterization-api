@@ -1,6 +1,7 @@
-import { CfnOutput } from 'aws-cdk-lib';
+import { CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
 import { AccountPrincipal, Effect, IRole, PolicyStatement, Role } from 'aws-cdk-lib/aws-iam';
 import * as aws_firehose from 'aws-cdk-lib/aws-kinesisfirehose';
+import * as aws_logs from 'aws-cdk-lib/aws-logs';
 import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
@@ -40,6 +41,10 @@ export const BACKEND_ANALYTICS_WRITER_ACTIONS = ['firehose:PutRecord', 'firehose
 // streams write land in the same hourly folders data-eng's BigQuery loader already lists.
 const DIRECT_WRITE_S3_BUFFERING = { sizeInMBs: 5, intervalInSeconds: 300 };
 
+// Firehose writes S3 delivery failures (permissions, a missing bucket) here, one log stream per
+// delivery stream. Without it a failing stream only shows up as a falling DeliveryToS3.Success.
+const DELIVERY_ERROR_LOG_STREAM = 'DestinationDelivery';
+
 export interface BackendAnalyticsWriterProps {
   // Buckets of the existing quote analytics streams, keyed by the record type they hold.
   buckets: Record<QuoteAnalyticsStreamKey, aws_s3.IBucket>;
@@ -68,6 +73,7 @@ export interface BackendAnalyticsWriterProps {
 export class BackendAnalyticsWriter extends Construct {
   public readonly role: Role;
   public readonly streams: Record<QuoteAnalyticsStreamKey, aws_firehose.CfnDeliveryStream>;
+  public readonly deliveryErrorLogGroup: aws_logs.LogGroup;
 
   constructor(scope: Construct, id: string, props: BackendAnalyticsWriterProps) {
     super(scope, id);
@@ -81,16 +87,34 @@ export class BackendAnalyticsWriter extends Construct {
       throw new Error('BackendAnalyticsWriter needs at least one allowed account');
     }
 
-    const directStream = (streamId: string, key: QuoteAnalyticsStreamKey) =>
-      new aws_firehose.CfnDeliveryStream(this, streamId, {
+    // Error logs only: nothing downstream reads them, so they expire and go with the stack.
+    this.deliveryErrorLogGroup = new aws_logs.LogGroup(this, 'DeliveryErrors', {
+      retention: aws_logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    this.deliveryErrorLogGroup.grantWrite(props.firehoseRole);
+
+    const directStream = (streamId: string, key: QuoteAnalyticsStreamKey) => {
+      const logStream = new aws_logs.LogStream(this, `${streamId}DeliveryErrors`, {
+        logGroup: this.deliveryErrorLogGroup,
+        logStreamName: `${props.streamNames[key]}-${DELIVERY_ERROR_LOG_STREAM}`,
+        removalPolicy: RemovalPolicy.DESTROY,
+      });
+      return new aws_firehose.CfnDeliveryStream(this, streamId, {
         deliveryStreamName: props.streamNames[key],
         extendedS3DestinationConfiguration: {
           bucketArn: props.buckets[key].bucketArn,
           roleArn: props.firehoseRole.roleArn,
           compressionFormat: 'UNCOMPRESSED',
           bufferingHints: DIRECT_WRITE_S3_BUFFERING,
+          cloudWatchLoggingOptions: {
+            enabled: true,
+            logGroupName: this.deliveryErrorLogGroup.logGroupName,
+            logStreamName: logStream.logStreamName,
+          },
         },
       });
+    };
 
     this.streams = {
       rfqRequest: directStream('RfqRequestDirectStream', 'rfqRequest'),

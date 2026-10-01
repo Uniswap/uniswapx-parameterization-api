@@ -95,6 +95,29 @@ describe('BackendAnalyticsWriter', () => {
     expect(targetBuckets.sort()).toEqual(Object.values(bucketIds).sort());
   });
 
+  it("logs each direct stream's delivery errors to its own stream in one expiring log group", () => {
+    const { template } = synth(BETA_ACCOUNT, ANALYTICS_WRITER_BACKEND_ACCOUNTS[STAGE.BETA]);
+    const groups = template.findResources('AWS::Logs::LogGroup');
+    expect(Object.values(groups)).toHaveLength(1);
+    const [groupId] = Object.keys(groups);
+    expect(groups[groupId].Properties.RetentionInDays).toEqual(30);
+
+    const logStreams = template.findResources('AWS::Logs::LogStream');
+    const streams = Object.values(template.findResources('AWS::KinesisFirehose::DeliveryStream'));
+    const logStreamIds = streams.map((s) => {
+      const logging = s.Properties.ExtendedS3DestinationConfiguration.CloudWatchLoggingOptions;
+      expect(logging.Enabled).toBe(true);
+      expect(logging.LogGroupName).toEqual({ Ref: groupId });
+      return logging.LogStreamName.Ref;
+    });
+    expect(new Set(logStreamIds).size).toEqual(4);
+    for (const id of logStreamIds) expect(logStreams[id].Properties.LogGroupName).toEqual({ Ref: groupId });
+
+    // The delivery role can write to the group.
+    const policies = JSON.stringify(template.findResources('AWS::IAM::Policy'));
+    expect(policies).toContain('logs:PutLogEvents');
+  });
+
   it('names each direct stream per stage, so the quote Lambdas can reference them without a cross-stack token', () => {
     expect(quoteAnalyticsDirectStreamNames(STAGE.BETA)).toEqual({
       rfqRequest: 'GoudaParameterization-beta-RfqRequestDirect',
