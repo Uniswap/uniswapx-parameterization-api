@@ -503,15 +503,21 @@ describe('fetchUnderDeadline keeps the event loop alive until the deadline', () 
   });
 
   it('holds a live timer while the request is pending, then aborts it with a TimeoutError', async () => {
-    const before = liveTimers();
+    // Watches the deadline's own timer: a process-wide count drifts during the real 50 ms wait as
+    // other suites' server and socket timers come and go.
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
     const pending = fetchUnderDeadline(50, neverAnswers);
-    expect(liveTimers()).toBe(before + 1);
+    const deadline = setTimeoutSpy.mock.results[0].value as NodeJS.Timeout;
+    setTimeoutSpy.mockRestore();
+    // Node marks a timer `_destroyed` once it has fired or been cleared.
+    const isLive = (t: NodeJS.Timeout) => t.hasRef() && !(t as unknown as { _destroyed: boolean })._destroyed;
+    expect(isLive(deadline)).toBe(true);
 
     await expect(pending).rejects.toMatchObject({
       name: 'TimeoutError',
       message: 'The operation was aborted due to timeout',
     });
-    expect(liveTimers()).toBe(before);
+    expect(isLive(deadline)).toBe(false);
   });
 
   it('fetchJson reads that abort as the same timeout it has always reported', async () => {
