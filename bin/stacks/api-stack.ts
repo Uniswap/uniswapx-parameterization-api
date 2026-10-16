@@ -3,7 +3,6 @@ import { CfnOutput, Duration, RemovalPolicy } from 'aws-cdk-lib';
 import * as aws_apigateway from 'aws-cdk-lib/aws-apigateway';
 import { MethodLoggingLevel } from 'aws-cdk-lib/aws-apigateway';
 import * as aws_asg from 'aws-cdk-lib/aws-applicationautoscaling';
-import * as aws_cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as aws_dynamo from 'aws-cdk-lib/aws-dynamodb';
 import { CfnEIP, NatProvider, Vpc } from 'aws-cdk-lib/aws-ec2';
 import * as aws_iam from 'aws-cdk-lib/aws-iam';
@@ -16,15 +15,8 @@ import * as path from 'path';
 import { KmsStack } from './kms-stack';
 
 import { DYNAMO_TABLE_NAME, POSTED_ORDERS_INDEX } from '../../lib/constants';
-import {
-  HardQuoteMetricDimension,
-  Metric,
-  SoftQuoteMetricDimension,
-  UniswapXParamServiceMetricDimension,
-} from '../../lib/entities';
 import { QUOTE_ANALYTICS_STREAM_ENV } from '../../lib/providers/analytics/quote-analytics';
 import { EGRESS_PROXY_URL_ENV, EGRESS_PROXY_WEBHOOK_SHARE_ENV } from '../../lib/quoters/egress-proxy-fetch';
-import { STAGE } from '../../lib/util/stage';
 import { PROD_TABLE_CAPACITY } from '../config';
 import { SERVICE_NAME } from '../constants';
 import { AnalyticsStack } from './analytics-stack';
@@ -476,83 +468,6 @@ export class APIStack extends cdk.Stack {
       ...PROD_TABLE_CAPACITY.fillerAddress,
     });
 
-    /* Alarms */
-    const apiAlarm5xxSev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-5XXAlarm', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-5XX',
-      metric: api.metricServerError({
-        period: Duration.minutes(5),
-        // For this metric 'sum' represents error count.
-        statistic: 'sum',
-      }),
-      threshold: 100,
-      // Beta has much less traffic so is more susceptible to transient errors.
-      evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
-    });
-
-    const apiAlarm5xxSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-5XXAlarm', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-5XX',
-      metric: api.metricServerError({
-        period: Duration.minutes(5),
-        // For this metric 'sum' represents error count.
-        statistic: 'sum',
-      }),
-      threshold: 20,
-      // Beta has much less traffic so is more susceptible to transient errors.
-      evaluationPeriods: stage == STAGE.BETA ? 5 : 3,
-    });
-
-    const apiAlarm4xxSev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-4XXAlarm', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-4XX',
-      metric: api.metricClientError({
-        period: Duration.minutes(5),
-        statistic: 'avg',
-      }),
-      threshold: 0.98,
-      evaluationPeriods: 3,
-    });
-
-    const apiAlarmLatencySev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-Latency', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-Latency',
-      metric: api.metricLatency({
-        period: Duration.minutes(5),
-        statistic: 'p90',
-      }),
-      // approx 2x getWebhookTimeoutMs(MAINNET)
-      threshold: 3500,
-      evaluationPeriods: 3,
-    });
-
-    const apiAlarmLatencySev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-Latency', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-Latency',
-      metric: api.metricLatency({
-        period: Duration.minutes(5),
-        statistic: 'p90',
-      }),
-      // approx 1.5x getWebhookTimeoutMs(MAINNET)
-      threshold: 2000,
-      evaluationPeriods: 3,
-    });
-
-    const apiAlarmLatencyP99Sev2 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV2-LatencyP99', {
-      alarmName: 'UniswapXParameterizationAPI-SEV2-LatencyP99',
-      metric: api.metricLatency({
-        period: Duration.minutes(5),
-        statistic: 'p99',
-      }),
-      threshold: 5000,
-      evaluationPeriods: 3,
-    });
-
-    const apiAlarmLatencyP99Sev3 = new aws_cloudwatch.Alarm(this, 'UniswapXParameterizationAPI-SEV3-LatencyP99', {
-      alarmName: 'UniswapXParameterizationAPI-SEV3-LatencyP99',
-      metric: api.metricLatency({
-        period: Duration.minutes(5),
-        statistic: 'p99',
-      }),
-      threshold: 4000,
-      evaluationPeriods: 3,
-    });
-
     const chatBotTopic = chatbotSNSArn
       ? cdk.aws_sns.Topic.fromTopicArn(this, 'ChatbotTopic', chatbotSNSArn)
       : undefined;
@@ -584,118 +499,6 @@ export class APIStack extends cdk.Stack {
         allowedAccounts: props.rampAccessBackendAccounts,
       });
     }
-    /* custom metric alarms */
-    // Alarm on calls to RFQ providers
-    for (const dimension of [SoftQuoteMetricDimension, HardQuoteMetricDimension]) {
-      const rfqOverallNonQuoteMetric = new aws_cloudwatch.MathExpression({
-        expression: '100*(nonQuote/invocations)',
-        period: Duration.minutes(5),
-        usingMetrics: {
-          invocations: new aws_cloudwatch.Metric({
-            namespace: 'Uniswap',
-            metricName: `${Metric.RFQ_REQUESTED}`,
-            dimensionsMap: dimension,
-            unit: aws_cloudwatch.Unit.COUNT,
-            statistic: 'sum',
-          }),
-          nonQuote: new aws_cloudwatch.Metric({
-            namespace: 'Uniswap',
-            metricName: `${Metric.RFQ_NON_QUOTE}`,
-            dimensionsMap: dimension,
-            unit: aws_cloudwatch.Unit.COUNT,
-            statistic: 'sum',
-          }),
-        },
-      });
-
-      const rfqOverallNonQuoteRateAlarmSev3 = new aws_cloudwatch.Alarm(
-        this,
-        `${dimension.Service}-SEV3-RFQ-NonQuoteRate`,
-        {
-          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV3-RFQ-NonQuoteRate-${dimension.Service}`,
-          metric: rfqOverallNonQuoteMetric,
-          threshold: 90,
-          comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-          evaluationPeriods: 3,
-        }
-      );
-
-      const quoteLatencyAlarmSev3 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV3-QuoteLatency`, {
-        alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV3-QuoteLatency-${dimension.Service}`,
-        metric: new aws_cloudwatch.Metric({
-          namespace: 'Uniswap',
-          metricName: `${Metric.QUOTE_LATENCY}`,
-          dimensionsMap: dimension,
-          unit: aws_cloudwatch.Unit.MILLISECONDS,
-          statistic: 'p90',
-        }),
-        threshold: 2_000,
-        comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        evaluationPeriods: 3,
-      });
-
-      if (dimension.Service == HardQuoteMetricDimension.Service) {
-        const quotePostErrorMetric = new aws_cloudwatch.MathExpression({
-          expression: '100*(postError/invocations)',
-          period: Duration.minutes(5),
-          usingMetrics: {
-            invocations: new aws_cloudwatch.Metric({
-              namespace: 'Uniswap',
-              metricName: `${Metric.QUOTE_POST_ATTEMPT}`,
-              dimensionsMap: dimension,
-              unit: aws_cloudwatch.Unit.COUNT,
-              statistic: 'sum',
-            }),
-            postError: new aws_cloudwatch.Metric({
-              namespace: 'Uniswap',
-              metricName: `${Metric.QUOTE_POST_ERROR}`,
-              dimensionsMap: dimension,
-              unit: aws_cloudwatch.Unit.COUNT,
-              statistic: 'sum',
-            }),
-          },
-        });
-
-        const quotePostErrorAlarmSev3 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV3-PostErrorRate`, {
-          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV3-PostErrorRate-${dimension.Service}`,
-          metric: quotePostErrorMetric,
-          evaluationPeriods: 3,
-          threshold: 70,
-          comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        });
-
-        const quotePostErrorAlarmSev2 = new aws_cloudwatch.Alarm(this, `${dimension.Service}-SEV2-PostErrorRate`, {
-          alarmName: `${UniswapXParamServiceMetricDimension.Service}-SEV2-PostErrorRate-${dimension.Service}`,
-          metric: quotePostErrorMetric,
-          evaluationPeriods: 3,
-          threshold: 50,
-          comparisonOperator: aws_cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        });
-
-        if (chatBotTopic) {
-          quotePostErrorAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-          quotePostErrorAlarmSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-        }
-      }
-
-      if (chatBotTopic) {
-        rfqOverallNonQuoteRateAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-        quoteLatencyAlarmSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      }
-    }
-
-    // TODO: consider alarming on individual RFQ providers
-
-    if (chatBotTopic) {
-      apiAlarm5xxSev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      apiAlarm5xxSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      apiAlarm4xxSev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      apiAlarmLatencySev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      apiAlarmLatencySev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      apiAlarmLatencyP99Sev2.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-      apiAlarmLatencyP99Sev3.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(chatBotTopic));
-    }
-
     this.url = new CfnOutput(this, 'Url', {
       value: api.url,
     });
