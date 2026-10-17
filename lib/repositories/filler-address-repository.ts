@@ -43,16 +43,16 @@ export type WinningAddressClaim = { outcome: 'recorded' } | { outcome: 'owned_by
  * Maps on-chain filler addresses to the RFQ webhook (filler) that quotes with them.
  *
  * One item per address (pk = checksummed address, filler = webhook endpoint, expiresAt = TTL).
- * The mapping has one runtime reader: the fade-rate breaker, whose rows are keyed by a posted
- * order's exclusive filler address and which needs the webhook to bench (lookupFillersForRows in
- * lib/core/circuit-breaker.ts; the backtest extract described in CLAUDE.md scans the table offline). Only a quote that WON produces a posted
+ * The mapping has no runtime reader: the fade-rate breaker scores each posted order by the
+ * endpoint stored on its PostedOrders row, never through this table, because the address is
+ * chosen by the webhook and can name another filler's address. The backtest extract described
+ * in CLAUDE.md scans the table offline to attribute order-service rows (which carry only the
+ * address) to endpoints. Only a quote that WON produces a posted
  * order, so only winning addresses are recorded (by recordPostedOrder, alongside the
  * PostedOrders row, at the confirmed post), and there is no per-filler address cap: a filler
  * may quote from as many addresses as it likes, each costing one read-free conditional write
  * per posted order and expiring FILLER_ADDRESS_TTL_SECS after its last win. Nothing on the
- * /quote path reads or writes this table. (The PostedOrders row also carries the endpoint per
- * order, frozen at post time; attributing through this table at read time is what lets a
- * filler's history follow an endpoint rename.)
+ * /quote path reads or writes this table.
  */
 export interface FillerAddressRepository {
   /**
@@ -81,8 +81,7 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
   /**
    * The default client is the sibling PostedOrders write's bounded one (short connect/request
    * ceilings) with one retry: on the hard-quote path this write sits in series with the
-   * response, and the recorder's wall caps the total. The cron passes its own unbounded client,
-   * since its BatchGets are not latency-sensitive and would be brittle under those ceilings.
+   * response, and the recorder's wall caps the total.
    */
   static create(
     documentClient: DynamoDBDocumentClient = postedOrderDocumentClient(FILLER_ADDRESS_WRITE_MAX_ATTEMPTS),

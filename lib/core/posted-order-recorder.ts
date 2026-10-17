@@ -137,7 +137,9 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
       });
     } else if (attributed.value.outcome === 'owned_by_other') {
       // The write itself succeeded in reaching DynamoDB; the address stays with its first
-      // owner, so this filler's fades on it bench nobody until that row expires or is deleted.
+      // owner. The breaker scores this order against record.filler regardless, so this is a
+      // signal (an endpoint quoting with an address another endpoint already won with), not
+      // a scoring gap.
       await metrics.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED);
       logger.warn('Filler address already attributed to another endpoint; claim refused, order unaffected', {
         orderHash,

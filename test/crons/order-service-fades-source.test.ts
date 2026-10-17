@@ -340,11 +340,14 @@ describe('OrderServiceFadesSource', () => {
     it('emits one row per completed, resolved order in the SQL row shape', () => {
       const a = fade({ deadline: NOW - 100, postedAt: NOW - 200 });
       const rows = buildFadeRows([a], { now: NOW });
-      expect(rows).toEqual([{ fillerAddress: ADDR_A, faded: 1, postTimestamp: NOW - 200, deadline: NOW - 100 }]);
+      expect(rows).toEqual([
+        { filler: FILLER_A, fillerAddress: ADDR_A, faded: 1, postTimestamp: NOW - 200, deadline: NOW - 100 },
+      ]);
     });
 
     it('produces rows with exactly the V2FadesRowType keys (the shape the scoring code has always consumed)', () => {
       const reference: V2FadesRowType = {
+        filler: FILLER_A,
         fillerAddress: ADDR_A,
         faded: 1,
         postTimestamp: NOW - 200,
@@ -390,7 +393,7 @@ describe('OrderServiceFadesSource', () => {
         { now: NOW }
       );
       expect(rows).toEqual([
-        { fillerAddress: ADDR_A, faded: 0, postTimestamp: kept.postedAt, deadline: kept.deadline },
+        { filler: FILLER_A, fillerAddress: ADDR_A, faded: 0, postTimestamp: kept.postedAt, deadline: kept.deadline },
       ]);
     });
 
@@ -412,7 +415,13 @@ describe('OrderServiceFadesSource', () => {
       const rows = buildFadeRows([...a1, a2Fade], { now: NOW });
       expect(rows).toHaveLength(ORDERS_PER_FILLER_LIMIT + 1);
       expect(rows.filter((r) => r.fillerAddress === ADDR_A2)).toEqual([
-        { fillerAddress: ADDR_A2, faded: 1, postTimestamp: a2Fade.postedAt, deadline: a2Fade.deadline },
+        {
+          filler: FILLER_A,
+          fillerAddress: ADDR_A2,
+          faded: 1,
+          postTimestamp: a2Fade.postedAt,
+          deadline: a2Fade.deadline,
+        },
       ]);
     });
 
@@ -431,12 +440,18 @@ describe('OrderServiceFadesSource', () => {
     it('honours the parity flag for never-filled terminal orders', () => {
       const cancelled = resolved(v2(), status('h', ORDER_STATUS.CANCELLED));
       expect(buildFadeRows([cancelled], { now: NOW, policy: { countNeverFilledTerminalAsFade: true } })).toEqual([
-        { fillerAddress: ADDR_A, faded: 1, postTimestamp: cancelled.postedAt, deadline: cancelled.deadline },
+        {
+          filler: FILLER_A,
+          fillerAddress: ADDR_A,
+          faded: 1,
+          postTimestamp: cancelled.postedAt,
+          deadline: cancelled.deadline,
+        },
       ]);
       expect(buildFadeRows([cancelled], { now: NOW, policy: { countNeverFilledTerminalAsFade: false } })).toEqual([]);
     });
 
-    it('orders rows by filler address then deadline desc, like the SQL', () => {
+    it('orders rows by filler, then filler address, then deadline desc', () => {
       const rows = buildFadeRows(
         [
           fill({ fillerAddress: ADDR_B, filler: FILLER_B, deadline: NOW - 10 }),
@@ -452,6 +467,38 @@ describe('OrderServiceFadesSource', () => {
         [ADDR_A, NOW - 30],
         [ADDR_B, NOW - 10],
       ]);
+    });
+  });
+
+  describe('buildFadeRows attribution to the winning endpoint', () => {
+    const fade = (overrides: Partial<PostedOrderRecord> = {}) =>
+      resolved(v2(overrides), status('h', ORDER_STATUS.EXPIRED));
+    const fill = (overrides: Partial<PostedOrderRecord> = {}) =>
+      resolved(v2(overrides), status('h', ORDER_STATUS.FILLED, { fillTimestamp: DECAY_START_TIME }));
+
+    it('carries the endpoint that won each order, not the owner of the address it names', () => {
+      const spoofed = fade({ filler: FILLER_B, fillerAddress: ADDR_A, deadline: NOW - 100 });
+      expect(buildFadeRows([spoofed], { now: NOW })).toEqual([
+        { filler: FILLER_B, fillerAddress: ADDR_A, faded: 1, postTimestamp: spoofed.postedAt, deadline: NOW - 100 },
+      ]);
+    });
+
+    it("keeps each endpoint's own latest-N window on a shared address", () => {
+      // FILLER_B posts a full window of newer orders naming FILLER_A's address. Partitioned by
+      // address alone, they would evict all of FILLER_A's rows; per (endpoint, address), both survive.
+      const victimFills = Array.from({ length: ORDERS_PER_FILLER_LIMIT }, (_, i) =>
+        fill({ postedAt: NOW - 5_000 + i, deadline: NOW - 2_000 + i })
+      );
+      const spoofed = Array.from({ length: ORDERS_PER_FILLER_LIMIT }, (_, i) =>
+        fade({ filler: FILLER_B, postedAt: NOW - 1_000 + i, deadline: NOW - 500 + i })
+      );
+      const rows = buildFadeRows([...victimFills, ...spoofed], { now: NOW });
+      const victimRows = rows.filter((r) => r.filler === FILLER_A);
+      const attackerRows = rows.filter((r) => r.filler === FILLER_B);
+      expect(victimRows).toHaveLength(ORDERS_PER_FILLER_LIMIT);
+      expect(victimRows.every((r) => r.faded === 0)).toBe(true);
+      expect(attackerRows).toHaveLength(ORDERS_PER_FILLER_LIMIT);
+      expect(attackerRows.every((r) => r.faded === 1 && r.fillerAddress === ADDR_A)).toBe(true);
     });
   });
 
@@ -708,9 +755,9 @@ describe('OrderServiceFadesSource', () => {
       const rows = await source.getFades();
 
       expect(rows).toEqual([
-        { fillerAddress: ADDR_A, faded: 0, postTimestamp: aFill.postedAt, deadline: aFill.deadline },
-        { fillerAddress: ADDR_A, faded: 1, postTimestamp: aFade.postedAt, deadline: aFade.deadline },
-        { fillerAddress: ADDR_B, faded: 1, postTimestamp: bFade.postedAt, deadline: bFade.deadline },
+        { filler: FILLER_A, fillerAddress: ADDR_A, faded: 0, postTimestamp: aFill.postedAt, deadline: aFill.deadline },
+        { filler: FILLER_A, fillerAddress: ADDR_A, faded: 1, postTimestamp: aFade.postedAt, deadline: aFade.deadline },
+        { filler: FILLER_B, fillerAddress: ADDR_B, faded: 1, postTimestamp: bFade.postedAt, deadline: bFade.deadline },
       ]);
       expect(source.lastResolution).toMatchObject({ pendingPastDeadline: 4, resolved: 4 });
     });
