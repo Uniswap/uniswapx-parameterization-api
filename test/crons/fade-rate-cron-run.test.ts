@@ -20,8 +20,6 @@ const FILLER_B = 'https://filler-b.example/rfq';
 const ADDR_A = '0x00000000000000000000000000000000000000A1';
 const ADDR_B = '0x00000000000000000000000000000000000000B1';
 
-const REMOVED_FILLER = 'https://removed.example/rfq';
-
 const row = (filler: string, fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRowType => ({
   filler,
   fillerAddress,
@@ -212,31 +210,11 @@ describe('runFadeRateCron', () => {
   });
 
   it('skips the write when there is nothing to update', async () => {
-    const r = await run({
-      rows: [row(REMOVED_FILLER, '0x00000000000000000000000000000000000000C1', 1, NOW - 10)],
-      endpoints: [FILLER_A],
-    });
+    const r = await run({ rows: [], endpoints: [FILLER_A] });
     expect(r.timestamps.writes).toEqual([]);
   });
 
   describe('filler attribution', () => {
-    it('drops rows from endpoints no longer in the webhook config', async () => {
-      const ADDR_C = '0x00000000000000000000000000000000000000C1';
-      const rows = [
-        ...BLOCKING_ROWS,
-        ...Array.from({ length: 5 }, (_, i) => row(REMOVED_FILLER, ADDR_C, 1, NOW - 100 - i)),
-      ];
-
-      const r = await run({ rows });
-
-      // the removed endpoint's fades bench nobody, and the drop is logged
-      expect(r.timestamps.writes).toEqual([BLOCK_A_DECISIONS]);
-      const warning = r.records.find((rec) =>
-        String(rec.msg).startsWith('fade rows from fillers not in the webhook config')
-      );
-      expect(warning).toMatchObject({ unconfiguredRows: 5, unconfiguredEndpoints: [REMOVED_FILLER] });
-    });
-
     it("scores an order by the endpoint that won it, even when it names another filler's address", async () => {
       // FILLER_B wins 14 quotes naming FILLER_A's settlement address and lets every one expire.
       // FILLER_A's own 100 clean fills keep it clear; the expiries bench FILLER_B, not FILLER_A.

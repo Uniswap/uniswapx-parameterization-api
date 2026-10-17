@@ -9,6 +9,7 @@ import {
   EXCLUDED_TESTNET_CHAIN_IDS,
   FADE_WINDOW_SECS,
   fadedForScoring,
+  fillerAddressKey,
   MAX_CONSECUTIVE_BATCH_FAILURES,
   MAX_PENDING_RESOLUTIONS_PER_RUN,
   MAX_RESOLUTION_ATTEMPTS,
@@ -345,7 +346,7 @@ describe('OrderServiceFadesSource', () => {
       ]);
     });
 
-    it('produces rows with exactly the V2FadesRowType keys (the shape the scoring code has always consumed)', () => {
+    it('produces rows with exactly the V2FadesRowType keys', () => {
       const reference: V2FadesRowType = {
         filler: FILLER_A,
         fillerAddress: ADDR_A,
@@ -397,7 +398,7 @@ describe('OrderServiceFadesSource', () => {
       ]);
     });
 
-    it('keeps the latest ORDERS_PER_FILLER_LIMIT orders per filler ADDRESS by post time', () => {
+    it('keeps the latest ORDERS_PER_FILLER_LIMIT orders per (endpoint, address) by post time', () => {
       // 100 clean fills posted after one fade: the fade is the 101st most recent and drops out.
       const oldFade = fade({ postedAt: NOW - 50_000, deadline: NOW - 49_000 });
       const fills = Array.from({ length: ORDERS_PER_FILLER_LIMIT }, (_, i) =>
@@ -408,7 +409,7 @@ describe('OrderServiceFadesSource', () => {
       expect(rows.every((r) => r.faded === 0)).toBe(true);
     });
 
-    it('latest-N is per address, not per filler identity', () => {
+    it('latest-N is per address within an endpoint, not per endpoint', () => {
       // Two addresses under the same endpoint each get their own 100 slots.
       const a1 = Array.from({ length: ORDERS_PER_FILLER_LIMIT }, (_, i) => fill({ postedAt: NOW - 1_000 + i }));
       const a2Fade = fade({ fillerAddress: ADDR_A2, postedAt: NOW - 50_000, deadline: NOW - 49_000 });
@@ -423,6 +424,20 @@ describe('OrderServiceFadesSource', () => {
           deadline: a2Fade.deadline,
         },
       ]);
+    });
+
+    it('one window per address regardless of the casing the order was posted with', () => {
+      // The same address in checksummed and lowercase form shares one window, so the fade
+      // posted under the other casing is still the 101st most recent and drops out.
+      const oldFade = fade({ fillerAddress: ADDR_A.toLowerCase(), postedAt: NOW - 50_000, deadline: NOW - 49_000 });
+      const fills = Array.from({ length: ORDERS_PER_FILLER_LIMIT }, (_, i) =>
+        fill({ postedAt: NOW - 10_000 + i, deadline: NOW - 9_000 + i })
+      );
+      const rows = buildFadeRows([oldFade, ...fills], { now: NOW });
+      expect(rows).toHaveLength(ORDERS_PER_FILLER_LIMIT);
+      expect(rows.every((r) => r.faded === 0)).toBe(true);
+      expect(fillerAddressKey(FILLER_A, ADDR_A)).toEqual(fillerAddressKey(FILLER_A, ADDR_A.toLowerCase()));
+      expect(fillerAddressKey(FILLER_A, ADDR_A)).not.toEqual(fillerAddressKey(FILLER_B, ADDR_A));
     });
 
     it('latest-N slots are consumed BEFORE the window/token/outcome filters, as in the view', () => {

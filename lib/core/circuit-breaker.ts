@@ -134,28 +134,6 @@ export interface CircuitBreakerRunOptions {
 }
 
 /**
- * Keeps the rows whose filler endpoint is in the current webhook config: an endpoint that has
- * since been removed from the config must not resurrect a timestamp row for it. Dropped rows
- * bench nobody, so their count is logged.
- */
-export function rowsForConfiguredFillers(
-  rows: V2FadesRowType[],
-  fillerEndpoints: string[],
-  logger: Logger
-): V2FadesRowType[] {
-  const configured = new Set(fillerEndpoints);
-  const kept = rows.filter((row) => configured.has(row.filler));
-  if (kept.length < rows.length) {
-    const unconfigured = rows.filter((row) => !configured.has(row.filler));
-    logger.warn('fade rows from fillers not in the webhook config; their fades bench nobody this run', {
-      unconfiguredRows: unconfigured.length,
-      unconfiguredEndpoints: [...new Set(unconfigured.map((row) => row.filler))],
-    });
-  }
-  return kept;
-}
-
-/**
  * One run of the fade circuit breaker, independent of what schedules it: refresh the webhook
  * config, read the recently completed orders, score each filler's fade rates, and write the
  * resulting block decisions to FillerCBTimestampsV2.
@@ -186,11 +164,10 @@ export class CircuitBreakerBL {
           |-- foo -|---- 0x1 -------|---- 0 ----|---- 12345678 ---|--- 12345738 -|
     */
     const fillerEndpoints = webhookProvider.fillerEndpoints();
-    const [allRows, fillerTimestamps] = await Promise.all([
+    const [rows, fillerTimestamps] = await Promise.all([
       source.getFades(),
       timestampDB.getFillerTimestampsMap(fillerEndpoints),
     ]);
-    const rows = rowsForConfiguredFillers(allRows, fillerEndpoints, logger);
 
     const now = this.deps.now ? this.deps.now() : Math.floor(Date.now() / 1000);
 

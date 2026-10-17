@@ -557,9 +557,7 @@ describe('Quote handler', () => {
         true
       );
       // first-writer-wins kept the victim's attribution
-      expect((await addresses.getAddressToFillerMap([MOCK_FILLER_ADDRESS])).get(MOCK_FILLER_ADDRESS)).toEqual(
-        victimEndpoint
-      );
+      expect(addresses.addressToFiller.get(MOCK_FILLER_ADDRESS)).toEqual(victimEndpoint);
 
       // Both orders expire. The victim also has clean fills on the same address, so the breaker
       // has a stored filler for both endpoints to decide about.

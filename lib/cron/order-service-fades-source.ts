@@ -20,6 +20,12 @@ import {
  * fade-rate-v2.ts did not change when the source did.
  */
 export interface FadesSource {
+  /**
+   * Rows for the fillers in the current webhook config only: the breaker writes a timestamp
+   * row for every `filler` it sees, so a row from an endpoint outside the config would
+   * resurrect bench state for a filler that was removed. OrderServiceFadesSource guarantees
+   * this by loading orders per configured endpoint rather than filtering afterwards.
+   */
   getFades(): Promise<V2FadesRowType[]>;
   // Wallclock (ms) after which best-effort work stops; set by the cron from the Lambda deadline.
   deadlineMs?: number;

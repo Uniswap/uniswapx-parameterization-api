@@ -20,8 +20,9 @@ export type CosignedOrder = CosignedV2DutchOrder | CosignedV3DutchOrder;
 
 export interface RecordPostedOrderArgs {
   repository: PostedOrderRepository;
-  // Address -> webhook attribution, which the fade breaker uses to map its fade rows (keyed by
-  // filler address) to fillers. Written alongside the PostedOrders row from the same record.
+  // Address -> webhook attribution for the offline backtest extract (CLAUDE.md); the fade
+  // breaker scores by the PostedOrders row's own `filler` and does not read it. Written
+  // alongside the PostedOrders row from the same record.
   fillerAddressRepository: FillerAddressRepository;
   order: CosignedOrder;
   // The winning RFQ quote, or undefined for an open order. Only RFQ-won orders are recorded.
