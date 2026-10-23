@@ -34,9 +34,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     const rfqResponseBucket = new aws_s3.Bucket(this, 'RfqResponseBucket');
     const hardResponseBucket = new aws_s3.Bucket(this, 'HardResponseBucket');
     const unifiedRoutingResponseBucket = new aws_s3.Bucket(this, 'UnifiedRoutingResponseBucket');
-    const botOrderLoaderBucket = new aws_s3.Bucket(this, 'BotOrderLoaderBucket');
-    const botOrderRouterBucket = new aws_s3.Bucket(this, 'BotOrderRouterBucket');
-    const botOrderBroadcasterBucket = new aws_s3.Bucket(this, 'BotOrderBroadcasterBucket');
 
     const dsRole = aws_iam.Role.fromRoleArn(this, 'DsRole', 'arn:aws:iam::867401673276:user/bq-load-sa');
     rfqRequestBucket.grantRead(dsRole);
@@ -45,9 +42,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     hardResponseBucket.grantRead(dsRole);
     unifiedRoutingRequestBucket.grantRead(dsRole);
     unifiedRoutingResponseBucket.grantRead(dsRole);
-    botOrderLoaderBucket.grantRead(dsRole);
-    botOrderRouterBucket.grantRead(dsRole);
-    botOrderBroadcasterBucket.grantRead(dsRole);
 
     /* Kinesis Firehose Initialization */
     const firehoseRole = new aws_iam.Role(this, 'FirehoseRole', {
@@ -58,9 +52,6 @@ export class AnalyticsStack extends cdk.NestedStack {
     hardRequestBucket.grantReadWrite(firehoseRole);
     rfqResponseBucket.grantReadWrite(firehoseRole);
     hardResponseBucket.grantReadWrite(firehoseRole);
-    botOrderLoaderBucket.grantReadWrite(firehoseRole);
-    botOrderRouterBucket.grantReadWrite(firehoseRole);
-    botOrderBroadcasterBucket.grantReadWrite(firehoseRole);
 
     let chatBotTopic: cdk.aws_sns.ITopic;
     if (chatbotSNSArn) {
