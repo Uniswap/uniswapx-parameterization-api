@@ -12,7 +12,6 @@ import { CircuitBreakerBL, CircuitBreakerDeps } from '../core/circuit-breaker';
 import { CircuitBreakerMetricDimension } from '../entities';
 import { BunyanLogger, Context, EmfMetrics } from '../observability';
 import { S3WebhookConfigurationProvider, UniswapXServiceProvider } from '../providers';
-import { DynamoFillerAddressRepository } from '../repositories/filler-address-repository';
 import { DynamoPostedOrderRepository } from '../repositories/posted-order-repository';
 import { TimestampRepository } from '../repositories/timestamp-repository';
 import { STAGE } from '../util/stage';
@@ -42,18 +41,9 @@ let productionClients: ProductionClients | undefined;
 function buildProductionClients(config: CircuitBreakerConfig): ProductionClients {
   const s3Key = config.stage === STAGE.BETA ? BETA_S3_KEY : PRODUCTION_S3_KEY;
   const webhookProvider = new S3WebhookConfigurationProvider(log, `${WEBHOOK_CONFIG_BUCKET}-${config.stage}-1`, s3Key);
-  const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-    marshallOptions: {
-      convertEmptyValues: true,
-    },
-    unmarshallOptions: {
-      wrapNumbers: true,
-    },
-  });
   return {
     config,
     webhookProvider,
-    fillerAddressRepo: DynamoFillerAddressRepository.create(documentClient),
     timestampDB: TimestampRepository.create(),
   };
 }

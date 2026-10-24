@@ -12,7 +12,6 @@ import {
   ToUpdateTimestampRow,
   V2FadesRowType,
 } from '../../lib/repositories';
-import { MockFillerAddressRepository } from '../../lib/repositories/filler-address-repository';
 import { UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../../lib/repositories/timestamp-repository';
 
 const NOW = 1_800_000_000;
@@ -21,7 +20,8 @@ const FILLER_B = 'https://filler-b.example/rfq';
 const ADDR_A = '0x00000000000000000000000000000000000000A1';
 const ADDR_B = '0x00000000000000000000000000000000000000B1';
 
-const row = (fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRowType => ({
+const row = (filler: string, fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRowType => ({
+  filler,
   fillerAddress,
   faded,
   postTimestamp: deadline - 60,
@@ -114,8 +114,8 @@ function recordingLog(): { log: Logger; records: Record<string, unknown>[] } {
 
 // Filler A fades 5 of 5 (blocks); filler B fills 5 of 5 (stays clear).
 const BLOCKING_ROWS: V2FadesRowType[] = [
-  ...Array.from({ length: 5 }, (_, i) => row(ADDR_A, 1, NOW - 100 - i)),
-  ...Array.from({ length: 5 }, (_, i) => row(ADDR_B, 0, NOW - 100 - i)),
+  ...Array.from({ length: 5 }, (_, i) => row(FILLER_A, ADDR_A, 1, NOW - 100 - i)),
+  ...Array.from({ length: 5 }, (_, i) => row(FILLER_B, ADDR_B, 0, NOW - 100 - i)),
 ];
 
 const BLOCK_A_DECISIONS: ToUpdateTimestampRow[] = [
@@ -153,16 +153,8 @@ const RESOLUTION: ResolutionSummary = {
   byOutcome: {},
 };
 
-async function fillerAddresses(): Promise<MockFillerAddressRepository> {
-  const repo = new MockFillerAddressRepository();
-  await repo.recordWinningAddress(ADDR_A, FILLER_A);
-  await repo.recordWinningAddress(ADDR_B, FILLER_B);
-  return repo;
-}
-
 type RunOptions = {
   rows: V2FadesRowType[] | Error;
-  addresses?: MockFillerAddressRepository;
   endpoints?: string[];
   resolution?: ResolutionSummary;
   remainingTimeMs?: () => number;
@@ -176,18 +168,16 @@ async function run(opts: RunOptions) {
   const timestamps = new FakeTimestampRepository(new Map(), order);
   const { metrics, calls, units } = recordingMetrics();
   const { log, records } = recordingLog();
-  const addresses = opts.addresses ?? (await fillerAddresses());
   const deps: FadeRateCronDeps = {
     source,
     webhookProvider: webhooks,
-    fillerAddressRepo: addresses,
     timestampDB: timestamps,
     now: () => NOW,
     log,
     remainingTimeMs: opts.remainingTimeMs,
   };
   await runFadeRateCron(metrics, deps);
-  return { source, webhooks, timestamps, calls, units, records, order, addresses };
+  return { source, webhooks, timestamps, calls, units, records, order };
 }
 
 describe('runFadeRateCron', () => {
@@ -212,7 +202,6 @@ describe('runFadeRateCron', () => {
       runFadeRateCron(metrics, {
         source: new FakeSource(new Error('order service unavailable')),
         webhookProvider: new FakeWebhookProvider([FILLER_A, FILLER_B]),
-        fillerAddressRepo: await fillerAddresses(),
         timestampDB: timestamps,
         now: () => NOW,
       })
@@ -221,26 +210,22 @@ describe('runFadeRateCron', () => {
   });
 
   it('skips the write when there is nothing to update', async () => {
-    const r = await run({
-      rows: [row('0x00000000000000000000000000000000000000C1', 1, NOW - 10)],
-      endpoints: [FILLER_A],
-    });
+    const r = await run({ rows: [], endpoints: [FILLER_A] });
     expect(r.timestamps.writes).toEqual([]);
   });
 
   describe('filler attribution', () => {
-    it('resolves fillers by the addresses in the rows and drops mappings to endpoints no longer configured', async () => {
-      const ADDR_C = '0x00000000000000000000000000000000000000C1';
-      const addresses = await fillerAddresses();
-      await addresses.recordWinningAddress(ADDR_C, 'https://removed.example/rfq');
-      const rows = [...BLOCKING_ROWS, ...Array.from({ length: 5 }, (_, i) => row(ADDR_C, 1, NOW - 100 - i))];
+    it("scores an order by the endpoint that won it, even when it names another filler's address", async () => {
+      // FILLER_B wins 14 quotes naming FILLER_A's settlement address and lets every one expire.
+      // FILLER_A's own 100 clean fills keep it clear; the expiries bench FILLER_B, not FILLER_A.
+      const victimFills = Array.from({ length: 100 }, (_, i) => row(FILLER_A, ADDR_A, 0, NOW - 1_000 - i));
+      const spoofedExpiries = Array.from({ length: 14 }, (_, i) => row(FILLER_B, ADDR_A, 1, NOW - 100 - i));
 
-      const r = await run({ rows, addresses });
+      const r = await run({ rows: [...victimFills, ...spoofedExpiries] });
 
-      // exactly the distinct addresses in the rows were looked up (no per-endpoint scan)
-      expect(r.addresses.requestedAddresses).toEqual([[ADDR_A, ADDR_B, ADDR_C]]);
-      // ADDR_C's filler is not in the webhook config, so its fades bench nobody
-      expect(r.timestamps.writes.flat().map((w) => w.hash)).toEqual([FILLER_A, FILLER_B]);
+      const [decisions] = r.timestamps.writes;
+      expect(decisions.find((d) => d.hash === FILLER_A)?.blockUntilTimestamp).toBe(UNBLOCKED_BLOCK_UNTIL_TIMESTAMP);
+      expect(decisions.find((d) => d.hash === FILLER_B)?.blockUntilTimestamp).toBe(NOW + BASE_BLOCK_SECS);
     });
   });
 

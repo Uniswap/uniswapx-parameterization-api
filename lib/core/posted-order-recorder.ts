@@ -20,8 +20,9 @@ export type CosignedOrder = CosignedV2DutchOrder | CosignedV3DutchOrder;
 
 export interface RecordPostedOrderArgs {
   repository: PostedOrderRepository;
-  // Address -> webhook attribution, which the fade breaker uses to map its fade rows (keyed by
-  // filler address) to fillers. Written alongside the PostedOrders row from the same record.
+  // Address -> webhook attribution for the offline backtest extract (CLAUDE.md); the fade
+  // breaker scores by the PostedOrders row's own `filler` and does not read it. Written
+  // alongside the PostedOrders row from the same record.
   fillerAddressRepository: FillerAddressRepository;
   order: CosignedOrder;
   // The winning RFQ quote, or undefined for an open order. Only RFQ-won orders are recorded.
@@ -137,7 +138,9 @@ export async function recordPostedOrder(args: RecordPostedOrderArgs): Promise<vo
       });
     } else if (attributed.value.outcome === 'owned_by_other') {
       // The write itself succeeded in reaching DynamoDB; the address stays with its first
-      // owner, so this filler's fades on it bench nobody until that row expires or is deleted.
+      // owner. The breaker scores this order against record.filler regardless, so this is a
+      // signal (an endpoint quoting with an address another endpoint already won with), not
+      // a scoring gap.
       await metrics.count(Metric.FILLER_ADDRESS_CLAIM_REJECTED);
       logger.warn('Filler address already attributed to another endpoint; claim refused, order unaffected', {
         orderHash,

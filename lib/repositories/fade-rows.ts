@@ -1,6 +1,7 @@
-// Most-recent orders per filler ADDRESS evaluated for the fade rate. Combined with the 24h
-// completion window the lookback is adaptive: a high-volume filler is judged on its latest N
-// orders (fast reaction), a low-volume filler on up to 24h of orders (catches chronic fading).
+// Most-recent orders per (filler endpoint, address) pair evaluated for the fade rate. Combined
+// with the 24h completion window the lookback is adaptive: a high-volume filler is judged on its
+// latest N orders (fast reaction), a low-volume filler on up to 24h of orders (catches chronic
+// fading).
 export const ORDERS_PER_FILLER_LIMIT = 100;
 
 /**
@@ -9,6 +10,10 @@ export const ORDERS_PER_FILLER_LIMIT = 100;
  * produced by lib/cron/order-service-fades-source.ts from PostedOrders + the order service.
  */
 export type V2FadesRowType = {
+  // RFQ webhook endpoint whose quote won the order (PostedOrderRecord.filler): the identity the
+  // breaker scores and benches. Never re-derived from fillerAddress, which the webhook chooses
+  // freely and so can name another filler's address.
+  filler: string;
   // Exclusive filler address the order was posted with (checksummed).
   fillerAddress: string;
   // 1 = fade (expired, or filled after decay start), 0 = clean fill.

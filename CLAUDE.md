@@ -101,5 +101,9 @@ Post-processing the replay must do itself (deliberately not in the SQL):
   per address. Use the per-address rows (`pk` = checksummed address, `filler` = endpoint);
   ignore the legacy rows keyed by endpoint URL with an `addresses` set, which stopped being
   updated when attribution moved to per-address rows. Per-address replay is a usable
-  approximation but under-counts multi-address fillers.
+  approximation but under-counts multi-address fillers. It also differs from the breaker in two
+  ways: the breaker scores each order by the endpoint frozen on its `PostedOrders` row, so an
+  order one endpoint posted with another filler's address is credited to the table's owner here
+  but to the poster there; and the breaker's latest-N partition is per (endpoint, address), not
+  per address.
 - Dedupe on `quoteId` (the `archivedorders` join can rarely fan out).
