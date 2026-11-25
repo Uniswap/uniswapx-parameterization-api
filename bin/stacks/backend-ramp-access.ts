@@ -19,9 +19,9 @@ export interface BackendRampAccessProps {
  * must read the same bench state and record the same rows the quote Lambdas do:
  *
  * - FillerCBTimestampsV2: read the bench state on every soft and hard quote (BatchGetItem).
- * - PostedOrders: record each confirmed RFQ-won post (PutItem), so the cron scores it.
- * - FillerAddress: attribute the winning filler address (UpdateItem), so the cron maps the
- *   order's filler back to an endpoint.
+ * - PostedOrders: record each confirmed RFQ-won post (PutItem), so the cron scores it against
+ *   the row's `filler` endpoint.
+ * - FillerAddress: attribute the winning filler address (UpdateItem), for the offline backtest.
  * - The market-maker roster (rfq-config bucket): the same object the quote Lambdas read.
  *
  * Only the request-path operations: the cron's writes (bench state, outcomes) stay here. The roster

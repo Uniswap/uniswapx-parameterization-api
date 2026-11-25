@@ -20,6 +20,12 @@ import {
  * fade-rate-v2.ts did not change when the source did.
  */
 export interface FadesSource {
+  /**
+   * Rows for the fillers in the current webhook config only: the breaker writes a timestamp
+   * row for every `filler` it sees, so a row from an endpoint outside the config would
+   * resurrect bench state for a filler that was removed. OrderServiceFadesSource guarantees
+   * this by loading orders per configured endpoint rather than filtering afterwards.
+   */
   getFades(): Promise<V2FadesRowType[]>;
   // Wallclock (ms) after which best-effort work stops; set by the cron from the Lambda deadline.
   deadlineMs?: number;
@@ -180,14 +186,16 @@ export function fadedForScoring(record: PostedOrderRecord, policy: FadeRowPolicy
  * operations (kept so the scoring code and its backtests still describe what runs):
  *
  *  1. completed orders only (deadline < now) — in-flight orders never consume window slots;
- *  2. the ORDERS_PER_FILLER_LIMIT most recently posted orders per filler ADDRESS (the view
- *     partitions by the exclusive filler address, before any other filter — so a permissioned
- *     token order or a not-yet-resolved order still occupies a slot);
+ *  2. the ORDERS_PER_FILLER_LIMIT most recently posted orders per (filler endpoint, exclusive
+ *     filler address) pair, before any other filter — so a permissioned token order or a
+ *     not-yet-resolved order still occupies a slot. The endpoint is part of the key so one
+ *     endpoint's orders naming another's address cannot evict that filler's own rows from its
+ *     window;
  *  3. then the 24h completion window, testnets, the zero filler, missing quoteId, the
  *     permissioned-token lists (both legs), and orders with no recorded outcome (the old SQL's
  *     LEFT JOIN likewise dropped rows that had not landed in archivedorders).
  *
- * Output rows are exactly V2FadesRowType, ordered by filler address then deadline desc.
+ * Output rows are exactly V2FadesRowType, ordered by filler, then address, then deadline desc.
  * `postTimestamp` is GPA's post-confirmation time (the old SQL's `createdat` was the order
  * service's, a second or two apart).
  */
@@ -199,16 +207,16 @@ export function buildFadeRows(
   const policy = args.policy ?? DEFAULT_FADE_ROW_POLICY;
   const windowStart = now - FADE_WINDOW_SECS;
 
-  const byAddress = new Map<string, PostedOrderRecord[]>();
+  const byFillerAddress = new Map<string, PostedOrderRecord[]>();
   records
     .filter((record) => record.deadline < now)
     .forEach((record) => {
-      const key = record.fillerAddress.toLowerCase();
-      byAddress.set(key, [...(byAddress.get(key) ?? []), record]);
+      const key = fillerAddressKey(record.filler, record.fillerAddress);
+      byFillerAddress.set(key, [...(byFillerAddress.get(key) ?? []), record]);
     });
 
   const rows: V2FadesRowType[] = [];
-  byAddress.forEach((orders) => {
+  byFillerAddress.forEach((orders) => {
     orders
       .sort(byMostRecentlyPosted)
       .slice(0, ORDERS_PER_FILLER_LIMIT)
@@ -221,6 +229,7 @@ export function buildFadeRows(
         const faded = fadedForScoring(record, policy);
         if (faded === undefined) return;
         rows.push({
+          filler: record.filler,
           fillerAddress: record.fillerAddress,
           faded,
           postTimestamp: record.postedAt,
@@ -230,8 +239,16 @@ export function buildFadeRows(
   });
 
   return rows.sort(
-    (a, b) => a.fillerAddress.toLowerCase().localeCompare(b.fillerAddress.toLowerCase()) || b.deadline - a.deadline
+    (a, b) =>
+      a.filler.localeCompare(b.filler) ||
+      a.fillerAddress.toLowerCase().localeCompare(b.fillerAddress.toLowerCase()) ||
+      b.deadline - a.deadline
   );
+}
+
+/** The latest-N partition: one window per address per endpoint. */
+export function fillerAddressKey(filler: string, fillerAddress: string): string {
+  return `${filler}|${fillerAddress.toLowerCase()}`;
 }
 
 // createdat DESC in the view; ties broken deterministically so a re-run yields the same slots.

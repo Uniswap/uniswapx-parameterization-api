@@ -34,7 +34,8 @@ const FINAL = STREAK_FINALITY_LAG_SECS + 100;
 const logger = new FakeLogger();
 
 // helper to build a faded/non-faded order row
-const order = (fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRowType => ({
+const order = (filler: string, fillerAddress: string, faded: 0 | 1, deadline: number): V2FadesRowType => ({
+  filler,
   fillerAddress,
   faded,
   postTimestamp: deadline - 20,
@@ -105,23 +106,16 @@ describe('FadeRateV2 cron', () => {
   });
 
   describe('getFillersFadeStats', () => {
-    const ADDRESS_TO_FILLER = new Map<string, string>([
-      ['0x0000000000000000000000000000000000000001', 'fillerA'],
-      ['0x0000000000000000000000000000000000000002', 'fillerB'],
-      ['0x0000000000000000000000000000000000000003', 'fillerC'],
-      ['0x0000000000000000000000000000000000000004', 'fillerC'],
-    ]);
-
     it('computes the smoothed rates for a filler with no prior timestamp', () => {
       const rows: V2FadesRowType[] = [
         ...Array(3)
           .fill(0)
-          .map(() => order('0x0000000000000000000000000000000000000001', 1, now - FINAL)),
+          .map(() => order('fillerA', '0x0000000000000000000000000000000000000001', 1, now - FINAL)),
         ...Array(7)
           .fill(0)
-          .map(() => order('0x0000000000000000000000000000000000000001', 0, now - FINAL)),
+          .map(() => order('fillerA', '0x0000000000000000000000000000000000000001', 0, now - FINAL)),
       ];
-      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), now, logger);
+      const stats = getFillersFadeStats(rows, new Map(), now, logger);
       // window = all 10 orders (no prior block), rate = (3+1)/(10+20) = 4/30
       expect(stats['fillerA'].fadeRate).toBeCloseTo(4 / 30, 6);
       // never blocked => empty during-block cohort => prior mean
@@ -139,8 +133,8 @@ describe('FadeRateV2 cron', () => {
       // but is not classified for the streak yet: its load state may still change (a fill row
       // that lands next batch would flip it to faded=0), so counting it now could reset an
       // honest filler's streak on a transient. It is classified once it ages past the horizon.
-      const fresh = order('0x0000000000000000000000000000000000000001', 1, now - 100);
-      const stats = getFillersFadeStats([fresh], ADDRESS_TO_FILLER, new Map(), now, logger);
+      const fresh = order('fillerA', '0x0000000000000000000000000000000000000001', 1, now - 100);
+      const stats = getFillersFadeStats([fresh], new Map(), now, logger);
       expect(stats['fillerA'].fadeRate).toBeCloseTo(2 / 21, 6); // scored for blocking
       expect(stats['fillerA'].newCompletions).toEqual(0); // not yet streak-classified
       expect(stats['fillerA'].newFades).toEqual(0);
@@ -153,7 +147,7 @@ describe('FadeRateV2 cron', () => {
       const timestamps: FillerTimestamps = new Map([
         ['fillerA', cbState({ lastExaminedTimestamp: now, fadeWindowStart: 0 })],
       ]);
-      const statsLater = getFillersFadeStats([fresh], ADDRESS_TO_FILLER, timestamps, later, logger);
+      const statsLater = getFillersFadeStats([fresh], timestamps, later, logger);
       expect(statsLater['fillerA'].newCompletions).toEqual(1);
       expect(statsLater['fillerA'].newFades).toEqual(1);
     });
@@ -170,15 +164,15 @@ describe('FadeRateV2 cron', () => {
         // pre-block fades (deadline now-30000, before block end now-20000): excluded from
         // window; also before lastExaminedTimestamp (now-15000) so already streak-classified
         // by an earlier run and not part of the during-block cohort
-        order('0x0000000000000000000000000000000000000002', 1, now - 30000),
-        order('0x0000000000000000000000000000000000000002', 1, now - 30000),
+        order('fillerB', '0x0000000000000000000000000000000000000002', 1, now - 30000),
+        order('fillerB', '0x0000000000000000000000000000000000000002', 1, now - 30000),
         // post-block orders (deadline now-10000, past the finality horizon): 1 faded + 4 clean
-        order('0x0000000000000000000000000000000000000002', 1, now - 10000),
+        order('fillerB', '0x0000000000000000000000000000000000000002', 1, now - 10000),
         ...Array(4)
           .fill(0)
-          .map(() => order('0x0000000000000000000000000000000000000002', 0, now - 10000)),
+          .map(() => order('fillerB', '0x0000000000000000000000000000000000000002', 0, now - 10000)),
       ];
-      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, fillerTimestamps, now, logger);
+      const stats = getFillersFadeStats(rows, fillerTimestamps, now, logger);
       // window = 5 post-block orders, 1 faded => (1+1)/(5+20) = 2/25
       expect(stats['fillerB'].fadeRate).toBeCloseTo(2 / 25, 6);
       // stale pre-block fades don't resurrect as a during-block cohort
@@ -205,13 +199,13 @@ describe('FadeRateV2 cron', () => {
       ]);
       const rows: V2FadesRowType[] = [
         // during-block cohort: 2 faded + 1 clean
-        order('0x0000000000000000000000000000000000000002', 1, now - 20000),
-        order('0x0000000000000000000000000000000000000002', 1, now - 20000),
-        order('0x0000000000000000000000000000000000000002', 0, now - 20000),
+        order('fillerB', '0x0000000000000000000000000000000000000002', 1, now - 20000),
+        order('fillerB', '0x0000000000000000000000000000000000000002', 1, now - 20000),
+        order('fillerB', '0x0000000000000000000000000000000000000002', 0, now - 20000),
         // post-block window: 1 clean (past the finality horizon)
-        order('0x0000000000000000000000000000000000000002', 0, now - FINAL),
+        order('fillerB', '0x0000000000000000000000000000000000000002', 0, now - FINAL),
       ];
-      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, fillerTimestamps, now, logger);
+      const stats = getFillersFadeStats(rows, fillerTimestamps, now, logger);
       // cohort = (2+1)/(3+20) = 3/23 ≈ 13.0% > threshold => calculateNewTimestamps re-blocks
       expect(stats['fillerB'].duringBlockRate).toBeCloseTo(3 / 23, 6);
       expect(stats['fillerB'].duringBlockRate).toBeGreaterThan(FADE_RATE_BLOCK_THRESHOLD);
@@ -226,12 +220,12 @@ describe('FadeRateV2 cron', () => {
 
     it('aggregates multiple addresses belonging to the same filler', () => {
       const rows: V2FadesRowType[] = [
-        order('0x0000000000000000000000000000000000000003', 1, now - FINAL),
-        order('0x0000000000000000000000000000000000000004', 1, now - FINAL),
-        order('0x0000000000000000000000000000000000000004', 0, now - FINAL),
-        order('0x0000000000000000000000000000000000000004', 0, now - FINAL),
+        order('fillerC', '0x0000000000000000000000000000000000000003', 1, now - FINAL),
+        order('fillerC', '0x0000000000000000000000000000000000000004', 1, now - FINAL),
+        order('fillerC', '0x0000000000000000000000000000000000000004', 0, now - FINAL),
+        order('fillerC', '0x0000000000000000000000000000000000000004', 0, now - FINAL),
       ];
-      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), now, logger);
+      const stats = getFillersFadeStats(rows, new Map(), now, logger);
       // combined: 2 faded / 4 total => (2+1)/(4+20) = 3/24 = 0.125
       expect(stats['fillerC'].fadeRate).toBeCloseTo(3 / 24, 6);
       expect(stats['fillerC'].duringBlockRate).toBeCloseTo(0.05, 6);
@@ -243,15 +237,15 @@ describe('FadeRateV2 cron', () => {
       const rows: V2FadesRowType[] = [
         ...Array(ORDERS_PER_FILLER_LIMIT)
           .fill(0)
-          .map((_, i) => order('0x0000000000000000000000000000000000000001', 0, now - 200 - i)),
+          .map((_, i) => order('fillerA', '0x0000000000000000000000000000000000000001', 0, now - 200 - i)),
         // fillerB: also a full window, but it still reaches past the horizon (oldest row is
         // final) — that's the designed adaptive window, not degradation
         ...Array(ORDERS_PER_FILLER_LIMIT - 1)
           .fill(0)
-          .map((_, i) => order('0x0000000000000000000000000000000000000002', 0, now - 200 - i)),
-        order('0x0000000000000000000000000000000000000002', 0, now - FINAL),
+          .map((_, i) => order('fillerB', '0x0000000000000000000000000000000000000002', 0, now - 200 - i)),
+        order('fillerB', '0x0000000000000000000000000000000000000002', 0, now - FINAL),
       ];
-      const stats = getFillersFadeStats(rows, ADDRESS_TO_FILLER, new Map(), now, logger);
+      const stats = getFillersFadeStats(rows, new Map(), now, logger);
       expect(stats['fillerA'].saturatedAddresses).toEqual(1);
       expect(stats['fillerB'].saturatedAddresses).toEqual(0);
     });
@@ -644,7 +638,6 @@ describe('FadeRateV2 cron', () => {
     // 15-30 minute blocks that cost a 1-order-per-2h filler nothing. Observed in prod:
     // a week of ~94% fading with consecutiveBlocks sitting at 2.
     const ELK_ADDR = '0x0000000000000000000000000000000000000005';
-    const ELK_MAP = new Map<string, string>([[ELK_ADDR, 'elk']]);
     const floor = now - 20000; // last block ended ~5.5h ago (clean-slate floor)
 
     const elkState = (consecutiveBlocks: number, lastExaminedTimestamp: number) =>
@@ -657,7 +650,7 @@ describe('FadeRateV2 cron', () => {
       const fillerTimestamps = elkState(2, t1 - 600);
       // one faded order past the finality horizon (visible in this batch, streak-classified
       // this run); window rate (1+1)/(1+20) is under threshold
-      const stats = getFillersFadeStats([order(ELK_ADDR, 1, t1 - FINAL)], ELK_MAP, fillerTimestamps, t1, logger);
+      const stats = getFillersFadeStats([order('elk', ELK_ADDR, 1, t1 - FINAL)], fillerTimestamps, t1, logger);
       expect(stats['elk'].fadeRate).toBeLessThan(FADE_RATE_BLOCK_THRESHOLD);
       expect(stats['elk'].newFades).toEqual(1);
 
@@ -670,12 +663,12 @@ describe('FadeRateV2 cron', () => {
       const t1 = now - 600;
       const t2 = now;
       // each fade ages past the finality horizon in time for the corresponding run's slice
-      const fade1 = order(ELK_ADDR, 1, t1 - FINAL);
-      const fade2 = order(ELK_ADDR, 1, t2 - FINAL);
+      const fade1 = order('elk', ELK_ADDR, 1, t1 - FINAL);
+      const fade2 = order('elk', ELK_ADDR, 1, t2 - FINAL);
 
       // run 1: lone sub-threshold fade
       const state1 = elkState(2, t1 - 600);
-      const stats1 = getFillersFadeStats([fade1], ELK_MAP, state1, t1, logger);
+      const stats1 = getFillersFadeStats([fade1], state1, t1, logger);
       const [row1] = calculateNewTimestamps(state1, stats1, t1, logger);
 
       // run 2: second fade (loaded in the next batch) puts the window at 3/22 > threshold -> block
@@ -691,7 +684,7 @@ describe('FadeRateV2 cron', () => {
           }),
         ],
       ]) as FillerTimestamps;
-      const stats2 = getFillersFadeStats([fade1, fade2], ELK_MAP, state2, t2, logger);
+      const stats2 = getFillersFadeStats([fade1, fade2], state2, t2, logger);
       expect(stats2['elk'].fadeRate).toBeGreaterThan(FADE_RATE_BLOCK_THRESHOLD);
 
       const [row2] = calculateNewTimestamps(state2, stats2, t2, logger);

@@ -5,7 +5,14 @@ import { default as Logger } from 'bunyan';
 import { BigNumber, ethers, Wallet } from 'ethers';
 
 import { getCosignerData } from '../../../lib/core';
-import { HardQuoteRequest, Metric, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
+import {
+  BASE_BLOCK_SECS,
+  calculateNewTimestamps,
+  getFillersFadeStats,
+  UNBLOCKED_BLOCK_UNTIL_TIMESTAMP,
+} from '../../../lib/core/circuit-breaker';
+import { buildFadeRows } from '../../../lib/cron/order-service-fades-source';
+import { HardQuoteRequest, Metric, QuoteRequest, QuoteResponse, QuoteResponseData } from '../../../lib/entities';
 import { ApiInjector } from '../../../lib/handlers/base/api-handler';
 import {
   ContainerInjected,
@@ -14,7 +21,8 @@ import {
   HardQuoteResponseData,
   RequestInjected,
 } from '../../../lib/handlers/hard-quote';
-import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter } from '../../../lib/quoters';
+import { Context as ObservabilityContext } from '../../../lib/observability';
+import { MOCK_FILLER_ADDRESS, MockQuoter, Quoter, QuoterType } from '../../../lib/quoters';
 import {
   FillerAddressRepository,
   MockFillerAddressRepository,
@@ -503,6 +511,75 @@ describe('Quote handler', () => {
   });
   // Bookkeeping for the fade breaker: one PostedOrders row per confirmed RFQ-won post.
   describe('posted-order bookkeeping', () => {
+    it("scores a quote naming another filler's settlement address against the endpoint that won it", async () => {
+      const victimEndpoint = 'https://victim.example/rfq';
+      const attackerEndpoint = 'https://attacker.example/rfq';
+      // The victim already won with MOCK_FILLER_ADDRESS, so the address table attributes it to them.
+      const addresses = new MockFillerAddressRepository();
+      await addresses.recordWinningAddress(MOCK_FILLER_ADDRESS, victimEndpoint);
+      const repository = new MockPostedOrderRepository();
+      // An admitted webhook quoting with the victim's address, through the real RFQ parser.
+      const attacker: Quoter = {
+        quote: async (_ctx: ObservabilityContext, request: QuoteRequest) => {
+          const parsed = QuoteResponse.fromRFQ({
+            request,
+            data: {
+              chainId: CHAIN_ID,
+              requestId: request.requestId,
+              tokenIn: request.tokenIn,
+              amountIn: request.amount.toString(),
+              tokenOut: request.tokenOut,
+              amountOut: request.amount.mul(2).toString(),
+              filler: MOCK_FILLER_ADDRESS,
+              quoteId: QUOTE_ID,
+            },
+            type: request.type,
+            metadata: { endpoint: attackerEndpoint, fillerName: 'attacker' },
+          });
+          expect(parsed.validationError).toBeUndefined();
+          return [parsed.response];
+        },
+        type: () => QuoterType.TEST,
+      };
+
+      for (const nonce of [10, 11]) {
+        const request = await getRequest(getOrder({ cosigner: cosignerWallet.address, nonce: BigNumber.from(nonce) }));
+        const response = await getQuoteHandler([attacker], repository, addresses).handler(
+          getEvent(request),
+          {} as unknown as Context
+        );
+        expect(response.statusCode).toEqual(200);
+      }
+
+      const records = [...repository.records.values()];
+      expect(records).toHaveLength(2);
+      expect(records.every((rec) => rec.filler === attackerEndpoint && rec.fillerAddress === MOCK_FILLER_ADDRESS)).toBe(
+        true
+      );
+      // first-writer-wins kept the victim's attribution
+      expect(addresses.addressToFiller.get(MOCK_FILLER_ADDRESS)).toEqual(victimEndpoint);
+
+      // Both orders expire. The victim also has clean fills on the same address, so the breaker
+      // has a stored filler for both endpoints to decide about.
+      const now = Math.max(...records.map((rec) => rec.deadline)) + 1;
+      const expired = records.map((rec) => ({ ...rec, outcome: PostedOrderOutcome.EXPIRED, faded: 1 }));
+      const victimFill = {
+        ...records[0],
+        orderHash: '0x' + 'f'.repeat(64),
+        filler: victimEndpoint,
+        outcome: PostedOrderOutcome.FILLED,
+        faded: 0,
+      };
+      const rows = buildFadeRows([...expired, victimFill], { now });
+      const stats = getFillersFadeStats(rows, new Map(), now);
+      const decisions = calculateNewTimestamps(new Map(), stats, now);
+
+      expect(decisions.find((d) => d.hash === attackerEndpoint)?.blockUntilTimestamp).toEqual(now + BASE_BLOCK_SECS);
+      expect(decisions.find((d) => d.hash === victimEndpoint)?.blockUntilTimestamp).toEqual(
+        UNBLOCKED_BLOCK_UNTIL_TIMESTAMP
+      );
+    });
+
     it('records the posted order when the winning quote earned exclusivity', async () => {
       const repository = new MockPostedOrderRepository();
       const quoters = [new MockQuoter(logger, 1, 1), new MockQuoter(logger, 2, 1)];

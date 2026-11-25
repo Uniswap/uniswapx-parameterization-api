@@ -1,17 +1,16 @@
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import { BatchGetCommand, BatchGetCommandInput, DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import Logger from 'bunyan';
 
 import { getAddress } from 'ethers/lib/utils';
 import { DYNAMO_TABLE_NAME } from '../constants';
-import { sleep } from '../util/time';
 import { postedOrderDocumentClient } from './posted-order-repository';
 
 /**
  * How long an address -> filler attribution lives after the filler last won a quote with it.
- * The fade breaker only looks back 24h (OrderServiceFadesSource) and the backtest extract 28d, so
- * a 30d TTL keeps every attribution either of them can ask about while letting the addresses
- * of a filler that rotates per quote age out instead of accumulating forever.
+ * The backtest extract looks back 28d, so a 30d TTL keeps every attribution it can ask about
+ * while letting the addresses of a filler that rotates per quote age out instead of
+ * accumulating forever.
  */
 export const FILLER_ADDRESS_TTL_SECS = 30 * 24 * 60 * 60;
 
@@ -22,15 +21,6 @@ export const FILLER_ADDRESS_TTL_SECS = 30 * 24 * 60 * 60;
  * the total, so the retry can only ever spend time the response was already going to wait.
  */
 export const FILLER_ADDRESS_WRITE_MAX_ATTEMPTS = 2;
-
-// DynamoDB BatchGetItem accepts at most 100 keys per request.
-const BATCH_GET_CHUNK = 100;
-// A throttled BatchGet returns the keys it could not serve as UnprocessedKeys; they are retried
-// with backoff this many times before the remainder is given up (and logged) for this call.
-const BATCH_GET_UNPROCESSED_RETRIES = 3;
-const BATCH_GET_RETRY_BASE_MS = 50;
-
-type BatchGetKeys = NonNullable<NonNullable<BatchGetCommandInput['RequestItems']>[string]['Keys']>;
 
 /**
  * Outcome of recordWinningAddress. `owned_by_other` is a refused claim: the address is already
@@ -43,16 +33,16 @@ export type WinningAddressClaim = { outcome: 'recorded' } | { outcome: 'owned_by
  * Maps on-chain filler addresses to the RFQ webhook (filler) that quotes with them.
  *
  * One item per address (pk = checksummed address, filler = webhook endpoint, expiresAt = TTL).
- * The mapping has one runtime reader: the fade-rate breaker, whose rows are keyed by a posted
- * order's exclusive filler address and which needs the webhook to bench (lookupFillersForRows in
- * lib/core/circuit-breaker.ts; the backtest extract described in CLAUDE.md scans the table offline). Only a quote that WON produces a posted
- * order, so only winning addresses are recorded (by recordPostedOrder, alongside the
- * PostedOrders row, at the confirmed post), and there is no per-filler address cap: a filler
- * may quote from as many addresses as it likes, each costing one read-free conditional write
- * per posted order and expiring FILLER_ADDRESS_TTL_SECS after its last win. Nothing on the
- * /quote path reads or writes this table. (The PostedOrders row also carries the endpoint per
- * order, frozen at post time; attributing through this table at read time is what lets a
- * filler's history follow an endpoint rename.)
+ * The mapping has no runtime reader: the fade-rate breaker scores each posted order by the
+ * endpoint stored on its PostedOrders row, never through this table, because the address is
+ * chosen by the webhook and can name another filler's address. The backtest extract described
+ * in CLAUDE.md scans the table offline to attribute order-service rows (which carry only the
+ * address) to endpoints. Only a quote that WON produces a posted order, so only winning
+ * addresses are recorded (by recordPostedOrder, alongside the PostedOrders row, at the
+ * confirmed post), and there is no per-filler address cap: a filler may quote from as many
+ * addresses as it likes, each costing one read-free conditional write per posted order and
+ * expiring FILLER_ADDRESS_TTL_SECS after its last win. Nothing on the /quote path reads or
+ * writes this table.
  */
 export interface FillerAddressRepository {
   /**
@@ -65,15 +55,7 @@ export interface FillerAddressRepository {
    * then. Re-recording for the same owner refreshes the TTL.
    */
   recordWinningAddress(address: string, filler: string): Promise<WinningAddressClaim>;
-  /** address -> filler for exactly the addresses asked (keys checksummed); unknown addresses absent. */
-  getAddressToFillerMap(addresses: string[]): Promise<Map<string, string>>;
 }
-
-type AddressItem = {
-  pk: string;
-  filler?: string;
-  expiresAt?: number;
-};
 
 export class DynamoFillerAddressRepository implements FillerAddressRepository {
   static log: Logger;
@@ -81,8 +63,7 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
   /**
    * The default client is the sibling PostedOrders write's bounded one (short connect/request
    * ceilings) with one retry: on the hard-quote path this write sits in series with the
-   * response, and the recorder's wall caps the total. The cron passes its own unbounded client,
-   * since its BatchGets are not latency-sensitive and would be brittle under those ceilings.
+   * response, and the recorder's wall caps the total.
    */
   static create(
     documentClient: DynamoDBDocumentClient = postedOrderDocumentClient(FILLER_ADDRESS_WRITE_MAX_ATTEMPTS),
@@ -137,65 +118,11 @@ export class DynamoFillerAddressRepository implements FillerAddressRepository {
       return { outcome: 'owned_by_other', existingOwner };
     }
   }
-
-  async getAddressToFillerMap(addresses: string[]): Promise<Map<string, string>> {
-    const table = DYNAMO_TABLE_NAME.FILLER_ADDRESS;
-    const unique = [...new Set(addresses.map((a) => getAddress(a)))];
-    const resMap = new Map<string, string>();
-    let pagesWithoutTable = 0;
-    let unprocessed = 0;
-
-    for (let i = 0; i < unique.length; i += BATCH_GET_CHUNK) {
-      let keys: BatchGetKeys = unique.slice(i, i + BATCH_GET_CHUNK).map((pk) => ({ pk }));
-      // DynamoDB may serve only part of a batch under throttling and return the rest as
-      // UnprocessedKeys; they are re-requested with backoff. Dropping them would silently leave
-      // those fillers unscored for this run.
-      for (let attempt = 0; ; attempt++) {
-        const { Responses, UnprocessedKeys } = await this.documentClient.send(
-          new BatchGetCommand({ RequestItems: { [table]: { Keys: keys } } })
-        );
-        // Responses is keyed by the table's physical name. A page without our entry is not
-        // "no rows" — every requested key would then be silently unattributed.
-        const served = Responses?.[table] as AddressItem[] | undefined;
-        if (served) {
-          served.forEach((row) => {
-            if (row.filler) {
-              resMap.set(getAddress(row.pk), row.filler);
-            }
-          });
-        } else {
-          pagesWithoutTable++;
-        }
-        keys = UnprocessedKeys?.[table]?.Keys ?? [];
-        if (keys.length === 0 || attempt >= BATCH_GET_UNPROCESSED_RETRIES) break;
-        await sleep(BATCH_GET_RETRY_BASE_MS * 2 ** attempt);
-      }
-      unprocessed += keys.length;
-    }
-    if (pagesWithoutTable > 0) {
-      DynamoFillerAddressRepository.log.warn(
-        { pagesWithoutTable, table, requested: unique.length },
-        'FillerAddress BatchGet pages carried no entry for the table; their addresses are unattributed this run'
-      );
-    }
-    if (unprocessed > 0) {
-      DynamoFillerAddressRepository.log.warn(
-        { unprocessed, requested: unique.length },
-        'FillerAddress BatchGet left keys unprocessed after retries; those addresses are unattributed this run'
-      );
-    }
-    DynamoFillerAddressRepository.log.info(
-      { requested: unique.length, resolved: resMap.size, unprocessed },
-      'filler addresses from dynamo'
-    );
-    return resMap;
-  }
 }
 
 /** In-memory fake with the same first-writer-wins semantics, for handler and cron tests. */
 export class MockFillerAddressRepository implements FillerAddressRepository {
   public readonly addressToFiller = new Map<string, string>();
-  public readonly requestedAddresses: string[][] = [];
 
   async recordWinningAddress(address: string, filler: string): Promise<WinningAddressClaim> {
     const addr = getAddress(address);
@@ -205,18 +132,5 @@ export class MockFillerAddressRepository implements FillerAddressRepository {
     }
     this.addressToFiller.set(addr, filler);
     return { outcome: 'recorded' };
-  }
-
-  async getAddressToFillerMap(addresses: string[]): Promise<Map<string, string>> {
-    const unique = [...new Set(addresses.map((a) => getAddress(a)))];
-    this.requestedAddresses.push(unique);
-    const res = new Map<string, string>();
-    for (const addr of unique) {
-      const filler = this.addressToFiller.get(addr);
-      if (filler) {
-        res.set(addr, filler);
-      }
-    }
-    return res;
   }
 }

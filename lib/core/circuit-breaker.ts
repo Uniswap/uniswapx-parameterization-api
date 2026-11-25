@@ -1,6 +1,4 @@
-import { ethers } from 'ethers';
-
-import { FadesSource, ResolutionSummary } from '../cron/order-service-fades-source';
+import { FadesSource, fillerAddressKey, ResolutionSummary } from '../cron/order-service-fades-source';
 import { Metric, metricContext } from '../entities';
 import { Context, Logger, Metrics } from '../observability';
 import { S3WebhookConfigurationProvider } from '../providers';
@@ -11,7 +9,6 @@ import {
   ToUpdateTimestampRow,
   V2FadesRowType,
 } from '../repositories';
-import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { UNBLOCKED_BLOCK_UNTIL_TIMESTAMP } from '../repositories/timestamp-repository';
 
 // Re-exported for the breaker's importers; the sentinel lives with the repository that owns the
@@ -40,7 +37,7 @@ export type FillerFadeStats = {
   // it), so a sub-threshold fade never counts as recovery.
   newFades: number;
   // Raw (unsmoothed) fade rate over the FINAL rows of the filler's window (24h / latest-100
-  // per address, deadline past the finality horizon), ignoring the clean-slate floor — the
+  // per filler address, deadline past the finality horizon), ignoring the clean-slate floor — the
   // no-amnesty "chronic" view. Never used for blocking: emitted as a watchlist
   // metric so persistent moderate faders who live inside the block threshold's envelope
   // (~0.12n + 1.4 fades per day, e.g. ~20% raw at 15 orders/day) stay visible to humans even
@@ -124,7 +121,6 @@ export interface CircuitBreakerDeps {
   // a failure of the run — there is no fallback source.
   source: FadesSource;
   webhookProvider: Pick<S3WebhookConfigurationProvider, 'fetchEndpoints' | 'fillerEndpoints'>;
-  fillerAddressRepo: Pick<FillerAddressRepository, 'getAddressToFillerMap'>;
   timestampDB: BaseTimestampRepository;
   // Epoch seconds. Injected so tests pin the run's clock.
   now?: () => number;
@@ -135,38 +131,6 @@ export interface CircuitBreakerRunOptions {
   // batches, so a slow order service truncates resolution (finished next run) rather than the
   // run. Set by a caller with a hard deadline (the Lambda); absent, resolution is unbounded.
   deadlineMs?: number;
-}
-
-/**
- * Resolves the filler (webhook) behind every address in the fade rows. Looks up exactly the
- * addresses the rows mention (one BatchGet per 100), then keeps only mappings to endpoints in
- * the current webhook config: an address whose filler has since been removed from the config
- * must not resurrect a timestamp row for it. Both kinds of gap — an address with no row and a
- * row pointing at an unconfigured endpoint — leave that address's fades benching nobody, so
- * each is logged with its count.
- */
-export async function lookupFillersForRows(
-  rows: V2FadesRowType[],
-  fillerEndpoints: string[],
-  fillerAddressRepo: Pick<FillerAddressRepository, 'getAddressToFillerMap'>,
-  logger: Logger
-): Promise<Map<string, string>> {
-  const addresses = [...new Set(rows.map((row) => ethers.utils.getAddress(row.fillerAddress)))];
-  if (addresses.length === 0) {
-    return new Map();
-  }
-  const mapped = await fillerAddressRepo.getAddressToFillerMap(addresses);
-  const configured = new Set(fillerEndpoints);
-  const unconfigured = [...mapped.entries()].filter(([, filler]) => !configured.has(filler));
-  const unattributed = addresses.filter((address) => !mapped.has(address));
-  if (unconfigured.length > 0 || unattributed.length > 0) {
-    logger.warn('fade rows whose address resolves to no configured filler; their fades bench nobody this run', {
-      unattributedAddresses: unattributed.length,
-      unconfiguredAddresses: unconfigured.length,
-      unconfiguredEndpoints: [...new Set(unconfigured.map(([, filler]) => filler))],
-    });
-  }
-  return new Map([...mapped.entries()].filter(([, filler]) => configured.has(filler)));
 }
 
 /**
@@ -181,7 +145,7 @@ export class CircuitBreakerBL {
   constructor(private readonly deps: CircuitBreakerDeps) {}
 
   public async run(ctx: Context, opts: CircuitBreakerRunOptions = {}): Promise<void> {
-    const { source, webhookProvider, fillerAddressRepo, timestampDB } = this.deps;
+    const { source, webhookProvider, timestampDB } = this.deps;
     const { logger, metrics } = ctx;
 
     // The webhook config provider reports RFQ_CONFIG_CHANGED through the caller's ctx, so the
@@ -194,16 +158,14 @@ export class CircuitBreakerBL {
     }
     /*
      rows: one per recently completed order
-          | fillerAddress |    faded  |   postTimestamp |   deadline   |
-          |---- 0x1 ------|---- 0 ----|---- 12222222 ---|--- 12222282 -|
-          |---- 0x2 ------|---- 1 ----|---- 12345679 ---|--- 12345739 -|
-          |---- 0x1 ------|---- 0 ----|---- 12345678 ---|--- 12345738 -|
+          | filler |  fillerAddress |    faded  |   postTimestamp |   deadline   |
+          |-- foo -|---- 0x1 -------|---- 0 ----|---- 12222222 ---|--- 12222282 -|
+          |-- bar -|---- 0x2 -------|---- 1 ----|---- 12345679 ---|--- 12345739 -|
+          |-- foo -|---- 0x1 -------|---- 0 ----|---- 12345678 ---|--- 12345738 -|
     */
-    const rows = await source.getFades();
-
     const fillerEndpoints = webhookProvider.fillerEndpoints();
-    const [addressToFillerMap, fillerTimestamps] = await Promise.all([
-      lookupFillersForRows(rows, fillerEndpoints, fillerAddressRepo, logger),
+    const [rows, fillerTimestamps] = await Promise.all([
+      source.getFades(),
       timestampDB.getFillerTimestampsMap(fillerEndpoints),
     ]);
 
@@ -213,7 +175,7 @@ export class CircuitBreakerBL {
     //  | hash     |  fadeRate  |  duringBlockRate  |
     //  |---- foo -|---- 0.18 --|------ 0.05 -------|
     //  |---- bar -|---- 0.05 --|------ 0.20 -------|
-    const fillerFadeStats = getFillersFadeStats(rows, addressToFillerMap, fillerTimestamps, now, logger);
+    const fillerFadeStats = getFillersFadeStats(rows, fillerTimestamps, now, logger);
 
     //  | hash        |lastExaminedTimestamp|blockUntilTimestamp|fadeWindowStart|
     //  |---- foo ----|---- 1300000 ----|----      calculated block until  ----|
@@ -469,9 +431,9 @@ export function laplaceSmoothedFadeRate(fades: number, total: number): number {
 }
 
 /* Compute, per filler, Laplace-smoothed fade rates over two disjoint cohorts.
-   @param rows: info about individual orders: filler address, faded or not, deadline (completion time)
+   @param rows: info about individual orders: winning filler endpoint (the hash scored), filler
+     address, faded or not, deadline (completion time)
    @param fillerTimestamps: last checked timestamp and block until timestamp for each filler
-   @param addressToFillerMap: map of address to filler hash
 
    - fadeRate: orders whose deadline is after the filler's fadeWindowStart (last block end)
      ("post-block window"). This is the clean-slate mechanism: a filler who served a block
@@ -499,7 +461,6 @@ export function laplaceSmoothedFadeRate(fades: number, total: number): number {
 */
 export function getFillersFadeStats(
   rows: V2FadesRowType[],
-  addressToFillerMap: Map<string, string>,
   fillerTimestamps: FillerTimestamps,
   now: number,
   logger?: Logger
@@ -510,7 +471,6 @@ export function getFillersFadeStats(
     rowCount: rows.length,
     fadeCount: rows.reduce((sum, row) => sum + row.faded, 0),
     fillerTimestamps: [...fillerTimestamps.entries()],
-    addressToFillerMap: [...addressToFillerMap.entries()],
   });
   // filler hash -> tallies used to derive the stats below
   const tallies: Record<
@@ -526,21 +486,17 @@ export function getFillersFadeStats(
       chronicTotal: number;
     }
   > = {};
-  // per-address row count and oldest deadline, to detect addresses whose latest-N window has
-  // outrun the streak finality horizon (rows evicted before they can be classified)
-  const addressRowCounts = new Map<string, number>();
-  const addressOldestDeadline = new Map<string, number>();
-  const addressHash = new Map<string, string>();
+  // per-window (filler, address) row count and oldest deadline, to detect windows whose
+  // latest-N has outrun the streak finality horizon (rows evicted before they can be classified)
+  const windowRowCounts = new Map<string, number>();
+  const windowOldestDeadline = new Map<string, number>();
+  const windowHash = new Map<string, string>();
   rows.forEach((row) => {
-    const fillerAddr = ethers.utils.getAddress(row.fillerAddress);
-    const fillerHash = addressToFillerMap.get(fillerAddr);
-    if (!fillerHash) {
-      logger?.info('filler address not found dynamo mapping', { fillerAddr });
-      return;
-    }
-    addressRowCounts.set(fillerAddr, (addressRowCounts.get(fillerAddr) ?? 0) + 1);
-    addressOldestDeadline.set(fillerAddr, Math.min(addressOldestDeadline.get(fillerAddr) ?? Infinity, row.deadline));
-    addressHash.set(fillerAddr, fillerHash);
+    const fillerHash = row.filler;
+    const windowKey = fillerAddressKey(row.filler, row.fillerAddress);
+    windowRowCounts.set(windowKey, (windowRowCounts.get(windowKey) ?? 0) + 1);
+    windowOldestDeadline.set(windowKey, Math.min(windowOldestDeadline.get(windowKey) ?? Infinity, row.deadline));
+    windowHash.set(windowKey, fillerHash);
     const fillerTimestamp = fillerTimestamps.get(fillerHash);
     if (!tallies[fillerHash]) {
       tallies[fillerHash] = {
@@ -592,13 +548,13 @@ export function getFillersFadeStats(
   // can ever be streak-classified. (Being at the cap alone is the designed adaptive window —
   // high-volume addresses sit there constantly — so it is deliberately not flagged.)
   const saturatedByHash: Record<string, number> = {};
-  addressRowCounts.forEach((count, addr) => {
-    const oldestDeadline = addressOldestDeadline.get(addr) ?? 0;
-    const hash = addressHash.get(addr); // always set: written alongside addressRowCounts above
+  windowRowCounts.forEach((count, windowKey) => {
+    const oldestDeadline = windowOldestDeadline.get(windowKey) ?? 0;
+    const hash = windowHash.get(windowKey); // always set: written alongside windowRowCounts above
     if (hash !== undefined && count >= ORDERS_PER_FILLER_LIMIT && oldestDeadline > now - STREAK_FINALITY_LAG_SECS) {
       saturatedByHash[hash] = (saturatedByHash[hash] ?? 0) + 1;
       logger?.info('filler address window has outrun the streak finality horizon', {
-        addr,
+        windowKey,
         hash,
         count,
         oldestDeadline,
