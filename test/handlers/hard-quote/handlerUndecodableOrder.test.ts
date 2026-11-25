@@ -1,8 +1,8 @@
-import { UniswapXOrderParser } from '@uniswap/uniswapx-sdk';
+import { DutchOrderBuilder, UniswapXOrderParser, V3DutchOrderBuilder } from '@uniswap/uniswapx-sdk';
 import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
-import { Wallet } from 'ethers';
+import { BigNumber, ethers, Wallet } from 'ethers';
 
 import { CosignerFactory } from '../../../lib/core/cosigner';
 import { Metric } from '../../../lib/entities';
@@ -14,9 +14,10 @@ import {
   RequestInjected,
 } from '../../../lib/handlers/hard-quote';
 import { MockQuoter } from '../../../lib/quoters';
-import { MalformedOrderError, UnsupportedOrderTypeError } from '../../../lib/util/errors';
+import { ChainId } from '../../../lib/util/chains';
+import { MalformedOrderError, UndecodableOrderError, UnsupportedOrderTypeError } from '../../../lib/util/errors';
 import { fakeContext, FakeCosigner, hardQuoteContainer } from '../../fakes';
-import { CHAIN_ID, getOrder } from '../../fixtures/hard-quote';
+import { CHAIN_ID, getOrder, TOKEN_IN, TOKEN_OUT } from '../../fixtures/hard-quote';
 
 const REQUEST_ID = 'a83f397c-8ef4-4801-a9b7-6e79155049f6';
 const QUOTE_ID = '5c8b4c1f-6c38-4b1a-9bd3-8c6f2c3b6d9e';
@@ -80,6 +81,16 @@ describe('Quote handler: undecodable orders', () => {
     };
   };
 
+  // A body for an order that is refused before its signature is read, on `chainId`.
+  const unsignedRequestFor = (chainId: number, encodedInnerOrder: string): HardQuoteRequestBody => ({
+    requestId: REQUEST_ID,
+    quoteId: QUOTE_ID,
+    tokenInChainId: chainId,
+    tokenOutChainId: chainId,
+    encodedInnerOrder,
+    innerSig: `0x${'11'.repeat(65)}`,
+  });
+
   const counted = (metric: Metric) => putMetric.mock.calls.filter(([name]) => name === metric).length;
   const loggedAt = (msg: string) => logRecords.filter((r) => r.msg === msg).map((r) => Logger.nameFromLevel[r.level]);
 
@@ -109,6 +120,77 @@ describe('Quote handler: undecodable orders', () => {
     const response = await post(await requestFor(validOrder(), encodedInnerOrder()));
 
     expectClientError(response, MalformedOrderError.MESSAGE);
+  });
+
+  // Orders the SDK cannot decode because a numeric field reads past 2^53 (ethers NUMERIC_FAULT). The
+  // service refuses them as undecodable, never as malformed: some are valid orders.
+  it.each([
+    [
+      'an order whose first offset word is 0xff..ff',
+      async () =>
+        requestFor(
+          validOrder(),
+          `0x${'f'.repeat(64)}${validOrder()
+            .serialize()
+            .slice(2 + 64)}`
+        ),
+    ],
+    [
+      // Valid, but the SDK packs a curve's relative blocks 16 bits apiece and calls toNumber() on the
+      // whole packed value, so a fifth point (bits 64+) always overflows. The curve is on the input
+      // because the SDK's unsigned V3 serialize writes the input's packed blocks into every output.
+      'a valid Dutch V3 order with a five-point decay curve',
+      async () => {
+        const amount = BigNumber.from('1000000000000000000');
+        const now = Math.floor(Date.now() / 1000);
+        const order = new V3DutchOrderBuilder(ChainId.ARBITRUM_ONE)
+          .cosigner(cosignerWallet.address)
+          .deadline(now + 1000)
+          .swapper(swapperWallet.address)
+          .nonce(BigNumber.from(100))
+          .startingBaseFee(BigNumber.from(0))
+          .input({
+            token: TOKEN_IN,
+            startAmount: amount,
+            curve: { relativeBlocks: [1, 2, 3, 4, 5], relativeAmounts: [1n, 2n, 3n, 4n, 5n] },
+            maxAmount: amount,
+            adjustmentPerGweiBaseFee: BigNumber.from(0),
+          })
+          .output({
+            token: TOKEN_OUT,
+            startAmount: amount,
+            curve: { relativeBlocks: [], relativeAmounts: [] },
+            recipient: ethers.constants.AddressZero,
+            minAmount: amount,
+            adjustmentPerGweiBaseFee: BigNumber.from(0),
+          })
+          .buildPartial();
+        return unsignedRequestFor(ChainId.ARBITRUM_ONE, order.serialize());
+      },
+    ],
+    [
+      // The SDK lists the zero address as Base's Dutch V1 reactor (none is deployed there) and maps
+      // the zero address back to Dutch V2, so these bytes are decoded with the V2 layout.
+      'an SDK-built Dutch V1 order on Base',
+      async () => {
+        const now = Math.floor(Date.now() / 1000);
+        const amount = BigNumber.from('1000000000000000000');
+        const order = new DutchOrderBuilder(ChainId.BASE)
+          .deadline(now + 100)
+          .decayStartTime(now)
+          .decayEndTime(now + 100)
+          .swapper(swapperWallet.address)
+          .nonce(BigNumber.from(100))
+          .input({ token: TOKEN_IN, startAmount: amount, endAmount: amount })
+          .output({ token: TOKEN_OUT, startAmount: amount, endAmount: amount, recipient: ethers.constants.AddressZero })
+          .build();
+        return unsignedRequestFor(ChainId.BASE, order.serialize());
+      },
+    ],
+  ])('answers 400 VALIDATION_ERROR with the undecodable-order detail for %s', async (_name, request) => {
+    const response = await post(await request());
+
+    expectClientError(response, UndecodableOrderError.MESSAGE);
   });
 
   // outputs[0] is read by every later step, so this used to be a TypeError (a 500).

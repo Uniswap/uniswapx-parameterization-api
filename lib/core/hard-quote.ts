@@ -30,6 +30,7 @@ import {
   NoQuotesAvailable,
   OrderDeadlineExpired,
   OrderPostError,
+  UndecodableOrderError,
   UnknownOrderCosignerError,
   UnsupportedOrderTypeError,
 } from '../util/errors';
@@ -254,6 +255,12 @@ const MALFORMED_ORDER_ERROR_CODES: ReadonlySet<unknown> = new Set([
   ethers.utils.Logger.errors.INVALID_ARGUMENT,
 ]);
 
+// A numeric field the decoder read past 2^53. Deliberately NOT in the malformed set above: the SDK
+// throws it for corrupted bytes (an offset or length word out of range) but also for some valid
+// orders it cannot read (a Dutch V3 decay curve whose packed block offsets reach 2^53, a deadline
+// or decay time above 2^53), so "malformed" would be false. It gets its own 400 and message.
+const NUMERIC_OUT_OF_RANGE_ERROR_CODE = ethers.utils.Logger.errors.NUMERIC_FAULT;
+
 /**
  * Decodes the caller's order. The decode reads only the caller's bytes, so the failures it reports
  * for them are refused as client errors (400): a reactor the SDK maps to no order type or to one a
@@ -277,16 +284,25 @@ function decodeOrder(
     return { orderType, request };
   } catch (e) {
     const refusal = asOrderDecodeError(e);
-    if (refusal instanceof MalformedOrderError || refusal instanceof UnsupportedOrderTypeError) {
+    if (isOrderDecodeRefusal(refusal)) {
       ctx.logger.info('Invalid order', { reason: refusal.message });
     }
     throw refusal;
   }
 }
 
+// The 400s the decode step answers.
+function isOrderDecodeRefusal(
+  e: unknown
+): e is MalformedOrderError | UndecodableOrderError | UnsupportedOrderTypeError {
+  return (
+    e instanceof MalformedOrderError || e instanceof UndecodableOrderError || e instanceof UnsupportedOrderTypeError
+  );
+}
+
 // The client error for a decode failure of the caller's bytes, or `e` itself for anything else.
 function asOrderDecodeError(e: unknown): unknown {
-  if (!(e instanceof Error) || e instanceof MalformedOrderError || e instanceof UnsupportedOrderTypeError) {
+  if (!(e instanceof Error) || isOrderDecodeRefusal(e)) {
     return e;
   }
   if (e.message.startsWith(SDK_MISSING_CONFIGURATION_PREFIX)) {
@@ -294,6 +310,9 @@ function asOrderDecodeError(e: unknown): unknown {
   }
   if ('code' in e && MALFORMED_ORDER_ERROR_CODES.has((e as { code: unknown }).code)) {
     return new MalformedOrderError({ cause: e });
+  }
+  if ('code' in e && (e as { code: unknown }).code === NUMERIC_OUT_OF_RANGE_ERROR_CODE) {
+    return new UndecodableOrderError({ cause: e });
   }
   return e;
 }
