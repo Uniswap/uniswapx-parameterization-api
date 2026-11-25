@@ -25,7 +25,15 @@ import { getBestQuote } from '../quoters/best-quote';
 import { FillerAddressRepository } from '../repositories/filler-address-repository';
 import { PostedOrderRepository } from '../repositories/posted-order-repository';
 import { ChainId } from '../util/chains';
-import { NoQuotesAvailable, OrderDeadlineExpired, OrderPostError, UnknownOrderCosignerError } from '../util/errors';
+import {
+  MalformedOrderError,
+  NoQuotesAvailable,
+  OrderDeadlineExpired,
+  OrderPostError,
+  UndecodableOrderError,
+  UnknownOrderCosignerError,
+  UnsupportedOrderTypeError,
+} from '../util/errors';
 import { timestampInMstoSeconds } from '../util/time';
 import { Cosigner, CosignerFactory } from './cosigner';
 import { recordPostedOrder } from './posted-order-recorder';
@@ -100,12 +108,7 @@ export class HardQuoteBL {
     try {
       const provider = chainIdRpcMap.get(requestBody.tokenInChainId);
 
-      const orderParser = new UniswapXOrderParser();
-      const orderType: OrderType = orderParser.getOrderTypeFromEncoded(
-        requestBody.encodedInnerOrder,
-        requestBody.tokenInChainId
-      );
-      const request = HardQuoteRequest.fromHardRequestBody(requestBody, orderType);
+      const { orderType, request } = decodeOrder(ctx, requestBody);
       // Built per request (see kmsCosignerFactory for why the KMS client is not reused).
       const cosigner = cosignerFactory();
       const cosignerAddress = await cosigner.getAddress();
@@ -239,6 +242,79 @@ export class HardQuoteBL {
       void metrics.timer(Metric.QUOTE_E2E_LATENCY, Date.now() - start);
     }
   }
+}
+
+// How the SDK words its MissingConfiguration, which it does not export: the error it throws for an
+// order whose reactor maps to no order type it parses.
+const SDK_MISSING_CONFIGURATION_PREFIX = 'Missing configuration for ';
+
+// The ethers codes the SDK's decoder throws for bytes that are not a complete order: an
+// out-of-bounds ABI read, and the empty address read from truncated or non-hex input.
+const MALFORMED_ORDER_ERROR_CODES: ReadonlySet<unknown> = new Set([
+  ethers.utils.Logger.errors.BUFFER_OVERRUN,
+  ethers.utils.Logger.errors.INVALID_ARGUMENT,
+]);
+
+// A numeric field the decoder read past 2^53. Deliberately NOT in the malformed set above: the SDK
+// throws it for corrupted bytes (an offset or length word out of range) but also for some valid
+// orders it cannot read (a Dutch V3 decay curve whose packed block offsets reach 2^53, a deadline
+// or decay time above 2^53), so "malformed" would be false. It gets its own 400 and message.
+const NUMERIC_OUT_OF_RANGE_ERROR_CODE = ethers.utils.Logger.errors.NUMERIC_FAULT;
+
+/**
+ * Decodes the caller's order. The decode reads only the caller's bytes, so the failures it reports
+ * for them are refused as client errors (400): a reactor the SDK maps to no order type or to one a
+ * hard quote does not cosign, bytes that are not a complete order, and an order with no outputs
+ * (which every later step reads `outputs[0]` of). Anything else it throws propagates unchanged and
+ * stays a 500.
+ */
+function decodeOrder(
+  ctx: Context,
+  requestBody: HardQuoteRequestBody
+): { orderType: OrderType; request: HardQuoteRequest } {
+  try {
+    const orderType = new UniswapXOrderParser().getOrderTypeFromEncoded(
+      requestBody.encodedInnerOrder,
+      requestBody.tokenInChainId
+    );
+    const request = HardQuoteRequest.fromHardRequestBody(requestBody, orderType);
+    if (request.order.info.outputs.length === 0) {
+      throw new MalformedOrderError({ message: MalformedOrderError.NO_OUTPUTS_MESSAGE });
+    }
+    return { orderType, request };
+  } catch (e) {
+    const refusal = asOrderDecodeError(e);
+    if (isOrderDecodeRefusal(refusal)) {
+      ctx.logger.info('Invalid order', { reason: refusal.message });
+    }
+    throw refusal;
+  }
+}
+
+// The 400s the decode step answers.
+function isOrderDecodeRefusal(
+  e: unknown
+): e is MalformedOrderError | UndecodableOrderError | UnsupportedOrderTypeError {
+  return (
+    e instanceof MalformedOrderError || e instanceof UndecodableOrderError || e instanceof UnsupportedOrderTypeError
+  );
+}
+
+// The client error for a decode failure of the caller's bytes, or `e` itself for anything else.
+function asOrderDecodeError(e: unknown): unknown {
+  if (!(e instanceof Error) || isOrderDecodeRefusal(e)) {
+    return e;
+  }
+  if (e.message.startsWith(SDK_MISSING_CONFIGURATION_PREFIX)) {
+    return new UnsupportedOrderTypeError({ cause: e });
+  }
+  if ('code' in e && MALFORMED_ORDER_ERROR_CODES.has((e as { code: unknown }).code)) {
+    return new MalformedOrderError({ cause: e });
+  }
+  if ('code' in e && (e as { code: unknown }).code === NUMERIC_OUT_OF_RANGE_ERROR_CODE) {
+    return new UndecodableOrderError({ cause: e });
+  }
+  return e;
 }
 
 export async function getCosignerData(

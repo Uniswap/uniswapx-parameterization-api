@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { QuoteRequest, QuoteRequestDataJSON } from '.';
 import { HardQuoteRequestBody } from '../handlers/hard-quote';
 import { ProtocolVersion } from '../providers';
+import { UnsupportedOrderTypeError } from '../util/errors';
 
 export class HardQuoteRequest {
   public order: UnsignedV2DutchOrder | UnsignedV3DutchOrder;
@@ -28,7 +29,7 @@ export class HardQuoteRequest {
       this.order = UnsignedV3DutchOrder.parse(_data.encodedInnerOrder, _data.tokenInChainId);
       this._protocol = ProtocolVersion.V3;
     } else {
-      throw new Error('Unsupported order type');
+      throw new UnsupportedOrderTypeError();
     }
   }
 

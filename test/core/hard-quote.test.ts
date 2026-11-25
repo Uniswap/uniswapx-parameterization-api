@@ -7,7 +7,7 @@ import { ErrorResponse } from '../../lib/handlers/base';
 import { HardQuoteRequestBody } from '../../lib/handlers/hard-quote';
 import { OrderServiceProvider, PostOrderArgs, UniswapXServiceResponse } from '../../lib/providers/order';
 import { MockQuoter } from '../../lib/quoters';
-import { ErrorCode, NoQuotesAvailable } from '../../lib/util/errors';
+import { ErrorCode, MalformedOrderError, NoQuotesAvailable } from '../../lib/util/errors';
 import { fakeContext, FakeCosigner, hardQuoteContainer } from '../fakes';
 import { getOrder } from '../fixtures/hard-quote';
 
@@ -89,6 +89,37 @@ describe('HardQuoteBL', () => {
     await expect(flow(orderService, []).getHardQuote(ctx, await requestBody())).rejects.toBeInstanceOf(
       NoQuotesAvailable
     );
+    expect(orderService.posted).toHaveLength(0);
+    expect(metrics.emitted(Metric.QUOTE_E2E_LATENCY)).toBe(1);
+  });
+
+  it.each([
+    ['bytes that are not a complete order', async () => ({ ...(await requestBody()), encodedInnerOrder: '0x' })],
+    [
+      'an order with no outputs',
+      async () => {
+        const order = getOrder({ cosigner: cosignerWallet.address, outputs: [] });
+        const { types, domain, values } = order.permitData();
+        return {
+          ...(await requestBody()),
+          encodedInnerOrder: order.serialize(),
+          innerSig: await swapperWallet._signTypedData(domain, types, values),
+        };
+      },
+    ],
+  ])('refuses %s as a MalformedOrderError before quoting, cosigning or posting', async (_name, body) => {
+    const { ctx, metrics } = fakeContext();
+    const orderService = new ScriptedOrderService({ statusCode: 201, data: { hash: '0xhash' } });
+    const quoter = new MockQuoter(logger, 2, 1);
+    const quote = jest.spyOn(quoter, 'quote');
+    // The cosigner is shared across this describe, so compare against what it had already signed.
+    const signedBefore = cosigner.signedDigests.length;
+
+    await expect(flow(orderService, [quoter]).getHardQuote(ctx, await body())).rejects.toBeInstanceOf(
+      MalformedOrderError
+    );
+    expect(quote).not.toHaveBeenCalled();
+    expect(cosigner.signedDigests).toHaveLength(signedBefore);
     expect(orderService.posted).toHaveLength(0);
     expect(metrics.emitted(Metric.QUOTE_E2E_LATENCY)).toBe(1);
   });
