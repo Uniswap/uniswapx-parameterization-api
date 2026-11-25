@@ -1,3 +1,4 @@
+import { UniswapXOrderParser } from '@uniswap/uniswapx-sdk';
 import { MetricsLogger } from 'aws-embedded-metrics';
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { default as Logger } from 'bunyan';
@@ -146,6 +147,22 @@ describe('Quote handler: undecodable orders', () => {
     });
 
     const response = await post(await requestFor(), failingCosigner);
+
+    expect(response.statusCode).toBe(500);
+    expect(JSON.parse(response.body)).toEqual({ errorCode: 'INTERNAL_ERROR', detail: 'Unexpected error', id: ID });
+    expect(counted(Metric.QUOTE_500)).toBe(1);
+    expect(counted(Metric.QUOTE_400)).toBe(0);
+    expect(loggedAt('Unexpected error in handler')).toEqual(['error']);
+  });
+
+  // The cosigner case above fails after the decode step returns. This one fails inside it, so it
+  // proves the decode catch maps only decode errors to a 400.
+  it('still answers the generic 500 when the decode step throws an error that is not a decode failure', async () => {
+    jest.spyOn(UniswapXOrderParser.prototype, 'getOrderTypeFromEncoded').mockImplementation(() => {
+      throw new TypeError('unexpected parser bug');
+    });
+
+    const response = await post(await requestFor());
 
     expect(response.statusCode).toBe(500);
     expect(JSON.parse(response.body)).toEqual({ errorCode: 'INTERNAL_ERROR', detail: 'Unexpected error', id: ID });
